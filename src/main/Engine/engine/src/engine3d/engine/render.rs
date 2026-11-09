@@ -16,7 +16,7 @@ use rer_engine_core::surface::{SurfacePresentError, SurfacePresentError::*};
 use crate::engine3d::bvh::{RtMaterialGpu, RtSceneBlob, RtTriangle};
 use crate::engine3d::config_3d::reflection_graphics::ReflectionTier;
 use crate::engine3d::ecs::{MeshComponent, SurfacePbr};
-use crate::engine3d::vulkan::{FrameAcquire, MeshBatch, RtBatch, SkinnedBatch};
+use crate::engine3d::vulkan::{FrameAcquire, FrameTarget, MeshBatch, RtBatch, SkinnedBatch};
 
 use super::{SceneUniforms, State};
 
@@ -584,6 +584,16 @@ impl State {
         }
     }
 
+    /// Fija el tamaño lógico del viewport sin tocar el swapchain.
+    ///
+    /// Lo usa el editor: el swapchain es de la ventana completa y la escena se dibuja
+    /// en un sub-rectángulo, así que `State` solo necesita saber su tamaño.
+    pub fn set_viewport_size(&mut self, new_size: PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.size = new_size;
+        }
+    }
+
     fn editor_selection_flag(
         &self,
         entity_id: crate::engine3d::ecs::EntityId,
@@ -608,12 +618,27 @@ impl State {
         }
     }
 
-    /// Graba y presenta un frame entero con Ash (Vulkan).
-    ///
-    /// Todos los datos de `FrameInput` se construyen como locales de este mÃ©todo, asÃ­ que
-    /// `FrameInput` nunca presta de `self` y no entra en conflicto con el prÃ©stamo mutable
-    /// de `frame_renderer` al grabar.
+    /// Graba y presenta un frame entero (host standalone).
     pub fn render(&mut self) -> Result<(), SurfacePresentError> {
+        let frame = match self.vulkan.begin_frame() {
+            Ok(frame) => frame,
+            Err(FrameAcquire::Outdated) => return Err(Reconfigure),
+            Err(FrameAcquire::Skip) => return Err(SkipFrame),
+            Err(FrameAcquire::Fail(_e)) => return Err(Validation),
+        };
+        self.render_into(&frame)?;
+        self.finish_present(&frame);
+        self.vulkan.submit_and_present(&frame).map_err(|e| match e {
+            FrameAcquire::Outdated | FrameAcquire::Skip => Reconfigure,
+            FrameAcquire::Fail(_e) => Validation,
+        })
+    }
+
+    /// Graba la escena en un `FrameTarget` abierto por otro host (el editor).
+    ///
+    /// Todos los datos de `FrameInput` se construyen como locales de este método, así que
+    /// `frame` puede seguir prestado mientras `frame_renderer` se toma mutable.
+    pub fn render_into(&mut self, frame: &FrameTarget) -> Result<(), SurfacePresentError> {
         self.update_animations();
         self.update_skinned_animations();
         self.sync_socket_attached_children();
@@ -669,13 +694,6 @@ impl State {
         };
         self.prev_view_proj = vp_stable;
         let scene_bytes = bytemuck::bytes_of(&scene_uni);
-
-        let frame = match self.vulkan.begin_frame() {
-            Ok(frame) => frame,
-            Err(FrameAcquire::Outdated) => return Err(Reconfigure),
-            Err(FrameAcquire::Skip) => return Err(SkipFrame),
-            Err(FrameAcquire::Fail(_e)) => return Err(Validation),
-        };
 
         // â”€â”€ Datos del frame (locales) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         let frustum_vp = {
@@ -1249,13 +1267,18 @@ impl State {
         self.frame_renderer
             .as_mut()
             .expect("FrameRenderer no inicializado")
-            .record(&frame, &input)
+            .record(frame, &input)
             .map_err(|_e| Validation)?;
+        Ok(())
+    }
 
-        self.vulkan.submit_and_present(&frame).map_err(|e| match e {
-            FrameAcquire::Outdated | FrameAcquire::Skip => Reconfigure,
-            FrameAcquire::Fail(_e) => Validation,
-        })
+    /// Transita la imagen del swapchain a `PRESENT_SRC_KHR` tras grabar la escena.
+    ///
+    /// En ventana única el editor no la llama: graba egui encima y transita al final.
+    pub fn finish_present(&self, frame: &FrameTarget) {
+        if let Some(renderer) = self.frame_renderer.as_ref() {
+            renderer.finish_present(frame);
+        }
     }
 }
 

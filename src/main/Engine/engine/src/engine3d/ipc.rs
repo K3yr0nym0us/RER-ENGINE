@@ -1,5 +1,6 @@
 use std::{
     io::{self, BufRead, Write},
+    sync::{OnceLock, mpsc},
     thread,
 };
 
@@ -1374,13 +1375,42 @@ pub fn send_load_progress(message: &str, step_ms: Option<u64>, total_ms: Option<
     });
 }
 
-/// Escribe un evento JSON en stdout y lo flushea inmediatamente.
-pub fn send_event(event: &EngineEvent) {
-    if let Ok(json) = serde_json::to_string(event) {
+/// Sink en proceso: cuando el editor hospeda el motor, los eventos van por canal en vez
+/// de stdout/stderr y el editor los reenvía a Electron con el mismo JSON.
+static EVENT_SINK: OnceLock<mpsc::Sender<String>> = OnceLock::new();
+
+/// Instala el sink de eventos del editor. Solo tiene efecto la primera vez.
+pub fn install_event_sink(tx: mpsc::Sender<String>) {
+    let _ = EVENT_SINK.set(tx);
+}
+
+/// Parsea un comando IPC desde el JSON que envía Electron.
+pub fn parse_command(value: &serde_json::Value) -> Option<EngineCommand> {
+    serde_json::from_value(value.clone()).ok()
+}
+
+fn emit(json: String, silent: bool) {
+    if let Some(sink) = EVENT_SINK.get() {
+        let _ = sink.send(json);
+        return;
+    }
+    if silent {
+        let stderr = io::stderr();
+        let mut handle = stderr.lock();
+        let _ = writeln!(handle, "[IPC_EVENT]{json}");
+        let _ = handle.flush();
+    } else {
         let stdout = io::stdout();
         let mut handle = stdout.lock();
         let _ = writeln!(handle, "{json}");
         let _ = handle.flush();
+    }
+}
+
+/// Escribe un evento JSON en stdout y lo flushea inmediatamente.
+pub fn send_event(event: &EngineEvent) {
+    if let Ok(json) = serde_json::to_string(event) {
+        emit(json, false);
     }
 }
 
@@ -1389,10 +1419,7 @@ pub fn send_event(event: &EngineEvent) {
 /// Útil para eventos ruidosos como `entity_bones_list` / `entity_bone_physics_list`.
 pub fn send_event_silent(event: &EngineEvent) {
     if let Ok(json) = serde_json::to_string(event) {
-        let stderr = io::stderr();
-        let mut handle = stderr.lock();
-        let _ = writeln!(handle, "[IPC_EVENT]{json}");
-        let _ = handle.flush();
+        emit(json, true);
     }
 }
 

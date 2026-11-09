@@ -10,7 +10,7 @@ mod engine_command;
 mod entity_save_meta;
 mod gizmo;
 mod hud_image_asset;
-mod ipc;
+pub(crate) mod ipc;
 mod mesh;
 mod platform;
 mod probe_registry;
@@ -18,7 +18,7 @@ mod save_entity_3d;
 mod screen_hud_image;
 mod scripting;
 mod texture;
-mod vulkan;
+pub(crate) mod vulkan;
 
 #[path = "config_3d/mod.rs"]
 mod config_3d;
@@ -27,6 +27,6 @@ mod config_base;
 mod config_compat;
 mod config_shared;
 #[path = "engine/mod.rs"]
-mod engine;
+pub(crate) mod engine;
 
 pub mod host;

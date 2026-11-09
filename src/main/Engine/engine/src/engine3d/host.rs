@@ -444,7 +444,7 @@ fn finish_entity_grab_confirm(
 // ---------------------------------------------------------------------------
 // Estructura principal de la aplicación winit
 // ---------------------------------------------------------------------------
-struct App {
+pub struct App {
     state: Option<crate::engine3d::engine::State>,
     overlay: Option<OverlayConfig>,
     // ── Cámara orbital (Blender: MMB + modificadores)
@@ -476,6 +476,119 @@ struct App {
     tracker_offset: TrackerOffset,
     tracker_parent_id: u64,
     cursor_captured: bool,
+}
+
+impl App {
+    /// Host del editor: el `State` ya existe y comparte el `SharedGpu` de la ventana.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub(crate) fn new_in_editor(state: crate::engine3d::engine::State) -> Self {
+        Self {
+            state: Some(state),
+            overlay: None,
+            mouse_middle: false,
+            mouse_right: false,
+            editor_keys: HashSet::new(),
+            last_cursor: None,
+            left_click_pos: None,
+            player_ui_left_press: None,
+            entity_drag: None,
+            entity_drag_start: None,
+            entity_grab: None,
+            last_entity_pick_click: None,
+            ctrl_held: false,
+            shift_held: false,
+            keyboard_mouse_pressed: HashSet::new(),
+            gilrs: Gilrs::new().ok(),
+            gamepad_pressed: HashSet::new(),
+            next_frame_at: std::time::Instant::now(),
+            target_fps: 60,
+            tracker_offset: std::sync::Arc::new((
+                std::sync::atomic::AtomicI32::new(0),
+                std::sync::atomic::AtomicI32::new(0),
+            )),
+            tracker_parent_id: 0,
+            cursor_captured: false,
+        }
+    }
+
+    /// Graba la escena en el `FrameTarget` del editor y fija el tamaño del viewport.
+    pub fn render_scene(
+        &mut self,
+        frame: &crate::engine3d::vulkan::FrameTarget,
+    ) -> Result<(), rer_engine_core::surface::SurfacePresentError> {
+        let Some(state) = self.state.as_mut() else {
+            return Ok(());
+        };
+        state.set_viewport_size(winit::dpi::PhysicalSize::new(
+            frame.extent.width,
+            frame.extent.height,
+        ));
+        state.render_into(frame)
+    }
+
+    pub fn is_preview_playing(&self) -> bool {
+        self.state
+            .as_ref()
+            .is_some_and(|state| state.is_preview_playing())
+    }
+
+    /// Movimiento relativo del ratón (DeviceEvent::MouseMotion) durante play.
+    pub fn handle_device_motion(&mut self, delta_x: f32, delta_y: f32) {
+        if !self.cursor_captured {
+            return;
+        }
+        if let Some(state) = self.state.as_mut()
+            && state.is_play_controller_active()
+        {
+            state.apply_fps_mouse_look(delta_x, delta_y);
+        }
+    }
+
+    /// Avanza simulación e input de play sin renderizar (el render lo decide el host).
+    pub fn frame_update(&mut self) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        if state.is_preview_playing() {
+            for control_key in &self.keyboard_mouse_pressed {
+                state.dispatch_on_keep_frame("keyboard_mouse", control_key);
+            }
+            for button in &self.gamepad_pressed {
+                if let Some(control_key) = map_gamepad_control_key(*button) {
+                    state.dispatch_on_keep_frame("gamepad", control_key);
+                }
+            }
+        }
+        state.poll_and_advance_model_preloads(
+            crate::engine3d::config_3d::static_model_cache::MODEL_GPU_PARTS_PER_FRAME,
+        );
+        state.update();
+        if state.is_play_controller_active() {
+            let inputs = state.play_controller_effective_inputs(&self.keyboard_mouse_pressed);
+            state.apply_play_controller_keyboard(&inputs, state.delta_time);
+        } else if state.editor_fly_active() {
+            // WASD/Space/C para recorrer el mapa en edición (estilo Minecraft).
+            state.apply_editor_fly_input(&self.editor_keys, state.delta_time);
+        }
+    }
+
+    /// Render y present del host standalone.
+    pub fn render_standalone(&mut self) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        match state.render() {
+            Ok(_) => {}
+            Err(SurfacePresentError::Reconfigure) => {
+                let size = state.size();
+                state.resize(size);
+            }
+            Err(SurfacePresentError::SkipFrame) => {}
+            Err(SurfacePresentError::Validation) => {
+                log::warn!("render validation error");
+            }
+        }
+    }
 }
 
 impl App {
@@ -628,71 +741,12 @@ impl App {
     }
 }
 
-impl ApplicationHandler<EngineCommand> for App {
-    /// Llamado al iniciar (y al volver de suspensión en móvil).
-    /// Aquí creamos la ventana y el estado wgpu.
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.state.is_some() {
-            return;
-        }
-
-        // Atributos base
-        let mut attrs = Window::default_attributes()
-            .with_title("RER-ENGINE - Viewport")
-            .with_window_icon(rer_engine_core::platform::app_window_icon());
-
-        if let Some(overlay) = &self.overlay {
-            attrs = attrs
-                .with_inner_size(winit::dpi::PhysicalSize::new(overlay.width, overlay.height))
-                .with_position(winit::dpi::PhysicalPosition::new(overlay.x, overlay.y))
-                .with_decorations(false)
-                .with_resizable(false);
-        } else {
-            // ── Modo standalone ──────────────────────────────────────────────
-            attrs = attrs
-                .with_inner_size(winit::dpi::LogicalSize::new(1280u32, 720u32))
-                .with_decorations(true);
-        }
-
-        let window = Arc::new(
-            event_loop
-                .create_window(attrs)
-                .expect("No se pudo crear la ventana"),
-        );
-
-        self.setup_overlay_tracking(&window);
-
-        match pollster::block_on(crate::engine3d::engine::State::new(Arc::clone(&window))) {
-            Ok(mut state) => {
-                let from_save = std::env::var("RER_3D_START_FROM_SAVE")
-                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                    .unwrap_or(false);
-                if from_save {
-                    state.setup_empty_3d();
-                    crate::engine3d::ipc::send_event(&EngineEvent::Ready {
-                        gravity: state.physics.gravity_magnitude(),
-                    });
-                } else {
-                    state.setup_default_3d_scene();
-                }
-                state.editor_parent_id = self.tracker_parent_id;
-                log::info!(
-                    "[editor] navegación del viewport: RMB mirar · WASD volar · Space/C subir/bajar · Shift sprint · MMB órbita · Shift+MMB paneo · Ctrl+MMB dolly · rueda zoom · Numpad. encuadrar selección"
-                );
-                self.state = Some(state);
-            }
-            Err(e) => {
-                log::error!("Inicialización GPU fallida: {e}");
-                crate::engine3d::ipc::send_event(&EngineEvent::Error { message: e.message });
-            }
-        }
-    }
-
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: EngineCommand) {
+impl App {
+    /// Procesa un comando IPC. Devuelve `true` si el motor debe apagarse.
+    pub fn handle_command(&mut self, cmd: EngineCommand) -> bool {
         // El IPC thread envió un comando vía EventLoopProxy — procesar de inmediato.
         if matches!(cmd, EngineCommand::Common(EngineCommandCommon::Shutdown)) {
-            event_loop.exit();
-            return;
+            return true;
         }
         if let EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) = &cmd {
             self.target_fps = (*fps).clamp(1, 1000);
@@ -747,46 +801,67 @@ impl ApplicationHandler<EngineCommand> for App {
             self.set_preview_playing(&mut state, playing);
             self.state = Some(state);
         }
+        false
     }
+}
 
-    fn device_event(
-        &mut self,
-        _event_loop: &ActiveEventLoop,
-        _device_id: winit::event::DeviceId,
-        event: DeviceEvent,
-    ) {
+impl App {
+    /// Input de mando y limpieza de teclas al salir de play. Una vez por frame.
+    pub fn tick(&mut self) {
         let Some(state) = self.state.as_mut() else {
             return;
         };
-
-        if !self.cursor_captured || !state.is_play_controller_active() {
-            return;
-        }
-
-        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
-            state.apply_fps_mouse_look(dx as f32, dy as f32);
+        if state.is_preview_playing() {
+            if state.is_play_controller_active() {
+                state.clear_play_controller_script_frame();
+            }
+            if let Some(gilrs) = self.gilrs.as_mut() {
+                while let Some(evt) = gilrs.next_event() {
+                    match evt.event {
+                        GamepadEventType::ButtonPressed(button, _) => {
+                            self.gamepad_pressed.insert(button);
+                            if let Some(control_key) = map_gamepad_control_key(button) {
+                                state.dispatch_on_press("gamepad", control_key);
+                                state.dispatch_on_keep_key_down(control_key);
+                            }
+                        }
+                        GamepadEventType::ButtonReleased(button, _) => {
+                            self.gamepad_pressed.remove(&button);
+                            if let Some(control_key) = map_gamepad_control_key(button) {
+                                state.dispatch_on_keep_key_up("gamepad", control_key);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        } else {
+            self.keyboard_mouse_pressed.clear();
+            self.gamepad_pressed.clear();
         }
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _window_id: WindowId,
-        event: WindowEvent,
-    ) {
+    /// Procesa un evento de ventana. Devuelve `true` si la ventana pidió cerrarse.
+    pub fn handle_window_event(&mut self, event: WindowEvent) -> bool {
+        // El avance de simulación se separa del render: el editor renderiza la escena en
+        // su propio command buffer y el host standalone lo hace en `render_standalone`.
+        if matches!(event, WindowEvent::RedrawRequested) {
+            self.frame_update();
+            return false;
+        }
         let mut preview_toggle = None;
         let mut release_cursor_on_focus_loss = false;
         let mut recapture_cursor_on_focus_gain = false;
 
         {
             let Some(state) = self.state.as_mut() else {
-                return;
+                return false;
             };
 
             // ── Eventos de ventana ───────────────────────────────────────────────
             match event {
                 WindowEvent::CloseRequested => {
-                    event_loop.exit();
+                    return true;
                 }
                 WindowEvent::Resized(size) => {
                     state.resize(size);
@@ -828,7 +903,7 @@ impl ApplicationHandler<EngineCommand> for App {
                                     &mut self.entity_drag_start,
                                     state,
                                 );
-                                return;
+                                return false;
                             }
                             if state.player_ui_edit_active {
                                 if let Some(cur) = self.last_cursor {
@@ -845,13 +920,13 @@ impl ApplicationHandler<EngineCommand> for App {
                                     &mut self.entity_drag_start,
                                     state,
                                 );
-                                return;
+                                return false;
                             }
                             if pressed {
                                 if self.entity_grab.is_some() {
                                     finish_entity_grab_confirm(&mut self.entity_grab, state);
                                     self.left_click_pos = None;
-                                    return;
+                                    return false;
                                 }
                                 // En modo quick_build_place los clicks son capturados por la herramienta;
                                 // no se deben seleccionar entidades ni activar el gizmo.
@@ -977,11 +1052,11 @@ impl ApplicationHandler<EngineCommand> for App {
                         state.ctrl_held = ctrl_active;
                         state.player_ui_mouse_move(cur.0, cur.1);
                         self.last_cursor = Some(cur);
-                        return;
+                        return false;
                     }
                     if self.cursor_captured && state.is_play_controller_active() {
                         self.last_cursor = None;
-                        return;
+                        return false;
                     }
                     if state.is_preview_playing() {
                         clear_entity_drag_fields(
@@ -1155,11 +1230,11 @@ impl ApplicationHandler<EngineCommand> for App {
 
                     if plane_tool_active && is_plane_tool_rotate_key(physical_key, text.as_deref())
                     {
-                        return;
+                        return false;
                     }
 
                     let Some(code) = key_code_from_physical(physical_key) else {
-                        return;
+                        return false;
                     };
 
                     // Estado de teclado para el vuelo del viewport de edición. Se registra antes de
@@ -1171,7 +1246,7 @@ impl ApplicationHandler<EngineCommand> for App {
                     }
 
                     if state.player_ui_edit_key_input(code, pressed, repeat) {
-                        return;
+                        return false;
                     }
                     if state.player_ui_text_key_input(
                         code,
@@ -1179,7 +1254,7 @@ impl ApplicationHandler<EngineCommand> for App {
                         repeat,
                         text.as_ref().map(|s| s.as_str()),
                     ) {
-                        return;
+                        return false;
                     }
                     if pressed
                         && !repeat
@@ -1321,7 +1396,7 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
                 WindowEvent::MouseWheel { delta, .. } => {
                     if state.is_preview_playing() {
-                        return;
+                        return false;
                     }
                     let scroll = match delta {
                         MouseScrollDelta::LineDelta(_, y) => y,
@@ -1332,43 +1407,6 @@ impl ApplicationHandler<EngineCommand> for App {
                     } else {
                         state.camera.zoom(scroll);
                     }
-                }
-                WindowEvent::RedrawRequested => {
-                    if state.is_preview_playing() {
-                        for control_key in &self.keyboard_mouse_pressed {
-                            state.dispatch_on_keep_frame("keyboard_mouse", control_key);
-                        }
-                        for button in &self.gamepad_pressed {
-                            if let Some(control_key) = map_gamepad_control_key(*button) {
-                                state.dispatch_on_keep_frame("gamepad", control_key);
-                            }
-                        }
-                    }
-                    state.poll_and_advance_model_preloads(
-                        crate::engine3d::config_3d::static_model_cache::MODEL_GPU_PARTS_PER_FRAME,
-                    );
-                    state.update();
-                    if state.is_play_controller_active() {
-                        let inputs =
-                            state.play_controller_effective_inputs(&self.keyboard_mouse_pressed);
-                        state.apply_play_controller_keyboard(&inputs, state.delta_time);
-                    } else if state.editor_fly_active() {
-                        // WASD/Space/C para recorrer el mapa en edición (estilo Minecraft).
-                        state.apply_editor_fly_input(&self.editor_keys, state.delta_time);
-                    }
-                    match state.render() {
-                        Ok(_) => {}
-                        Err(SurfacePresentError::Reconfigure) => {
-                            let size = state.size();
-                            state.resize(size);
-                        }
-                        Err(SurfacePresentError::SkipFrame) => {}
-                        Err(SurfacePresentError::Validation) => {
-                            log::warn!("render validation error");
-                        }
-                    }
-                    // NO llamar request_redraw() aquí: lo hace about_to_wait con WaitUntil.
-                    // Hacerlo aquí + ControlFlow::Poll crea un busy loop que consume CPU al 100%.
                 }
                 _ => {}
             }
@@ -1388,7 +1426,109 @@ impl ApplicationHandler<EngineCommand> for App {
             self.capture_cursor_for_preview(&state);
             self.state = Some(state);
         }
+        false
     }
+}
+
+impl ApplicationHandler<EngineCommand> for App {
+    /// Llamado al iniciar (y al volver de suspensión en móvil).
+    /// Aquí creamos la ventana y el estado wgpu.
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.state.is_some() {
+            return;
+        }
+
+        // Atributos base
+        let mut attrs = Window::default_attributes()
+            .with_title("RER-ENGINE - Viewport")
+            .with_window_icon(rer_engine_core::platform::app_window_icon());
+
+        if let Some(overlay) = &self.overlay {
+            attrs = attrs
+                .with_inner_size(winit::dpi::PhysicalSize::new(overlay.width, overlay.height))
+                .with_position(winit::dpi::PhysicalPosition::new(overlay.x, overlay.y))
+                .with_decorations(false)
+                .with_resizable(false);
+        } else {
+            // ── Modo standalone ──────────────────────────────────────────────
+            attrs = attrs
+                .with_inner_size(winit::dpi::LogicalSize::new(1280u32, 720u32))
+                .with_decorations(true);
+        }
+
+        let window = Arc::new(
+            event_loop
+                .create_window(attrs)
+                .expect("No se pudo crear la ventana"),
+        );
+
+        self.setup_overlay_tracking(&window);
+
+        match pollster::block_on(crate::engine3d::engine::State::new(Arc::clone(&window))) {
+            Ok(mut state) => {
+                let from_save = std::env::var("RER_3D_START_FROM_SAVE")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false);
+                if from_save {
+                    state.setup_empty_3d();
+                    crate::engine3d::ipc::send_event(&EngineEvent::Ready {
+                        gravity: state.physics.gravity_magnitude(),
+                    });
+                } else {
+                    state.setup_default_3d_scene();
+                }
+                state.editor_parent_id = self.tracker_parent_id;
+                log::info!(
+                    "[editor] navegación del viewport: RMB mirar · WASD volar · Space/C subir/bajar · Shift sprint · MMB órbita · Shift+MMB paneo · Ctrl+MMB dolly · rueda zoom · Numpad. encuadrar selección"
+                );
+                self.state = Some(state);
+            }
+            Err(e) => {
+                log::error!("Inicialización GPU fallida: {e}");
+                crate::engine3d::ipc::send_event(&EngineEvent::Error { message: e.message });
+            }
+        }
+    }
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, cmd: EngineCommand) {
+        if self.handle_command(cmd) {
+            event_loop.exit();
+        }
+    }
+
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: DeviceEvent,
+    ) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+
+        if !self.cursor_captured || !state.is_play_controller_active() {
+            return;
+        }
+
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
+            state.apply_fps_mouse_look(dx as f32, dy as f32);
+        }
+    }
+    fn window_event(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        _window_id: WindowId,
+        event: WindowEvent,
+    ) {
+        let is_redraw = matches!(event, WindowEvent::RedrawRequested);
+        if self.handle_window_event(event) {
+            event_loop.exit();
+            return;
+        }
+        if is_redraw {
+            self.render_standalone();
+        }
+    }
+
     /// Llamado cuando winit ha procesado todos los eventos pendientes del ciclo actual.
     /// Es el único lugar correcto para pedir el siguiente frame en modo Poll.
     /// Usando WaitUntil capamos al FPS objetivo y el CPU puede dormir entre frames.
@@ -1396,38 +1536,9 @@ impl ApplicationHandler<EngineCommand> for App {
         let frame_duration =
             std::time::Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
 
-        let now = std::time::Instant::now();
-        if let Some(state) = self.state.as_mut() {
-            if state.is_preview_playing() {
-                if state.is_play_controller_active() {
-                    state.clear_play_controller_script_frame();
-                }
-                if let Some(gilrs) = self.gilrs.as_mut() {
-                    while let Some(evt) = gilrs.next_event() {
-                        match evt.event {
-                            GamepadEventType::ButtonPressed(button, _) => {
-                                self.gamepad_pressed.insert(button);
-                                if let Some(control_key) = map_gamepad_control_key(button) {
-                                    state.dispatch_on_press("gamepad", control_key);
-                                    state.dispatch_on_keep_key_down(control_key);
-                                }
-                            }
-                            GamepadEventType::ButtonReleased(button, _) => {
-                                self.gamepad_pressed.remove(&button);
-                                if let Some(control_key) = map_gamepad_control_key(button) {
-                                    state.dispatch_on_keep_key_up("gamepad", control_key);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            } else {
-                self.keyboard_mouse_pressed.clear();
-                self.gamepad_pressed.clear();
-            }
-        }
+        self.tick();
 
+        let now = std::time::Instant::now();
         if now >= self.next_frame_at {
             if let Some(state) = &self.state {
                 state.window().request_redraw();
@@ -1450,13 +1561,13 @@ pub fn run() {
     // La capa de validación y el contexto Ash viven ahora en rer_engine_core::vulkan. Sin listar ese
     // módulo, sus [vulkan-validación] (nivel warn) quedan filtrados por rer_engine=warn: son justo
     // los mensajes que delatan un layout de imagen mal declarado.
-    const DEFAULT_LOG_FILTER: &str = "rer_engine=warn,rer_crate::engine3d::engine::engine3d::config_base=info,\
-rer_crate::engine3d::engine::engine3d::config_3d::skin_diag=info,\
-rer_crate::engine3d::engine::engine3d::config_3d::model_asset=info,\
-rer_crate::engine3d::engine::engine3d::config_3d::reflection_settings=info,\
-rer_crate::engine3d::engine::engine3d::engine::commands=info,\
-rer_crate::engine3d::engine::engine3d::reflections=info,\
-rer_crate::engine3d::engine::engine3d::engine::render=info,\
+    const DEFAULT_LOG_FILTER: &str = "rer_engine=warn,rer_engine::engine3d::config_base=info,\
+rer_engine::engine3d::config_3d::skin_diag=info,\
+rer_engine::engine3d::config_3d::model_asset=info,\
+rer_engine::engine3d::config_3d::reflection_settings=info,\
+rer_engine::engine3d::engine::commands=info,\
+rer_engine::engine3d::reflections=info,\
+rer_engine::engine3d::engine::render=info,\
 rer_engine_core::vulkan=info";
 
     rer_engine_core::logging::init(DEFAULT_LOG_FILTER);

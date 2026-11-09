@@ -58,8 +58,8 @@ gpu-allocator = { version = "0.27", default-features = false, features = ["vulka
 # `--no-default-features --features <motor>` para no enlazar el motor ajeno.
 default = ["engine3d", "editor"]
 engine3d = []
-# Editor egui. Reutiliza el mismo `SharedGpu` que los motores.
-editor = []
+# Editor egui. Reutiliza el mismo `SharedGpu` que los motores y hospeda el 3D en proceso.
+editor = ["engine3d"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true

@@ -12,7 +12,6 @@ use crate::editor::app::EditorApp;
 use super::{bottom_bar, sidebar_left, sidebar_right, top_bar};
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
-    let text = app.text();
     let full_height = ui.max_rect().height();
     let console_height = console_height(full_height);
 
@@ -52,15 +51,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             bottom_bar::show(ui, app);
         });
 
+    // El centro queda limpio: aquí se dibuja la escena del motor en el mismo swapchain.
     egui::CentralPanel::default()
-        .frame(panel_frame(crate::editor::theme::PANEL_BG))
+        .frame(egui::Frame::NONE)
         .show(ui, |ui| {
-            let title = format!(
-                "{} — {}",
-                text.engine_viewport,
-                app.cli.context.project_type.as_str()
-            );
-            section_box(ui, &title, crate::editor::theme::PANEL_BG);
+            app.viewport_rect = Some(ui.max_rect());
         });
 }
 
@@ -71,27 +66,6 @@ fn panel_frame(fill: egui::Color32) -> egui::Frame {
 /// Altura de la consola: 25 % del alto disponible, con un mínimo de 120 px.
 fn console_height(full_height: f32) -> f32 {
     (full_height * 0.25).max(120.0)
-}
-
-fn section_box(ui: &mut egui::Ui, title: &str, fill: egui::Color32) {
-    let rect = ui.max_rect();
-    let painter = ui.painter();
-
-    painter.rect(
-        rect,
-        egui::CornerRadius::ZERO,
-        fill,
-        egui::Stroke::new(1.0, crate::editor::theme::BORDER),
-        egui::StrokeKind::Inside,
-    );
-
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        title,
-        egui::FontId::proportional(13.0),
-        crate::editor::theme::TEXT_MUTED,
-    );
 }
 
 #[cfg(test)]

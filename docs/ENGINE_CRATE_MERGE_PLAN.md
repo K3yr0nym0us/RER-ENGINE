@@ -176,19 +176,27 @@ Gate: `yarn dev` con proyecto 2D y 3D; `electron-builder --dir`.
 
 ### Fase 5 — Ventana única 3D
 
+> Estado: completada. El motor 3D se construye con `State::with_context` sobre el
+> `SharedGpu` del editor, graba en el rectángulo del `CentralPanel` y egui se dibuja
+> encima en el mismo command buffer. Los eventos del motor salen por el sink IPC al
+> mismo JSON que consume Electron. Pendiente de pulido: `ClipCursor` explícito al rect
+> (hoy el motor usa `CursorGrabMode::Locked/Confined` sobre la ventana compartida).
+
 Sin la fase de "convertir el 3D en librería" (ya son módulos del mismo crate):
 
 1. `core/vulkan`: `FrameTarget.offset: vk::Offset2D`; `begin_frame` a cero.
-2. `engine3d/render`: `render_area`/viewport/scissor con offset; barrera final a
-   `PRESENT_SRC_KHR` al dueño del present.
+2. `engine3d/render`: `render_area`/viewport/scissor con offset; `FrameRenderer::finish_present`
+   separa la barrera a `PRESENT_SRC_KHR` para que egui pinte antes.
 3. `scene/render.rs`: `render_into(&FrameTarget)`; `State::with_context`;
    `set_viewport_size` sin tocar swapchain.
-4. `core/vulkan`: exponer `queue()`; pool de comandos propio del editor para egui.
-5. `editor/render/ui_pass.rs`: egui en `RenderMode::DynamicRendering`, `in_flight_frames = 2`,
-   `loadOp = LOAD` a ventana completa.
-6. `ipc/send`: sink `OnceLock<mpsc::Sender<Value>>`; sin sink → stdout. El JSON que recibe
+4. `core/vulkan`: `queue()`, `instance()`, `physical_device()` y `queue_family_index()`;
+   pool de comandos propio del editor para egui.
+5. `editor/render.rs`: egui en `RenderMode::DynamicRendering`, `in_flight_frames = 2`,
+   `loadOp = LOAD` a ventana completa sobre la escena.
+6. `ipc`: sink `OnceLock<mpsc::Sender<String>>`; sin sink → stdout. El JSON que recibe
    `bridge::forward_line` no cambia, así que las modales Electron no se tocan.
-7. `host/input` reutilizado por el editor; `ClipCursor` de Win32 al rect.
+7. `host`: `App::new_in_editor`, `handle_command`, `handle_window_event`, `tick`,
+   `frame_update` reutilizados por el editor; input traducido al rect del viewport.
 
 ### Fase 6 — Repartir ficheros grandes
 

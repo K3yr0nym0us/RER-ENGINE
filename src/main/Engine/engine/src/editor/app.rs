@@ -229,6 +229,8 @@ pub struct EditorApp {
     pub right_sidebar: SidebarRightState,
     /// Canal de comandos hacia el motor (lo conecta `main` al lanzarlo).
     pub engine_tx: Option<Sender<Value>>,
+    /// Rectángulo central (en puntos) donde el motor dibuja la escena.
+    pub viewport_rect: Option<egui::Rect>,
 }
 
 impl EditorApp {
@@ -260,6 +262,7 @@ impl EditorApp {
             left_sidebar: SidebarLeftState::default(),
             right_sidebar: SidebarRightState::default(),
             engine_tx: None,
+            viewport_rect: None,
         }
     }
 

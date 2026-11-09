@@ -32,5 +32,5 @@ pub use frame::{
 };
 
 pub use rer_engine_core::vulkan::{
-    FrameAcquire, GpuBuffer, GpuImage, SharedGpu, VulkanError, VulkanOptions,
+    FrameAcquire, FrameTarget, GpuBuffer, GpuImage, SharedGpu, VulkanError, VulkanOptions,
 };

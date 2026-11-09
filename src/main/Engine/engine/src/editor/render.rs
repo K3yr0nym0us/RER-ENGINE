@@ -1,8 +1,8 @@
 //! Contexto Vulkan/egui del editor, apoyado en el núcleo Ash compartido con los motores.
 //!
 //! No crea instancia, device ni swapchain propios: usa `SharedGpu`, el mismo que el motor
-//! 3D. Así la ventana única solo tendrá que añadir la grabación de la escena dentro del
-//! mismo command buffer.
+//! 3D. En ventana única graba la escena del motor y la UI de egui en el mismo command
+//! buffer: la escena dentro del rectángulo del `CentralPanel` y egui encima.
 
 use ash::vk;
 use egui_ash_renderer::{
@@ -13,6 +13,8 @@ use rer_engine_core::vulkan::select::is_srgb_format;
 use rer_engine_core::vulkan::{FRAMES_IN_FLIGHT, FrameAcquire, SharedGpu, VulkanOptions};
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+
+use super::theme;
 
 pub struct EditorGpu {
     // Orden de destrucción: egui → command pool (en `Drop`) → device (dentro de `gpu`).
@@ -61,10 +63,15 @@ impl EditorGpu {
             gpu,
             clear: vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: crate::editor::theme::clear_color(),
+                    float32: theme::clear_color(),
                 },
             },
         })
+    }
+
+    /// Copia del contexto para que el motor 3D comparta device y swapchain.
+    pub fn shared_gpu(&self) -> SharedGpu {
+        self.gpu.clone()
     }
 
     pub fn max_texture_dimension_2d(&self) -> u32 {
@@ -80,15 +87,18 @@ impl EditorGpu {
             .map_err(|error| error.to_string())
     }
 
-    /// Dibuja un frame completo de egui y lo presenta.
+    /// Dibuja un frame completo: escena opcional del motor + egui, y lo presenta.
     ///
-    /// Devuelve `true` si egui pide repintar inmediatamente.
+    /// `viewport` llega en puntos egui (coordenadas de ventana); la escena se graba en su
+    /// equivalente físico. Devuelve `true` si egui pide repintar inmediatamente.
     pub fn render(
         &mut self,
         window: &Window,
         egui_ctx: &egui::Context,
         egui_state: &mut egui_winit::State,
         build: impl FnMut(&mut egui::Ui),
+        engine: Option<&mut crate::engine3d::host::App>,
+        viewport: Option<egui::Rect>,
     ) -> Result<bool, String> {
         let raw_input = egui_state.take_egui_input(window);
         let full_output = egui_ctx.run_ui(raw_input, build);
@@ -126,26 +136,57 @@ impl EditorGpu {
         let extent = frame.extent;
         let device = self.gpu.device();
 
+        // Escena del motor en el rectángulo del viewport, si está disponible.
+        let scene_area = if let (Some(app), Some(rect)) = (engine, viewport) {
+            match scene_rect(rect, full_output.pixels_per_point, extent) {
+                Some(area) => {
+                    let scene_frame = crate::engine3d::vulkan::FrameTarget {
+                        offset: area.offset,
+                        extent: area.extent,
+                        ..frame
+                    };
+                    match app.render_scene(&scene_frame) {
+                        Ok(()) => Some(area),
+                        Err(error) => {
+                            log::warn!("[editor] no se pudo grabar la escena: {error:?}");
+                            None
+                        }
+                    }
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+
         unsafe {
-            cmd_image_barrier(
-                device,
-                command,
-                frame.color_image,
-                vk::ImageAspectFlags::COLOR,
-                1,
-                1,
-                vk::ImageLayout::UNDEFINED,
-                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-                vk::PipelineStageFlags::TOP_OF_PIPE,
-                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-                vk::AccessFlags::empty(),
-                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            );
+            // Si no hay escena, el editor transita la imagen; si la hay, el motor ya la
+            // dejó en COLOR_ATTACHMENT_OPTIMAL dentro de su propio `record`.
+            if scene_area.is_none() {
+                cmd_image_barrier(
+                    device,
+                    command,
+                    frame.color_image,
+                    vk::ImageAspectFlags::COLOR,
+                    1,
+                    1,
+                    vk::ImageLayout::UNDEFINED,
+                    vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                    vk::PipelineStageFlags::TOP_OF_PIPE,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                    vk::AccessFlags::empty(),
+                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                );
+            }
 
             let attachment = vk::RenderingAttachmentInfo::default()
                 .image_view(frame.color_view)
                 .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                .load_op(vk::AttachmentLoadOp::CLEAR)
+                .load_op(if scene_area.is_some() {
+                    vk::AttachmentLoadOp::LOAD
+                } else {
+                    vk::AttachmentLoadOp::CLEAR
+                })
                 .store_op(vk::AttachmentStoreOp::STORE)
                 .clear_value(self.clear);
             let rendering = vk::RenderingInfo::default()
@@ -202,6 +243,25 @@ impl EditorGpu {
             .resize(size.width, size.height)
             .map_err(|error| error.to_string())
     }
+}
+
+/// Convierte el rectángulo del `CentralPanel` (puntos) a píxeles físicos, recortado al swapchain.
+fn scene_rect(rect: egui::Rect, pixels_per_point: f32, extent: vk::Extent2D) -> Option<vk::Rect2D> {
+    let x = (rect.min.x * pixels_per_point).round() as i32;
+    let y = (rect.min.y * pixels_per_point).round() as i32;
+    let width = (rect.width() * pixels_per_point).round() as i32;
+    let height = (rect.height() * pixels_per_point).round() as i32;
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    let x = x.clamp(0, extent.width as i32);
+    let y = y.clamp(0, extent.height as i32);
+    let width = width.min(extent.width as i32 - x).max(1) as u32;
+    let height = height.min(extent.height as i32 - y).max(1) as u32;
+    Some(vk::Rect2D {
+        offset: vk::Offset2D { x, y },
+        extent: vk::Extent2D { width, height },
+    })
 }
 
 impl Drop for EditorGpu {

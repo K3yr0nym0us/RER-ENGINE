@@ -2193,8 +2193,14 @@ impl FrameRenderer {
             vk::AccessFlags::empty(),
             vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
         );
-        begin_swapchain(device, cmd, frame.color_view, extent);
-        set_viewport(device, cmd, extent);
+        // Área del swapchain donde se dibuja la escena. En standalone es toda la imagen;
+        // el editor la reduce al rectángulo del viewport.
+        let area = vk::Rect2D {
+            offset: frame.offset,
+            extent,
+        };
+        begin_swapchain(device, cmd, frame.color_view, area);
+        set_viewport_rect(device, cmd, area);
         unsafe {
             device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipes.present);
             device.cmd_bind_descriptor_sets(
@@ -2223,8 +2229,8 @@ impl FrameRenderer {
             } else {
                 pipes.gizmo
             };
-            begin_swapchain_load(device, cmd, frame.color_view, extent);
-            set_viewport(device, cmd, extent);
+            begin_swapchain_load(device, cmd, frame.color_view, area);
+            set_viewport_rect(device, cmd, area);
             unsafe {
                 device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
                 device.cmd_bind_descriptor_sets(
@@ -2241,8 +2247,8 @@ impl FrameRenderer {
             }
         }
         if let (Some(vertex), Some(index)) = (input.hud_vertex, input.hud_index) {
-            begin_swapchain_load(device, cmd, frame.color_view, extent);
-            set_viewport(device, cmd, extent);
+            begin_swapchain_load(device, cmd, frame.color_view, area);
+            set_viewport_rect(device, cmd, area);
             unsafe {
                 device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipes.hud);
                 device.cmd_bind_descriptor_sets(
@@ -2271,9 +2277,17 @@ impl FrameRenderer {
                 device.cmd_end_rendering(cmd);
             }
         }
+        Ok(())
+    }
+
+    /// Transita la imagen del swapchain a `PRESENT_SRC_KHR`.
+    ///
+    /// La llama el host standalone tras `record`. En ventana única el editor graba egui
+    /// encima de la misma imagen y hace la transición al final de su propio pase.
+    pub fn finish_present(&self, frame: &FrameTarget) {
         super::gpu::cmd_image_barrier(
-            device,
-            cmd,
+            self.gpu.device(),
+            frame.command,
             frame.color_image,
             vk::ImageAspectFlags::COLOR,
             1,
@@ -2285,7 +2299,6 @@ impl FrameRenderer {
             vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
             vk::AccessFlags::empty(),
         );
-        Ok(())
     }
 }
 
@@ -2297,18 +2310,27 @@ fn push_bytes(joint_base: u32, pass_kind: f32) -> [u8; 8] {
 }
 
 fn set_viewport(device: &ash::Device, cmd: vk::CommandBuffer, extent: vk::Extent2D) {
+    set_viewport_rect(
+        device,
+        cmd,
+        vk::Rect2D {
+            offset: vk::Offset2D::default(),
+            extent,
+        },
+    );
+}
+
+/// Viewport y scissor sobre un sub-rectángulo de la imagen (ventana única del editor).
+fn set_viewport_rect(device: &ash::Device, cmd: vk::CommandBuffer, rect: vk::Rect2D) {
     let viewport = vk::Viewport {
-        x: 0.0,
-        y: extent.height as f32,
-        width: extent.width as f32,
-        height: -(extent.height as f32),
+        x: rect.offset.x as f32,
+        y: (rect.offset.y + rect.extent.height as i32) as f32,
+        width: rect.extent.width as f32,
+        height: -(rect.extent.height as f32),
         min_depth: 0.0,
         max_depth: 1.0,
     };
-    let scissor = vk::Rect2D {
-        offset: vk::Offset2D::default(),
-        extent,
-    };
+    let scissor = rect;
     unsafe {
         device.cmd_set_viewport(cmd, 0, &[viewport]);
         device.cmd_set_scissor(cmd, 0, &[scissor]);
@@ -2549,7 +2571,7 @@ fn begin_swapchain(
     device: &ash::Device,
     cmd: vk::CommandBuffer,
     view: vk::ImageView,
-    extent: vk::Extent2D,
+    area: vk::Rect2D,
 ) {
     let color = vk::RenderingAttachmentInfo::default()
         .image_view(view)
@@ -2559,10 +2581,7 @@ fn begin_swapchain(
         .clear_value(clear_color([0.72, 0.86, 0.98, 1.0]));
     let colors = [color];
     let info = vk::RenderingInfo::default()
-        .render_area(vk::Rect2D {
-            offset: vk::Offset2D::default(),
-            extent,
-        })
+        .render_area(area)
         .layer_count(1)
         .color_attachments(&colors);
     unsafe { device.cmd_begin_rendering(cmd, &info) };
@@ -2572,7 +2591,7 @@ fn begin_swapchain_load(
     device: &ash::Device,
     cmd: vk::CommandBuffer,
     view: vk::ImageView,
-    extent: vk::Extent2D,
+    area: vk::Rect2D,
 ) {
     let color = vk::RenderingAttachmentInfo::default()
         .image_view(view)
@@ -2581,10 +2600,7 @@ fn begin_swapchain_load(
         .store_op(vk::AttachmentStoreOp::STORE);
     let colors = [color];
     let info = vk::RenderingInfo::default()
-        .render_area(vk::Rect2D {
-            offset: vk::Offset2D::default(),
-            extent,
-        })
+        .render_area(area)
         .layer_count(1)
         .color_attachments(&colors);
     unsafe { device.cmd_begin_rendering(cmd, &info) };

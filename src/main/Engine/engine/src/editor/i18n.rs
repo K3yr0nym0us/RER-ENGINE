@@ -4,7 +4,6 @@ use crate::editor::cli::Locale;
 
 pub struct Text {
     pub window_title: &'static str,
-    pub engine_viewport: &'static str,
     pub play: &'static str,
     pub stop: &'static str,
     pub debug: &'static str,
@@ -32,7 +31,6 @@ pub fn text(locale: Locale) -> Text {
     match locale {
         Locale::Es => Text {
             window_title: "RER-ENGINE — Editor (egui)",
-            engine_viewport: "Espacio del motor",
             play: "Reproducir",
             stop: "Detener",
             debug: "Depurar",
@@ -50,7 +48,6 @@ pub fn text(locale: Locale) -> Text {
         },
         Locale::En => Text {
             window_title: "RER-ENGINE — Editor (egui)",
-            engine_viewport: "Engine viewport",
             play: "Play",
             stop: "Stop",
             debug: "Debug",

@@ -2,12 +2,13 @@
 
 use std::io::BufRead;
 use std::sync::Arc;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self, Sender};
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use winit::{
     application::ApplicationHandler,
-    dpi::{LogicalSize, PhysicalSize},
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event::WindowEvent,
     event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     window::{Window, WindowId},
@@ -34,6 +35,9 @@ fn app_window_icon() -> Option<winit::window::Icon> {
 
 struct EditorWindow {
     window: Arc<Window>,
+    /// Motor 3D en proceso (solo proyectos 3D). Se declara antes que `gpu` para que sus
+    /// recursos Vulkan se liberen antes del device compartido.
+    engine: Option<crate::engine3d::host::App>,
     gpu: crate::editor::render::EditorGpu,
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
@@ -63,11 +67,179 @@ impl EditorWindow {
 
         Ok(Self {
             window,
+            engine: None,
             gpu,
             egui_ctx,
             egui_state,
             app: EditorApp::new(cli),
         })
+    }
+
+    /// Construye el motor 3D dentro del proceso del editor, reutilizando su `SharedGpu`.
+    fn start_in_process_engine(&mut self, proxy: EventLoopProxy<UserEvent>) -> Result<(), String> {
+        let cli = self.app.cli.clone();
+        // El cargador de proyectos lee estas variables, igual que el proceso standalone.
+        if let Some(save_path) = &cli.save_path {
+            unsafe {
+                std::env::set_var("RER_PROJECT_SAVE_PATH", save_path);
+                std::env::set_var("RER_3D_START_FROM_SAVE", "1");
+            }
+        }
+        if let Some(extract_dir) = &cli.extract_dir {
+            unsafe { std::env::set_var("RER_PROJECT_EXTRACT_DIR", extract_dir) };
+        }
+
+        // El sink debe existir antes de construir el estado: la carga inicial ya emite eventos.
+        let (sink_tx, sink_rx) = mpsc::channel::<String>();
+        crate::engine3d::ipc::install_event_sink(sink_tx);
+
+        let mut state = crate::engine3d::engine::State::with_context(
+            Arc::clone(&self.window),
+            self.gpu.shared_gpu(),
+        )
+        .map_err(|error| error.message)?;
+
+        let from_save = std::env::var("RER_3D_START_FROM_SAVE")
+            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        if from_save {
+            state.setup_empty_3d();
+            crate::engine3d::ipc::send_event(&crate::engine3d::ipc::EngineEvent::Ready {
+                gravity: state.physics.gravity_magnitude(),
+            });
+        } else {
+            state.setup_default_3d_scene();
+        }
+        state.editor_parent_id = 0;
+
+        self.engine = Some(crate::engine3d::host::App::new_in_editor(state));
+
+        std::thread::Builder::new()
+            .name("engine-events".into())
+            .spawn(move || {
+                for line in sink_rx {
+                    // Mismo JSON hacia Electron: las modales no cambian.
+                    crate::editor::bridge::forward_line(&line);
+                    if let Ok(value) = serde_json::from_str::<Value>(&line)
+                        && proxy.send_event(UserEvent::EngineEvent(value)).is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .map_err(|error| format!("no se pudo crear el hilo de eventos del motor: {error}"))?;
+
+        Ok(())
+    }
+
+    /// Comando de Electron que debe llegar al motor en proceso.
+    fn handle_engine_command(&mut self, command: &Value) {
+        if let Some(engine) = self.engine.as_mut()
+            && let Some(parsed) = crate::engine3d::ipc::parse_command(command)
+        {
+            engine.handle_command(parsed);
+        }
+    }
+
+    /// Reenvía input a la escena cuando el puntero está en el viewport.
+    fn forward_input(&mut self, event: &WindowEvent, egui_consumed: bool) {
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
+        let pixels_per_point = self.egui_ctx.pixels_per_point();
+        let viewport = self.app.viewport_rect;
+        let preview = engine.is_preview_playing();
+
+        let to_scene = |position: PhysicalPosition<f64>, rect: egui::Rect| {
+            let offset_x = (rect.min.x * pixels_per_point).round();
+            let offset_y = (rect.min.y * pixels_per_point).round();
+            PhysicalPosition::new(position.x - offset_x as f64, position.y - offset_y as f64)
+        };
+        let inside = |position: PhysicalPosition<f64>| {
+            viewport.is_some_and(|rect| {
+                let min_x = rect.min.x * pixels_per_point;
+                let min_y = rect.min.y * pixels_per_point;
+                let max_x = rect.max.x * pixels_per_point;
+                let max_y = rect.max.y * pixels_per_point;
+                position.x >= min_x as f64
+                    && position.x <= max_x as f64
+                    && position.y >= min_y as f64
+                    && position.y <= max_y as f64
+            })
+        };
+
+        match event {
+            WindowEvent::CursorMoved {
+                device_id,
+                position,
+                ..
+            } => {
+                if !inside(*position) && !preview {
+                    return;
+                }
+                let Some(rect) = viewport else { return };
+                engine.handle_window_event(WindowEvent::CursorMoved {
+                    device_id: *device_id,
+                    position: to_scene(*position, rect),
+                });
+            }
+            WindowEvent::CursorLeft { .. } => {
+                engine.handle_window_event(event.clone());
+            }
+            WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } => {
+                let cursor_inside = self
+                    .app
+                    .viewport_rect
+                    .zip(self.egui_ctx.pointer_latest_pos())
+                    .is_some_and(|(rect, position)| rect.contains(position));
+                if !cursor_inside && !preview {
+                    return;
+                }
+                engine.handle_window_event(event.clone());
+            }
+            WindowEvent::KeyboardInput { .. }
+            | WindowEvent::ModifiersChanged(_)
+            | WindowEvent::Ime(_)
+            | WindowEvent::Focused(_) => {
+                if self.egui_ctx.egui_wants_keyboard_input() {
+                    return;
+                }
+                engine.handle_window_event(event.clone());
+            }
+            _ => {}
+        }
+
+        let _ = egui_consumed;
+    }
+
+    fn device_motion(&mut self, delta_x: f64, delta_y: f64) {
+        if let Some(engine) = self.engine.as_mut() {
+            engine.handle_device_motion(delta_x as f32, delta_y as f32);
+        }
+    }
+
+    /// Primer frame antes de construir el motor, para no dejar la ventana en blanco.
+    fn render_loading(&mut self) -> Result<(), String> {
+        let EditorWindow {
+            window,
+            gpu,
+            egui_ctx,
+            egui_state,
+            ..
+        } = self;
+        let _ = gpu.render(
+            window.as_ref(),
+            egui_ctx,
+            egui_state,
+            |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.label("Cargando motor 3D…");
+                });
+            },
+            None,
+            None,
+        )?;
+        Ok(())
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), String> {
@@ -86,13 +258,28 @@ impl EditorWindow {
     fn render(&mut self) -> Result<(), String> {
         let EditorWindow {
             window,
+            engine,
             gpu,
             egui_ctx,
             egui_state,
             app,
         } = self;
 
-        let repaint = gpu.render(window.as_ref(), egui_ctx, egui_state, |ui| app.ui(ui))?;
+        if let Some(engine) = engine.as_mut() {
+            engine.tick();
+            engine.frame_update();
+        }
+
+        // Rect del frame anterior: el layout de egui se conoce al terminar de construir la UI.
+        let viewport = app.viewport_rect;
+        let repaint = gpu.render(
+            window.as_ref(),
+            egui_ctx,
+            egui_state,
+            |ui| app.ui(ui),
+            engine.as_mut(),
+            viewport,
+        )?;
         if repaint {
             window.request_redraw();
         }
@@ -106,10 +293,19 @@ struct EditorApplication {
     editor: Option<EditorWindow>,
     engine_host: Option<EngineHost>,
     engine_tx: Option<Sender<Value>>,
+    next_frame_at: Instant,
+    target_fps: u64,
 }
 
 impl EditorApplication {
-    fn send_engine(&self, command: Value) {
+    fn send_engine(&mut self, command: Value) {
+        // En proceso 3D el comando se despacha directamente; en 2D va al hijo por stdin.
+        if let Some(editor) = self.editor.as_mut()
+            && editor.engine.is_some()
+        {
+            editor.handle_engine_command(&command);
+            return;
+        }
         if let Some(tx) = &self.engine_tx {
             let _ = tx.send(command);
         }
@@ -309,23 +505,44 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 );
                 self.editor = Some(editor);
 
-                match EngineHost::spawn(&self.cli, self.proxy.clone()) {
-                    Ok(host) => {
-                        let tx = host.sender();
-                        if let Some(editor) = self.editor.as_mut() {
-                            editor.app.engine_tx = Some(tx.clone());
-                            editor.app.proxy = Some(self.proxy.clone());
-                            editor.app.push_log("[Editor] ventana lista", false);
-                            editor.app.push_log("[Editor] motor iniciado", false);
+                if self.cli.context.is_3d() {
+                    // Ventana única: el motor 3D vive en este proceso y usa nuestro `SharedGpu`.
+                    if let Some(editor) = self.editor.as_mut() {
+                        editor.app.proxy = Some(self.proxy.clone());
+                        editor.app.push_log("[Editor] ventana lista", false);
+                        if let Err(error) = editor.render_loading() {
+                            log::warn!("[editor] no se pudo pintar el frame de carga: {error}");
                         }
-                        self.engine_tx = Some(tx);
-                        self.engine_host = Some(host);
+                        match editor.start_in_process_engine(self.proxy.clone()) {
+                            Ok(()) => {
+                                editor.app.push_log("[Editor] motor 3D en proceso", false);
+                            }
+                            Err(message) => {
+                                log::error!("[editor] {message}");
+                                editor.app.status = EditorStatus::Error;
+                                editor.app.push_log(format!("[Editor] {message}"), true);
+                            }
+                        }
                     }
-                    Err(message) => {
-                        log::error!("[editor] {message}");
-                        if let Some(editor) = self.editor.as_mut() {
-                            editor.app.status = EditorStatus::Error;
-                            editor.app.push_log(format!("[Editor] {message}"), true);
+                } else {
+                    match EngineHost::spawn(&self.cli, self.proxy.clone()) {
+                        Ok(host) => {
+                            let tx = host.sender();
+                            if let Some(editor) = self.editor.as_mut() {
+                                editor.app.engine_tx = Some(tx.clone());
+                                editor.app.proxy = Some(self.proxy.clone());
+                                editor.app.push_log("[Editor] ventana lista", false);
+                                editor.app.push_log("[Editor] motor iniciado", false);
+                            }
+                            self.engine_tx = Some(tx);
+                            self.engine_host = Some(host);
+                        }
+                        Err(message) => {
+                            log::error!("[editor] {message}");
+                            if let Some(editor) = self.editor.as_mut() {
+                                editor.app.status = EditorStatus::Error;
+                                editor.app.push_log(format!("[Editor] {message}"), true);
+                            }
                         }
                     }
                 }
@@ -382,6 +599,19 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         }
     }
 
+    fn device_event(
+        &mut self,
+        _event_loop: &ActiveEventLoop,
+        _device_id: winit::event::DeviceId,
+        event: winit::event::DeviceEvent,
+    ) {
+        if let winit::event::DeviceEvent::MouseMotion { delta } = event
+            && let Some(editor) = self.editor.as_mut()
+        {
+            editor.device_motion(delta.0, delta.1);
+        }
+    }
+
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -415,6 +645,8 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         if response.repaint && !is_redraw {
             editor.window.request_redraw();
         }
+        // Al motor solo le llega lo que ocurre dentro del viewport (o todo en play).
+        editor.forward_input(&event, response.consumed);
         if response.consumed {
             return;
         }
@@ -442,6 +674,23 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             }
             _ => {}
         }
+    }
+
+    /// Mantiene el editor a ~60 fps: el motor en proceso necesita frames continuos y
+    /// egui solo pide repintar cuando hay animaciones o cambios.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let frame_duration = Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
+        let now = Instant::now();
+        if now >= self.next_frame_at {
+            if let Some(editor) = self.editor.as_ref() {
+                editor.window.request_redraw();
+            }
+            self.next_frame_at += frame_duration;
+            if self.next_frame_at < now {
+                self.next_frame_at = now + frame_duration;
+            }
+        }
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame_at));
     }
 }
 
@@ -475,7 +724,6 @@ pub fn run() {
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
         .expect("No se pudo crear el EventLoop del editor");
-    event_loop.set_control_flow(ControlFlow::Wait);
 
     let proxy = event_loop.create_proxy();
     spawn_electron_reader(proxy.clone());
@@ -486,6 +734,8 @@ pub fn run() {
         editor: None,
         engine_host: None,
         engine_tx: None,
+        next_frame_at: Instant::now(),
+        target_fps: 60,
     };
     event_loop
         .run_app(&mut application)

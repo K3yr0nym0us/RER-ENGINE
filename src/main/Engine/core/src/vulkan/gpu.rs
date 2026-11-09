@@ -259,6 +259,7 @@ impl Drop for GpuImage {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct FrameTarget {
     pub slot: usize,
     pub image_index: u32,
@@ -266,6 +267,9 @@ pub struct FrameTarget {
     pub color_view: vk::ImageView,
     pub color_image: vk::Image,
     pub extent: vk::Extent2D,
+    /// Origen del área de dibujo dentro de la imagen. El standalone lo deja en (0, 0);
+    /// el editor lo usa para renderizar la escena solo en el rectángulo del viewport.
+    pub offset: vk::Offset2D,
     #[allow(dead_code)]
     pub format: vk::Format,
 }
@@ -1399,6 +1403,7 @@ impl SharedGpu {
             color_view: swapchain.views[image_index as usize],
             color_image: swapchain.images[image_index as usize],
             extent: swapchain.extent,
+            offset: vk::Offset2D::default(),
             format: swapchain.format,
         })
     }

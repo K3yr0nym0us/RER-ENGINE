@@ -21,8 +21,6 @@ use crate::engine3d::config_3d::directional_light::{
 impl State {
     /// Inicializa Ash (Vulkan) para el 3D.
     pub async fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
-        let size = window.inner_size();
-
         // El 3D sí pide trazado por hardware (todo-o-nada) y `imageCubeArray` para las sondas.
         let vulkan = crate::engine3d::vulkan::SharedGpu::new(
             window.as_ref(),
@@ -31,6 +29,15 @@ impl State {
         .map_err(|error| GpuInitError {
             message: error.to_string(),
         })?;
+        Self::with_context(window, vulkan)
+    }
+
+    /// Construye el estado reutilizando un contexto Ash ya creado por otro host (el editor).
+    pub fn with_context(
+        window: Arc<Window>,
+        vulkan: crate::engine3d::vulkan::SharedGpu,
+    ) -> Result<Self, GpuInitError> {
+        let size = window.inner_size();
 
         let shadow_tier = crate::engine3d::config_3d::shadow_graphics::DEFAULT_SHADOW_TIER;
         let shadow_map_size = shadow_tier.shadow_map_size();
