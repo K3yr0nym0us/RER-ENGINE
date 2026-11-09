@@ -216,15 +216,18 @@ pub struct GpuImage {
 }
 
 impl GpuImage {
-    /// Vista de la capa `index` del array, o la vista completa si no se crearon las por capa.
+    /// Vista de la capa `index` del array, o `None` si el array no tiene vistas por capa.
     ///
-    /// `vkCmdBeginRendering` toma el rango de capas del imageView del adjunto, así que para dibujar
-    /// UNA cascada del shadow map hay que pasarle la vista de ESA capa.
-    pub fn layer_view(&self, index: u32) -> vk::ImageView {
-        self.layer_views
-            .get(index as usize)
-            .copied()
-            .unwrap_or(self.view)
+    /// No cae a la vista completa a propósito: con la vista de array, `vkCmdBeginRendering` escribe
+    /// SIEMPRE la capa 0, así que un fallo al crear las vistas convertiría las cascadas lejanas en
+    /// capas nunca pintadas (contenido indefinido = todo en sombra). El llamador degrada a 1 cascada.
+    pub fn layer_view(&self, index: u32) -> Option<vk::ImageView> {
+        self.layer_views.get(index as usize).copied()
+    }
+
+    /// Cuántas vistas por capa tiene el array (0 si nunca se llamaron `attach_layer_views`).
+    pub fn layer_view_count(&self) -> usize {
+        self.layer_views.len()
     }
 
     /// Crea (o recrea) una vista `TYPE_2D` por capa del array.

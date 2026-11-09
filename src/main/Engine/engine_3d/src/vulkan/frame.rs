@@ -41,8 +41,6 @@ const SCENE_CAM_POS: usize = std::mem::offset_of!(SceneUniforms, cam_pos);
 const SCENE_LIGHT_DIR: usize = std::mem::offset_of!(SceneUniforms, light_dir);
 const SCENE_LIGHT_PARAMS_Y: usize = std::mem::offset_of!(SceneUniforms, light_params) + 4;
 const SCENE_LIGHT_VIEW_PROJ: usize = std::mem::offset_of!(SceneUniforms, light_view_proj);
-/// Bytes de una matriz del array `light_view_proj[4]`.
-const SCENE_MATRIX_BYTES: usize = std::mem::size_of::<[[f32; 4]; 4]>();
 
 fn spv(name: &str) -> &'static [u8] {
     match name {
@@ -1472,6 +1470,9 @@ impl FrameRenderer {
     ///
     /// La barrera de layout abarca TODAS las capas de una sola vez: pasar de adjunto a lectura capa a
     /// capa dejaría las restantes en un layout que el descriptor no declara (contenido indefinido).
+    /// Antes de dibujar se limpia el array ENTERO: una capa que el tier no usa no puede quedar con
+    /// basura, porque el forward la indexa en cuanto cambia de cascada (contenido indefinido ≈ 0 =
+    /// "hay algo delante" = la escena entera en sombra salvo el radio de la primera cascada).
     fn shadow_pass(
         &mut self,
         slot: usize,
@@ -1480,10 +1481,26 @@ impl FrameRenderer {
         device: &ash::Device,
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
-        let count = input
-            .shadow_cascades
-            .clamp(1, MAX_SHADOW_CASCADES)
+        // Sin vistas por capa no se puede dirigir cada pase a su capa: con la vista del array
+        // completo TODAS las cascadas escribirían la capa 0. Se degrada a una cascada (correcto) en
+        // vez de dejar capas leídas sin escribir.
+        let available = self
+            .targets
+            .shadow
+            .layer_view_count()
             .min(SHADOW_LAYERS as usize);
+        let requested = input.shadow_cascades.clamp(1, MAX_SHADOW_CASCADES);
+        let count = requested.min(available.max(1));
+        if available < requested {
+            // `error!` a propósito: el filtro por defecto del motor es `warn`, así que esto se ve sin
+            // tocar RUST_LOG. Sin vistas por capa, TODOS los pases escribirían la capa 0 y las capas
+            // lejanas se muestrearían sin pintar; el síntoma en pantalla es "todo en sombra salvo un
+            // círculo alrededor de la cámara".
+            log::error!(
+                "[sombras] el array tiene {available} vistas por capa para {requested} cascadas \
+                 pedidas: se dibuja 1 sola cascada"
+            );
+        }
         let shadow_image = self.targets.shadow.image;
         let extent = self.targets.shadow.extent;
         transition_depth_layers(
@@ -1494,19 +1511,27 @@ impl FrameRenderer {
             DEPTH_ATTACHMENT,
             SHADOW_LAYERS,
         );
+        // Limpieza de las 4 capas sin dibujar nada (1.0 = no ocluye).
+        begin_depth(device, cmd, self.targets.shadow.view, extent, SHADOW_LAYERS);
+        unsafe { device.cmd_end_rendering(cmd) };
         for cascade in 0..count {
+            let Some(layer_view) = self.targets.shadow.layer_view(cascade as u32) else {
+                break;
+            };
             let mut scene = input.scene.to_vec();
-            Self::patch_cascade_matrix(&mut scene, cascade);
+            if !crate::config_3d::shadow_cascades::patch_matrix_into_first_slot(
+                &mut scene,
+                SCENE_LIGHT_VIEW_PROJ,
+                cascade,
+            ) {
+                // El índice no cabía: mejor no escribir la capa que escribir con la matriz de otra.
+                break;
+            }
             if !scene.is_empty() {
                 unsafe { device.cmd_update_buffer(cmd, self.scene_ubo[slot].buffer, 0, &scene) };
                 buffer_barrier(device, cmd, self.scene_ubo[slot].buffer);
             }
-            begin_depth(
-                device,
-                cmd,
-                self.targets.shadow.layer_view(cascade as u32),
-                extent,
-            );
+            begin_depth(device, cmd, layer_view, extent, 1);
             set_viewport(device, cmd, extent);
             self.draw_depth(
                 slot,
@@ -1535,20 +1560,6 @@ impl FrameRenderer {
             SHADOW_LAYERS,
         );
         Ok(())
-    }
-
-    /// Lleva la matriz de la cascada `index` a la ranura 0 del array, dentro de los bytes del UBO.
-    fn patch_cascade_matrix(scene: &mut [u8], index: usize) {
-        let matrix = SCENE_MATRIX_BYTES;
-        let source = SCENE_LIGHT_VIEW_PROJ + index * matrix;
-        let Some(source_end) = source.checked_add(matrix) else {
-            return;
-        };
-        let target_end = SCENE_LIGHT_VIEW_PROJ + matrix;
-        if source_end > scene.len() || target_end > scene.len() {
-            return;
-        }
-        scene.copy_within(source..source_end, SCENE_LIGHT_VIEW_PROJ);
     }
 
     /// Captura una sonda completa (6 caras) dentro de su ranura del cubemap array.
@@ -1706,7 +1717,7 @@ impl FrameRenderer {
                     &mut self.depth_layout,
                     DEPTH_ATTACHMENT,
                 );
-                begin_depth(device, cmd, self.targets.depth.view, extent);
+                begin_depth(device, cmd, self.targets.depth.view, extent, 1);
                 set_viewport(device, cmd, extent);
                 let depth_pipes = self.depth_pipes(*pipes);
                 self.draw_forward(slot, input, &depth_pipes, device, cmd, 0.0);
@@ -2467,6 +2478,7 @@ fn begin_depth(
     cmd: vk::CommandBuffer,
     view: vk::ImageView,
     extent: vk::Extent2D,
+    layers: u32,
 ) {
     let depth = vk::RenderingAttachmentInfo::default()
         .image_view(view)
@@ -2484,7 +2496,7 @@ fn begin_depth(
             offset: vk::Offset2D::default(),
             extent,
         })
-        .layer_count(1)
+        .layer_count(layers.max(1))
         .depth_attachment(&depth);
     unsafe { device.cmd_begin_rendering(cmd, &info) };
 }
@@ -2668,6 +2680,15 @@ fn create_shadow_array(gpu: &SharedGpu, size: u32) -> Result<GpuImage, VulkanErr
         "shadow",
     )?;
     image.attach_layer_views("sombras")?;
+    // Se comprueba aquí y no en el primer frame: si el array no tuviera vistas por capa, todas las
+    // cascadas escribirían la capa 0 y las lejanas se muestrearían sin pintar (todo en sombra).
+    if image.layer_view_count() != SHADOW_LAYERS as usize {
+        return Err(VulkanError::new(format!(
+            "el array de sombras quedó con {} vistas por capa en vez de {SHADOW_LAYERS}",
+            image.layer_view_count()
+        )));
+    }
+    log::info!("[sombras] array de {SHADOW_LAYERS} capas de {size}x{size} px creado");
     Ok(image)
 }
 

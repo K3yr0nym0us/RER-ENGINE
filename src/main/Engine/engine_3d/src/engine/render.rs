@@ -654,7 +654,7 @@ impl State {
             cam_pos: [eye.x, eye.y, eye.z, 0.0],
             light_dir: self.scene_light_dir(),
             light_color: self.scene_light_color(),
-            light_view_proj: cascades.view_proj,
+            light_view_proj: cascades.matrices,
             cascade_splits: cascades.splits,
             cascade_extent: cascades.extents,
             shadow_params: self.scene_shadow_params(cascade_count),
