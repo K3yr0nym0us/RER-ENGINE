@@ -95,6 +95,6 @@
 
 ## Motores (ARCHITECTURE en código)
 
-- [`engine_2d/ARCHITECTURE.md`](../src/main/Engine/engine_2d/ARCHITECTURE.md)
+- [`engine/src/engine2d/ARCHITECTURE.md`](../src/main/Engine/engine/src/engine2d/ARCHITECTURE.md)
 - [`engine/ARCHITECTURE.md`](../src/main/Engine/engine/ARCHITECTURE.md)
 - [`renderer/ARCHITECTURE.md`](../src/renderer/ARCHITECTURE.md)

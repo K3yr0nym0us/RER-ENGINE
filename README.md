@@ -122,12 +122,13 @@ yarn dist
 Compilar solo los motores (opcional):
 
 ```bash
-cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine-2d -p rer-engine-3d
+cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine --bin rer_engine_2d --no-default-features --features engine2d
+cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine --bin rer_engine_3d --no-default-features --features engine3d
 ```
 
 Los ejecutables quedan en `src/main/Engine/target/debug/` o `target/release/`.
 
-Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine_2d=debug`.
+Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine::engine2d=debug`.
 
 ---
 
@@ -140,8 +141,8 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine_2d=debug`.
 | [docs/Plugins_Model.yaml](./docs/Plugins_Model.yaml) | Plugins opcionales (catálogo, IPC, persistencia) |
 | [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.yaml) | Plugin asistente IA local (Qwen3, llama.cpp, chat) |
 | [docs/README.md](./docs/README.md) | Índice de documentación (funcionalidad implementada) |
-| [`src/main/Engine/engine_2d/ARCHITECTURE.md`](src/main/Engine/engine_2d/ARCHITECTURE.md) | Contrato del motor 2D |
-| [`src/main/Engine/engine_3d/ARCHITECTURE.md`](src/main/Engine/engine_3d/ARCHITECTURE.md) | Contrato del motor 3D |
+| [`src/main/Engine/engine/src/engine2d/ARCHITECTURE.md`](src/main/Engine/engine/src/engine2d/ARCHITECTURE.md) | Contrato del motor 2D |
+| [`src/main/Engine/engine/ARCHITECTURE.md`](src/main/Engine/engine/ARCHITECTURE.md) | Contrato del motor 3D |
 | [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) | Rol del frontend y qué no duplicar |
 | [`.cursor/rules/project.mdc`](.cursor/rules/project.mdc) | Reglas del proyecto (índice de reglas: `engine`, `frontend`, `rust-quality`, `frontend-quality`) |
 

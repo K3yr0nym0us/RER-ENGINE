@@ -50,7 +50,7 @@ gpu_policy:
     (drivers, Vulkan runtime). Main reenvía error al renderer si falla arranque.
   files:
     - src/main/Engine/core/src/gpu.rs
-    - src/main/Engine/engine_2d/src/engine/init.rs
+    - src/main/Engine/engine/src/engine2d/engine/init.rs
     - src/main/Engine/engine/src/engine3d/engine/init.rs
 
 input_routing:

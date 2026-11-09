@@ -7,7 +7,7 @@
 # Relacionado con:
 #   - src/renderer/.../ResourcesAccordion/   (UI de bibliotecas)
 #   - src/main/index.ts                        (empaquetar / extraer .save)
-#   - engine_2d|3d/.../load_proyect.rs         (carga en stores del motor)
+#   - engine/src/{engine2d,engine3d}/.../load_proyect.rs         (carga en stores del motor)
 #   - src/renderer/src/defaults/buildProjectSaveFromEngine.ts
 
 principle:
@@ -281,7 +281,7 @@ load_flow:
       - import_player_ui_* con paths ya resueltos
       - load_progress: mensajes [Carga] / pasos con tiempos
   motor_2d:
-    file: engine_2d/.../load_proyect.rs
+    file: engine/src/engine2d/.../load_proyect.rs
     steps:
       - resolve_loaded_paths (relativas; limpia raíz si scenes[])
       - "load_project_asset_stores: sounds, fonts, backgrounds (biblioteca global)"

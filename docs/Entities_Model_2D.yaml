@@ -102,7 +102,7 @@ differences_from_3d:
 import_scene:
   command: import_scene
   owner: engine_2d
-  file: src/main/Engine/engine_2d/src/engine/import_scene.rs
+  file: src/main/Engine/engine/src/engine2d/engine/import_scene.rs
   purpose: |
     Un solo IPC carga la escena entera (sprites, background, entidades + restores).
     Sustituye ráfagas de spawn/restore en el front al abrir .save o cambiar escena.
@@ -129,9 +129,9 @@ motor_first_2d:
   atlas_exhausted: evento → consola editor
 
 key_files:
-  save_meta: src/main/Engine/engine_2d/src/entity_save_meta.rs
-  markers: src/main/Engine/engine_2d/src/config_2d/ (ScenarioMarker, CharacterMarker)
-  physics: src/main/Engine/engine_2d/src/physics_2d.rs
-  animations: src/main/Engine/engine_2d/src/engine/animations.rs
-  import: src/main/Engine/engine_2d/src/engine/import_scene.rs
+  save_meta: src/main/Engine/engine/src/engine2d/entity_save_meta.rs
+  markers: src/main/Engine/engine/src/engine2d/config_2d/ (ScenarioMarker, CharacterMarker)
+  physics: src/main/Engine/engine/src/engine2d/physics_2d.rs
+  animations: src/main/Engine/engine/src/engine2d/engine/animations.rs
+  import: src/main/Engine/engine/src/engine2d/engine/import_scene.rs
   renderer_types: src/renderer/src/context/useContextEngine/types.ts

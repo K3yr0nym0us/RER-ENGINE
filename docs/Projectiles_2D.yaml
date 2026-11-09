@@ -3,8 +3,8 @@
 # Referencias:
 #   - docs/Entities_Model_2D.yaml
 #   - docs/RHAI_API.yaml
-#   - src/main/Engine/engine_2d/src/config_2d/projectiles.rs
-#   - src/main/Engine/engine_2d/src/physics_2d.rs (raycast_projectile_hit_xy)
+#   - src/main/Engine/engine/src/engine2d/config_2d/projectiles.rs
+#   - src/main/Engine/engine/src/engine2d/physics_2d.rs (raycast_projectile_hit_xy)
 #   - src/main/Engine/core/src/projectile_hardness.rs
 
 summary: |

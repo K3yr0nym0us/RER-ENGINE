@@ -19,9 +19,9 @@ Keep 2D and 3D logic separated:
 
 - `rer_engine_2d`
 - `rer_engine_3d`
-- `engine_shared`
+- `rer-engine-core` (código compartido)
 
-Only place code in `engine_shared` when it is genuinely shared.
+Only place code in `rer-engine-core` when it is genuinely shared.
 
 ## GPU
 

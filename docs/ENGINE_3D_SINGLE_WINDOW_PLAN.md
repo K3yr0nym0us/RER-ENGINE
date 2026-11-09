@@ -376,15 +376,16 @@ Solo cambia el proceso Rust del editor/motor, no la lógica de proyecto ni las m
 
 ## Fase 7 — Motor 2D
 
-`engine_2d` sigue en wgpu. Opciones:
+Estado: el 2D ya usa Ash y `rer_engine_core::vulkan::SharedGpu`, y vive en
+`engine/src/engine2d/` (feature `engine2d`, bin `rer_engine_2d`). Queda la parte de
+ventana única:
 
-1. Portarlo a ash y usar el mismo renderer/host.
-2. Mantenerlo temporalmente en una ventana separada.
+1. Construir el `State` 2D sobre el `SharedGpu` del editor (sin crear swapchain propia).
+2. Renderizar el scene target 2D al viewport del `CentralPanel` en el mismo frame que egui.
+3. Traducir el input del rect y despachar los comandos 2D por el host in-process.
 
-Recomendación:
-
-- Terminar primero el 3D.
-- Después crear una abstracción de renderer común o portar 2D a ash.
+Mientras eso no esté, el editor sigue lanzando `rer_engine_2d` como proceso con ventana
+overlay; el 3D ya va in-process.
 
 ---
 

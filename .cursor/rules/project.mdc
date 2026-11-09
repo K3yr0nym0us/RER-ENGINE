@@ -24,7 +24,7 @@ alwaysApply: true
 - Cargo
 - `rer_engine_2d`
 - `rer_engine_3d`
-- `engine_shared`
+- `rer-engine-core` (compartido)
 
 ## Architecture
 

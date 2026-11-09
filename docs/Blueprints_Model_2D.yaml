@@ -101,7 +101,7 @@ quick_build:
       preview_blueprint_id: blueprint.id
       preview_src_rect: optional crop del primer frame
   motor_ghost:
-    file: src/main/Engine/engine_2d/src/config_2d/assets.rs → load_quick_build_ghost
+    file: src/main/Engine/engine/src/engine2d/config_2d/assets.rs → load_quick_build_ghost
     note: Empaqueta sprite en atlas; entidad __qb_ghost__ fuera de pantalla hasta mover cursor
   placement:
     file: src/renderer/src/hooks/useQuickBuildPlacement.ts
@@ -111,7 +111,7 @@ quick_build:
       - load_scenario o load_character según bp.kind
       - apply_entity_restore / scene import aplica transform en posición del click
   snap_2d:
-    file: src/main/Engine/engine_2d/src/config_2d.rs
+    file: src/main/Engine/engine/src/engine2d/config_2d.rs
     ctrl_held:
       - Escenario: escala ajustada a celdas de grilla (snap_size_to_grid_2d)
       - Snap a instancias adyacentes con el mismo preview_path (mismo sprite)
@@ -131,7 +131,7 @@ propagation:
   per_instance:
     - position
   load:
-    file: src/main/Engine/engine_2d/src/engine/load_proyect.rs
+    file: src/main/Engine/engine/src/engine2d/engine/load_proyect.rs
     function: resolve_entity_restore
     inherits: scale, rotation, physics, animations, scripts, control_bindings
     entity_path: permanece path de la entidad en manifest (sprite de instancia)
@@ -189,8 +189,8 @@ key_files:
   quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
   actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   modal: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/BluePrintModalBody.tsx
-  motor_ghost: src/main/Engine/engine_2d/src/config_2d/assets.rs
-  motor_snap: src/main/Engine/engine_2d/src/config_2d.rs
-  motor_load: src/main/Engine/engine_2d/src/engine/load_proyect.rs
-  motor_import: src/main/Engine/engine_2d/src/engine/import_scene.rs
-  motor_commands: src/main/Engine/engine_2d/src/engine/commands.rs (set_active_tool, load_scenario)
+  motor_ghost: src/main/Engine/engine/src/engine2d/config_2d/assets.rs
+  motor_snap: src/main/Engine/engine/src/engine2d/config_2d.rs
+  motor_load: src/main/Engine/engine/src/engine2d/engine/load_proyect.rs
+  motor_import: src/main/Engine/engine/src/engine2d/engine/import_scene.rs
+  motor_commands: src/main/Engine/engine/src/engine2d/engine/commands.rs (set_active_tool, load_scenario)

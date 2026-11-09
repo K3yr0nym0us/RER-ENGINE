@@ -162,7 +162,7 @@ El front **no** decide qué entidades ni qué modelos precargados van al save ni
 
 Documentacion de motores:
 
-- `src/main/Engine/engine_2d/ARCHITECTURE.md`
+- `src/main/Engine/engine/src/engine2d/ARCHITECTURE.md`
 - `src/main/Engine/engine/ARCHITECTURE.md`
 
 ## Archivos fuente de verdad (renderer)

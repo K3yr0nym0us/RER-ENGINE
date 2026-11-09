@@ -161,7 +161,7 @@ sync_to_motor:
   blueprint: Propaga a instancias del blueprint
 
 runtime_2d:
-  module: engine_2d/src/engine/animations.rs
+  module: engine/src/engine2d/engine/animations.rs
   tick: update_animations — avance por fps con corrección de drift
   on_finish_non_loop: start_animation_deferred (default) o restore sprite
   flip: resolve_animation_flip (facing_right vs flip_horizontal de autoría)
@@ -211,11 +211,11 @@ rhai:
     Scripts en anim.scripts se adjuntan al reproducir y se desadjuntan al parar.
 
 key_files:
-  motor_2d_anim: src/main/Engine/engine_2d/src/engine/animations.rs
-  motor_2d_types: src/main/Engine/engine_2d/src/engine/types.rs
+  motor_2d_anim: src/main/Engine/engine/src/engine2d/engine/animations.rs
+  motor_2d_types: src/main/Engine/engine/src/engine2d/engine/types.rs
   motor_3d_anim: src/main/Engine/engine/src/engine3d/config_3d/model_animation.rs
   motor_3d_asset: src/main/Engine/engine/src/engine3d/config_3d/model_asset.rs
-  ipc: engine_2d|3d/src/ipc.rs (SetAnimation, PlayAnimation, …)
+  ipc: engine/src/{engine2d,engine3d}/ipc.rs (SetAnimation, PlayAnimation, …)
   ui: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/AnimationsPanel.tsx
   sync: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   event_handler: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts

@@ -164,7 +164,7 @@ tools:
 # ---------------------------------------------------------------------------
 
 engine_2d:
-  module: src/main/Engine/engine_2d/src/physics_2d.rs
+  module: src/main/Engine/engine/src/engine2d/physics_2d.rs
   character_movement:
     kinematic: KinematicCharacterController (snap_to_ground, offset)
     velocity: kinematic_actor_vel desde scripts (move_control, apply_kinematic_gravity)
@@ -239,13 +239,13 @@ rhai:
     - engine.fp_press_key / movimiento FP vía play_controller (no move_entity XY)
 
 key_files:
-  motor_2d: src/main/Engine/engine_2d/src/physics_2d.rs
+  motor_2d: src/main/Engine/engine/src/engine2d/physics_2d.rs
   motor_3d: src/main/Engine/engine/src/engine3d/config_3d/physics_3d.rs
   reconcile_3d: src/main/Engine/engine/src/engine3d/config_3d/mod.rs
   plane_tools: src/main/Engine/engine/src/engine3d/config_3d/plane_tools.rs
   execution_3d: src/main/Engine/engine/src/engine3d/config_3d/execution_areas_3d.rs
   play: src/main/Engine/engine/src/engine3d/config_3d/play_controller.rs
-  commands_2d: src/main/Engine/engine_2d/src/engine/commands.rs
+  commands_2d: src/main/Engine/engine/src/engine2d/engine/commands.rs
   commands_3d: src/main/Engine/engine/src/engine3d/engine/commands.rs
   ui_world: src/renderer/src/pages/EngineView/components/sidebar/WorldAccordion/
   ui_props: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/

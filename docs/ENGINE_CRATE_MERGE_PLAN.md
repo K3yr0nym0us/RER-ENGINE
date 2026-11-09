@@ -227,12 +227,17 @@ macro principal mantiene su firma y expande sub-macros `__rer_player_ui_text_*!`
 
 ### Fase 7 — Sumar el 2D
 
-- `engine2d/` con `crate::` → `crate::engine2d::` (237 usos).
-- Bin `rer_engine_2d` con `required-features = ["engine2d"]`.
-- Solo después de que termine la migración Ash del 2D: hoy hay 17 nombres de módulo en
-  conflicto con el 3D (`engine`, `vulkan`, `ipc`, `ecs`, `mesh`, `gizmo`, `scripting`,
-  `texture`, …), resueltos por prefijo, pero reescribirlos mientras se edita ese crate
-  garantiza conflictos.
+> Estado: completada. `engine_2d/` vive en `engine/src/engine2d/`; los 250 usos de
+> `crate::` se reescribieron a `crate::engine2d::`, el bin `rer_engine_2d` usa
+> `required-features = ["engine2d"]` y `build.rs` compila los shaders 2D con prefijo
+> `2d_`. El paquete `rer-engine-2d` desaparece del workspace.
+
+- Feature `engine2d` (en `default` para el build local completo; cada bin se compila
+  con `--no-default-features --features <motor>`).
+- `engine2d/host.rs` conserva el host winit; el bin solo llama a `host::run()`.
+- Shaders en `engine/shaders/2d/`, compilados solo si la feature está activa.
+- Pendiente de la ventana única: hospedar el 2D en el editor (hoy el editor abre el
+  proceso 2D y el 3D in-process).
 
 ## Riesgos
 

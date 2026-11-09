@@ -243,9 +243,9 @@ event_categories:
 
 key_files:
   contract_3d: src/main/Engine/engine/src/engine3d/ipc.rs
-  contract_2d: src/main/Engine/engine_2d/src/ipc.rs
+  contract_2d: src/main/Engine/engine/src/engine2d/ipc.rs
   dispatch_3d: src/main/Engine/engine/src/engine3d/engine/commands.rs
-  dispatch_2d: src/main/Engine/engine_2d/src/engine/commands.rs
+  dispatch_2d: src/main/Engine/engine/src/engine2d/engine/commands.rs
   main_catalog: src/main/engine/engineCommandCatalog.ts
   main_registry: src/main/engine/registerEngineCmdIpc.ts
   main_startup_scene: src/main/engine/engineStartupScene.ts
