@@ -16,7 +16,7 @@ use crate::engine3d::entity_save_meta::EntitySaveMeta;
 use crate::engine3d::ipc::{EngineEvent, send_event};
 
 impl State {
-    /// Punto delante del jugador a altura de torso (colocaciÃƒÂ³n de reflection probes).
+    /// Punto delante del jugador a altura de torso (colocación de reflection probes).
     pub(crate) fn default_reflection_probe_spawn_position(&self) -> [f32; 3] {
         const FORWARD_M: f32 = 2.0;
 
@@ -33,7 +33,7 @@ impl State {
         (body_center + forward * FORWARD_M).to_array()
     }
 
-    /// AABB de hover/click alineado al volumen visual del jugador (centro de malla, no solo cÃƒÂ¡psula).
+    /// AABB de hover/click alineado al volumen visual del jugador (centro de malla, no solo cápsula).
     pub(crate) fn play_character_world_pick_aabb(&self) -> Option<(glam::Vec3, glam::Vec3)> {
         let id = self.play_character_entity?;
         let t = self.world.get::<Transform>(id)?;
@@ -82,8 +82,8 @@ impl State {
         Some((radius, half_height, t.rotation, t.position))
     }
 
-    /// Colliders que la cÃƒÂ¡psula de movimiento y la cÃƒÂ¡mara FP no deben tratar como obstÃƒÂ¡culo
-    /// (jugador + accesorios fusionados / en socket bajo el jugador, incl. jerarquÃƒÂ­a).
+    /// Colliders que la cápsula de movimiento y la cámara FP no deben tratar como obstáculo
+    /// (jugador + accesorios fusionados / en socket bajo el jugador, incl. jerarquía).
     pub(crate) fn play_character_movement_excluded_colliders(
         &self,
     ) -> Vec<rapier3d::prelude::ColliderHandle> {
@@ -127,7 +127,7 @@ impl State {
         self.play_character_mesh_extents.is_some()
     }
 
-    /// Aplica colisiÃƒÂ³n por AABB de malla al jugador solo cuando hay modelo 3D en disco.
+    /// Aplica colisión por AABB de malla al jugador solo cuando hay modelo 3D en disco.
     pub(crate) fn should_apply_play_character_mesh_collision(
         &self,
         id: EntityId,
@@ -189,7 +189,7 @@ impl State {
         self.sync_attached_children_of(id);
     }
 
-    /// Transform del jugador desde el panel Propiedades en editor: cuerpo solo, cÃƒÂ¡mara intacta.
+    /// Transform del jugador desde el panel Propiedades en editor: cuerpo solo, cámara intacta.
     pub(crate) fn apply_play_character_transform_editor(
         &mut self,
         id: EntityId,
@@ -240,7 +240,7 @@ impl State {
             self.sync_attached_children_of(id);
         }
 
-        // Editor: cuerpo independiente del blanco orbital (cÃƒÂ¡mara = gizmo). Play acopla en set_play_character_feet_position.
+        // Editor: cuerpo independiente del blanco orbital (cámara = gizmo). Play acopla en set_play_character_feet_position.
         true
     }
 
@@ -253,7 +253,7 @@ impl State {
             .unwrap_or(0.0);
     }
 
-    /// Solo en play: en editor la rotaciÃƒÂ³n del mesh viene del save / panel Transform.
+    /// Solo en play: en editor la rotación del mesh viene del save / panel Transform.
     pub(crate) fn sync_play_character_body_rotation_after_mesh_assign(&mut self) {
         if self.is_play_controller_active() {
             self.sync_player_rotation_from_look();
@@ -278,7 +278,7 @@ impl State {
         }
     }
 
-    /// El jugador principal no debe tener cuerpo Rapier (solo cÃƒÂ¡psula cinemÃƒÂ¡tica por queries).
+    /// El jugador principal no debe tener cuerpo Rapier (solo cápsula cinemática por queries).
     pub(crate) fn ensure_play_character_kinematic_only(&mut self) {
         let Some(id) = self.play_character_entity else {
             return;
@@ -336,7 +336,7 @@ impl State {
         }
     }
 
-    /// AABB local de la malla que se dibuja (skinned si hay animaciÃƒÂ³n, si no cachÃƒÂ© `::play_character`).
+    /// AABB local de la malla que se dibuja (skinned si hay animación, si no caché `::play_character`).
     pub(crate) fn play_character_visual_local_bounds(
         &self,
         model_path: &str,
@@ -362,14 +362,14 @@ impl State {
             .map(|p| p.local_bounds)
     }
 
-    /// Tras `replace_entity_model` / bind de animaciÃƒÂ³n: alinea transform, cÃƒÂ¡mara y notifica al front.
+    /// Tras `replace_entity_model` / bind de animación: alinea transform, cámara y notifica al front.
     pub(crate) fn finish_play_character_model_replace(&mut self, id: EntityId, model_path: &str) {
         self.sync_play_character_scale_to_body_height(id, model_path);
         self.align_play_character_transform_to_visual_mesh(id, model_path);
         self.emit_play_character_view_changed(true);
     }
 
-    /// Bounds para colocaciÃƒÂ³n: bind pose skinned (lo que dibuja el motor), no solo cachÃƒÂ© estÃƒÂ¡tica.
+    /// Bounds para colocación: bind pose skinned (lo que dibuja el motor), no solo caché estática.
     fn play_character_placement_bounds(&self, model_path: &str) -> Option<([f32; 3], [f32; 3])> {
         self.play_character_visual_local_bounds(model_path)
             .or_else(|| {
@@ -382,7 +382,7 @@ impl State {
             })
     }
 
-    /// Fija `Transform.position` segÃƒÂºn pies en mundo y AABB local (pivote malla normalizada).
+    /// Fija `Transform.position` según pies en mundo y AABB local (pivote malla normalizada).
     pub(crate) fn place_play_character_at_world_feet_with_bounds(
         &mut self,
         id: EntityId,
@@ -401,7 +401,7 @@ impl State {
         } else {
             world_feet
         };
-        // Misma fÃƒÂ³rmula que `align_play_character_transform_to_visual_mesh` (skinned usa este pivote).
+        // Misma fórmula que `align_play_character_transform_to_visual_mesh` (skinned usa este pivote).
         let new_position = world_feet - extents.feet_world_offset(t.scale, t.rotation);
 
         let old_feet = self.play_character_feet_position();
@@ -424,7 +424,7 @@ impl State {
         }
     }
 
-    /// ColocaciÃƒÂ³n en carga `.save` (bounds visuales / skinned, sin snap al suelo).
+    /// Colocación en carga `.save` (bounds visuales / skinned, sin snap al suelo).
     pub(crate) fn place_play_character_at_world_feet(
         &mut self,
         id: EntityId,
@@ -457,7 +457,7 @@ impl State {
         self.place_play_character_at_world_feet_with_bounds(id, bounds, world_feet_mesh, true);
     }
 
-    /// Solo FBX: AABB para cÃƒÂ¡psula de suelo y `Transform.position` en los pies.
+    /// Solo FBX: AABB para cápsula de suelo y `Transform.position` en los pies.
     fn apply_play_character_mesh_ground_extents(
         &mut self,
         id: EntityId,
@@ -490,7 +490,7 @@ impl State {
         self.camera.target = feet;
     }
 
-    /// Ajusta los pies al suelo estÃƒÂ¡tico (mesh collider del terreno), sin usar la malla visual del jugador.
+    /// Ajusta los pies al suelo estático (mesh collider del terreno), sin usar la malla visual del jugador.
     fn snap_play_character_feet_to_ground(&mut self, feet: glam::Vec3) -> glam::Vec3 {
         let mut out = feet;
         if let Some(ground_y) = self
@@ -502,7 +502,7 @@ impl State {
         out
     }
 
-    /// Crea o reutiliza entidad jugador sin `setup_play_character_entity` (sin ÃƒÂ³rbita/rotaciÃƒÂ³n por defecto).
+    /// Crea o reutiliza entidad jugador sin `setup_play_character_entity` (sin órbita/rotación por defecto).
     pub(crate) fn ensure_play_character_shell(
         &mut self,
         display_name: &str,
@@ -519,7 +519,7 @@ impl State {
             let reuse_existing = match desired {
                 Some(wanted) if wanted != id && self.restoring_save_manifest => {
                     log::warn!(
-                        "[restore] jugador runtime {id} Ã¢â€°Â  id guardado {wanted}; recreando shell"
+                        "[restore] jugador runtime {id} ≠ id guardado {wanted}; recreando shell"
                     );
                     self.physics.remove_entity_body(id);
                     self.clear_entity_attachments_for_removed(id);
@@ -577,7 +577,7 @@ impl State {
         id
     }
 
-    /// Instala mesh jugador desde cachÃƒÂ© `::play_character` (.rerasset) sin auto-escala ni alineaciÃƒÂ³n de editor.
+    /// Instala mesh jugador desde caché `::play_character` (.rerasset) sin auto-escala ni alineación de editor.
     pub(crate) fn install_play_character_visual_from_path(
         &mut self,
         id: EntityId,
@@ -599,7 +599,7 @@ impl State {
             .get(&mesh_cache_key)
             .and_then(|parts| parts.first())
             .copied()
-            .ok_or_else(|| format!("sin malla en cachÃƒÂ© jugador: {mesh_cache_key}"))?;
+            .ok_or_else(|| format!("sin malla en caché jugador: {mesh_cache_key}"))?;
 
         if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
             mc.mesh_idx = part.mesh_idx;
@@ -837,7 +837,7 @@ impl State {
         self.play_character_capsule_params()
     }
 
-    /// Pies + radio uniforme + altura total (pÃƒÂ­ldora 1.7 m normalizada).
+    /// Pies + radio uniforme + altura total (píldora 1.7 m normalizada).
     pub(crate) fn play_character_capsule_wire_dims(&self) -> Option<(Vec3, f32, f32)> {
         let cap = self.play_character_collision_capsule();
         Some((self.play_character_feet_position(), cap.radius, cap.height))

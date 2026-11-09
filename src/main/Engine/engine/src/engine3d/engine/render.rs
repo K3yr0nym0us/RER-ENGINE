@@ -1,6 +1,6 @@
 //! Frame 3D del motor sobre Ash (Vulkan).
 //!
-//! `State::render` ahora graba el frame entero a travÃ©s de
+//! `State::render` ahora graba el frame entero a través de
 //! `crate::engine3d::vulkan::FrameRenderer` y presenta con el swapchain de Ash.
 //! El motor 2D sigue en wgpu y no toca este archivo.
 
@@ -507,7 +507,7 @@ pub(crate) fn filter_batches_by_alpha(
         .collect()
 }
 
-/// Instancias estÃ¡ticas para escena o captura de probe.
+/// Instancias estáticas para escena o captura de probe.
 pub(crate) fn build_scene_instance_batches(
     state: &State,
     entities: &[(crate::engine3d::ecs::EntityId, usize, usize, Mat4, i32)],
@@ -573,7 +573,7 @@ pub(crate) fn build_scene_instance_batches(
 }
 
 impl State {
-    /// Reconfigura el swapchain de Ash al nuevo tamaÃ±o del viewport.
+    /// Reconfigura el swapchain de Ash al nuevo tamaño del viewport.
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width == 0 || new_size.height == 0 {
             return;
@@ -695,7 +695,7 @@ impl State {
         self.prev_view_proj = vp_stable;
         let scene_bytes = bytemuck::bytes_of(&scene_uni);
 
-        // â”€â”€ Datos del frame (locales) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // ── Datos del frame (locales) ────────────────────────────────────────────
         let frustum_vp = {
             let raw = self
                 .camera_to_uniform_at_anchor(self.orbit_view_anchor(), aspect)

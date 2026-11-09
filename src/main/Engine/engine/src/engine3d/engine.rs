@@ -22,7 +22,7 @@ use crate::engine3d::scripting::ScriptEngine;
 
 pub struct State {
     pub(crate) window: Arc<Window>,
-    /// Contexto Ash (Vulkan) del motor 3D. Es dueÃ±o del swapchain y presenta el frame.
+    /// Contexto Ash (Vulkan) del motor 3D. Es dueño del swapchain y presenta el frame.
     pub(crate) vulkan: crate::engine3d::vulkan::SharedGpu,
     /// Renderizador de frame en Ash (sombras, forward, TAA, SSR, reflejos RT/BVH, gizmo, HUD).
     pub(crate) frame_renderer: Option<crate::engine3d::vulkan::FrameRenderer>,
@@ -32,9 +32,9 @@ pub struct State {
     pub(crate) clear_color: [f32; 4],
     pub(crate) vsync_enabled: bool,
     pub(crate) prev_view_proj: [[f32; 4]; 4],
-    /// Nivel de calidad de sombras (resoluciÃ³n del shadow map por tier).
+    /// Nivel de calidad de sombras (resolución del shadow map por tier).
     pub(crate) shadow_tier: crate::engine3d::config_3d::shadow_graphics::ShadowTier,
-    /// ResoluciÃ³n actual del shadow map (px por lado); se recrea al cambiar de tier.
+    /// Resolución actual del shadow map (px por lado); se recrea al cambiar de tier.
     pub(crate) shadow_map_size: u32,
     /// Nivel MSAA del pase forward (Low = Off).
     pub(crate) msaa_tier: crate::engine3d::config_3d::msaa_graphics::MsaaTier,
@@ -45,7 +45,7 @@ pub struct State {
     pub(crate) taa_blend: f32,
 
     pub(crate) texture_array: crate::engine3d::texture::TextureArray,
-    /// `tex_idx` de `MeshComponent` â†’ capa en `texture_array`.
+    /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
     pub(crate) tex_layers: Vec<crate::engine3d::texture::TextureLayer>,
     /// Albedo promedio por `tex_idx` (paralelo a `tex_layers`).
     pub(crate) tex_layer_albedo: Vec<[f32; 3]>,
@@ -53,7 +53,7 @@ pub struct State {
     /// Quad para tooltips en pantalla (HUD); no usar `meshes[0]` (suelo).
     pub(crate) hud_quad_mesh: Mesh,
     pub camera: Camera,
-    /// Blanco de Ã³rbita del editor 3D: no sigue al transform del jugador FP.
+    /// Blanco de órbita del editor 3D: no sigue al transform del jugador FP.
     pub editor_orbit_target: glam::Vec3,
     /// Yaw/pitch/distancia del viewport orbital en editor (desacoplados de `camera` y del jugador).
     pub editor_viewport_yaw: f32,
@@ -61,14 +61,14 @@ pub struct State {
     pub editor_viewport_distance: f32,
     /// Profundidad del gizmo de frustum FPS en modo editor (metros).
     pub(crate) fps_editor_frustum_distance: f32,
-    /// PosiciÃ³n absoluta del ojo de la cÃ¡mara FPS en editor. Independiente del transform
-    /// del jugador salvo modo de seguimiento activo en el panel CÃ¡mara.
+    /// Posición absoluta del ojo de la cámara FPS en editor. Independiente del transform
+    /// del jugador salvo modo de seguimiento activo en el panel Cámara.
     pub(crate) play_camera_eye_position: glam::Vec3,
     /// Modo de seguimiento del ojo FPS respecto al jugador en editor.
     pub(crate) play_camera_follow_mode: PlayCameraFollowMode,
-    /// Offset mundo ojoâˆ’cabeza (legacy / depuraciÃ³n).
+    /// Offset mundo ojo−cabeza (legacy / depuración).
     pub(crate) play_camera_follow_offset: glam::Vec3,
-    /// Offset ojoâˆ’cabeza en espacio local del jugador (yaw del cuerpo); `FollowCharacter`.
+    /// Offset ojo−cabeza en espacio local del jugador (yaw del cuerpo); `FollowCharacter`.
     pub(crate) play_camera_follow_offset_local: glam::Vec3,
     pub(crate) meshes: Vec<Mesh>,
     pub(crate) world: World,
@@ -108,31 +108,31 @@ pub struct State {
     pub(crate) plane_tool_ghost_id: Option<EntityId>,
     pub(crate) plane_tool_preview_scale: Option<[f32; 3]>,
     pub(crate) plane_tool_tex_cache: std::collections::HashMap<[u8; 4], usize>,
-    /// Reservado (obsoleto): rotaciÃ³n Q/E solo vÃ­a polling OS en el tick del motor.
+    /// Reservado (obsoleto): rotación Q/E solo vía polling OS en el tick del motor.
     pub(crate) plane_tool_rotate_left: bool,
     pub(crate) plane_tool_rotate_right: bool,
-    /// Ventana nativa con foco: rotaciÃ³n vÃ­a OS. Sin foco: flags IPC (sidebar Electron).
+    /// Ventana nativa con foco: rotación vía OS. Sin foco: flags IPC (sidebar Electron).
     pub(crate) engine_window_focused: bool,
     /// HWND/XID de la ventana Electron (padre del overlay); devolver foco al colocar herramientas plano.
     pub(crate) editor_parent_id: u64,
-    /// Ãšltima posiciÃ³n del cursor en pÃ­xeles del viewport (ghost de herramientas).
+    /// Última posición del cursor en píxeles del viewport (ghost de herramientas).
     pub(crate) tool_cursor_pixels: Option<(f32, f32)>,
     pub(crate) quick_build_preview_path: Option<String>,
     pub(crate) quick_build_preview_kind: Option<String>,
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
-    /// Metadatos del blueprint activo (nombre, fÃ­sica, rotaciÃ³nâ€¦) para colocar instancias.
+    /// Metadatos del blueprint activo (nombre, física, rotación…) para colocar instancias.
     pub(crate) quick_build_blueprint:
         Option<crate::engine3d::config_3d::quick_build::QuickBuildBlueprint>,
     /// Registro IPC de blueprints (`register_blueprint`) por id.
     pub(crate) blueprint_registry:
         std::collections::HashMap<String, crate::engine3d::ipc::BlueprintPlacementMeta>,
-    /// Blueprint de origen por entidad (construcciÃ³n rÃ¡pida u otras vÃ­as del motor).
+    /// Blueprint de origen por entidad (construcción rápida u otras vías del motor).
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
-    /// ColisiÃ³n de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
+    /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
     /// Dureza de gameplay por entidad (0 = no afecta proyectiles).
     pub(crate) entity_hardness: std::collections::HashMap<EntityId, u32>,
-    /// Hijo â†’ ancla + transform local (fusiÃ³n de entidades o socket en editor).
+    /// Hijo → ancla + transform local (fusión de entidades o socket en editor).
     pub(crate) entity_attachments: std::collections::HashMap<
         EntityId,
         crate::engine3d::config_3d::entity_attachments::EntityAttachmentLocal,
@@ -142,28 +142,28 @@ pub struct State {
         EntityId,
         Vec<crate::engine3d::config_3d::entity_sockets::EntitySocket>,
     >,
-    /// Cache hueso â†’ Ã­ndice joint (invalidar al cambiar modelo).
+    /// Cache hueso → índice joint (invalidar al cambiar modelo).
     pub(crate) bone_index_cache: std::collections::HashMap<(EntityId, String), usize>,
     /// Modo editor: seleccionar hueso con click para un socket.
     pub(crate) socket_bone_pick_entity: Option<EntityId>,
     pub(crate) socket_bone_pick_hovered_joint: Option<usize>,
-    /// Entidad con esqueleto visible en editor de fÃ­sica por hueso.
+    /// Entidad con esqueleto visible en editor de física por hueso.
     pub(crate) bone_physics_editor_entity: Option<EntityId>,
     pub(crate) bone_physics_pick_entity: Option<EntityId>,
     pub(crate) bone_physics_pick_hovered_joint: Option<usize>,
-    /// ConfiguraciÃ³n persistida de fÃ­sica por hueso.
+    /// Configuración persistida de física por hueso.
     pub(crate) entity_bone_physics: std::collections::HashMap<
         EntityId,
         Vec<crate::engine3d::config_3d::bone_physics::BonePhysicsEntry>,
     >,
-    /// Config de proyectil (plantillas categorÃ­a `projectile`).
+    /// Config de proyectil (plantillas categoría `projectile`).
     pub(crate) entity_projectile_config: std::collections::HashMap<
         EntityId,
         crate::engine3d::config_3d::projectiles::ProjectileConfig,
     >,
     /// Instancias de proyectil en play (no persistidas).
     pub(crate) active_projectiles: Vec<crate::engine3d::config_3d::projectiles::ActiveProjectile>,
-    /// Estado de simulaciÃ³n jiggle (no persistido).
+    /// Estado de simulación jiggle (no persistido).
     pub(crate) bone_physics_sim: std::collections::HashMap<
         (EntityId, usize),
         crate::engine3d::config_3d::bone_physics::BonePhysicsSimState,
@@ -173,7 +173,7 @@ pub struct State {
         crate::engine3d::config_3d::bone_physics::BonePhysicsEntityMotion,
     >,
     pub preview_playing: bool,
-    /// EdiciÃ³n de UI del jugador (vista play + cuadrÃ­cula de trabajo).
+    /// Edición de UI del jugador (vista play + cuadrícula de trabajo).
     pub(crate) player_ui_edit_active: bool,
     pub(crate) player_ui_edit_restore:
         Option<crate::engine3d::config_3d::player_ui::edit::PlayerUiEditViewportRestore>,
@@ -182,7 +182,7 @@ pub struct State {
     pub(crate) player_ui_edit_screen_id: Option<String>,
     /// Pantalla Player UI marcada como activa (play y scripts Rhai).
     pub(crate) player_ui_active_player_screen_id: Option<String>,
-    /// id â†’ nombre de pantallas Player UI (sincronizado desde el editor).
+    /// id → nombre de pantallas Player UI (sincronizado desde el editor).
     pub(crate) player_ui_player_screen_names: HashMap<String, String>,
     pub(crate) player_ui_text_boxes: std::collections::HashMap<
         String,
@@ -219,39 +219,39 @@ pub struct State {
     pub(crate) player_ui_selected_image_id: Option<u32>,
     pub(crate) player_ui_selected_object_id: Option<u32>,
     pub(crate) player_ui_text_editing_id: Option<u32>,
-    /// Ãndice de carÃ¡cter (UTF-8) del cursor en el cuadro en ediciÃ³n.
+    /// Índice de carácter (UTF-8) del cursor en el cuadro en edición.
     pub(crate) player_ui_text_caret: usize,
     pub(crate) player_ui_caret_blink_epoch: std::time::Instant,
     pub(crate) player_ui_caret_buffer: crate::engine3d::gizmo::GizmoBuffer,
     pub(crate) player_ui_text_drag: Option<crate::engine3d::config_3d::player_ui::PlayerUiTextDrag>,
     pub(crate) player_ui_last_text_click: Option<(u32, std::time::Instant)>,
-    /// Wireframes de colisiÃ³n en editor (IPC `set_debug_mode`).
+    /// Wireframes de colisión en editor (IPC `set_debug_mode`).
     pub debug_mode: bool,
     pub(crate) preview_entity_transform_snapshots:
         HashMap<EntityId, crate::engine3d::config_3d::preview_editor::PreviewEntityTransform>,
     pub(crate) preview_fp_view_snapshot:
         Option<crate::engine3d::config_3d::preview_editor::PreviewFpEditorView>,
-    /// Velocidad del personaje (m/s), patrÃ³n character controller.
+    /// Velocidad del personaje (m/s), patrón character controller.
     pub(crate) play_controller_velocity: GlamVec3,
     pub(crate) play_controller_on_floor: bool,
     pub(crate) play_controller_jump_queued: bool,
-    /// DetecciÃ³n de flanco de input: true mientras el script SPACE
-    /// estÃ¡ pulsando este frame; comparado con `_prev` para detectar la transiciÃ³n.
+    /// Detección de flanco de input: true mientras el script SPACE
+    /// está pulsando este frame; comparado con `_prev` para detectar la transición.
     pub(crate) play_controller_jump_request_active: bool,
     pub(crate) play_controller_jump_request_prev: bool,
     /// Teclas acumuladas por scripts de control en el frame actual (play).
     pub(crate) play_controller_script_input: HashSet<String>,
-    /// ParÃ¡metros opcionales fijados por scripts Rhai de control (play).
+    /// Parámetros opcionales fijados por scripts Rhai de control (play).
     pub(crate) play_controller_script_walk_speed: Option<f32>,
     pub(crate) play_controller_script_sprint_multiplier: Option<f32>,
     pub(crate) play_controller_script_jump_speed: Option<f32>,
     /// Entidad `[Player]` principal de la escena 3D.
     pub(crate) play_character_entity: Option<EntityId>,
-    /// CÃ¡mara orbital del editor 3D (ECS separada del jugador FP).
+    /// Cámara orbital del editor 3D (ECS separada del jugador FP).
     pub(crate) editor_camera_entity: Option<EntityId>,
     /// Forward local (plano XZ) del mesh del jugador; se recalcula al reemplazar el modelo.
     pub(crate) play_character_mesh_forward_xz: glam::Vec2,
-    /// AABB de la malla visual del jugador (pies en `local_min_y`, tÃ­p. 0 tras normalizar).
+    /// AABB de la malla visual del jugador (pies en `local_min_y`, típ. 0 tras normalizar).
     pub(crate) play_character_mesh_extents:
         Option<crate::engine3d::config_3d::character_anchor::PlayCharacterMeshExtents>,
     pub(crate) play_session_body_yaw_baseline: f32,
@@ -269,14 +269,14 @@ pub struct State {
     pub(crate) script_engine: ScriptEngine,
     pub(crate) control_bindings_by_entity: HashMap<u32, crate::engine3d::ipc::ControlBindingsData>,
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>,
-    /// Modelos 3D precargados: clave de ruta normalizada â†’ nombre + categorÃ­a de biblioteca.
+    /// Modelos 3D precargados: clave de ruta normalizada → nombre + categoría de biblioteca.
     pub(crate) model_store: HashMap<String, crate::engine3d::ipc::ModelStoreEntry>,
     /// Assets importados indexados por `model_id` (.rerasset).
     pub(crate) imported_model_registry: crate::engine3d::assets::ImportedModelRegistry,
-    /// `model_id` â†’ (`material_index` â†’ `texture_chunk`) del Ãºltimo `.rerasset` cargado.
+    /// `model_id` → (`material_index` → `texture_chunk`) del último `.rerasset` cargado.
     pub(crate) rerasset_material_tex:
         std::collections::HashMap<String, std::collections::HashMap<u32, u32>>,
-    /// Mallas estÃ¡ticas en GPU indexadas por ruta (precarga al registrar recurso).
+    /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
     pub(crate) static_model_cache: crate::engine3d::config_3d::static_model_cache::StaticModelCache,
     pub(crate) model_preload_rx: crate::engine3d::config_3d::static_model_cache::ModelPreloadRx,
     pub(crate) model_preload_tx: crate::engine3d::config_3d::static_model_cache::ModelPreloadTx,
@@ -289,7 +289,7 @@ pub struct State {
         Vec<crate::engine3d::config_3d::static_model_cache::PendingEntityModelReplace>,
     pub(crate) sound_store: HashMap<String, String>,
     pub(crate) font_store: HashMap<String, String>,
-    /// ImÃ¡genes HUD (Resources â†’ Images): path â†’ metadatos para UI del jugador.
+    /// Imágenes HUD (Resources → Images): path → metadatos para UI del jugador.
     pub(crate) hud_image_store:
         HashMap<String, crate::engine3d::hud_image_asset::HudImageAssetMeta>,
     pub(crate) background_store: HashMap<String, String>,
@@ -304,7 +304,7 @@ pub struct State {
     pub(crate) autosave_last_tick: Instant,
     /// Metadatos de persistencia (rutas, tipo) y fuentes de scripts por entidad.
     pub(crate) save_registry: EntitySaveRegistry,
-    /// PrÃ³ximo `load_proyect` monta el manifest sin vaciar (arranque con `.save`).
+    /// Próximo `load_proyect` monta el manifest sin vaciar (arranque con `.save`).
     pub(crate) mount_save_on_empty_world: bool,
     /// Carga 3D desde manifest: el jugador no usa pipeline editor (`sync_scale` / `align`).
     pub(crate) restoring_save_manifest: bool,
@@ -312,9 +312,9 @@ pub struct State {
     pub(crate) fp_baseline_defer_frames: u8,
     /// Registro multi-escena del editor (baselines, dirty, cambio de escena activa).
     pub(crate) editor_scenes: crate::engine3d::engine::editor_scenes::EditorSceneStore,
-    /// LÃ­mite de FPS del bucle (sincronizado con `set_target_fps`).
+    /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
     pub(crate) target_fps: u64,
-    /// Nivel grÃ¡fico global de texturas GLB embebidas.
+    /// Nivel gráfico global de texturas GLB embebidas.
     pub(crate) graphics_texture_tier:
         crate::engine3d::config_3d::texture_graphics::TextureGraphicsTier,
     /// Nivel global de reflejos (Off / Low / Medium / High).
@@ -327,13 +327,13 @@ pub struct State {
     pub(crate) reflection_debug_view:
         crate::engine3d::config_3d::reflection_graphics::ReflectionDebugView,
 
-    /// Modo depuraciÃ³n SSR: emite logs del pipeline cada frame.
+    /// Modo depuración SSR: emite logs del pipeline cada frame.
 
     /// GPU expone `EXPERIMENTAL_RAY_QUERY` (para UI / IPC).
 
-    /// BVH CPU + TLAS hardware (actualizado cuando RT estÃ¡ activo).
+    /// BVH CPU + TLAS hardware (actualizado cuando RT está activo).
 
-    /// Ãšltimo tier emitido por IPC (evita spam).
+    /// Último tier emitido por IPC (evita spam).
     pub(crate) probe_capture_cursor: usize,
     pub(crate) probe_capture_burst_all: bool,
     pub(crate) probe_entity_slots: std::collections::HashMap<crate::engine3d::ecs::EntityId, usize>,
@@ -359,7 +359,7 @@ pub struct State {
     pub(crate) rt_skinned_rebuild: bool,
     /// Contador de frames para el refresco periódico de la geometría skinned trazable.
     pub(crate) rt_skinned_tick: u32,
-    /// Distancia (m) a la cÃ¡mara con textura al tope del tier activo.
+    /// Distancia (m) a la cámara con textura al tope del tier activo.
     pub(crate) texture_detail_near_m: f32,
     pub(crate) glb_texture_catalog_cache:
         HashMap<String, Vec<crate::engine3d::config_3d::entity_textures::MaterialTexturesCatalog>>,
@@ -367,7 +367,7 @@ pub struct State {
     pub(crate) texture_lod_last_update: Instant,
     /// Entidad icono del sol (luz direccional).
     pub(crate) sun_entity: Option<EntityId>,
-    /// Mesh y textura compartidos del icono esfÃ©rico del sol.
+    /// Mesh y textura compartidos del icono esférico del sol.
     pub(crate) sun_icon_mesh_idx: Option<usize>,
     pub(crate) sun_icon_tex_idx: Option<usize>,
     /// Cubo blanco compartido para `[EditorBox]` (plantilla y `.save`).
@@ -383,9 +383,9 @@ pub struct State {
     pub(crate) directional_light_ambient: f32,
     pub(crate) light_intensity: f32,
     pub(crate) shadow_darkness: f32,
-    /// path absoluto de imagen â†’ capa en `texture_array` (dedup).
+    /// path absoluto de imagen → capa en `texture_array` (dedup).
     pub(crate) texture_path_layers: HashMap<String, crate::engine3d::texture::TextureLayer>,
-    /// Assets de animaciÃ³n 3D por ruta de archivo (parseo aparte de mesh_3d).
+    /// Assets de animación 3D por ruta de archivo (parseo aparte de mesh_3d).
     pub(crate) model_assets: std::collections::HashMap<String, Arc<ModelAsset>>,
     pub(crate) model_animation_bindings: std::collections::HashMap<u32, ModelAnimationBinding>,
     pub(crate) active_model_clips: std::collections::HashMap<u32, ActiveModelClip>,

@@ -1,5 +1,5 @@
-//! Luz direccional (sol) para iluminaciÃ³n PBR compatible con pipelines RTX.
-//! La posiciÃ³n del sol en el mundo define la direcciÃ³n de la luz.
+//! Luz direccional (sol) para iluminación PBR compatible con pipelines RTX.
+//! La posición del sol en el mundo define la dirección de la luz.
 
 use glam::{Mat4, Vec3};
 
@@ -7,25 +7,25 @@ use crate::engine3d::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine3d::engine::State;
 use crate::engine3d::entity_save_meta::EntitySaveMeta;
 
-/// DirecciÃ³n por defecto (hacia la luz, mismo sentido que el shader histÃ³rico).
+/// Dirección por defecto (hacia la luz, mismo sentido que el shader histórico).
 pub const DEFAULT_LIGHT_DIR: Vec3 = Vec3::new(0.6, 1.0, 0.4);
 /// Color de la luz direccional (intensidad ~1; evita saturar el framebuffer sRGB).
 pub const DEFAULT_LIGHT_COLOR: Vec3 = Vec3::new(1.0, 0.96, 0.88);
-/// Factor de ambiente (0â€“1). Bajo = caras no iluminadas mÃ¡s oscuras.
+/// Factor de ambiente (0–1). Bajo = caras no iluminadas más oscuras.
 pub const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
 /// Multiplicador de color de luz direccional.
 pub const DEFAULT_LIGHT_INTENSITY: f32 = 1.0;
-/// Factor mÃ­nimo en zona de sombra (0â€“1). Bajo = sombras mÃ¡s oscuras.
+/// Factor mínimo en zona de sombra (0–1). Bajo = sombras más oscuras.
 pub const DEFAULT_SHADOW_DARKNESS: f32 = 0.22;
-/// Desplazamiento mÃ­nimo hacia la luz al comparar sombras (metros).
+/// Desplazamiento mínimo hacia la luz al comparar sombras (metros).
 pub const SHADOW_NORMAL_BIAS_MIN: f32 = 0.0;
-/// Desplazamiento mÃ¡ximo en superficies casi paralelas a los rayos del sol.
+/// Desplazamiento máximo en superficies casi paralelas a los rayos del sol.
 pub const SHADOW_NORMAL_BIAS_MAX: f32 = 0.0004;
 /// Offset constante en profundidad del comparador de sombras (NDC).
 pub const SHADOW_DEPTH_BIAS_CONST: f32 = 0.0;
-/// Escala de bias por pendiente (1 - NÂ·L).
+/// Escala de bias por pendiente (1 - N·L).
 pub const SHADOW_DEPTH_BIAS_SLOPE: f32 = 0.00003;
-/// Distancia tÃ­pica del icono del sol respecto al origen.
+/// Distancia típica del icono del sol respecto al origen.
 pub const SUN_DISTANCE: f32 = 42.0;
 
 impl State {
@@ -34,14 +34,14 @@ impl State {
         center + DEFAULT_LIGHT_DIR.normalize() * SUN_DISTANCE
     }
 
-    /// Centro de la escena para calcular la direcciÃ³n del sol (luz direccional).
+    /// Centro de la escena para calcular la dirección del sol (luz direccional).
     pub(crate) fn directional_light_scene_center(&self) -> Vec3 {
         let min = self.world_bounds_3d.min_corner();
         let max = self.world_bounds_3d.max_corner();
         (min + max) * 0.5
     }
 
-    /// Actualiza la direcciÃ³n de luz: del centro de la escena hacia el icono del sol.
+    /// Actualiza la dirección de luz: del centro de la escena hacia el icono del sol.
     pub(crate) fn sync_directional_light_from_sun(&mut self) {
         let Some(sun_id) = self.sun_entity else {
             return;
@@ -55,7 +55,7 @@ impl State {
         }
     }
 
-    /// Misma posiciÃ³n que `ensure_default_sun` / plantilla FP al arrancar sin `.save`.
+    /// Misma posición que `ensure_default_sun` / plantilla FP al arrancar sin `.save`.
     pub(crate) fn align_editor_sun_to_default_position(&mut self) {
         let pos = self.default_sun_position();
         if let Some(id) = self.sun_entity {
@@ -113,7 +113,7 @@ impl State {
     /// x = intensidad; y = oscuridad sombra (lit-composite / pase transparente); z = 1/texel sombra; w = radio PCF.
     pub(crate) fn scene_light_params(&self) -> [f32; 4] {
         let dist = self.camera.distance;
-        // Radio PCF algo mayor con shadow map 1024 para compensar resoluciÃ³n.
+        // Radio PCF algo mayor con shadow map 1024 para compensar resolución.
         let pcf_radius = if dist < 12.0 {
             0.85
         } else if dist < 28.0 {
@@ -144,7 +144,7 @@ impl State {
         ]
     }
 
-    /// ProyecciÃ³n ortogrÃ¡fica de la luz que cubre los bounds del mundo.
+    /// Proyección ortográfica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
         let center = self.directional_light_scene_center();
         let dir = self.directional_light_dir.normalize();
@@ -233,7 +233,7 @@ impl State {
         }
     }
 
-    /// Icono del sol seleccionable con gizmo; sin fÃ­sica. Idempotente al recargar `.save`.
+    /// Icono del sol seleccionable con gizmo; sin física. Idempotente al recargar `.save`.
     pub(crate) fn spawn_sun(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
         let label = self
             .resolve_entity_display_name(name, rer_engine_core::editor_defaults::entity_label::SUN);
@@ -279,7 +279,7 @@ impl State {
         self.spawn_sun("", pos.to_array(), [1.0, 1.0, 1.0]);
     }
 
-    /// Esfera visual como el sol (malla UV + textura) sin luz direccional; fÃ­sica esfÃ©rica.
+    /// Esfera visual como el sol (malla UV + textura) sin luz direccional; física esférica.
     pub(crate) fn spawn_physics_ball(
         &mut self,
         name: &str,
@@ -328,7 +328,7 @@ impl State {
             entity_category: Some("object".to_string()),
         });
         log::info!(
-            "Pelota fÃ­sica Â«{label}Â» en [{:.1}, {:.1}, {:.1}]",
+            "Pelota física «{label}» en [{:.1}, {:.1}, {:.1}]",
             position[0],
             position[1],
             position[2]
@@ -336,7 +336,7 @@ impl State {
         id
     }
 
-    /// Entidad lÃ³gica de reflection probe: sin malla en escena (solo gizmo en editor/debug).
+    /// Entidad lógica de reflection probe: sin malla en escena (solo gizmo en editor/debug).
     pub(crate) fn spawn_reflection_probe_entity(
         &mut self,
         name: &str,
@@ -383,7 +383,7 @@ impl State {
             entity_category: Some("object".to_string()),
         });
         log::info!(
-            "Sonda de reflejo Â«{label}Â» radio={influence:.1}m en [{:.1}, {:.1}, {:.1}]",
+            "Sonda de reflejo «{label}» radio={influence:.1}m en [{:.1}, {:.1}, {:.1}]",
             position[0],
             position[1],
             position[2]

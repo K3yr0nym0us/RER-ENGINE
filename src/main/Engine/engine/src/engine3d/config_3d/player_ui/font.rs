@@ -23,7 +23,7 @@ pub(crate) struct TextCaretLineNdc {
     pub y1: f32,
 }
 
-/// PosiciÃ³n horizontal del cursor alineada con el layout de `rasterize_text_block`.
+/// Posición horizontal del cursor alineada con el layout de `rasterize_text_block`.
 pub(crate) fn text_caret_line_ndc(
     font: &FontArc,
     text: &str,
@@ -77,7 +77,7 @@ fn layout_caret_x_px(
     boundaries[idx].clamp(0.0, width_px as f32)
 }
 
-/// `boundaries[i]` = posiciÃ³n X en el bitmap antes del carÃ¡cter `i` (y tras el Ãºltimo).
+/// `boundaries[i]` = posición X en el bitmap antes del carácter `i` (y tras el último).
 fn text_x_boundaries_in_bitmap(
     font: &FontArc,
     text: &str,
@@ -127,7 +127,7 @@ fn text_x_boundaries_in_bitmap(
     Some(boundaries.into_iter().map(|x| x + shift_x).collect())
 }
 
-/// Layout en pÃ­xeles â†’ raster â†’ atlas â†’ un quad con UV.
+/// Layout en píxeles → raster → atlas → un quad con UV.
 /// No-op temporal Fase 4: el HUD de texto se porta a Ash con `FrameRenderer`.
 pub(crate) fn build_hud_label_glyph(
     font: &FontArc,

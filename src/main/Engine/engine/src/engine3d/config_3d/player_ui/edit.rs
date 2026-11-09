@@ -1,4 +1,4 @@
-//! Vista de ediciÃƒÂ³n de UI del jugador (3D): cÃƒÂ¡mara FPS del panel CÃƒÂ¡mara sin modo play.
+//! Vista de edición de UI del jugador (3D): cámara FPS del panel Cámara sin modo play.
 
 use glam::Vec3;
 
@@ -10,7 +10,7 @@ use crate::engine3d::vulkan::SharedGpu;
 
 pub(crate) use rer_engine_core::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
 
-/// Snapshot del viewport de editor al entrar en ediciÃƒÂ³n UI.
+/// Snapshot del viewport de editor al entrar en edición UI.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PlayerUiEditViewportRestore {
     editor_viewport_yaw: f32,
@@ -23,7 +23,7 @@ pub(crate) struct PlayerUiEditViewportRestore {
 }
 
 impl State {
-    /// Vista desde el ojo del jugador (play real o ediciÃƒÂ³n UI), sin ÃƒÂ³rbita de editor.
+    /// Vista desde el ojo del jugador (play real o edición UI), sin órbita de editor.
     pub(crate) fn uses_player_fps_viewport(&self) -> bool {
         self.has_play_character()
             && (self.is_play_controller_active() || self.player_ui_edit_active)
@@ -35,7 +35,7 @@ impl State {
             let vh = self.size.height.max(1) as f32;
             let buf = build_player_ui_screen_grid(&self.vulkan, vw, vh);
             log::info!(
-                "[player-ui] cuadrÃƒÂ­cula pantalla: {} vÃƒÂ©rtices",
+                "[player-ui] cuadrícula pantalla: {} vértices",
                 buf.vertex_count
             );
             buf
@@ -85,7 +85,7 @@ impl State {
             );
             self.rebuild_player_ui_screen_grid();
             self.emit_player_ui_text_boxes_list();
-            log::info!("[player-ui] vista de ediciÃƒÂ³n activada (cÃƒÂ¡mara jugador, sin play)");
+            log::info!("[player-ui] vista de edición activada (cámara jugador, sin play)");
         } else {
             self.player_ui_edit_active = false;
             self.cancel_player_ui_object_draw();
@@ -102,7 +102,7 @@ impl State {
                 self.sync_editor_camera_entity_from_viewport();
             }
             self.rebuild_player_ui_screen_grid();
-            log::info!("[player-ui] vista de ediciÃƒÂ³n desactivada");
+            log::info!("[player-ui] vista de edición desactivada");
         }
     }
 
@@ -121,7 +121,7 @@ impl State {
     }
 }
 
-/// CuadrÃƒÂ­cula de trabajo en NDC (regla sobre el viewport del jugador).
+/// Cuadrícula de trabajo en NDC (regla sobre el viewport del jugador).
 fn build_player_ui_screen_grid(gpu: &SharedGpu, viewport_w: f32, viewport_h: f32) -> GizmoBuffer {
     let mut verts: Vec<GizmoVertex> = Vec::new();
 

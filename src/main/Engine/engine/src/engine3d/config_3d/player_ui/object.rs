@@ -15,7 +15,7 @@ use super::hud_layers;
 use super::ndc_draw::{push_handle_disc, push_line_segment, push_quad};
 use super::text_render::HANDLE_RADIUS;
 
-/// Distancia NDC (con aspecto) para cerrar el polÃ­gono al clicar el primer punto.
+/// Distancia NDC (con aspecto) para cerrar el polígono al clicar el primer punto.
 const CLOSE_THRESHOLD: f32 = 0.028;
 const DRAW_CROSS_ARM: f32 = 0.018;
 pub(crate) const DEFAULT_OBJECT_FILL: [f32; 4] = [0.28, 0.55, 0.92, 0.72];
@@ -163,7 +163,7 @@ impl State {
             vertex_count: vertices.len() as u32,
         });
         log::info!(
-            "[player-ui] objeto HUD creado: id={} vÃ©rtices={}",
+            "[player-ui] objeto HUD creado: id={} vértices={}",
             id,
             vertices.len()
         );

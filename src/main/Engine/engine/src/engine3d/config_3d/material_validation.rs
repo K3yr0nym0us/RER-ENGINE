@@ -68,10 +68,10 @@ fn despawn_validation_entity(state: &mut State, id: EntityId) {
 
 pub const MATERIAL_COMPARISON_PATH: &str = "[MatComparison]";
 
-/// Alfombra MatComp: ancho X Ãƒâ€” largo Z (quad unitario escalado).
+/// Alfombra MatComp: ancho X × largo Z (quad unitario escalado).
 const MAT_COMP_QUAD_X_WIDTH: f32 = 2.0;
 const MAT_COMP_QUAD_Z_LENGTH: f32 = 3.5;
-/// Delante de las esferas (z=-5): borde trasero Ã¢â€°Ë† -6.0, sin invadir la fila de esferas.
+/// Delante de las esferas (z=-5): borde trasero ≈ -6.0, sin invadir la fila de esferas.
 const MAT_COMP_QUAD_Z: f32 = -4.0;
 const MAT_COMP_X_POSITIONS: [f32; MAT_VAL_ROW_COUNT] = [-6.0, -3.0, 0.0, 3.0, 6.0];
 
@@ -105,7 +105,7 @@ fn material_comparison_sphere_ids(state: &State) -> Vec<EntityId> {
         .filter(|(_, m)| entity_path_marker(&m.path) == Some(MATERIAL_COMPARISON_PATH))
         .filter_map(|(id, _)| {
             state.world.get::<NameComponent>(*id).and_then(|n| {
-                if n.name.starts_with("MatComp Ã‚Â· ")
+                if n.name.starts_with("MatComp · ")
                     && !n.name.contains("Label")
                     && !n.name.contains("Quad")
                     && !n.name.contains("Wall")
@@ -127,7 +127,7 @@ fn material_comparison_quad_ids(state: &State) -> Vec<EntityId> {
         .filter(|(_, m)| entity_path_marker(&m.path) == Some(MATERIAL_COMPARISON_PATH))
         .filter_map(|(id, _)| {
             state.world.get::<NameComponent>(*id).and_then(|n| {
-                if n.name.starts_with("MatCompQuad Ã‚Â· ") {
+                if n.name.starts_with("MatCompQuad · ") {
                     Some(*id)
                 } else {
                     None
@@ -211,8 +211,8 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
         let tex_idx = state.mat_val_texture_for_preset(preset);
         let roughness = preset.roughness_min;
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Esfera Ã¢â€â‚¬Ã¢â€â‚¬
-        let name = format!("MatComp Ã‚Â· {}", preset.label);
+        // ── Esfera ──
+        let name = format!("MatComp · {}", preset.label);
         let id = state.world.spawn(Some(&name));
         state.apply_mat_val_sphere_visual(id, tex_idx);
         if let Some(t) = state.world.get_mut::<Transform>(id) {
@@ -247,8 +247,8 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
             entity_category: Some("object".to_string()),
         });
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Letrero Ã¢â€â‚¬Ã¢â€â‚¬
-        let label_name = format!("MatCompLabel Ã‚Â· {}", preset.label);
+        // ── Letrero ──
+        let label_name = format!("MatCompLabel · {}", preset.label);
         let label_id = state.world.spawn(Some(&label_name));
         let mesh_idx = state.mat_val_label_mesh_idx();
         let label_tex_idx = state.mat_val_texture_for_label(preset);
@@ -287,8 +287,8 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
             entity_category: Some("object".to_string()),
         });
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Cuadro plano en el suelo Ã¢â€â‚¬Ã¢â€â‚¬
-        let quad_name = format!("MatCompQuad Ã‚Â· {}", preset.label);
+        // ── Cuadro plano en el suelo ──
+        let quad_name = format!("MatCompQuad · {}", preset.label);
         let quad_id = state.world.spawn(Some(&quad_name));
         let quad_mesh_idx = state.mat_val_label_mesh_idx();
         state.world.insert(
@@ -331,10 +331,10 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
             entity_category: Some("object".to_string()),
         });
 
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Pared divisoria Ã¢â€â‚¬Ã¢â€â‚¬
+        // ── Pared divisoria ──
         if i + 1 < MAT_VAL_ROW_COUNT {
             let wall_x = (MAT_COMP_X_POSITIONS[i] + MAT_COMP_X_POSITIONS[i + 1]) * 0.5;
-            let wall_name = format!("MatCompWall Ã‚Â· {}", preset.label);
+            let wall_name = format!("MatCompWall · {}", preset.label);
             state.spawn_editor_box(
                 &wall_name,
                 [wall_x, WALL_H * 0.5, WALL_Z],
@@ -346,13 +346,13 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
     // Paredes de los extremos
     let edge_wall_x = MAT_COMP_X_POSITIONS[0] - 1.5;
     state.spawn_editor_box(
-        "MatCompWall Ã‚Â· left",
+        "MatCompWall · left",
         [edge_wall_x, WALL_H * 0.5, WALL_Z],
         [WALL_T, WALL_H, WALL_D],
     );
     let edge_wall_x = MAT_COMP_X_POSITIONS[MAT_VAL_ROW_COUNT - 1] + 1.5;
     state.spawn_editor_box(
-        "MatCompWall Ã‚Â· right",
+        "MatCompWall · right",
         [edge_wall_x, WALL_H * 0.5, WALL_Z],
         [WALL_T, WALL_H, WALL_D],
     );

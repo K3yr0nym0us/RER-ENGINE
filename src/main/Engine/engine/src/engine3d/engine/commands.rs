@@ -60,7 +60,7 @@ impl State {
         self.sync_editor_scenes_undo_dirty_to_renderer();
     }
 
-    /// VacÃ­a historial undo/redo tras carga de escena o guardado (estado limpio del editor).
+    /// Vacía historial undo/redo tras carga de escena o guardado (estado limpio del editor).
     pub fn clear_editor_undo_redo(&mut self) {
         let had_history = !self.undo_stack.is_empty() || !self.redo_stack.is_empty();
         self.undo_stack.clear();
@@ -539,7 +539,7 @@ impl State {
                     );
                 } else {
                     let Some(pos) = position else {
-                        log::warn!("set_play_character_view: falta position (carga/restauraciÃ³n)");
+                        log::warn!("set_play_character_view: falta position (carga/restauración)");
                         return;
                     };
                     self.apply_play_character_view(
@@ -618,7 +618,7 @@ impl State {
                     } else {
                         rot_quat
                     };
-                    // RotaciÃ³n en editor: solo cuerpo; posiciÃ³n del front desincronizada rompe el anclaje de pies.
+                    // Rotación en editor: solo cuerpo; posición del front desincronizada rompe el anclaje de pies.
                     let position_apply = if rot_apply.is_some() && !in_play_mode {
                         None
                     } else {
@@ -766,7 +766,7 @@ impl State {
                                 self.load_proyect_from_save_path(&path);
                             } else {
                                 log::warn!(
-                                    "[SetScene] se esperaba directorio extraÃ­do, no archivo: {path}"
+                                    "[SetScene] se esperaba directorio extraído, no archivo: {path}"
                                 );
                                 self.setup_default_3d_scene();
                             }
@@ -890,7 +890,7 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }) => {
                 let magnitude = gravity.abs();
                 self.physics.set_gravity(-magnitude);
-                log::info!("[physics] Gravedad actualizada: {:.2} m/sÂ²", magnitude);
+                log::info!("[physics] Gravedad actualizada: {:.2} m/s²", magnitude);
             }
             EngineCommand::Common(EngineCommandCommon::SetGridVisible { visible }) => {
                 self.grid_config.visible = visible;
@@ -901,7 +901,7 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) => {
                 self.target_fps = fps.clamp(1, 1000);
-                log::info!("[render] LÃ­mite de FPS actualizado: {}", self.target_fps);
+                log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetGraphicsTextureTier { tier }) => {
                 if let Some(t) =
@@ -1255,7 +1255,7 @@ impl State {
                     .filter(|s| !s.trim().is_empty())
                 {
                     log::info!(
-                        "[blueprint] registrada id={id} categorÃ­a={:?}",
+                        "[blueprint] registrada id={id} categoría={:?}",
                         blueprint.category
                     );
                     self.blueprint_registry.insert(id, blueprint);
@@ -1381,7 +1381,7 @@ impl State {
                                 );
                                 if let Some(ref bp) = self.quick_build_blueprint {
                                     log::info!(
-                                        "[quick_build] blueprint activa categorÃ­a={:?} plantilla={}",
+                                        "[quick_build] blueprint activa categoría={:?} plantilla={}",
                                         bp.entity_category,
                                         bp.template_name
                                     );
@@ -1411,7 +1411,7 @@ impl State {
                                     });
                                 }
                             }
-                            log::info!("Herramienta activa: construcciÃ³n rÃ¡pida");
+                            log::info!("Herramienta activa: construcción rápida");
                         }
                         _ => log::warn!("Herramienta desconocida: {}", tool),
                     }
@@ -1544,7 +1544,7 @@ impl State {
                     }
                     None => {
                         send_event(&crate::engine3d::ipc::EngineEvent::Error {
-                            message: format!("Modo de fÃ­sica por hueso invÃ¡lido: {mode}"),
+                            message: format!("Modo de física por hueso inválido: {mode}"),
                         });
                     }
                 }
@@ -1644,14 +1644,11 @@ impl State {
                         std::path::Path::new(&key),
                     );
                     log::info!(
-                        "[hot-reload] CachÃ© de modelo invalidada; recarga al volver a instanciar: {}",
+                        "[hot-reload] Caché de modelo invalidada; recarga al volver a instanciar: {}",
                         path
                     );
                 } else {
-                    log::warn!(
-                        "[hot-reload] Path no estÃ¡ en cachÃ© de modelos 3D: {}",
-                        path
-                    );
+                    log::warn!("[hot-reload] Path no está en caché de modelos 3D: {}", path);
                 }
             }
             EngineCommand::Common(EngineCommandCommon::SetAnimation {
@@ -1857,7 +1854,7 @@ impl State {
 
                 match anim_opt {
                     None => log::warn!(
-                        "[IPC] AnimaciÃ³n '{}' no encontrada para entidad {}",
+                        "[IPC] Animación '{}' no encontrada para entidad {}",
                         name,
                         id
                     ),
@@ -1907,7 +1904,7 @@ impl State {
                                     .attach_script(id, &anim_path, &script.source)
                             {
                                 log::error!(
-                                    "[scripting] Error cargando script de animaciÃ³n '{}': {}",
+                                    "[scripting] Error cargando script de animación '{}': {}",
                                     anim_path,
                                     e
                                 );
@@ -2194,7 +2191,7 @@ impl State {
                     .collect();
                 let count = images.len();
                 send_event(&EngineEvent::HudImagesList { images });
-                log::info!("[hud-image] lista enviada: {} imÃ¡genes", count);
+                log::info!("[hud-image] lista enviada: {} imágenes", count);
             }
             EngineCommand::Common(EngineCommandCommon::LoadBackgroundAsset { path, name }) => {
                 self.background_store.insert(path.clone(), name.clone());
@@ -2232,7 +2229,7 @@ impl State {
     }
 }
 
-/// Valida extensiÃ³n y contenido de un archivo de fuente (.ttf / .otf).
+/// Valida extensión y contenido de un archivo de fuente (.ttf / .otf).
 fn validate_font_file(path: &str) -> Result<(), String> {
     let ext = std::path::Path::new(path)
         .extension()
@@ -2243,6 +2240,6 @@ fn validate_font_file(path: &str) -> Result<(), String> {
         return Err("Se esperaba un archivo .ttf u .otf".to_string());
     }
     let bytes = std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
-    ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("Archivo de fuente invÃ¡lido: {e}"))?;
+    ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("Archivo de fuente inválido: {e}"))?;
     Ok(())
 }

@@ -97,7 +97,7 @@ impl State {
 
     pub(crate) fn add_player_ui_text_box(&mut self, font_path: &str) -> Result<u32, String> {
         if !self.player_ui_edit_active {
-            return Err("modo ediciÃ³n UI inactivo".into());
+            return Err("modo edición UI inactivo".into());
         }
         let key = self
             .player_ui_text_key()
@@ -149,7 +149,7 @@ impl State {
         self.player_ui_text_drag = None;
         self.rebuild_player_ui_overlay();
         log::info!(
-            "[player-ui] cuadro de texto aÃ±adido: id={} fuente={}",
+            "[player-ui] cuadro de texto añadido: id={} fuente={}",
             id,
             entry.font_name
         );
@@ -190,7 +190,7 @@ impl State {
         true
     }
 
-    /// Teclas en modo ediciÃ³n UI sin ediciÃ³n de caracteres activa (p. ej. Supr â†’ borrar cuadro).
+    /// Teclas en modo edición UI sin edición de caracteres activa (p. ej. Supr → borrar cuadro).
     pub(crate) fn player_ui_edit_key_input(
         &mut self,
         code: winit::keyboard::KeyCode,
@@ -522,7 +522,7 @@ impl State {
         self.ctrl_held || query_ctrl_held_os()
     }
 
-    /// Fija `source_aspect` al tamaÃ±o NDC actual para que resize sin Shift use esa proporciÃ³n.
+    /// Fija `source_aspect` al tamaño NDC actual para que resize sin Shift use esa proporción.
     pub(crate) fn commit_player_ui_image_display_aspect(&mut self, id: u32) {
         let vw = self.size.width.max(1) as f32;
         let vh = self.size.height.max(1) as f32;
@@ -535,7 +535,7 @@ impl State {
         }
     }
 
-    /// Al soltar Shift: guardar la proporciÃ³n actual y seguir en modo proporcional.
+    /// Al soltar Shift: guardar la proporción actual y seguir en modo proporcional.
     pub(crate) fn player_ui_on_shift_released(&mut self) {
         if !self.player_ui_edit_active {
             return;
@@ -817,7 +817,7 @@ impl State {
                     self.clear_player_ui_selection_except_text();
                     if double {
                         self.player_ui_begin_text_edit(id);
-                        log::info!("[player-ui] ediciÃ³n de texto: id={id}");
+                        log::info!("[player-ui] edición de texto: id={id}");
                     }
                     self.rebuild_player_ui_overlay();
                     return true;
