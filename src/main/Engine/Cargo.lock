@@ -2664,6 +2664,7 @@ name = "rer-engine-2d"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
+ "ash",
  "bytemuck",
  "getrandom 0.4.3",
  "gilrs",

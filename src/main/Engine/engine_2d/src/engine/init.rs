@@ -28,6 +28,19 @@ impl State {
         let (_instance, surface, adapter) =
             init_gpu(window.clone(), EngineGpuProfile::TwoD).await?;
 
+        // Ruta en paralelo (fase 2 del plan de migración a Ash). Con `RER_2D_VULKAN=1` el frame se
+        // presenta por Vulkan y el camino wgpu queda inactivo en `render()`; sin la variable esto
+        // es `None` y el motor se comporta exactamente igual que antes.
+        let vulkan2d = if crate::vulkan::enabled_from_env() {
+            Some(
+                crate::vulkan::Vulkan2d::new(window.as_ref()).map_err(|error| GpuInitError {
+                    message: error.to_string(),
+                })?,
+            )
+        } else {
+            None
+        };
+
         // ── Device & Queue ────────────────────────────────────────────────────
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
@@ -540,6 +553,7 @@ impl State {
                 b: 0.10,
                 a: 1.0,
             },
+            vulkan2d,
             render_pipeline,
             render_pipeline_2d,
             render_pipeline_overlay,

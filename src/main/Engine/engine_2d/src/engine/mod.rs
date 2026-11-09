@@ -57,6 +57,9 @@ pub struct State {
     pub(crate) config: wgpu::SurfaceConfiguration,
     pub(crate) size: PhysicalSize<u32>,
     pub(crate) clear_color: wgpu::Color,
+    /// Contexto Ash del 2D cuando `RER_2D_VULKAN=1`. `None` = ruta wgpu de siempre (comportamiento
+    /// actual del motor, sin cambios).
+    pub(crate) vulkan2d: Option<crate::vulkan::Vulkan2d>,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
     /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
     /// Permite que el alpha blending funcione correctamente con back-to-front sort.
@@ -571,6 +574,14 @@ impl State {
             );
         }
         self.size = new_size;
+        // Con la ruta Ash activa hay que recrear también su swapchain, con el tamaño ya recortado
+        // por el límite de la GPU para que las dos vistas coincidan.
+        if let Some(vulkan) = &self.vulkan2d {
+            let recreated = vulkan.resize(new_size.width, new_size.height);
+            if let Err(error) = recreated {
+                log::warn!("[2d-vulkan] no se pudo recrear el swapchain: {error}");
+            }
+        }
         self.config.width = new_size.width;
         self.config.height = new_size.height;
         self.surface.configure(&self.device, &self.config);

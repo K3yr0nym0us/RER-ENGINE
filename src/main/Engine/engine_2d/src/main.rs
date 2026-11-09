@@ -14,6 +14,7 @@ mod screen_hud_image;
 mod scripting;
 mod spatial;
 mod texture;
+mod vulkan;
 
 #[path = "config_2d/mod.rs"]
 mod config_2d;

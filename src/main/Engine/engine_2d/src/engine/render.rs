@@ -12,6 +12,23 @@ use super::render_helpers::{build_scene_uniforms, build_scene_uniforms_2d, is_vi
 impl State {
     pub fn render(&mut self) -> Result<(), SurfacePresentError> {
         self.update_animations();
+
+        // Fase 2 de la migración a Ash (`RER_2D_VULKAN=1`): el frame se presenta por Vulkan y
+        // todavía no se dibuja ninguna entidad. Se sale antes de la ruta wgpu a propósito: no se
+        // pueden presentar dos swapchains sobre la misma ventana en un mismo frame. Sin la variable
+        // `vulkan2d` es `None` y todo el bloque de abajo corre igual que siempre.
+        if let Some(vulkan) = self.vulkan2d.clone() {
+            let color = self.clear_color;
+            // `wgpu::Color` trae r/g/b en 0..=255 y alfa en 0..=1; Vulkan quiere los cuatro en
+            // 0..=1. Se divide igual para que el color de fondo sea el mismo de la ruta wgpu.
+            return vulkan.present_clear([
+                (color.r / 255.0) as f32,
+                (color.g / 255.0) as f32,
+                (color.b / 255.0) as f32,
+                color.a as f32,
+            ]);
+        }
+
         let mut draw_calls: u32 = 0;
 
         // ── Paso 0: reconstruir spatial grid para picking ──────────────────────────
