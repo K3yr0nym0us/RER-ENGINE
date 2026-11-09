@@ -30,9 +30,19 @@ impl State {
         }
         self.reflection_raytracing_enabled = enabled;
         send_event(&EngineEvent::ReflectionRaytracingChanged { enabled });
+        // Hay que decir la fuente REAL, no desearla: `hw_rt` es lo que decide si los rayos salen por
+        // la cola de trazado por hardware o por el BVH en compute. El texto anterior decía "trazado
+        // por hardware" activando Y desactivando, y en una GPU sin las extensiones sonaba a éxito
+        // cuando el motor estaba usando la ruta por software.
+        let fuente = if self.vulkan.hw_rt() {
+            "núcleos RT (VK_KHR_ray_tracing_pipeline)"
+        } else {
+            "BVH por software (compute)"
+        };
         log::info!(
-            "[reflexiones] RT {} (trazado por hardware en FrameRenderer)",
-            if enabled { "activado" } else { "desactivado" }
+            "[reflexiones] RT {}: trazado por {}",
+            if enabled { "activado" } else { "desactivado" },
+            fuente
         );
     }
 

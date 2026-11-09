@@ -193,6 +193,9 @@ pub struct FrameRenderer {
     layouts: Vec<vk::PipelineLayout>,
     pipelines: Vec<vk::Pipeline>,
     pool: vk::DescriptorPool,
+    /// Los `VkDescriptorSetLayout` del renderer. Se guardan porque hay que destruirlos: el leak que
+    /// reportaba `vkDestroyDevice(): N leaked objects` al cerrar eran exactamente estos.
+    set_layouts: SetLayouts,
     samplers: Vec<vk::Sampler>,
     sets: DescriptorSets,
     scene_ubo: [GpuBuffer; FRAMES],
@@ -319,6 +322,9 @@ impl Drop for FrameRenderer {
                 device.destroy_sampler(sampler, None);
             }
             device.destroy_descriptor_pool(self.pool, None);
+            // Despues del pool: los sets del pool mueren con él, y los pipeline layouts (que
+            // apuntan a estos layouts) ya se destruyeron arriba.
+            self.set_layouts.destroy(device);
         }
     }
 }
@@ -739,6 +745,7 @@ impl FrameRenderer {
             layouts,
             pipelines,
             pool,
+            set_layouts,
             samplers,
             sets,
             scene_ubo,
@@ -2856,6 +2863,30 @@ fn host_buffer(gpu: &SharedGpu, size: u64, name: &str) -> Result<GpuBuffer, Vulk
         MemoryLocation::CpuToGpu,
         name,
     )
+}
+
+impl SetLayouts {
+    /// Destruye los 12 layouts. Se llama en `Drop` del renderer, después de destruir los pipeline
+    /// layouts y el descriptor pool, que son los únicos objetos que los referencian.
+    fn destroy(&self, device: &ash::Device) {
+        let all = [
+            self.scene,
+            self.albedo,
+            self.probe,
+            self.joints,
+            self.empty,
+            self.gizmo,
+            self.hud,
+            self.full,
+            self.taa,
+            self.denoise,
+            self.rt,
+            self.bvh,
+        ];
+        for layout in all {
+            unsafe { device.destroy_descriptor_set_layout(layout, None) };
+        }
+    }
 }
 
 struct SetLayouts {
