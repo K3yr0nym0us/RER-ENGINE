@@ -29,6 +29,11 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
   encima en el mismo command buffer.
 - El input de winit se traduce al rect del viewport; los comandos emitidos por la UI se
   drenan a `handle_command` antes de actualizar el motor.
+- El editor marca el ritmo con `world.target_fps`: solo `about_to_wait` pide el siguiente
+  redraw. Un `request_redraw` desde `render` saltaba el `WaitUntil` y corría a la
+  frecuencia del monitor (picos de 200 FPS).
+- `forward_input` combina `egui_is_using_pointer()` y `layer_id_at()`: el `consumed`
+  global de egui también es true sobre el viewport vacío, así que no se usa solo.
 - En modo embebido los motores ignoran `set_bounds`/`resize`/`set_vsync` sobre la ventana
   compartida: el tamaño lo fija el editor.
 - Fallback 2D por proceso: `RER_LEGACY_2D_WINDOW=1`.

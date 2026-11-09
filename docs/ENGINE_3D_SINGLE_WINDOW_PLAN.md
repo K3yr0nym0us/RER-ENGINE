@@ -386,6 +386,8 @@ Estado: completada. El 2D usa Ash y `rer_engine_core::vulkan::SharedGpu`, y vive
   `COLOR_ATTACHMENT_OPTIMAL` para que egui componga encima.
 - Los comandos de la UI se encolan y se drenan a `handle_command` antes de `update()`.
 - Fallback al proceso separado con `RER_LEGACY_2D_WINDOW=1`.
+- El demo 2D embebido usa `targetFps: 60`; antes traía 240 y el editor lo respetaba,
+  disparando CPU en el proyecto nuevo.
 
 ---
 
@@ -422,6 +424,10 @@ Mantener el binario standalone para debug, si se desea.
 ---
 
 ## Criterios de aceptación
+
+> Verificado: 1–6, 8 y 10. Pendiente: 7 (Fase 8) y 9 (modales con `yarn dev`).
+> El criterio 8 se implementa con `egui_is_using_pointer()` + `layer_id_at()`:
+> `response.consumed` a secas también es true sobre el viewport vacío.
 
 1. Un solo proceso Rust para editor + motor.
 2. Una sola ventana winit.
