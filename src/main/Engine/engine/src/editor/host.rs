@@ -341,6 +341,19 @@ impl EditorWindow {
 
     /// Reenvía input a la escena cuando el puntero está en el viewport.
     fn forward_input(&mut self, event: &WindowEvent, egui_consumed: bool) {
+        // `response.consumed` es global: también es true sobre el viewport vacío. Solo
+        // se bloquea si egui está usando el puntero o hay una capa flotante (modal,
+        // popup, menú) encima; si no, el motor debe recibir el input del viewport.
+        if egui_consumed
+            && (self.egui_ctx.egui_is_using_pointer()
+                || self
+                    .egui_ctx
+                    .pointer_latest_pos()
+                    .and_then(|pos| self.egui_ctx.layer_id_at(pos))
+                    .is_some_and(|layer| layer != egui::LayerId::background()))
+        {
+            return;
+        }
         let Some(engine) = self.engine.as_mut() else {
             return;
         };
@@ -457,7 +470,9 @@ impl EditorWindow {
 
         // Rect del frame anterior: el layout de egui se conoce al terminar de construir la UI.
         let viewport = app.viewport_rect;
-        let repaint = gpu.render(
+        // `about_to_wait` es el único que marca el siguiente frame: pedir otro redraw aquí
+        // saltaba el `WaitUntil` y el loop corría a la frecuencia del monitor (200 Hz).
+        let _ = gpu.render(
             window.as_ref(),
             egui_ctx,
             egui_state,
@@ -465,9 +480,6 @@ impl EditorWindow {
             engine.as_mut(),
             viewport,
         )?;
-        if repaint {
-            window.request_redraw();
-        }
         Ok(())
     }
 }
@@ -873,11 +885,25 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         }
     }
 
-    /// Mantiene el editor a ~60 fps: el motor en proceso necesita frames continuos y
-    /// egui solo pide repintar cuando hay animaciones o cambios.
+    /// Mantiene el editor al FPS configurado por el proyecto: el motor en proceso
+    /// necesita frames continuos y egui solo pide repintar cuando hay animaciones/cambios.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        let frame_duration = Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
         let now = Instant::now();
+        // El limitador de la UI (`set_target_fps`) se aplica aquí: antes el editor
+        // seguía siempre a 60 y el motor recibía `update()` a la frecuencia del monitor.
+        let requested = self
+            .editor
+            .as_ref()
+            .map_or(self.target_fps, |editor| {
+                u64::from(editor.app.world.target_fps)
+            })
+            .clamp(1, 1000);
+        if requested != self.target_fps {
+            self.target_fps = requested;
+            self.next_frame_at = now;
+        }
+
+        let frame_duration = Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
         if now >= self.next_frame_at {
             if let Some(editor) = self.editor.as_ref() {
                 editor.window.request_redraw();
