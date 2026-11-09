@@ -1,7 +1,7 @@
 # Formato binario de assets importados
 #
 # Implementación: core/src/assets/
-# Pipeline 3D: engine_3d/src/assets/
+# Pipeline 3D: engine/src/engine3d/assets/
 #
 # Relacionado con:
 #   - docs/Save_Proyect_Model.yaml (manifest v2 resources.models)

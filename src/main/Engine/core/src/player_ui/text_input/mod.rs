@@ -5,12 +5,14 @@ pub mod types;
 
 pub use types::PlayerUiTextDrag;
 
-/// Genera el bloque `impl State` de edición HUD. `$pu` = módulo `player_ui` del motor; `$ipc` = módulo IPC.
-/// `use crate::engine::State` refers to the calling engine crate (2d/3d), not `core`.
-#[allow(clippy::crate_in_macro_def)]
+/// Genera el bloque `impl State` de edición HUD.
+///
+/// `$pu` = módulo `player_ui` del motor; `$ipc` = módulo IPC; `$state` = ruta al
+/// `State` del motor llamante. Así el macro no asume que `crate::engine` exista,
+/// que solo era cierto cuando el motor 3D era un crate raíz.
 #[macro_export]
 macro_rules! impl_player_ui_text_input {
-    ($pu:path, $ipc:path) => {
+    ($pu:path, $ipc:path, $state:path) => {
         use std::time::Instant;
 
         use rer_engine_core::player_ui::config::{
@@ -31,7 +33,7 @@ macro_rules! impl_player_ui_text_input {
             PlayerUiTextBoxListItem, SavePlayerUiTextBoxSnapshot,
         };
         use $pu::{button, image, object};
-        use crate::engine::State;
+        use $state;
 impl State {
     pub(crate) fn clear_player_ui_text_interaction(&mut self) {
         self.clear_player_ui_hud_selection();

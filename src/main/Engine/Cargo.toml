@@ -1,8 +1,8 @@
 [workspace]
 members = [
 	"core",
+	"engine",
 	"engine_2d",
-	"engine_3d",
 	"engine_editor",
 ]
 resolver = "2"

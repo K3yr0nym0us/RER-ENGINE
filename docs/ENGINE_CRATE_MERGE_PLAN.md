@@ -138,9 +138,15 @@ Gate: `cargo check/test --workspace`, 2D y 3D arrancan igual. Commit.
 
 ### Fase 2 — `engine/` con el 3D
 
+> Estado: completada. El host sigue en un único `host.rs`; su división en
+> `app`/`input`/`overlay`/`preview` se hace en la Fase 6, cuando el editor
+> reutilice el input.
+
 - Mover `engine_3d/src` a `engine/src/engine3d/`.
 - `crate::` → `crate::engine3d::` (813 usos); `super::` intacto.
-- `main.rs` → `engine3d/host/` (`app`, `input`, `overlay`, `preview`); bin de 6 líneas.
+- `main.rs` → `engine3d/host.rs` (`run()`); bin de 6 líneas.
+- El macro `impl_player_ui_text_input!` recibe ahora la ruta al `State` del motor
+  en vez de asumir `crate::engine::State`.
 - Borrar ficheros-eco que solo reexportan al core.
 - `engine/Cargo.toml` con la feature `engine3d` y sus dependencias opcionales.
 

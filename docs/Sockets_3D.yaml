@@ -47,14 +47,14 @@ editor:
     child_cannot_be_self: el mismo host
 
 engine:
-  module: engine_3d/src/config_3d/entity_sockets.rs
+  module: engine/src/engine3d/config_3d/entity_sockets.rs
   state:
     entity_sockets: HashMap<EntityId, Vec<EntitySocket>>  # definición en el host
     entity_attachments: "AttachmentAnchor::Socket { host_entity_id, socket_name }"
   sync: |
     sync_socket_attached_children() cada frame: posición mundial del socket desde
     bone_world_transform + offset local; el hijo hereda escala y offset guardados al vincular.
-  bone_pick: engine_3d/src/config_3d/socket_bone_pick.rs
+  bone_pick: engine/src/engine3d/config_3d/socket_bone_pick.rs
   gizmos: sockets visibles en editor al seleccionar host (módulo de gizmos asociado)
 
 ipc_commands:

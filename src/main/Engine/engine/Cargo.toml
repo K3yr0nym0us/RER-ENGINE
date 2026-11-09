@@ -1,0 +1,50 @@
+[package]
+name = "rer-engine"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "rer_engine_3d"
+path = "src/bin/rer_engine_3d.rs"
+required-features = ["engine3d"]
+
+[dependencies]
+winit.workspace = true
+pollster.workspace = true
+glam.workspace = true
+bytemuck.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+gltf.workspace = true
+ufbx.workspace = true
+image.workspace = true
+rayon.workspace = true
+rapier3d.workspace = true
+rodio.workspace = true
+getrandom.workspace = true
+raw-window-handle.workspace = true
+gilrs.workspace = true
+# `rer-engine-core` aporta el núcleo Ash (contexto, swapchain, buffers, imágenes) y los
+# tipos IPC comunes que comparten los dos motores, sin duplicar FFI de Vulkan.
+rer-engine-core = { path = "../core", features = ["vulkan"] }
+ttf-parser.workspace = true
+ab_glyph.workspace = true
+ash = "0.38"
+ash-window = "0.13"
+gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"] }
+
+[features]
+# Motor 3D aislado: el binario `rer_engine_3d` solo existe si esta feature está activa.
+# `default` la mantiene durante la migración; el editor pedirá las features que necesite.
+default = ["engine3d"]
+engine3d = []
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows.workspace = true

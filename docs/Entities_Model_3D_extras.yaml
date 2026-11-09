@@ -76,8 +76,8 @@ player_glb_orientation:
     - corrección yaw cadera Mixamo
     - forward skinned coherente con cápsula de movimiento
   files:
-    - src/main/Engine/engine_3d/src/config_3d/model_asset.rs
-    - src/main/Engine/engine_3d/src/config_3d/mesh_3d.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/model_asset.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/mesh_3d.rs
   ipc: replace_entity_model → entity_model_replaced (quita overlay de carga)
   qa_manual: |
     Validar con varios GLB Mixamo reales en cámara play character (~1.7 m, de pie,

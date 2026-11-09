@@ -18,7 +18,7 @@ principle: |
   por entidades de la escena activa y el modelo visual del jugador play character.
 
 entry_point:
-  file: src/main/Engine/engine_3d/src/engine/load_proyect.rs
+  file: src/main/Engine/engine/src/engine3d/engine/load_proyect.rs
   function: apply_loaded_proyect_3d
 
 startup:
@@ -99,8 +99,8 @@ spawn_character:
   ui: modal y acordeón Entidades reconocen personaje (no Object_*)
 
 key_files:
-  - src/main/Engine/engine_3d/src/engine/load_proyect.rs
-  - src/main/Engine/engine_3d/src/config_3d/static_model_cache.rs
-  - src/main/Engine/engine_3d/src/config_3d/gltf_texture_load.rs
+  - src/main/Engine/engine/src/engine3d/engine/load_proyect.rs
+  - src/main/Engine/engine/src/engine3d/config_3d/static_model_cache.rs
+  - src/main/Engine/engine/src/engine3d/config_3d/gltf_texture_load.rs
   - src/main/index.ts
   - src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts

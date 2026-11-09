@@ -19,7 +19,7 @@ updated: 2026-11-09
 principle:
   owner: motor_3d
   philosophy: |
-    Implementado sobre Ash/Vulkan en `engine_3d/src/vulkan/frame.rs`. El tier SOLO enciende o
+    Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame.rs`. El tier SOLO enciende o
     apaga la cadena de reflejos (`reflections = tier != off`); la calidad por tier
     (resolución, pasos, rebotes, denoise, material RT) era de la era wgpu y no se portó.
     RT = fuente adicional de información (toggle editor reflectionRaytracing), con fallback BVH
@@ -85,7 +85,7 @@ g_buffer:
   exports: nada aparte del MRT; el "depth_export R32Float" de wgpu se sustituye por la depth real
 
 frame_order:
-  source: engine_3d/src/vulkan/frame.rs::FrameRenderer::record
+  source: engine/src/engine3d/vulkan/frame.rs::FrameRenderer::record
   steps:
     - ensure_msaa (G-buffer multisampleado y pipelines del tier de MSAA)
     - trace_background (fondo por RT o BVH) + sky copy/quad
@@ -131,4 +131,4 @@ ui:
 
 diagnostics:
   audit_report: docs/Reflections_Diagnostics.yaml
-  architecture: src/main/Engine/engine_3d/ARCHITECTURE.md
+  architecture: src/main/Engine/engine/ARCHITECTURE.md

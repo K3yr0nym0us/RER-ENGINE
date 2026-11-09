@@ -361,7 +361,7 @@ impl SharedGpu {
         }
 
         let app = vk::ApplicationInfo::default()
-            .application_name(c"rer_engine_3d")
+            .application_name(c"rer_engine")
             .engine_name(c"rer-engine")
             .api_version(vk::API_VERSION_1_3);
         let mut instance_info = vk::InstanceCreateInfo::default()

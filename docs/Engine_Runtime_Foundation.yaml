@@ -32,7 +32,7 @@ viewport_overlay:
     - src/renderer/src/pages/EngineView/EngineView.tsx
 
 gpu_policy:
-  backend: Vulkan exclusivo — 2D vía wgpu (`Backends::VULKAN`), 3D vía Ash (`engine_3d/src/vulkan/`)
+  backend: Vulkan exclusivo — 2D vía wgpu (`Backends::VULKAN`), 3D vía Ash (`engine/src/engine3d/vulkan/`)
   profiles:
     - EngineGpuProfile::TwoD  → rer_engine_2d
     - EngineGpuProfile::ThreeD → rer_engine_3d
@@ -51,7 +51,7 @@ gpu_policy:
   files:
     - src/main/Engine/core/src/gpu.rs
     - src/main/Engine/engine_2d/src/engine/init.rs
-    - src/main/Engine/engine_3d/src/engine/init.rs
+    - src/main/Engine/engine/src/engine3d/engine/init.rs
 
 input_routing:
   note: |

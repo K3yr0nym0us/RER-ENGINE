@@ -69,7 +69,7 @@ model_resolution:
       - attachModelIdsToBlueprints desde resources.models[]
       - rewriteImportedBlueprintPaths: blueprint.model ← model_id (marcadores excluidos)
   load_flow:
-    file: src/main/Engine/engine_3d/src/engine/load_proyect.rs
+    file: src/main/Engine/engine/src/engine3d/engine/load_proyect.rs
     steps:
       - build_generic_pending_restore hereda model/model_id de blueprint si blueprint_id
       - entity_model_cache_lookup resuelve model_id → .rerasset → static_model_cache
@@ -108,7 +108,7 @@ quick_build:
       preview_blueprint: buildBlueprintPlacementMeta(...)
       preview_blueprint_id: blueprint.id
   motor:
-    file: src/main/Engine/engine_3d/src/config_3d/quick_build.rs
+    file: src/main/Engine/engine/src/engine3d/config_3d/quick_build.rs
     steps:
       - enrich_blueprint_placement_meta (registro + categoría biblioteca)
       - Ghost con mesh del model_id / path
@@ -203,7 +203,7 @@ key_files:
   actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
   modal: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/BluePrintModalBody.tsx
-  motor_registry: src/main/Engine/engine_3d/src/engine/commands.rs (RegisterBlueprint)
-  motor_placement: src/main/Engine/engine_3d/src/config_3d/quick_build.rs
-  motor_load: src/main/Engine/engine_3d/src/engine/load_proyect.rs
-  ipc_meta: src/main/Engine/engine_3d/src/ipc.rs (BlueprintPlacementMeta, enrich_blueprint_placement_meta)
+  motor_registry: src/main/Engine/engine/src/engine3d/engine/commands.rs (RegisterBlueprint)
+  motor_placement: src/main/Engine/engine/src/engine3d/config_3d/quick_build.rs
+  motor_load: src/main/Engine/engine/src/engine3d/engine/load_proyect.rs
+  ipc_meta: src/main/Engine/engine/src/engine3d/ipc.rs (BlueprintPlacementMeta, enrich_blueprint_placement_meta)

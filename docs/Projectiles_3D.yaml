@@ -4,7 +4,7 @@
 #   - docs/Entities_Model_3D.yaml
 #   - docs/Sockets_3D.yaml
 #   - docs/RHAI_API.yaml
-#   - src/main/Engine/engine_3d/src/config_3d/projectiles.rs
+#   - src/main/Engine/engine/src/engine3d/config_3d/projectiles.rs
 #   - src/main/Engine/core/src/projectile_hardness.rs
 
 summary: |

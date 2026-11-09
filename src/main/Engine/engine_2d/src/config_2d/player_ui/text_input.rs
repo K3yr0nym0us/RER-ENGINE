@@ -2,5 +2,6 @@
 
 rer_engine_core::impl_player_ui_text_input! {
     crate::config_2d::player_ui,
-    crate::ipc
+    crate::ipc,
+    crate::engine::State
 }

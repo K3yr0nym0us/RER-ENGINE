@@ -40,11 +40,11 @@ editor:
       (lista del motor vía list_entity_bones).
 
 engine:
-  module: engine_3d/src/config_3d/bone_physics.rs
+  module: engine/src/engine3d/config_3d/bone_physics.rs
   integration: |
     write_joint_matrices_all_parts (model_animation.rs):
       apply_clip_to_locals → apply_bone_physics_to_locals → compute_joint_globals
-  pick: engine_3d/src/config_3d/bone_physics_pick.rs
+  pick: engine/src/engine3d/config_3d/bone_physics_pick.rs
   shared_pick: pick_bone_at_pixel en socket_bone_pick.rs (mutuamente excluyente con socket pick)
   skeleton_overlay: skeleton_debug.rs (cyan = hueso con física; amarillo = hover)
   sim_constants:
@@ -84,8 +84,8 @@ save:
     - bone_name: "mixamorig:Hair_01"
       mode: dynamic
   files:
-    serialize: engine_3d/src/save_entity_3d.rs
-    restore: engine_3d/src/engine/load_proyect.rs (restore_entity_bone_physics_after_scene_load)
+    serialize: engine/src/engine3d/save_entity_3d.rs
+    restore: engine/src/engine3d/engine/load_proyect.rs (restore_entity_bone_physics_after_scene_load)
 
 frontend:
   panel: EntityPropertiesBonesPanel.tsx (pestaña Huesos en EntityPropertiesModalContent)
@@ -94,10 +94,10 @@ frontend:
 
 key_files:
   rust:
-    - src/main/Engine/engine_3d/src/config_3d/bone_physics.rs
-    - src/main/Engine/engine_3d/src/config_3d/bone_physics_pick.rs
-    - src/main/Engine/engine_3d/src/config_3d/model_animation.rs
-    - src/main/Engine/engine_3d/src/engine/undo_bone_physics.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/bone_physics.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/bone_physics_pick.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/model_animation.rs
+    - src/main/Engine/engine/src/engine3d/engine/undo_bone_physics.rs
   ts:
     - src/renderer/src/modal-electron/entityPropertiesBonePhysics.ts
     - src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/EntityPropertiesBonesPanel.tsx

@@ -28,11 +28,11 @@ principle:
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine_3d/src/probe_registry.rs       # detección, ranuras, selección por influencia
-    - src/main/Engine/engine_3d/src/vulkan/frame.rs         # capture_probe + cubemap array
-    - src/main/Engine/engine_3d/src/config_3d/reflection_settings.rs
+    - src/main/Engine/engine/src/engine3d/probe_registry.rs       # detección, ranuras, selección por influencia
+    - src/main/Engine/engine/src/engine3d/vulkan/frame.rs         # capture_probe + cubemap array
+    - src/main/Engine/engine/src/engine3d/config_3d/reflection_settings.rs
   shaders:
-    - src/main/Engine/engine_3d/shaders/raster/forward.frag  # samplerCubeArray por instancia
+    - src/main/Engine/engine/shaders/raster/forward.frag  # samplerCubeArray por instancia
 
 limits:
   max_probes: 8

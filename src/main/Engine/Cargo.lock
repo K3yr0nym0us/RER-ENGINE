@@ -2478,32 +2478,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
-name = "rer-engine-2d"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "ash",
- "bytemuck",
- "getrandom 0.4.3",
- "gilrs",
- "glam 0.33.1",
- "gltf",
- "image",
- "log",
- "rapier3d",
- "raw-window-handle",
- "rer-engine-core",
- "rodio",
- "serde",
- "serde_json",
- "ttf-parser",
- "windows",
- "winit",
- "zip",
-]
-
-[[package]]
-name = "rer-engine-3d"
+name = "rer-engine"
 version = "0.1.0"
 dependencies = [
  "ab_glyph",
@@ -2529,6 +2504,31 @@ dependencies = [
  "ufbx",
  "windows",
  "winit",
+]
+
+[[package]]
+name = "rer-engine-2d"
+version = "0.1.0"
+dependencies = [
+ "ab_glyph",
+ "ash",
+ "bytemuck",
+ "getrandom 0.4.3",
+ "gilrs",
+ "glam 0.33.1",
+ "gltf",
+ "image",
+ "log",
+ "rapier3d",
+ "raw-window-handle",
+ "rer-engine-core",
+ "rodio",
+ "serde",
+ "serde_json",
+ "ttf-parser",
+ "windows",
+ "winit",
+ "zip",
 ]
 
 [[package]]

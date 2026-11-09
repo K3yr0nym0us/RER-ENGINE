@@ -1,6 +1,6 @@
 # MSAA 3D (multisample anti-aliasing del pase forward)
 #
-# Implementado sobre Ash/Vulkan en `engine_3d/src/vulkan/frame.rs`. El MRT forward se dibuja
+# Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame.rs`. El MRT forward se dibuja
 # contra copias multisampleadas de los 5 adjuntos y se resuelve contra los G-buffers 1× que
 # consumen TAA, SSR, denoise, composite y present. Shadow map, probes y post-FX siguen a 1 muestra.
 #

@@ -4,7 +4,7 @@ import type { ProjectType } from './types'
  * Nombres `cmd` IPC alineados con Rust:
  * - `rer_engine_core::ipc::EngineCommandCommon`
  * - `engine_2d/src/engine_command.rs` (Only2d)
- * - `engine_3d/src/engine_command.rs` (Only3d)
+ * - `engine/src/engine3d/engine_command.rs` (Only3d)
  *
  * Fuente única para main (`engineCommandCatalog.ts`) y tipos TS (`engineCommands.ts`).
  */

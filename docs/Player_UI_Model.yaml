@@ -75,7 +75,7 @@ events:
   - player_ui_active_screen_changed
 
 key_files:
-  motor_3d: src/main/Engine/engine_3d/src/config_3d/player_ui/
+  motor_3d: src/main/Engine/engine/src/engine3d/config_3d/player_ui/
   motor_2d: src/main/Engine/engine_2d/src/config_2d/player_ui/
   modal: src/renderer/src/modal-electron/playerUiEditorSessions.ts
   hook_draw: src/renderer/src/hooks/usePlayerUiObjectDrawing.ts

@@ -30,17 +30,17 @@ principle:
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine_3d/src/vulkan/accel.rs     # BLAS/TLAS, scratch, device addresses
-    - src/main/Engine/engine_3d/src/vulkan/frame.rs     # dispatch, SBT, cache de BLAS, BVH por slot
-    - src/main/Engine/engine_3d/src/bvh.rs              # BVH binario y layouts GPU del fallback
-    - src/main/Engine/engine_3d/src/vulkan/select.rs    # gate de extensiones
-    - src/main/Engine/engine_3d/src/engine/render.rs    # instancias trazables, materiales, hash
+    - src/main/Engine/engine/src/engine3d/vulkan/accel.rs     # BLAS/TLAS, scratch, device addresses
+    - src/main/Engine/engine/src/engine3d/vulkan/frame.rs     # dispatch, SBT, cache de BLAS, BVH por slot
+    - src/main/Engine/engine/src/engine3d/bvh.rs              # BVH binario y layouts GPU del fallback
+    - src/main/Engine/engine/src/engine3d/vulkan/select.rs    # gate de extensiones
+    - src/main/Engine/engine/src/engine3d/engine/render.rs    # instancias trazables, materiales, hash
   shaders:
-    - src/main/Engine/engine_3d/shaders/rt/primary.rgen
-    - src/main/Engine/engine_3d/shaders/rt/primary.rchit
-    - src/main/Engine/engine_3d/shaders/rt/primary.rmiss
-    - src/main/Engine/engine_3d/shaders/rt/reflect.rgen
-    - src/main/Engine/engine_3d/shaders/bvh/trace.comp
+    - src/main/Engine/engine/shaders/rt/primary.rgen
+    - src/main/Engine/engine/shaders/rt/primary.rchit
+    - src/main/Engine/engine/shaders/rt/primary.rmiss
+    - src/main/Engine/engine/shaders/rt/reflect.rgen
+    - src/main/Engine/engine/shaders/bvh/trace.comp
 
 not_ported_from_wgpu:
   quality_preset: |
@@ -81,7 +81,7 @@ pipeline:
     address de un buffer ya liberado.
 
 denoise:
-  shader: src/main/Engine/engine_3d/shaders/raster/denoise.frag
+  shader: src/main/Engine/engine/shaders/raster/denoise.frag
   profile: |
     Kernel 3×3 con peso `exp(-|Δdepth| · 80) · pow(max(dot(n, n0), 0), 16) · alpha`. El radio
     llega por push constant (`step_px`) y hoy vale 1 texel para todos los tiers.

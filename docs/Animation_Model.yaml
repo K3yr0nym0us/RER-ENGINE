@@ -168,7 +168,7 @@ runtime_2d:
   scripts: script_engine.attach_script con path $anim$::{name}::{script}
 
 runtime_3d:
-  module: engine_3d/src/config_3d/model_animation.rs
+  module: engine/src/engine3d/config_3d/model_animation.rs
   tick: update_skinned_animations (dt, loop, joint matrices)
   gpu: skinned_gpu_meshes + joint_buffer por pieza del asset
   stop: AnimationFinished event
@@ -213,8 +213,8 @@ rhai:
 key_files:
   motor_2d_anim: src/main/Engine/engine_2d/src/engine/animations.rs
   motor_2d_types: src/main/Engine/engine_2d/src/engine/types.rs
-  motor_3d_anim: src/main/Engine/engine_3d/src/config_3d/model_animation.rs
-  motor_3d_asset: src/main/Engine/engine_3d/src/config_3d/model_asset.rs
+  motor_3d_anim: src/main/Engine/engine/src/engine3d/config_3d/model_animation.rs
+  motor_3d_asset: src/main/Engine/engine/src/engine3d/config_3d/model_asset.rs
   ipc: engine_2d|3d/src/ipc.rs (SetAnimation, PlayAnimation, …)
   ui: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/AnimationsPanel.tsx
   sync: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts

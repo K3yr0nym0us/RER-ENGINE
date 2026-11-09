@@ -32,13 +32,13 @@ principle:
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine_3d/src/vulkan/frame.rs   # ssr/denoise/composite passes y sus descriptors
-    - src/main/Engine/engine_3d/src/config_3d/reflection_settings.rs
-    - src/main/Engine/engine_3d/src/config_3d/reflection_graphics.rs
+    - src/main/Engine/engine/src/engine3d/vulkan/frame.rs   # ssr/denoise/composite passes y sus descriptors
+    - src/main/Engine/engine/src/engine3d/config_3d/reflection_settings.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/reflection_graphics.rs
   shaders:
-    - src/main/Engine/engine_3d/shaders/raster/ssr.frag
-    - src/main/Engine/engine_3d/shaders/raster/denoise.frag
-    - src/main/Engine/engine_3d/shaders/raster/composite.frag
+    - src/main/Engine/engine/shaders/raster/ssr.frag
+    - src/main/Engine/engine/shaders/raster/denoise.frag
+    - src/main/Engine/engine/shaders/raster/composite.frag
 
 resolution_by_tier:
   description: |

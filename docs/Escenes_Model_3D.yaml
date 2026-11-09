@@ -147,9 +147,9 @@ electron:
 
 archivos_clave:
   motor:
-    - "engine_3d/src/engine/editor_scenes.rs"
-    - "engine_3d/src/engine/load_proyect.rs"
-    - "engine_3d/src/engine/commands.rs (undo + clear_editor_undo_redo)"
+    - "engine/src/engine3d/engine/editor_scenes.rs"
+    - "engine/src/engine3d/engine/load_proyect.rs"
+    - "engine/src/engine3d/engine/commands.rs (undo + clear_editor_undo_redo)"
   renderer:
     - "pages/EngineView/hooks/useSceneManager.tsx"
     - "pages/EngineView/hooks/sceneManagerModalBodies.tsx"

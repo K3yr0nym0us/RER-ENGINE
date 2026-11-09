@@ -180,7 +180,7 @@ engine_2d:
 # ---------------------------------------------------------------------------
 
 engine_3d:
-  module: src/main/Engine/engine_3d/src/config_3d/physics_3d.rs
+  module: src/main/Engine/engine/src/engine3d/config_3d/physics_3d.rs
   reconcile: config_3d/mod.rs → reconcile_entity_physics_with_mesh
   mesh_aabb: set_entity_physics_from_mesh_aabb (local_bounds del GLB + transform)
   sphere_fallback: entity_uses_sphere_physics (iconos sol, etc.)
@@ -240,13 +240,13 @@ rhai:
 
 key_files:
   motor_2d: src/main/Engine/engine_2d/src/physics_2d.rs
-  motor_3d: src/main/Engine/engine_3d/src/config_3d/physics_3d.rs
-  reconcile_3d: src/main/Engine/engine_3d/src/config_3d/mod.rs
-  plane_tools: src/main/Engine/engine_3d/src/config_3d/plane_tools.rs
-  execution_3d: src/main/Engine/engine_3d/src/config_3d/execution_areas_3d.rs
-  play: src/main/Engine/engine_3d/src/config_3d/play_controller.rs
+  motor_3d: src/main/Engine/engine/src/engine3d/config_3d/physics_3d.rs
+  reconcile_3d: src/main/Engine/engine/src/engine3d/config_3d/mod.rs
+  plane_tools: src/main/Engine/engine/src/engine3d/config_3d/plane_tools.rs
+  execution_3d: src/main/Engine/engine/src/engine3d/config_3d/execution_areas_3d.rs
+  play: src/main/Engine/engine/src/engine3d/config_3d/play_controller.rs
   commands_2d: src/main/Engine/engine_2d/src/engine/commands.rs
-  commands_3d: src/main/Engine/engine_3d/src/engine/commands.rs
+  commands_3d: src/main/Engine/engine/src/engine3d/engine/commands.rs
   ui_world: src/renderer/src/pages/EngineView/components/sidebar/WorldAccordion/
   ui_props: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/
   actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts (setEntityPhysics)
