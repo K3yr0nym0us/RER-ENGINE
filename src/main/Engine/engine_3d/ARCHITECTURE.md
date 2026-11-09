@@ -47,7 +47,8 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   matriz de luz salen del tamaño real (`active_shadow_map_size`), y el radio PCF escala con la
   raíz del tamaño para que la penumbra no se afinde al subir resolución; por encima de 2.5
   texeles el kernel pasa de 3×3 a 5×5. Sigue siendo un único mapa sobre los bounds del mundo:
-  no hay cascadas (CSM).
+  no hay cascadas (CSM). Se intentó y se retiró: la evidencia de qué quedó descartado está en
+  `docs/Shadows_3D.yaml` (`csm_attempt`) para no volver a empezar de cero.
 - **MSAA** (`set_msaa_tier`): Low 1× (por defecto, sin multisampling), Medium 2×, High 4×,
   Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
   `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). Con >1× se crean copias

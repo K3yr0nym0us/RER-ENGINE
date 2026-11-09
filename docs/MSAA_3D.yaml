@@ -10,7 +10,7 @@
 #   - docs/Reflections_3D.yaml
 #   - docs/IPC_Protocol.yaml
 
-version: 3
+version: 4
 updated: 2026-11-09
 
 principle:
@@ -104,7 +104,9 @@ extended_scope:
       roughness baja se leen los bordes dentados de la geometría. El coste es bajo (5 adjuntos de
       PROBE_FACE_SIZE con N muestras + resolve), pero toca el pase de captura, que es donde más
       validación se rompió históricamente (layout de depth, `imageCubeArray`, capas `slot*6+face`).
-      Decide el usuario tras ver CSM: si los bordes de las reflexiones de sonda molestan, se hace.
+      Decide el usuario por su cuenta: si los bordes dentados en las reflexiones de sonda molestan al
+       mirar, se hace. Ya no depende del CSM: el intento de cascadas se retiró en `5efc8c0` y quedó
+       aplazado, así que no hay nada que esperar antes de decidir esto.
   msaa_in_overlay_ui:
     status: descartado
     reason: |
