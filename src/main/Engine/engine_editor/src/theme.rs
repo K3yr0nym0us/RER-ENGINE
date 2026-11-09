@@ -56,14 +56,9 @@ pub const BADGE_GREEN_BG: Color32 = Color32::from_rgba_unmultiplied_const(0x34, 
 pub const BADGE_GREEN_BORDER: Color32 =
     Color32::from_rgba_unmultiplied_const(0x34, 0xd3, 0x99, 0x40);
 
-/// Color de limpieza del swapchain (sRGB la convierte a lineal).
-pub fn clear_color() -> wgpu::Color {
-    wgpu::Color {
-        r: 0.02,
-        g: 0.025,
-        b: 0.06,
-        a: 1.0,
-    }
+/// Color de limpieza del swapchain en formato RGBA lineal.
+pub fn clear_color() -> [f32; 4] {
+    [0.02, 0.025, 0.06, 1.0]
 }
 
 pub fn apply(ctx: &egui::Context) {

@@ -39,10 +39,11 @@ ttf-parser = "0.25"
 ab_glyph = "0.2"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sysinfo = "0.39"
-# UI del editor. egui 0.35 es la línea compatible con wgpu 29 / winit 0.30.
-# Sin `default-features` en egui-wgpu para no reactivar backends distintos de Vulkan.
+# UI del editor: egui 0.35 + backend Vulkan/ash.
+ash = "0.38"
+ash-window = "0.13"
 egui = "0.35"
-egui-wgpu = { version = "0.35", default-features = false }
+egui-ash-renderer = "0.12"
 egui-winit = { version = "0.35", default-features = false }
 egui-phosphor = "0.13"
 

@@ -55,19 +55,22 @@ Problemas:
 
 ### Backend de UI
 
-Usar **`egui-ash-renderer` 0.13.0**:
+Usar **`egui-ash-renderer` 0.12.0**:
 
 - usa `ash 0.38`,
-- usa `egui 0.36`,
-- está mantenido y actualizado.
+- usa `egui 0.35` (la misma línea que el resto del editor),
+- evita saltar a egui 0.36 en esta fase.
 
 No usar `egui-ash` 0.4.0: depende de egui 0.25 y está desactualizado.
 
+`egui-ash-renderer` 0.13 exige egui 0.36; se puede adoptar más adelante como
+actualización independiente.
+
 Esto implica:
 
-- subir `egui` y `egui-winit` de 0.35 a 0.36,
+- mantener `egui` y `egui-winit` en 0.35,
 - quitar `egui-wgpu` y `wgpu` del editor,
-- adaptar los cambios de API de egui 0.36.
+- añadir `ash`, `ash-window` y `egui-ash-renderer`.
 
 ### Contexto Vulkan
 
@@ -169,11 +172,14 @@ Así se puede seguir depurando sin el editor.
 
 ## Fase 2 — Migrar el editor a ash + egui-ash-renderer
 
+> Estado: el editor ya usa `ash` + `egui-ash-renderer` 0.12 y renderiza su UI
+> sin `wgpu`. Falta compartir el `VkDevice`/swapchain con el motor en la fase 4.
+
 ### 2.1 Dependencias
 
-- `egui = 0.36`
-- `egui-winit = 0.36`
-- `egui-ash-renderer = 0.13`
+- `egui = 0.35`
+- `egui-winit = 0.35`
+- `egui-ash-renderer = 0.12`
 - `ash = 0.38`
 - `ash-window = 0.13`
 
@@ -406,7 +412,7 @@ Mantener el binario standalone para debug, si se desea.
 |---|---|
 | `FrameRenderer` está acoplado a swapchain/FrameTarget | Extraer `record` a un `FrameTarget` externo |
 | Portar editor de wgpu a ash es grande | Hacerlo en una rama/fase aislada y validar egui solo primero |
-| egui 0.36 cambia APIs | Actualizar paso a paso; no mezclar con lógica de juego |
+| egui 0.36 cambia APIs | Mantener 0.35 con `egui-ash-renderer` 0.12; subir versión en un cambio aparte |
 | El motor crea su device en varios sitios | Centralizar en `SharedGpu` propiedad del editor |
 | Input duplicado | Un solo event loop y `consumed` |
 | Resize/DPI | Tests manuales en 100 %, 125 %, 150 % |

@@ -37,8 +37,7 @@ use crate::app::{EditorApp, EditorStatus};
 use crate::cli::Cli;
 use crate::engine_host::{EngineHost, UserEvent};
 
-const DEFAULT_LOG_FILTER: &str = "rer_engine_editor=info,wgpu_core=warn,wgpu_hal=warn,\
-wgpu_hal::vulkan::instance=off,naga=warn,egui_wgpu=warn";
+const DEFAULT_LOG_FILTER: &str = "rer_engine_editor=info,ash=warn,egui_ash_renderer=warn";
 
 /// Icono de ventana, el mismo PNG que usa Electron (`src/resources/RER-ENGINE-LOGO.png`).
 const APP_ICON_PNG: &[u8] = include_bytes!("../../../../../src/resources/RER-ENGINE-LOGO.png");
@@ -56,13 +55,12 @@ struct EditorWindow {
     gpu: gpu::Gpu,
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
-    egui_renderer: egui_wgpu::Renderer,
     app: EditorApp,
 }
 
 impl EditorWindow {
     fn new(window: Arc<Window>, cli: Cli) -> Result<Self, String> {
-        let gpu = pollster::block_on(gpu::init(window.clone()))?;
+        let gpu = gpu::Gpu::new(window.as_ref())?;
 
         let egui_ctx = egui::Context::default();
         theme::apply(&egui_ctx);
@@ -73,13 +71,7 @@ impl EditorWindow {
             window.as_ref(),
             Some(window.scale_factor() as f32),
             Some(winit::window::Theme::Dark),
-            Some(gpu.device.limits().max_texture_dimension_2d as usize),
-        );
-
-        let egui_renderer = egui_wgpu::Renderer::new(
-            &gpu.device,
-            gpu.config.format,
-            egui_wgpu::RendererOptions::default(),
+            Some(gpu.max_texture_dimension_2d() as usize),
         );
 
         Ok(Self {
@@ -87,22 +79,12 @@ impl EditorWindow {
             gpu,
             egui_ctx,
             egui_state,
-            egui_renderer,
             app: EditorApp::new(cli),
         })
     }
 
-    fn resize(&mut self, size: PhysicalSize<u32>) {
-        if size.width == 0 || size.height == 0 {
-            return;
-        }
-
-        let max = self.gpu.device.limits().max_texture_dimension_2d.max(1);
-        self.gpu.config.width = size.width.clamp(1, max);
-        self.gpu.config.height = size.height.clamp(1, max);
-        self.gpu
-            .surface
-            .configure(&self.gpu.device, &self.gpu.config);
+    fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), String> {
+        self.gpu.resize(size)
     }
 
     /// Recoloca el overlay del motor tras un resize/cambio de escala.
@@ -112,125 +94,21 @@ impl EditorWindow {
         }
     }
 
-    fn render(&mut self) {
+    fn render(&mut self) -> Result<(), String> {
         let EditorWindow {
             window,
             gpu,
             egui_ctx,
             egui_state,
-            egui_renderer,
             app,
         } = self;
 
-        let repaint = render_egui(
-            window.as_ref(),
-            gpu,
-            egui_ctx,
-            egui_state,
-            egui_renderer,
-            theme::clear_color(),
-            |ui| app.ui(ui),
-        );
+        let repaint = gpu.render(window.as_ref(), egui_ctx, egui_state, |ui| app.ui(ui))?;
         if repaint {
             window.request_redraw();
         }
+        Ok(())
     }
-}
-
-/// Ejecuta un frame de egui sobre una superficie wgpu ya configurada.
-///
-/// Devuelve `true` si hay que volver a pintar inmediatamente.
-fn render_egui(
-    window: &Window,
-    gpu: &mut gpu::Gpu,
-    egui_ctx: &egui::Context,
-    egui_state: &mut egui_winit::State,
-    egui_renderer: &mut egui_wgpu::Renderer,
-    clear: wgpu::Color,
-    build: impl FnMut(&mut egui::Ui),
-) -> bool {
-    let raw_input = egui_state.take_egui_input(window);
-    let full_output = egui_ctx.run_ui(raw_input, build);
-
-    egui_state.handle_platform_output(window, full_output.platform_output);
-
-    let paint_jobs = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
-    let repaint_now = full_output
-        .viewport_output
-        .get(&egui::ViewportId::ROOT)
-        .map(|output| output.repaint_delay.is_zero())
-        .unwrap_or(true);
-    let screen = egui_wgpu::ScreenDescriptor {
-        size_in_pixels: [gpu.config.width, gpu.config.height],
-        pixels_per_point: full_output.pixels_per_point,
-    };
-
-    for (id, image_delta) in &full_output.textures_delta.set {
-        egui_renderer.update_texture(&gpu.device, &gpu.queue, *id, image_delta);
-    }
-
-    let frame = match gpu.surface.get_current_texture() {
-        wgpu::CurrentSurfaceTexture::Success(texture)
-        | wgpu::CurrentSurfaceTexture::Suboptimal(texture) => texture,
-        wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-            return false;
-        }
-        wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-            gpu.surface.configure(&gpu.device, &gpu.config);
-            return false;
-        }
-        wgpu::CurrentSurfaceTexture::Validation => {
-            log::error!("[editor] error de validación al adquirir la superficie");
-            return false;
-        }
-    };
-
-    let view = frame
-        .texture
-        .create_view(&wgpu::TextureViewDescriptor::default());
-    let mut encoder = gpu
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("rer-editor-encoder"),
-        });
-
-    let user_commands =
-        egui_renderer.update_buffers(&gpu.device, &gpu.queue, &mut encoder, &paint_jobs, &screen);
-
-    {
-        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("rer-editor-egui-pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(clear),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-            multiview_mask: None,
-        });
-        let mut render_pass = render_pass.forget_lifetime();
-        egui_renderer.render(&mut render_pass, &paint_jobs, &screen);
-        drop(render_pass);
-    }
-
-    gpu.queue.submit(
-        user_commands
-            .into_iter()
-            .chain(std::iter::once(encoder.finish())),
-    );
-    frame.present();
-
-    for id in &full_output.textures_delta.free {
-        egui_renderer.free_texture(id);
-    }
-
-    repaint_now
 }
 
 struct EditorApplication {
@@ -554,18 +432,24 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
 
         match event {
             WindowEvent::Resized(size) => {
-                editor.resize(size);
+                if let Err(error) = editor.resize(size) {
+                    log::error!("[editor] {error}");
+                }
                 editor.update_engine_viewport();
                 editor.window.request_redraw();
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 let size = editor.window.inner_size();
-                editor.resize(size);
+                if let Err(error) = editor.resize(size) {
+                    log::error!("[editor] {error}");
+                }
                 editor.update_engine_viewport();
                 editor.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                editor.render();
+                if let Err(error) = editor.render() {
+                    log::error!("[editor] {error}");
+                }
             }
             _ => {}
         }

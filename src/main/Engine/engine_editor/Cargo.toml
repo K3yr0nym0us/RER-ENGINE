@@ -12,12 +12,12 @@ path = "src/main.rs"
 
 [dependencies]
 winit.workspace = true
-wgpu.workspace = true
-pollster.workspace = true
+ash.workspace = true
+ash-window.workspace = true
 log.workspace = true
 env_logger.workspace = true
 egui.workspace = true
-egui-wgpu.workspace = true
+egui-ash-renderer.workspace = true
 egui-winit.workspace = true
 egui-phosphor.workspace = true
 glam.workspace = true
