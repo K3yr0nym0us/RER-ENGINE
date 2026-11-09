@@ -16,14 +16,17 @@ layout(set = 0, binding = 0) uniform Scene {
     vec4 cam_pos;
     vec4 light_dir;
     vec4 light_color;
-    mat4 light_view_proj;
+    mat4 light_view_proj[4];
+    vec4 cascade_splits;
+    vec4 cascade_extent;
+    vec4 shadow_params;
     vec4 light_params;
     vec4 jitter;
     vec4 depth_plane;
     vec4 shadow_bias;
 } u;
 
-layout(set = 0, binding = 1) uniform sampler2DShadow shadow_map;
+layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadow_map;
 layout(set = 1, binding = 0) uniform sampler2DArray albedo_tex;
 layout(set = 3, binding = 0) uniform highp samplerCubeArray probe_cube;
 layout(push_constant) uniform Push {
@@ -37,14 +40,39 @@ layout(location = 2) out vec4 out_albedo;
 layout(location = 3) out vec4 out_world;
 layout(location = 4) out vec2 out_velocity;
 
+/// Cascada que cubre un punto, por su distancia al ojo. Los cortes vienen en `cascade_splits`
+/// (borde lejano de cada cascada) y las casillas inactivas valen FLT_MAX, así que el primer
+/// `split` que encaja es siempre la cascada correcta. Devuelve -1 más allá del borde de sombras.
+int shadow_cascade(float view_dist) {
+    int count = int(u.shadow_params.w);
+    if (count <= 0 || count > 4) {
+        return -1;
+    }
+    if (view_dist > u.cascade_splits[count - 1]) {
+        return -1;
+    }
+    for (int i = 0; i < 4; i++) {
+        if (i < count && view_dist <= u.cascade_splits[i]) {
+            return i;
+        }
+    }
+    return count - 1;
+}
+
 float shadow_pcf(vec3 world, vec3 n) {
     if (u.light_color.w < 0.5) {
         return 1.0;
     }
+    float view_dist = distance(world, u.cam_pos.xyz);
+    int cascade = shadow_cascade(view_dist);
+    if (cascade < 0) {
+        return 1.0;
+    }
+    int count = int(u.shadow_params.w);
     float ndotl = max(dot(normalize(n), normalize(u.light_dir.xyz)), 0.0);
     float normal_scale = u.shadow_bias.x + u.shadow_bias.y * (1.0 - ndotl);
     vec3 biased = world + normalize(u.light_dir.xyz) * normal_scale;
-    vec4 clip = u.light_view_proj * vec4(biased, 1.0);
+    vec4 clip = u.light_view_proj[cascade] * vec4(biased, 1.0);
     vec3 ndc = clip.xyz / clip.w;
     vec2 uv = ndc.xy * 0.5 + 0.5;
     uv.y = 1.0 - uv.y;
@@ -53,22 +81,33 @@ float shadow_pcf(vec3 world, vec3 n) {
     }
     float slope = sqrt(max(1.0 - ndotl * ndotl, 0.0));
     float depth_ref = ndc.z - (u.shadow_bias.z + u.shadow_bias.w * slope);
-    float texel = u.light_params.z;
-    float radius = max(u.light_params.w, 1.0);
-    // El radio ya escala con la resolución del mapa (lo decide `scene_light_params`). Con mapas
-    // grandes el radio supera 2.5 texeles y conviene abrir el kernel a 5x5: así Ultra aporta más
-    // taps además de más resolución, en lugar de dibujar solo más fino.
+    // El radio PCF se pide en UNIDADES DE MUNDO y se traduce a texeles de ESTE mapa. Con un radio
+    // fijo en texeles, la cascada lejana (misma resolución, más mundo por texel) tendría una
+    // penumbra durísima y el cambio de cascada se vería como un corte.
+    float texel_world = 2.0 * max(u.cascade_extent[cascade], 0.001) * u.shadow_params.z;
+    float radius = clamp(u.shadow_params.x / max(texel_world, 1e-5), 1.0, 4.0);
+    float texel = u.shadow_params.z;
+    // Con radio abierto conviene 5x5 taps: más penumbra sin más resolución de mapa.
     int taps = radius > 2.5 ? 2 : 1;
     float sum = 0.0;
     float used = 0.0;
     for (int y = -taps; y <= taps; y++) {
         for (int x = -taps; x <= taps; x++) {
             vec2 off = vec2(float(x), float(y)) * texel * radius;
-            sum += texture(shadow_map, vec3(uv + off, depth_ref));
+            sum += texture(shadow_map, vec4(uv + off, depth_ref, float(cascade)));
             used += 1.0;
         }
     }
-    return sum / used;
+    float shadow = sum / used;
+    // Costura entre cascadas: en la última franja de cada cascada (excepto la última) se desvanece
+    // hacia "sin sombra" para que el salto de densidad de texel no se lea como una línea dura.
+    if (cascade + 1 < count) {
+        float edge = u.cascade_splits[cascade];
+        float thickness = clamp(u.shadow_params.y, 0.0, 0.9);
+        float k = smoothstep(edge * (1.0 - thickness), edge, view_dist);
+        shadow = mix(shadow, 1.0, k);
+    }
+    return shadow;
 }
 
 void main() {

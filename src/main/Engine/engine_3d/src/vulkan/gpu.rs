@@ -203,6 +203,9 @@ pub struct GpuImage {
     pub image: vk::Image,
     allocation: Option<Allocation>,
     pub view: vk::ImageView,
+    /// Una vista `TYPE_2D` por capa del array, cuando hace falta dibujar capa a capa (CSM).
+    /// Vacío salvo que se llame a `attach_layer_views`.
+    layer_views: Vec<vk::ImageView>,
     #[allow(dead_code)]
     pub format: vk::Format,
     #[allow(dead_code)]
@@ -212,8 +215,70 @@ pub struct GpuImage {
     pub mips: u32,
 }
 
+impl GpuImage {
+    /// Vista de la capa `index` del array, o la vista completa si no se crearon las por capa.
+    ///
+    /// `vkCmdBeginRendering` toma el rango de capas del imageView del adjunto, así que para dibujar
+    /// UNA cascada del shadow map hay que pasarle la vista de ESA capa.
+    pub fn layer_view(&self, index: u32) -> vk::ImageView {
+        self.layer_views
+            .get(index as usize)
+            .copied()
+            .unwrap_or(self.view)
+    }
+
+    /// Crea (o recrea) una vista `TYPE_2D` por capa del array.
+    ///
+    /// Sin esto no se puede dibujar una cascada sin tocar las demás: `vkCmdBeginRendering` toma el
+    /// rango de capas del imageView del adjunto, y la vista completa del array abarca todas.
+    pub fn attach_layer_views(&mut self, what: &str) -> Result<(), VulkanError> {
+        let device = &self.gpu.inner.device;
+        unsafe {
+            for view in self.layer_views.drain(..) {
+                device.destroy_image_view(view, None);
+            }
+        }
+        let mut views = Vec::with_capacity(self.layers as usize);
+        for layer in 0..self.layers {
+            let created = unsafe {
+                device.create_image_view(
+                    &vk::ImageViewCreateInfo::default()
+                        .image(self.image)
+                        .view_type(vk::ImageViewType::TYPE_2D)
+                        .format(self.format)
+                        .subresource_range(vk::ImageSubresourceRange {
+                            aspect_mask: self.aspect,
+                            base_mip_level: 0,
+                            level_count: self.mips,
+                            base_array_layer: layer,
+                            layer_count: 1,
+                        }),
+                    None,
+                )
+            };
+            match created {
+                Ok(view) => views.push(view),
+                Err(error) => {
+                    for view in views {
+                        unsafe { device.destroy_image_view(view, None) };
+                    }
+                    return Err(vk_error(
+                        &format!("crear la vista de la capa de {what}"),
+                        error,
+                    ));
+                }
+            }
+        }
+        self.layer_views = views;
+        Ok(())
+    }
+}
+
 impl Drop for GpuImage {
     fn drop(&mut self) {
+        for view in self.layer_views.drain(..) {
+            unsafe { self.gpu.inner.device.destroy_image_view(view, None) };
+        }
         unsafe {
             self.gpu.inner.device.destroy_image_view(self.view, None);
             self.gpu.inner.device.destroy_image(self.image, None);
@@ -884,6 +949,7 @@ impl SharedGpu {
             aspect,
             layers: 1,
             mips: 1,
+            layer_views: Vec::new(),
         };
         self.transition_initial(&image)?;
         Ok(image)
@@ -987,6 +1053,7 @@ impl SharedGpu {
             aspect,
             layers,
             mips,
+            layer_views: Vec::new(),
         };
         self.transition_initial(&image)?;
         Ok(image)

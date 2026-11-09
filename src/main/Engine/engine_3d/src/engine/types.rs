@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
 
+use crate::config_3d::shadow_cascades::MAX_SHADOW_CASCADES;
 use crate::ecs::MeshComponent;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::ipc::{AnimScriptData, AnimationFrameData};
@@ -103,6 +104,20 @@ pub(crate) const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// 1024: ~4× menos trabajo que 2048 en el shadow pass; PCF/texel usan esta constante.
 pub(crate) const SHADOW_MAP_SIZE: u32 = 1024;
 
+/// Bytes del UBO de escena. Debe sobrar sitio para `SceneUniforms` entero (con las 4 matrices de
+/// cascada); `frame.rs` lo reserva fijo y copia el struct por delante.
+pub(crate) const SCENE_UBO_BYTES: usize = 1024;
+
+const _: () = assert!(std::mem::size_of::<SceneUniforms>() <= SCENE_UBO_BYTES);
+
+/// Los 4 shaders que declaran `uniform Scene` (`forward.vert`, `forward.frag`, `skinned.vert`,
+/// `shadow.vert`) son un espejo byte a byte de este struct. Si un offset se mueve, el shader lee
+/// otros campos y la escena se deforma SIN ningún error de API: estos asserts fijan el contrato.
+const _: () = assert!(std::mem::size_of::<SceneUniforms>() == 672);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, light_view_proj) == 304);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, cascade_splits) == 560);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, shadow_bias) == 656);
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(crate) struct SceneUniforms {
@@ -117,7 +132,19 @@ pub(crate) struct SceneUniforms {
     pub(crate) light_dir: [f32; 4],
     /// rgb = color de luz; w > 0.5 activa sombras proyectadas.
     pub(crate) light_color: [f32; 4],
-    pub(crate) light_view_proj: [[f32; 4]; 4],
+    /// Una matriz `luz · proyección` por cascada (CSM). El pase de sombras reescribe la ranura 0
+    /// con la cascada que está dibujando (`shadow.vert` siempre lee `[0]`); el forward elige
+    /// cascada por profundidad contra `cascade_splits`, así que ahí la array se usa completa.
+    pub(crate) light_view_proj: [[[f32; 4]; 4]; MAX_SHADOW_CASCADES],
+    /// Borde lejano de cada cascada, en distancia desde el ojo. `f32::MAX` en las inactivas, para
+    /// que el shader busque la primera que encaje sin ramificar por tier.
+    pub(crate) cascade_splits: [f32; 4],
+    /// Mitad del lado de la caja ortográfica por cascada (unidades de mundo). El radio PCF se
+    /// escala con esto: una cascada lejana cubre más mundo por texel y necesita taps más separados.
+    pub(crate) cascade_extent: [f32; 4],
+    /// x = radio PCF en unidades de mundo, y = grosor del fade en la costura entre cascadas,
+    /// z = 1 / lado del shadow map (texel en UV, idéntico para todas las capas), w = cascadas activas.
+    pub(crate) shadow_params: [f32; 4],
     /// x = intensidad, z = 1/texel sombra, w = radio PCF (y sin uso en GPU).
     pub(crate) light_params: [f32; 4],
     /// xy = jitter subpíxel en espacio de proyección; zw sin uso (near/far en `depth_plane`).

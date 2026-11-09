@@ -48,6 +48,7 @@ pub(crate) mod projectiles;
 pub(crate) mod quick_build;
 pub(crate) mod reflection_graphics;
 pub(crate) mod reflection_settings;
+pub(crate) mod shadow_cascades;
 pub(crate) mod shadow_graphics;
 pub(crate) mod shadow_settings;
 pub(crate) mod skeleton_debug;

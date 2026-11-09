@@ -644,6 +644,8 @@ impl State {
         } else {
             0.0
         };
+        let cascades = self.build_shadow_cascades(aspect);
+        let cascade_count = cascades.count;
         let scene_uni = SceneUniforms {
             view_proj,
             view_proj_stable: vp_stable,
@@ -652,7 +654,10 @@ impl State {
             cam_pos: [eye.x, eye.y, eye.z, 0.0],
             light_dir: self.scene_light_dir(),
             light_color: self.scene_light_color(),
-            light_view_proj: self.build_light_view_proj(),
+            light_view_proj: cascades.view_proj,
+            cascade_splits: cascades.splits,
+            cascade_extent: cascades.extents,
+            shadow_params: self.scene_shadow_params(cascade_count),
             light_params,
             jitter: [0.0, 0.0, 0.0, 0.0],
             depth_plane: [
@@ -1191,6 +1196,7 @@ impl State {
             scene: scene_bytes,
             shadows: self.shadow_tier != crate::config_3d::shadow_graphics::ShadowTier::Off,
             shadow_map_size: self.active_shadow_map_size(),
+            shadow_cascades: cascade_count,
             msaa_samples: self.msaa_sample_count,
             debug_ssr_view: self.reflection_debug_view
                 != crate::config_3d::reflection_graphics::ReflectionDebugView::Final,

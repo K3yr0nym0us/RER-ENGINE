@@ -3,10 +3,29 @@
 
 use glam::{Mat4, Vec3};
 
+use crate::config_3d::shadow_cascades::{
+    MAX_SHADOW_CASCADES, fit_cascade, slice_corners, split_distances,
+};
+
 use crate::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::mesh;
+
+/// Resultado de `State::build_shadow_cascades`: lo que se vuelca tal cual en `SceneUniforms`.
+///
+/// Existe como tipo para que el llamador no tenga que saber de cuántas capas es el array de sombras
+/// ni cómo se rellenan las casillas que el tier no usa.
+pub(crate) struct ShadowCascadeSet {
+    /// Una matriz `luz · proyección` por capa del shadow map.
+    pub(crate) view_proj: [[[f32; 4]; 4]; MAX_SHADOW_CASCADES],
+    /// Borde lejano de cada cascada, medido desde el ojo; `f32::MAX` en las inactivas.
+    pub(crate) splits: [f32; MAX_SHADOW_CASCADES],
+    /// Mitad del lado de la caja ortográfica por cascada (unidades de mundo).
+    pub(crate) extents: [f32; MAX_SHADOW_CASCADES],
+    /// Cascadas que el tier activo dibujará y muestreará.
+    pub(crate) count: usize,
+}
 
 /// DirecciÃ³n por defecto (hacia la luz, mismo sentido que el shader histÃ³rico).
 pub const DEFAULT_LIGHT_DIR: Vec3 = Vec3::new(0.6, 1.0, 0.4);
@@ -110,29 +129,13 @@ impl State {
         }
     }
 
-    /// x = intensidad; y = oscuridad sombra (lit-composite / pase transparente); z = 1/texel sombra; w = radio PCF.
+    /// x = intensidad; y = oscuridad de sombra (lo sobrescribe `render` según haya sondas activas).
+    ///
+    /// `z` y `w` se quedan a 0: desde CSM el texel y el radio PCF viajan en `shadow_params`, que es
+    /// **por cascada**, así que un valor único del mapa ya no significa nada. Se mantienen los
+    /// campos porque el bloque `Scene` de los shaders es un espejo byte a byte del struct.
     pub(crate) fn scene_light_params(&self) -> [f32; 4] {
-        let dist = self.camera.distance;
-        // Radio PCF algo mayor con shadow map 1024 para compensar resoluciÃ³n.
-        let pcf_radius = if dist < 12.0 {
-            0.85
-        } else if dist < 28.0 {
-            0.95
-        } else {
-            1.15
-        };
-        // El radio PCF se expresa en TEXELES del mapa actual: sin escalarlo, pasar de 1024 a 4096
-        // hace la penumbra 4 veces más fina en el mundo y la sombra se ve igual en todos los tiers
-        // (solo cambia el coste). Con raíz cuadrada la penumbra se mantiene parecida mientras el
-        // detalle sube de verdad.
-        let size = self.active_shadow_map_size() as f32;
-        let scale = (size / crate::engine::SHADOW_MAP_SIZE as f32).sqrt();
-        [
-            self.light_intensity,
-            self.shadow_darkness,
-            1.0 / size,
-            pcf_radius * scale,
-        ]
+        [self.light_intensity, self.shadow_darkness, 0.0, 0.0]
     }
 
     pub(crate) fn scene_shadow_bias(&self) -> [f32; 4] {
@@ -144,29 +147,109 @@ impl State {
         ]
     }
 
-    /// ProyecciÃ³n ortogrÃ¡fica de la luz que cubre los bounds del mundo.
-    pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
-        let center = self.directional_light_scene_center();
-        let dir = self.directional_light_dir.normalize();
+    /// Cascadas de sombra del frame: una matriz por capa del array, con sus cortes y extents.
+    ///
+    /// Cada cascada encuadra la loncha de frustum `[r0, r1]` medida desde el ojo y se ajusta con
+    /// `shadow_cascades::fit_cascade` (centro alineado al texel y extent cuantizado, para que la
+    /// sombra no hierva al mover la cámara). La primera cascada es pequeña, así que tiene muchos más
+    /// texeles por metro que el antiguo mapa único: ahí es donde se nota el CSM.
+    pub(crate) fn build_shadow_cascades(&self, aspect: f32) -> ShadowCascadeSet {
+        let count = self.shadow_tier.cascades().min(MAX_SHADOW_CASCADES);
+        let identity = Mat4::IDENTITY.to_cols_array_2d();
+        let mut set = ShadowCascadeSet {
+            view_proj: [identity; MAX_SHADOW_CASCADES],
+            splits: [f32::MAX; MAX_SHADOW_CASCADES],
+            extents: [0.0; MAX_SHADOW_CASCADES],
+            count,
+        };
+        if count == 0 {
+            return set;
+        }
+
+        // La base de cámara se lee de la propia matriz de vista: es la autoridad tanto en órbita de
+        // editor como en FPS, y evita reconstruir ángulos que el render ya resolvió. Sus filas son
+        // los ejes de vista expresados en mundo, así que hacia delante es -fila(2).
+        let view = self.camera_view_matrix().to_cols_array_2d();
+        let row = |index: usize| {
+            Vec3::new(view[0][index], view[1][index], view[2][index]).normalize_or_zero()
+        };
+        let (right, up, backward) = (row(0), row(1), row(2));
+        let (forward, right, up) =
+            if backward == Vec3::ZERO || right == Vec3::ZERO || up == Vec3::ZERO {
+                // Vista degenerada (ojo justo sobre el blanco): cámara canónica hacia -Z.
+                (Vec3::NEG_Z, Vec3::X, Vec3::Y)
+            } else {
+                (-backward, right, up)
+            };
+
+        let eye = self.camera_world_position();
+        let tan_half_fov_y = (self.camera.fov_y * 0.5).tan().max(1e-4);
+        let aspect = aspect.max(0.01);
+        let near = self.camera.near.max(0.05);
         let min = self.world_bounds_3d.min_corner();
         let max = self.world_bounds_3d.max_corner();
-        let extent = (max - min).length().max(48.0) * 0.55;
-        let up = if dir.y.abs() > 0.95 { Vec3::X } else { Vec3::Y };
-        let eye = center + dir * extent * 2.5;
-        let view = Mat4::look_at_rh(eye, center, up);
-        let center_ls = view.transform_point3(center);
-        let texel = (2.0 * extent) / self.active_shadow_map_size() as f32;
-        let cx = (center_ls.x / texel).floor() * texel + texel * 0.5;
-        let cy = (center_ls.y / texel).floor() * texel + texel * 0.5;
-        let proj = Mat4::orthographic_rh(
-            cx - extent,
-            cx + extent,
-            cy - extent,
-            cy + extent,
-            0.5,
-            extent * 8.0,
-        );
-        (proj * view).to_cols_array_2d()
+        // Radio de escena: con un mundo pequeño las cascadas no se estiran hasta `camera.far`
+        // (lejos de ahí no hay nada que sombrear y se perdería toda la resolución).
+        let scene_radius = ((max - min).length() * 0.5).max(24.0);
+        let shadow_far = (scene_radius * self.shadow_tier.shadow_distance_scale())
+            .clamp(near + 2.0, self.camera.far.max(near + 2.0));
+        let splits = split_distances(near, shadow_far, count);
+        let map_size = self.active_shadow_map_size();
+        let light_dir = self.directional_light_dir;
+
+        let mut previous = near;
+        let mut last_valid: Option<([[f32; 4]; 4], f32)> = None;
+        for (index, edge) in splits.iter().enumerate().take(count) {
+            let corners = slice_corners(
+                eye,
+                forward,
+                right,
+                up,
+                tan_half_fov_y,
+                aspect,
+                previous,
+                *edge,
+            );
+            previous = *edge;
+            let Some(fit) = fit_cascade(&corners, light_dir, map_size) else {
+                continue;
+            };
+            let matrix = fit.view_proj.to_cols_array_2d();
+            set.view_proj[index] = matrix;
+            set.extents[index] = fit.extent;
+            // El corte se guarda SIEMPRE que la cascada exista: si se omitiera al fallar un ajuste
+            // vecino, el shader elegiría una cascada cuya matriz nunca se escribió.
+            set.splits[index] = *edge;
+            last_valid = Some((matrix, fit.extent));
+        }
+
+        // Capas sin usar (tier con menos cascadas que las que soporta el array) se rellenan con la
+        // última válida: el sampler puede leerlas si un shader indexa sin comprobar, y así nunca se
+        // muestrea basura ni NaN.
+        if let Some((matrix, extent)) = last_valid {
+            for slot in set.view_proj.iter_mut().skip(count) {
+                *slot = matrix;
+            }
+            for slot in set.extents.iter_mut().skip(count) {
+                *slot = extent;
+            }
+        }
+        set
+    }
+
+    /// x = radio PCF en unidades de mundo, y = grosor del fade de costura, z = texel en UV
+    /// (1 / lado del mapa, igual para todas las capas), w = cascadas activas.
+    ///
+    /// El `cascades` llega desde `ShadowCascadeSet::count`, no se vuelve a leer del tier: lo que ve
+    /// el shader tiene que ser exactamente el número de cortes que se calcularon, si no elegiría una
+    /// cascada con `split = FLT_MAX`.
+    pub(crate) fn scene_shadow_params(&self, cascades: usize) -> [f32; 4] {
+        [
+            self.shadow_tier.shadow_soft_radius(),
+            self.shadow_tier.cascade_fade(),
+            1.0 / self.active_shadow_map_size() as f32,
+            cascades.min(MAX_SHADOW_CASCADES) as f32,
+        ]
     }
 
     pub(crate) fn apply_directional_light_settings(

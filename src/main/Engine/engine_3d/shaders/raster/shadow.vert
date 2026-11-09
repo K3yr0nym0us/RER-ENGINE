@@ -14,7 +14,10 @@ layout(set = 0, binding = 0) uniform Scene {
     vec4 cam_pos;
     vec4 light_dir;
     vec4 light_color;
-    mat4 light_view_proj;
+    mat4 light_view_proj[4];
+    vec4 cascade_splits;
+    vec4 cascade_extent;
+    vec4 shadow_params;
     vec4 light_params;
     vec4 jitter;
     vec4 depth_plane;
@@ -23,5 +26,7 @@ layout(set = 0, binding = 0) uniform Scene {
 
 void main() {
     mat4 model = mat4(model0, model1, model2, model3);
-    gl_Position = u.light_view_proj * model * vec4(position, 1.0);
+    // El pase de sombras reescribe esta ranura con la matriz de la cascada que está dibujando
+    // (cmd_update_buffer por cascada), así que el shader no necesita saber el índice.
+    gl_Position = u.light_view_proj[0] * model * vec4(position, 1.0);
 }

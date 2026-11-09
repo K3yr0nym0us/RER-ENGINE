@@ -26,5 +26,6 @@ pub use types::{ActiveAnimation, AnimationState};
 
 pub(crate) use audio::{AudioSlot, start_audio_thread};
 pub(crate) use types::{
-    AUTOSAVE_INTERVAL, EntityTransformSnapshot, SHADOW_MAP_SIZE, SceneUniforms, UndoAction,
+    AUTOSAVE_INTERVAL, EntityTransformSnapshot, SCENE_UBO_BYTES, SHADOW_MAP_SIZE, SceneUniforms,
+    UndoAction,
 };
