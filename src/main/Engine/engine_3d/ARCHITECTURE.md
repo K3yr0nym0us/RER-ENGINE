@@ -40,24 +40,14 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 Cada tier se aplica en `vulkan::FrameRenderer`; los valores pedidos se recortan a lo que admite
 el adaptador, y el recorte se registra en el log (nada de números que no afectan al render).
 
-- **Sombras — Cascaded Shadow Maps** (`set_shadow_tier`): el shadow map es un **array** de
-  `MAX_SHADOW_CASCADES` (4) capas D32_SFLOAT, asignado siempre completo para que cambiar de tier
-  nunca toque los descriptores del `sampler2DArrayShadow`. El tier decide cascadas (Low 2, Medium 3,
-  High 4, Ultra 4), lado **por cascada** (Low/Medium 1024, High/Ultra 2048) y alcance
-  (`shadow_distance_scale`, Ultra 1.45× = distancia extendida). `record()` reasigna el array cuando
-  cambia el tamaño, recortado a `max_image_dimension2_d`, y si la asignación falla baja a la mitad en
-  vez de abortar cada frame.
-  Los cortes se mezclan log/uniforme (lambda 0.55) y cada cascada encuadra su loncha de frustum con
-  el centro alineado al texel y el extent cuantizado (anti-shimmering): matemática pura y testeada en
-  `src/config_3d/shadow_cascades.rs`. `shadow.vert` proyecta siempre contra `light_view_proj[0]` y el
-  pase reescribe esa ranura del UBO por cascada con `cmd_update_buffer` (igual que la captura de
-  sondas), restaurando el bloque al terminar porque el forward necesita las 4 matrices. El radio PCF
-  se pide en **unidades de mundo** y se traduce a texeles de la cascada que toca; sobre 2.5 texeles el
-  kernel pasa de 3×3 a 5×5, y en el borde de cada cascada (menos la última) la sombra se desvanece
-  para que el salto de densidad no se vea como una línea. La barrera ATTACHMENT→READ_ONLY abarca las
-  4 capas de una (`transition_depth_layers`).
-  Limitación heredada del mapa único: los castores que entran al pase son los que ya recortó el
-  frustum de cámara, así que algo detrás del ojo no proyecta sombra.
+- **Sombras** (`set_shadow_tier`): resuelve el lado del shadow map (Low 1024, Medium 2048,
+  High 4096, Ultra 8192; `Off` no dibuja el pase). `record()` reasigna solo esa imagen cuando
+  cambia (`Targets::recreate_shadow`), recortado a `max_image_dimension2_d`, y si la asignación
+  falla baja a la mitad en vez de abortar cada frame. El texel del PCF y el snapping de la
+  matriz de luz salen del tamaño real (`active_shadow_map_size`), y el radio PCF escala con la
+  raíz del tamaño para que la penumbra no se afinde al subir resolución; por encima de 2.5
+  texeles el kernel pasa de 3×3 a 5×5. Sigue siendo un único mapa sobre los bounds del mundo:
+  no hay cascadas (CSM).
 - **MSAA** (`set_msaa_tier`): Low 1× (por defecto, sin multisampling), Medium 2×, High 4×,
   Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
   `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). Con >1× se crean copias

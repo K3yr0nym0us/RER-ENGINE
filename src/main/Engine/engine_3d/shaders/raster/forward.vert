@@ -18,10 +18,7 @@ layout(set = 0, binding = 0) uniform Scene {
     vec4 cam_pos;
     vec4 light_dir;
     vec4 light_color;
-    mat4 light_view_proj[4];
-    vec4 cascade_splits;
-    vec4 cascade_extent;
-    vec4 shadow_params;
+    mat4 light_view_proj;
     vec4 light_params;
     vec4 jitter;
     vec4 depth_plane;

@@ -203,9 +203,6 @@ pub struct GpuImage {
     pub image: vk::Image,
     allocation: Option<Allocation>,
     pub view: vk::ImageView,
-    /// Una vista `TYPE_2D` por capa del array, cuando hace falta dibujar capa a capa (CSM).
-    /// Vacío salvo que se llame a `attach_layer_views`.
-    layer_views: Vec<vk::ImageView>,
     #[allow(dead_code)]
     pub format: vk::Format,
     #[allow(dead_code)]
@@ -215,73 +212,8 @@ pub struct GpuImage {
     pub mips: u32,
 }
 
-impl GpuImage {
-    /// Vista de la capa `index` del array, o `None` si el array no tiene vistas por capa.
-    ///
-    /// No cae a la vista completa a propósito: con la vista de array, `vkCmdBeginRendering` escribe
-    /// SIEMPRE la capa 0, así que un fallo al crear las vistas convertiría las cascadas lejanas en
-    /// capas nunca pintadas (contenido indefinido = todo en sombra). El llamador degrada a 1 cascada.
-    pub fn layer_view(&self, index: u32) -> Option<vk::ImageView> {
-        self.layer_views.get(index as usize).copied()
-    }
-
-    /// Cuántas vistas por capa tiene el array (0 si nunca se llamaron `attach_layer_views`).
-    pub fn layer_view_count(&self) -> usize {
-        self.layer_views.len()
-    }
-
-    /// Crea (o recrea) una vista `TYPE_2D` por capa del array.
-    ///
-    /// Sin esto no se puede dibujar una cascada sin tocar las demás: `vkCmdBeginRendering` toma el
-    /// rango de capas del imageView del adjunto, y la vista completa del array abarca todas.
-    pub fn attach_layer_views(&mut self, what: &str) -> Result<(), VulkanError> {
-        let device = &self.gpu.inner.device;
-        unsafe {
-            for view in self.layer_views.drain(..) {
-                device.destroy_image_view(view, None);
-            }
-        }
-        let mut views = Vec::with_capacity(self.layers as usize);
-        for layer in 0..self.layers {
-            let created = unsafe {
-                device.create_image_view(
-                    &vk::ImageViewCreateInfo::default()
-                        .image(self.image)
-                        .view_type(vk::ImageViewType::TYPE_2D)
-                        .format(self.format)
-                        .subresource_range(vk::ImageSubresourceRange {
-                            aspect_mask: self.aspect,
-                            base_mip_level: 0,
-                            level_count: self.mips,
-                            base_array_layer: layer,
-                            layer_count: 1,
-                        }),
-                    None,
-                )
-            };
-            match created {
-                Ok(view) => views.push(view),
-                Err(error) => {
-                    for view in views {
-                        unsafe { device.destroy_image_view(view, None) };
-                    }
-                    return Err(vk_error(
-                        &format!("crear la vista de la capa de {what}"),
-                        error,
-                    ));
-                }
-            }
-        }
-        self.layer_views = views;
-        Ok(())
-    }
-}
-
 impl Drop for GpuImage {
     fn drop(&mut self) {
-        for view in self.layer_views.drain(..) {
-            unsafe { self.gpu.inner.device.destroy_image_view(view, None) };
-        }
         unsafe {
             self.gpu.inner.device.destroy_image_view(self.view, None);
             self.gpu.inner.device.destroy_image(self.image, None);
@@ -960,7 +892,6 @@ impl SharedGpu {
             aspect,
             layers: 1,
             mips: 1,
-            layer_views: Vec::new(),
         };
         self.transition_initial(&image)?;
         Ok(image)
@@ -1064,7 +995,6 @@ impl SharedGpu {
             aspect,
             layers,
             mips,
-            layer_views: Vec::new(),
         };
         self.transition_initial(&image)?;
         Ok(image)
@@ -1488,15 +1418,6 @@ pub enum FrameAcquire {
 }
 
 impl GpuBuffer {
-    /// Bytes ya mapeados del búfer, para leer resultados de una copia GPU→CPU.
-    ///
-    /// Sólo es válido después de que el trabajo que escribió el búfer haya terminado; el motor
-    /// espera al device por frame con `RER_VK_SYNC_FRAMES`, así que la sonda de sombras lee lo del
-    /// frame ANTERIOR, que para diagnóstico es suficiente.
-    pub fn mapped_bytes(&self) -> Option<&[u8]> {
-        self.allocation.as_ref()?.mapped_slice()
-    }
-
     pub fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), VulkanError> {
         let Some(allocation) = self.allocation.as_mut() else {
             return Err(VulkanError::new(

@@ -1,56 +1,33 @@
-# Sombras 3D por nivel (Cascaded Shadow Maps)
+# Sombras 3D por nivel (resolución del shadow map)
 #
-# El motor usa un ARRAY de capas D32_SFLOAT, una por cascada, en `engine_3d/src/vulkan/frame.rs`
-# (Ash). El nivel de calidad decide cuántas cascadas se dibujan, su resolución por cascada y el
-# alcance de la sombra. CSM está implementado (card `CASCADES / CSM (3D)`); la distancia extendida
-# de Ultra también.
+# El motor usa un único shadow map 2D ortográfico (depth compare, sin cascadas CSM), vive en
+# `engine_3d/src/vulkan/frame.rs` (Ash) y el nivel de calidad controla su resolución REAL.
+# CSM y la distancia extendida de Ultra quedan como tarea pendiente.
 #
 # Relacionado con:
 #   - docs/TAA_3D.yaml
 #   - docs/Reflections_3D.yaml
 #   - docs/IPC_Protocol.yaml
 
-version: 4
-updated: 2026-11-09
+version: 3
+updated: 2026-11-08
 
 principle:
   owner: motor_3d
   pipeline: |
-    1. `State::build_shadow_cascades` (config_3d/directional_light.rs) calcula por frame los cortes
-       por distancia (`shadow_cascades::split_distances`, mezcla log/uniforme con lambda 0.55) y una
-       caja ortográfica por cascada (`fit_cascade`) que encuadra la loncha de frustum `[r0, r1]`
-       medida desde el ojo.
-    2. `shadow_pass` recorre las cascadas del tier y dibuja cada una en SU capa del array. Como
-       `shadow.vert` proyecta contra `light_view_proj[0]`, por cascada se reescribe esa ranura del
-       UBO con `cmd_update_buffer` (mismo mecanismo que la captura de sondas) y al terminar se
-       restaura el bloque original: el forward necesita las 4 matrices.
-    3. El forward elige cascada por distancia al ojo (`shadow_cascade` en `forward.frag`) y muestrea
-       `sampler2DArrayShadow` en la capa correspondiente (compare `LESS_OR_EQUAL` + PCF).
-    4. El array pasa ATTACHMENT → READ_ONLY con una sola barrera que cubre TODAS las capas
-       (`transition_depth_layers`): si sólo se barriera la capa 0, las demás quedarían en un layout
-       que el descriptor no declara = lectura indefinida.
+    1. Shadow pass único a `targets.shadow` (D32_SFLOAT) con el lado del tier; se reasigna
+       la imagen cuando cambia el tier (`Targets::recreate_shadow`).
+    2. Sombreado en el forward con sampler de comparación (`LESS_OR_EQUAL`) + PCF; el texel y
+       el radio salen del tamaño real del mapa (`State::active_shadow_map_size`).
+    3. El mapa pasa ATTACHMENT → READ_ONLY con registro explícito de layout
+       (`transition_depth`), igual que la profundidad del viewport.
   note: |
-    El radio PCF se pide en UNIDADES DE MUNDO (`ShadowTier::shadow_soft_radius`) y se traduce a
-    texeles de la cascada que toca: cada cascada cubre un área distinta con el mismo mapa, así que
-    un radio fijo en texeles pondría la penumbra durísima en la lejana. Por encima de 2.5 texeles el
-    kernel pasa de 3×3 a 5×5.
-    En la última franja de cada cascada (menos la última) la sombra se desvanece hacia 1.0
-    (`ShadowTier::cascade_fade`) para que el salto de densidad de texel no se lea como una línea.
-    Anti-shimmering: el centro de la caja se alinea a la rejilla de texel y el extent se cuantiza a
-    0.5 unidades de mundo (`shadow_cascades::EXTENT_QUANTUM`).
-    `shadow_darkness` hoy llega como peso del IBL de sondas (`light_params.y`, 0 si no hay probes
-    activas); el PCF del forward no la usa como oscurecimiento. `light_params.z/w` quedaron sin
-    lectura desde CSM (el texel y el radio viajan en `shadow_params`, que es por cascada).
-  limitaciones:
-    casters_fuera_de_frustum: |
-      Los lotes que entran al shadow pass son los que ya recortó el FRUSTUM DE CÁMARA, así que un
-      objeto detrás de la cámara no proyecta sombra hacia el plano visible. Herencia del mapa único
-      (no es regresión): arreglarlo pide una lista de castores propia del pase de sombras con sus
-      propios buffers de instancias.
-    coste_geometrico: |
-      La geometría se envía una vez POR CASCADA (2-4× el trabajo de vértices del mapa único) aunque
-      el trabajo de píxeles baja: High era 4096² y ahora son 4 × 2048². Sin culling por cascada, el
-      coste de draw calls sube con el número de cascadas.
+    Sin CSM: un solo mapa ortográfico centrado en los bounds del mundo, así Ultra gana densidad
+    pero no distancia.
+    El radio PCF escala con la raíz del tamaño del mapa (penumbra parecida en el mundo al subir
+    resolución) y, por encima de 2.5 texeles, el kernel pasa de 3×3 a 5×5 (Ultra).
+    `shadow_darkness` hoy llega como peso del IBL de sondas (`light_params.y`, 0 si no hay
+    probes activas); el PCF del forward no la usa como oscurecimiento.
   rt_shadows: |
     No hay sombras por ray tracing en el renderizador Ash: los shaders de trazado
     (`shaders/rt/primary.rchit`, `shaders/bvh/trace.comp`) iluminan con N·L y un ambiente,
@@ -62,48 +39,33 @@ principle:
 graphics_tiers:
   - id: off
     aliases: [desactivado, none]
-    cascades: 0
-    resolution_per_cascade: 1
+    resolution: 1
     note: |
-      No se ejecuta el shadow pass y el forward salta el sampling (light_color.w = 0). El array se
-      sigue pasando a READ_ONLY completo y la matriz de luz se construye con el tamaño base para no
-      dividir por 1 px.
+      No se ejecuta el shadow pass y el forward salta el sampling (light_color.w = 0).
+      El mapa se queda en el tamaño base para no dividir por 1 al construir la matriz de luz.
   - id: low
     aliases: [bajo]
-    cascades: 2
-    resolution_per_cascade: 1024
-    shadow_distance_scale: 0.55
-    note: Resolución base del motor (SHADOW_MAP_SIZE = 1024); 2 capas de 1024 = 8 MB
+    resolution: 1024
+    note: Resolución base del motor (SHADOW_MAP_SIZE = 1024), coincide con el camino sin reasignar
   - id: medium
     aliases: [medio]
-    cascades: 3
-    resolution_per_cascade: 1024
-    shadow_distance_scale: 0.75
+    resolution: 2048
   - id: high
     aliases: [alto]
-    cascades: 4
-    resolution_per_cascade: 2048
-    shadow_distance_scale: 1.0
+    resolution: 4096
   - id: ultra
     aliases: [ultra]
-    cascades: 4
-    resolution_per_cascade: 2048
-    shadow_distance_scale: 1.45
-    note: |
-      Extended shadow distance: el borde lejano de la última cascada es 1.45× el radio de escena.
-      La resolución por cascada NO sube a 4096: el array se asigna siempre con las 4 capas y 4×4096
-      costaría 256 MB. El detalle del primer plano lo da la primera cascada, que encuadra pocos
-      metros. Recortado a `max_image_dimension2_d`; si la asignación falla se prueba con la mitad.
+    resolution: 8192
+    note: recortado a `max_image_dimension2_d`; si la asignación falla se prueba con la mitad
 
 commands:
   set_shadow_tier:
     params: { tier: off | low | medium | high | ultra }
     effect: |
-      Cambia cascadas, resolución por cascada y alcance (`ShadowTier::cascades` /
-      `shadow_map_size` / `shadow_distance_scale`). `FrameRenderer` detecta el cambio en `record()`,
-      reasigna solo el array de sombras y reescribe los descriptors que lo referencian en todos los
-      slots en vuelo; el log muestra "[sombras] shadow map reasignado a NxN px" y el de tier enseña
-      "[sombras] Nivel de sombras: low -> high (4 cascadas de 2048 px, alcance x1.00)".
+      Cambia la resolución real del shadow map (o salta el pase con Off). `FrameRenderer`
+      detecta el cambio en `record()`, reasigna solo esa imagen y reescribe los descriptors
+      que la referencian en todos los slots en vuelo; el log muestra
+      "[sombras] shadow map reasignado a NxN px".
 
 events:
   shadow_tier_changed:
@@ -121,14 +83,3 @@ ui:
   accordion: World → Shadows
   controls:
     - tier selector: off | low | medium | high | ultra
-
-source_of_truth:
-  rust:
-    - src/main/Engine/engine_3d/src/config_3d/shadow_cascades.rs  # cortes, fit ortogonal, snapping y tests
-    - src/main/Engine/engine_3d/src/config_3d/shadow_graphics.rs  # tabla de tiers (cascadas, px, alcance, radio)
-    - src/main/Engine/engine_3d/src/config_3d/directional_light.rs  # build_shadow_cascades + scene_shadow_params
-    - src/main/Engine/engine_3d/src/vulkan/frame.rs  # array de capas, vistas por capa, shadow_pass y layouts
-    - src/main/Engine/engine_3d/src/engine/types.rs  # SceneUniforms (espejo byte a byte del bloque Scene)
-  shaders:
-    - src/main/Engine/engine_3d/shaders/raster/shadow.vert  # escribe light_view_proj[0] (parcheado por cascada)
-    - src/main/Engine/engine_3d/shaders/raster/forward.frag  # shadow_cascade + PCF en sampler2DArrayShadow + fade
