@@ -5,7 +5,7 @@
 // siempre sean visibles encima de la escena del editor.
 // ---------------------------------------------------------------------------
 
-pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
+pub use rer_engine_core::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
 /// Overlay de vértices en CPU. El renderer Ash sube estos datos a sus propios `VkBuffer` en el
 /// frame (`FrameInput`); el motor ya no mantiene buffers gráficos por overlay.

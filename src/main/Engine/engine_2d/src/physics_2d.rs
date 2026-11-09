@@ -30,7 +30,7 @@ use std::collections::{HashMap, HashSet};
 use glam::Vec2;
 use rapier3d::control::{CharacterLength, KinematicCharacterController};
 use rapier3d::prelude::*;
-use rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE;
+use rer_engine_core::DEFAULT_GRAVITY_MAGNITUDE;
 
 use crate::ecs::{EntityId, Transform, World};
 

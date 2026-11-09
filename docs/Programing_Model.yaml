@@ -253,7 +253,7 @@ files:
 # ── Motor Rhai (invoke pattern) ───────────────────────────────────────────────
 
 rhai_runtime:
-  shared_crate: src/main/Engine/engine_shared/src/scripting/
+  shared_crate: src/main/Engine/core/src/scripting/
   invoke_pattern: |
     User-defined callbacks (on_start, update, on_press, on_keep, on_trigger_enter,
     on_scene_start, etc.) are invoked via run_ast_with_scope + explicit call suffix
@@ -269,4 +269,4 @@ rhai_runtime:
 # ── Relación con RHAI_API.yaml ────────────────────────────────────────────────
 
 rhai_reference: docs/RHAI_API.yaml
-motor_impl: src/main/Engine/engine_shared/src/scripting/
+motor_impl: src/main/Engine/core/src/scripting/

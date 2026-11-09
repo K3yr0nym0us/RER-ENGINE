@@ -23,7 +23,7 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
     }
     if let Some(name) = state.entity_display_name(id)
         && let Some(from_name) =
-            rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(&name)
+            rer_engine_core::editor_defaults::infer_entity_category_from_numbered_name(&name)
         && matches!(
             from_name,
             "environment" | "character" | "weapon" | "projectile"
@@ -39,7 +39,7 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
         if cat == "object" {
             if let Some(name) = state.entity_display_name(id)
                 && let Some(from_name) =
-                    rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(
+                    rer_engine_core::editor_defaults::infer_entity_category_from_numbered_name(
                         &name,
                     )
                 && matches!(

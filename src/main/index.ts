@@ -297,7 +297,7 @@ interface ViewportBounds {
 function engineBinaryLabel(): string {
   if (currentProjectType === '3D') return 'rer_engine_3d'
   if (currentProjectType === '2D') return 'rer_engine_2d'
-  return 'rer_engine_shared'
+  return 'rer_engine_editor'
 }
 
 /** Procesa un evento del motor (el editor Rust los reenvía desde su stdout). */

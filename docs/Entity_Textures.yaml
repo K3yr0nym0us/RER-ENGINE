@@ -14,7 +14,7 @@ updated: 2026-11-08
 status: |
   Desactualizado parcialmente y marcado como tal: el panel de UI (`EntityTexturesPanel.tsx`,
   `showTexturesTab`) y los comandos `list_entity_textures` / `set_entity_texture_*` ya NO existen
-  en el repo (ni en `engine_ipc_common` ni en el renderer). Lo que sobrevive es el mecanismo de
+  en el repo (ni en `core/src/ipc` ni en el renderer). Lo que sobrevive es el mecanismo de
   calidad gráfica por mundo (`graphics_texture_tier`, `texture_detail_distance_m` en el world del
   .save) y el snapshot persistido por entidad (`SaveEntityTextureLodSnapshot` en engine_3d/src/ipc.rs),
   usado al restaurar modelos GLB/GLTF. El resto de este documento describe el diseño original.

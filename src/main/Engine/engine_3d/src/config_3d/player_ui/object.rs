@@ -4,7 +4,7 @@ use crate::engine::State;
 use crate::gizmo::{self, GizmoVertex};
 use crate::ipc::{EngineEvent, PlayerUiObjectListItem, SavePlayerUiObjectSnapshot, send_event};
 
-use rer_engine_shared::platform::query_ctrl_held_os;
+use rer_engine_core::platform::query_ctrl_held_os;
 
 use super::config::PlayerUiObject;
 use super::config::UiHudRect;

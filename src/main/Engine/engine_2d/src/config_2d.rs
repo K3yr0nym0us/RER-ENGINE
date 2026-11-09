@@ -50,11 +50,11 @@ mod selection;
 
 #[path = "config_2d/player_ui/mod.rs"]
 pub(crate) mod player_ui;
+pub(crate) use overlay::collision_overlay_vertices;
 use overlay::{
     build_logical_area_overlay, build_pivot_edit_overlay_with_cross, build_tool_overlay,
     create_quad_xy,
 };
-pub(crate) use overlay::collision_overlay_vertices;
 
 // ── Componente exclusivo del modo 2D ─────────────────────────────────────────
 
@@ -283,8 +283,7 @@ impl State {
             } => {
                 *cursor_world = Some([wx, wy]);
                 let pts_clone = points_world.clone();
-                self.tool_overlay_buffer =
-                    build_tool_overlay(&pts_clone, *cursor_world);
+                self.tool_overlay_buffer = build_tool_overlay(&pts_clone, *cursor_world);
             }
             ActiveTool::QuickBuildPlace { cursor_world } => {
                 let (target_x, target_y) = quick_build_snap_target.unwrap_or((wx, wy));
@@ -320,8 +319,7 @@ impl State {
             } => {
                 if points_world.pop().is_some() {
                     let pts_clone = points_world.clone();
-                    self.tool_overlay_buffer =
-                        build_tool_overlay(&pts_clone, *cursor_world);
+                    self.tool_overlay_buffer = build_tool_overlay(&pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress {
                         count: points_world.len() as u32,
                     });
@@ -911,8 +909,7 @@ impl State {
                     self.create_collision_box_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
-                    self.tool_overlay_buffer =
-                        build_tool_overlay(&pts_clone, *cursor_world);
+                    self.tool_overlay_buffer = build_tool_overlay(&pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress { count });
                 }
                 true
@@ -937,8 +934,7 @@ impl State {
                     self.create_execution_area_from_points(&pts, true);
                 } else {
                     let pts_clone: Vec<[f32; 2]> = points_world.clone();
-                    self.tool_overlay_buffer =
-                        build_tool_overlay(&pts_clone, *cursor_world);
+                    self.tool_overlay_buffer = build_tool_overlay(&pts_clone, *cursor_world);
                     send_event(&EngineEvent::DrawingProgress { count });
                 }
                 true
@@ -991,7 +987,7 @@ impl State {
             .map(|n| n.to_owned())
             .unwrap_or_else(|| {
                 self.next_numbered_entity_name(
-                    rer_engine_shared::editor_defaults::entity_label::COLLIDER,
+                    rer_engine_core::editor_defaults::entity_label::COLLIDER,
                 )
             });
         let (entity, pos, scale) =
@@ -1058,7 +1054,7 @@ impl State {
             .map(|n| n.to_owned())
             .unwrap_or_else(|| {
                 self.next_numbered_entity_name(
-                    rer_engine_shared::editor_defaults::entity_label::EXECUTION_AREA,
+                    rer_engine_core::editor_defaults::entity_label::EXECUTION_AREA,
                 )
             });
         let (entity, _pos, _scale) =

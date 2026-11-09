@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use rer_engine_shared::assets::{AssetState, RER_IMPORTER_VERSION};
+use rer_engine_core::assets::{AssetState, RER_IMPORTER_VERSION};
 
 use crate::config_3d::mesh_3d::{ModelPreloadOptions, preload_model_cpu_bundle};
 use crate::config_3d::static_model_cache::ModelPreloadCpuResult;

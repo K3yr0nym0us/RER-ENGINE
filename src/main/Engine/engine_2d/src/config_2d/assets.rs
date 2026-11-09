@@ -103,7 +103,7 @@ impl State {
             .map(|n| n.to_owned())
             .unwrap_or_else(|| {
                 self.next_numbered_entity_name(
-                    rer_engine_shared::editor_defaults::entity_label::SCENARIO,
+                    rer_engine_core::editor_defaults::entity_label::SCENARIO,
                 )
             });
         let sc_id = if let Some(id) = forced_id {
@@ -210,9 +210,8 @@ impl State {
         let uv = self.atlas.pack(&img, img_w, img_h);
         let tex_idx = self.uv_rects.len();
         self.uv_rects.push(uv);
-        let background_name = self.next_numbered_entity_name(
-            rer_engine_shared::editor_defaults::entity_label::BACKGROUND,
-        );
+        let background_name = self
+            .next_numbered_entity_name(rer_engine_core::editor_defaults::entity_label::BACKGROUND);
         let bg_id = self.world.spawn(Some(&background_name));
         self.world.insert(
             bg_id,
@@ -309,7 +308,7 @@ impl State {
             .map(|n| n.to_owned())
             .unwrap_or_else(|| {
                 self.next_numbered_entity_name(
-                    rer_engine_shared::editor_defaults::entity_label::CHARACTER,
+                    rer_engine_core::editor_defaults::entity_label::CHARACTER,
                 )
             });
         let ch_id = if let Some(id) = forced_id {
@@ -426,7 +425,7 @@ impl State {
             .map(|n| n.to_owned())
             .unwrap_or_else(|| {
                 self.next_numbered_entity_name(
-                    rer_engine_shared::editor_defaults::entity_label::PROJECTILE,
+                    rer_engine_core::editor_defaults::entity_label::PROJECTILE,
                 )
             });
         let proj_id = if let Some(id) = forced_id {

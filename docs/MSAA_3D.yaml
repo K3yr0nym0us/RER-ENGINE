@@ -117,7 +117,7 @@ extended_scope:
     status: no_aplica
     reason: |
       El motor 2D sigue en wgpu y su frame es un passthrough de sprites/quad con blend alfa; además la
-      fachada `engine_shared/src/gpu.rs` está fuera de límites para este trabajo (regla de la
+      fachada `core/src/gpu.rs` está fuera de límites para este trabajo (regla de la
       migración Ash: el 2D no se toca). Si algún día se quisiera, sería cambio de la capa compartida,
       no del crate 3D.
   sampling_multisample_textures_in_taa_ssr:

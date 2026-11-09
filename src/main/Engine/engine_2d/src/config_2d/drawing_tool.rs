@@ -80,9 +80,5 @@ pub(super) fn create_mesh_from_4_points(pts: &[[f32; 2]; 4]) -> (Mesh, [f32; 3],
     // Z = -0.5: between scenarios (Z=-1) and characters (Z=0).
     let position = [cx, cy, -0.5];
     let scale = [bw, bh, 1.0];
-    (
-        upload(&vertices, &indices),
-        position,
-        scale,
-    )
+    (upload(&vertices, &indices), position, scale)
 }

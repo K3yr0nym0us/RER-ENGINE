@@ -27,14 +27,9 @@ rodio.workspace = true
 getrandom.workspace = true
 raw-window-handle.workspace = true
 gilrs.workspace = true
-# Sin la feature `gpu`: el 3D renderiza con Ash/Vulkan y no debe enlazar wgpu ni de rebote a
-# través de la fachada compartida (init GPU, superficie de presentación, atlas HUD de pantalla).
-# Con `vulkan`: el núcleo Ash (contexto, swapchain, buffers, imágenes) vive ahí y lo comparten
-# los dos motores, para no tener una segunda copia de FFI de Vulkan.
-rer-engine-shared = { path = "../engine_shared", default-features = false, features = [
-    "vulkan",
-] }
-rer-engine-ipc-common = { path = "../engine_ipc_common" }
+# `rer-engine-core` aporta el núcleo Ash (contexto, swapchain, buffers, imágenes) y los
+# tipos IPC comunes que comparten los dos motores, sin duplicar FFI de Vulkan.
+rer-engine-core = { path = "../core", features = ["vulkan"] }
 ttf-parser.workspace = true
 ab_glyph.workspace = true
 ash = "0.38"

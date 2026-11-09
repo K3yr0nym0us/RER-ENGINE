@@ -279,7 +279,7 @@ pub struct State {
     pub(crate) undo_stack: Vec<UndoAction>,
     pub(crate) redo_stack: Vec<UndoAction>,
     pub(crate) is_applying_undo: bool,
-    pub(crate) process_metrics_sampler: rer_engine_shared::process_metrics::ProcessMetricsSampler,
+    pub(crate) process_metrics_sampler: rer_engine_core::process_metrics::ProcessMetricsSampler,
     pub(crate) metrics_last_emit: Instant,
     pub(crate) metrics_frame_count: u32,
     pub(crate) last_draw_calls: u32,
@@ -428,7 +428,7 @@ impl State {
             .world
             .query::<NameComponent>()
             .map(|(_, c)| c.name.clone());
-        rer_engine_shared::editor_defaults::next_numbered_entity_label(base, names)
+        rer_engine_core::editor_defaults::next_numbered_entity_label(base, names)
     }
 
     pub(crate) fn resolve_entity_display_name(
@@ -440,7 +440,7 @@ impl State {
             .world
             .query::<NameComponent>()
             .map(|(_, c)| c.name.clone());
-        rer_engine_shared::editor_defaults::resolve_entity_display_name(
+        rer_engine_core::editor_defaults::resolve_entity_display_name(
             requested,
             default_base,
             names,

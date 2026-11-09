@@ -13,10 +13,10 @@
 //!    los `begin_rendering` consecutivos que documentó el CSM).
 
 use ash::vk;
-use rer_engine_shared::player_ui::grid::NDC_SCREEN_UNIFORM;
-use rer_engine_shared::player_ui::ndc_draw::NdcVertex;
-use rer_engine_shared::vulkan::gpu::cmd_image_barrier;
-use rer_engine_shared::vulkan::{
+use rer_engine_core::player_ui::grid::NDC_SCREEN_UNIFORM;
+use rer_engine_core::player_ui::ndc_draw::NdcVertex;
+use rer_engine_core::vulkan::gpu::cmd_image_barrier;
+use rer_engine_core::vulkan::{
     FRAMES_IN_FLIGHT, GpuBuffer, GpuImage, MemoryLocation, SharedGpu, VulkanError,
 };
 
@@ -668,7 +668,7 @@ impl Renderer {
 
     pub(crate) fn render(
         &mut self,
-        frame: &rer_engine_shared::vulkan::FrameTarget,
+        frame: &rer_engine_core::vulkan::FrameTarget,
         input: FrameInput<'_>,
     ) -> Result<(), VulkanError> {
         // El device se toma de una copia del `SharedGpu`: así el préstamo no ata `*self` y se

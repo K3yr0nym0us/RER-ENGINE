@@ -645,8 +645,7 @@ impl State {
                         }
                         "quick_build_place" => {
                             self.active_tool = ActiveTool::QuickBuildPlace { cursor_world: None };
-                            self.tool_overlay_buffer =
-                                crate::gizmo::build_from_vertices(&[]);
+                            self.tool_overlay_buffer = crate::gizmo::build_from_vertices(&[]);
                             // Cargar entidad fantasma si se proporcionaron datos del blueprint
                             if let (Some(path), Some(kind), Some(scale)) = (
                                 preview_path.as_deref(),
@@ -714,7 +713,7 @@ impl State {
                 self.export_save_snapshot();
             }
             EngineCommand::Common(EngineCommandCommon::GetDefaultSceneName { id }) => {
-                let name = rer_engine_shared::editor_defaults::default_scene_name(id);
+                let name = rer_engine_core::editor_defaults::default_scene_name(id);
                 send_event(&EngineEvent::DefaultSceneNameReady { id, name });
             }
             EngineCommand::Common(EngineCommandCommon::SetPlayerUiEditMode {

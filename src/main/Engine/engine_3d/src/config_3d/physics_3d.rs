@@ -7,7 +7,7 @@ use rapier3d::na::Unit;
 use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::prelude::*;
 
-use rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE;
+use rer_engine_core::DEFAULT_GRAVITY_MAGNITUDE;
 
 use crate::config_3d::WorldBounds3D;
 use crate::ecs::{EntityId, Transform, World};

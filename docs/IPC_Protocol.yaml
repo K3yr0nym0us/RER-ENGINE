@@ -19,9 +19,9 @@ summary: |
   stdin del proceso hijo (una línea JSON por comando).
   El motor escribe eventos en stdout; main los reenvía al renderer como engine:event.
 
-  **No hay un tercer contrato IPC:** rer_engine_shared es crate de biblioteca
-  (GPU, overlay, scripting, .rerasset, métricas, helpers Player UI). El binario
-  homónimo solo imprime un JSON de estado y no participa en engine:cmd.
+  **No hay un tercer contrato IPC:** rer_engine_core es crate de biblioteca
+  (GPU, overlay, scripting, .rerasset, métricas, helpers Player UI) y no participa
+  en engine:cmd.
 
 principle:
   engine_first: |
@@ -29,7 +29,7 @@ principle:
     No reimplementar lógica espacial, clasificación de entidades ni undo en TypeScript.
   per_motor_contract: |
     Cada binario ensambla `EngineCommand` en engine_command.rs:
-      - `Common(EngineCommandCommon)` — crate rer-engine-ipc-common (stdin JSON `cmd`)
+      - `Common(EngineCommandCommon)` — crate rer-engine-core (stdin JSON `cmd`)
       - `Only2d` / `Only3d` — variantes exclusivas en engine_command.rs del motor
     ipc.rs reexporta tipos y eventos; ya no duplica el enum monolítico.
   main_gate: |
@@ -46,17 +46,16 @@ principle:
     window.engine.send sigue disponible como unión + send2d/send3d helpers.
     Renderer: engine/engineSend.ts — send2d, send3d, sendMotor(projectType, cmd), createEngineSend.
 
-engine_shared_crate:
-  role: biblioteca Rust (rer-engine-shared), dependencia de engine_2d y engine_3d
+core_crate:
+  role: biblioteca Rust (rer-engine-core), dependencia de engine_2d y engine_3d
   not_ipc: |
     No lee stdin ni define EngineCommand. Código compartido: gpu, overlay winit,
     scripting Rhai, formato .rerasset, player_ui (macros), process_metrics, etc.
-  binary_rer_engine_shared: |
-    Artefacto empaquetado en extraResources; main.rs imprime un JSON de prueba.
-    Electron **no** lo usa como motor del viewport (spawn siempre 2d o 3d según projectType).
+  no_binary: |
+    Es solo biblioteca: no produce ni empaqueta un binario propio.
   relation_to_shared_commands: |
     Los comandos "compartidos" del catálogo IPC son los de `EngineCommandCommon`
-    en `src/main/Engine/engine_ipc_common` (serde tag `cmd`). Cada motor despacha
+    en `src/main/Engine/core/src/ipc` (serde tag `cmd`). Cada motor despacha
     `EngineCommand::Common(...)` en commands.rs; la lógica de ejecución sigue en
     el binario correspondiente.
 
@@ -252,7 +251,7 @@ key_files:
   main_startup_scene: src/main/engine/engineStartupScene.ts
   main_bridge: src/main/index.ts
   preload: src/preload/index.ts
-  shared_library: src/main/Engine/engine_shared/   # sin IPC stdin
+  shared_library: src/main/Engine/core/   # sin IPC stdin
   ts_types: src/shared-types/types.ts
   ts_command_catalog: src/shared-types/engineCommandCatalog.ts
   ts_command_types: src/shared-types/engineCommands.ts
@@ -289,6 +288,6 @@ patterns:
 do_not:
   - Duplicar enums de comandos solo en TypeScript sin actualizar ipc.rs y el catálogo main
   - Enviar comandos 2D al binario 3D (o viceversa); main los rechaza y el otro ipc.rs no debe aceptarlos
-  - Asumir que rer_engine_shared escucha engine:cmd (es biblioteca, no motor del viewport)
+  - Asumir que rer_engine_core escucha engine:cmd (es biblioteca, no motor del viewport)
   - Enviar funciones o JSX por IPC; solo JSON plano
   - Leer RER_GPU_BACKEND; Electron la elimina al spawn del motor

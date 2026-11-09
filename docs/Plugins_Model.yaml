@@ -10,7 +10,7 @@ summary: |
   Estado persistido en userData/plugins/state.json.
 
 principles:
-  - Cero cambios en engine_2d / engine_3d / engine_shared para plugins
+  - Cero cambios en engine_2d / engine_3d / core para plugins
   - Descarga on-demand tras confirmación del usuario
   - IPC bajo prefijo plugins:* en Electron main
 

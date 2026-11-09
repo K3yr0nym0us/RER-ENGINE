@@ -8,7 +8,7 @@
 use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
-use rer_engine_shared::wgpu_surface::SurfacePresentError;
+use rer_engine_core::surface::SurfacePresentError;
 
 use crate::vulkan::{FrameInput, GizmoBatch, GridBatch, HudBatch, NdcOverlay, Vulkan2d};
 
@@ -110,7 +110,7 @@ impl State {
                 crate::config_2d::player_ui::text_render::rebuild_caret_buffer(self, edit_id);
             }
 
-            let tool_overlay: &[rer_engine_shared::player_ui::ndc_draw::NdcVertex] =
+            let tool_overlay: &[rer_engine_core::player_ui::ndc_draw::NdcVertex] =
                 if !self.preview_playing && vp_2d.is_some() {
                     &self.tool_overlay_buffer.vertices
                 } else {

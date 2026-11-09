@@ -13,7 +13,7 @@ updated: 2026-06-14
 
 principle:
   scope: personajes (character / player), no escenarios ni objetos estáticos
-  owner_runtime: motor + scripting compartido (engine_shared/scripting)
+  owner_runtime: motor + scripting compartido (core/scripting)
   owner_ui: acordeón Controls del sidebar
 
 ui:
@@ -51,7 +51,7 @@ defaults:
 key_files:
   ui: src/renderer/src/pages/EngineView/components/sidebar/ControlsAccordion/
   hooks: src/renderer/src/hooks/useControlBindings*.ts
-  scripting: src/main/Engine/engine_shared/src/scripting/
+  scripting: src/main/Engine/core/src/scripting/
 
 do_not:
   - Asignar controles a entidades scenario / sun / ground

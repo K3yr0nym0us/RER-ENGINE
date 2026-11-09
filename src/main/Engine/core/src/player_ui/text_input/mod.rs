@@ -6,22 +6,22 @@ pub mod types;
 pub use types::PlayerUiTextDrag;
 
 /// Genera el bloque `impl State` de edición HUD. `$pu` = módulo `player_ui` del motor; `$ipc` = módulo IPC.
-/// `use crate::engine::State` refers to the calling engine crate (2d/3d), not `engine_shared`.
+/// `use crate::engine::State` refers to the calling engine crate (2d/3d), not `core`.
 #[allow(clippy::crate_in_macro_def)]
 #[macro_export]
 macro_rules! impl_player_ui_text_input {
     ($pu:path, $ipc:path) => {
         use std::time::Instant;
 
-        use rer_engine_shared::player_ui::config::{
+        use rer_engine_core::player_ui::config::{
             self, apply_resize_free, apply_resize_locked_aspect, HasUiHudRect, PlayerUiButton,
             PlayerUiImage, PlayerUiResizeHandle, PlayerUiTextBox, UiHudRect, BOX_STACK_GAP,
         };
-        use rer_engine_shared::player_ui::grid::{
+        use rer_engine_core::player_ui::grid::{
             player_ui_grid_steps, snap_ndc_point_to_grid, snap_ui_hud_rect_to_grid,
         };
-        use rer_engine_shared::platform::{query_ctrl_held_os, query_shift_held_os};
-        use rer_engine_shared::player_ui::text_input::types::{
+        use rer_engine_core::platform::{query_ctrl_held_os, query_shift_held_os};
+        use rer_engine_core::player_ui::text_input::types::{
             PlayerUiHitTarget, PlayerUiTextDrag as PuTextDrag, CARET_BLINK_ON_MS, CARET_BLINK_PERIOD_MS,
             DEFAULT_BOX_H, DEFAULT_BOX_W, DOUBLE_CLICK, DRAG_THRESHOLD_PX, MAX_TEXT_CHARS,
             MIN_BOX_H, MIN_BOX_W,
@@ -112,7 +112,7 @@ impl State {
 
         let index = self.player_ui_text_boxes.get(&key).map_or(0, |v| v.len());
         let center_y = 0.28_f32 - index as f32 * BOX_STACK_GAP;
-        let z_index = rer_engine_shared::player_ui::hud_layers::next_z_index_for_screen(
+        let z_index = rer_engine_core::player_ui::hud_layers::next_z_index_for_screen(
             self.player_ui_text_boxes.get(&key).map(|v| v.as_slice()),
             self.player_ui_buttons.get(&key).map(|v| v.as_slice()),
             self.player_ui_images.get(&key).map(|v| v.as_slice()),
@@ -235,7 +235,7 @@ impl State {
     }
 
     pub(crate) fn pixel_to_ndc(&self, px: f32, py: f32) -> [f32; 2] {
-        rer_engine_shared::player_ui::viewport::pixel_to_ndc(
+        rer_engine_core::player_ui::viewport::pixel_to_ndc(
             self.size.width.max(1) as f32,
             self.size.height.max(1) as f32,
             px,
@@ -258,7 +258,7 @@ impl State {
         self.player_ui_images.get_mut(&key)
     }
 
-    fn player_ui_objects_mut(&mut self) -> Option<&mut Vec<rer_engine_shared::player_ui::config::PlayerUiObject>> {
+    fn player_ui_objects_mut(&mut self) -> Option<&mut Vec<rer_engine_core::player_ui::config::PlayerUiObject>> {
         let key = self.player_ui_text_key()?;
         self.player_ui_objects.get_mut(&key)
     }
@@ -324,7 +324,7 @@ impl State {
                 .map(|key| {
                     self.player_ui_text_boxes
                         .get(&key)
-                        .is_some_and(|boxes| rer_engine_shared::player_ui::text_input::hit_test::hit_test_box(boxes, edit_id, ndc))
+                        .is_some_and(|boxes| rer_engine_core::player_ui::text_input::hit_test::hit_test_box(boxes, edit_id, ndc))
                 })
                 .unwrap_or(false);
             if !hit {
@@ -575,7 +575,7 @@ impl State {
                         img.center_x = start_center[0] + dx;
                         img.center_y = start_center[1] + dy;
                         if snap {
-                            let (cx, cy) = rer_engine_shared::player_ui::text_input::hit_test::snap_player_ui_element_move(
+                            let (cx, cy) = rer_engine_core::player_ui::text_input::hit_test::snap_player_ui_element_move(
                                 img.center_x,
                                 img.center_y,
                                 img.width,
@@ -669,7 +669,7 @@ impl State {
                         b.center_x = start_center[0] + dx;
                         b.center_y = start_center[1] + dy;
                         if snap {
-                            let (cx, cy) = rer_engine_shared::player_ui::text_input::hit_test::snap_player_ui_element_move(
+                            let (cx, cy) = rer_engine_core::player_ui::text_input::hit_test::snap_player_ui_element_move(
                                 b.center_x,
                                 b.center_y,
                                 b.width,
@@ -695,7 +695,7 @@ impl State {
                         b.center_x = start_center[0] + dx;
                         b.center_y = start_center[1] + dy;
                         if snap {
-                            let (cx, cy) = rer_engine_shared::player_ui::text_input::hit_test::snap_player_ui_element_move(
+                            let (cx, cy) = rer_engine_core::player_ui::text_input::hit_test::snap_player_ui_element_move(
                                 b.center_x,
                                 b.center_y,
                                 b.width,
@@ -717,7 +717,7 @@ impl State {
             } => {
                 if let Some(boxes) = self.player_ui_boxes_mut() {
                     if let Some(b) = Self::find_box_by_id_mut(boxes, id) {
-                        rer_engine_shared::player_ui::text_input::hit_test::apply_resize(b, &start_box, handle, start_mouse, ndc);
+                        rer_engine_core::player_ui::text_input::hit_test::apply_resize(b, &start_box, handle, start_mouse, ndc);
                     }
                 }
             }
@@ -730,7 +730,7 @@ impl State {
                 let dy = ndc[1] - start_mouse[1];
                 let (step_x, step_y) = player_ui_grid_steps(vw, vh);
                 let (ox, oy) = if snap {
-                    let c0 = rer_engine_shared::player_ui::geometry::polygon_centroid(&start_vertices);
+                    let c0 = rer_engine_core::player_ui::geometry::polygon_centroid(&start_vertices);
                     let target = [c0[0] + dx, c0[1] + dy];
                     let snapped = snap_ndc_point_to_grid(target[0], target[1], step_x, step_y);
                     (snapped[0] - c0[0], snapped[1] - c0[1])
@@ -922,8 +922,8 @@ impl State {
         let mut updated: Option<String> = None;
         if let Some(boxes) = self.player_ui_boxes_mut() {
             if let Some(b) = Self::find_box_by_id_mut(boxes, id) {
-                let start = rer_engine_shared::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret - 1);
-                let end = rer_engine_shared::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret);
+                let start = rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret - 1);
+                let end = rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret);
                 b.text.replace_range(start..end, "");
                 updated = Some(b.text.clone());
             }
@@ -947,8 +947,8 @@ impl State {
                 if caret >= char_count {
                     return;
                 }
-                let start = rer_engine_shared::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret);
-                let end = rer_engine_shared::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret + 1);
+                let start = rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret);
+                let end = rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret + 1);
                 b.text.replace_range(start..end, "");
                 updated = Some(b.text.clone());
             }
@@ -980,7 +980,7 @@ impl State {
         let mut inserted_chars = 0usize;
         if let Some(boxes) = self.player_ui_boxes_mut() {
             if let Some(b) = Self::find_box_by_id_mut(boxes, id) {
-                let byte_start = rer_engine_shared::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret);
+                let byte_start = rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(&b.text, caret);
                 let mut chunk = String::new();
                 for ch in s.chars() {
                     if ch == '\n' || ch == '\r' || ch == '\u{8}' || ch == '\u{7f}' {
@@ -1097,31 +1097,31 @@ impl State {
         );
     }
 
-    fn hit_test_text_handle(&self, selected_id: u32, ndc: [f32; 2]) -> Option<rer_engine_shared::player_ui::config::PlayerUiResizeHandle> {
+    fn hit_test_text_handle(&self, selected_id: u32, ndc: [f32; 2]) -> Option<rer_engine_core::player_ui::config::PlayerUiResizeHandle> {
         let key = self.player_ui_text_key()?;
         let boxes = self.player_ui_text_boxes.get(&key)?;
-        rer_engine_shared::player_ui::text_input::hit_test::hit_test_text_handle(boxes, selected_id, ndc)
+        rer_engine_core::player_ui::text_input::hit_test::hit_test_text_handle(boxes, selected_id, ndc)
     }
 
-    fn hit_test_image_handle(&self, selected_id: u32, ndc: [f32; 2]) -> Option<rer_engine_shared::player_ui::config::PlayerUiResizeHandle> {
+    fn hit_test_image_handle(&self, selected_id: u32, ndc: [f32; 2]) -> Option<rer_engine_core::player_ui::config::PlayerUiResizeHandle> {
         let key = self.player_ui_text_key()?;
         let list = self.player_ui_images.get(&key)?;
-        rer_engine_shared::player_ui::text_input::hit_test::hit_test_image_handle(list, selected_id, ndc)
+        rer_engine_core::player_ui::text_input::hit_test::hit_test_image_handle(list, selected_id, ndc)
     }
 
-    fn hit_test_button_handle(&self, selected_id: u32, ndc: [f32; 2]) -> Option<rer_engine_shared::player_ui::config::PlayerUiResizeHandle> {
+    fn hit_test_button_handle(&self, selected_id: u32, ndc: [f32; 2]) -> Option<rer_engine_core::player_ui::config::PlayerUiResizeHandle> {
         let key = self.player_ui_text_key()?;
         let list = self.player_ui_buttons.get(&key)?;
-        rer_engine_shared::player_ui::text_input::hit_test::hit_test_button_handle(list, selected_id, ndc)
+        rer_engine_core::player_ui::text_input::hit_test::hit_test_button_handle(list, selected_id, ndc)
     }
 
-    fn hit_test_top_hud(&self, ndc: [f32; 2]) -> Option<rer_engine_shared::player_ui::text_input::types::PlayerUiHitTarget> {
+    fn hit_test_top_hud(&self, ndc: [f32; 2]) -> Option<rer_engine_core::player_ui::text_input::types::PlayerUiHitTarget> {
         let key = self.player_ui_text_key()?;
         let texts = self.player_ui_text_boxes.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
         let buttons = self.player_ui_buttons.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
         let images = self.player_ui_images.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
         let objects = self.player_ui_objects.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
-        rer_engine_shared::player_ui::text_input::hit_test::hit_test_top_hud(texts, buttons, images, objects, ndc)
+        rer_engine_core::player_ui::text_input::hit_test::hit_test_top_hud(texts, buttons, images, objects, ndc)
     }}
     };
 }

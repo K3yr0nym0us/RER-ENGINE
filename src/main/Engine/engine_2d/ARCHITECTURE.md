@@ -5,15 +5,15 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 ## Relacion con `engine_3d`
 
 - `rer_engine_2d` y `rer_engine_3d` son **binarios distintos** con runtimes distintos.
-- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`engine_shared`), no un enum de comandos unico ni la logica de juego.
+- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`core`), no un enum de comandos unico ni la logica de juego.
 - Contrato por motor: `engine_2d/src/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: lo que el producto 3D necesitaba del stack 2D ya se extrajo; nuevas funciones 2D se implementan solo aqui (`config_2d/`, `physics_2d.rs`, `engine/`).
 - Este documento no describe ni prescribe comportamiento del motor 3D.
 
 ## Politica GPU
 
-- Perfil **TwoD**: siempre **Vulkan** mediante Ash (`rer_engine_shared::vulkan::SharedGpu`). El crate no depende de wgpu.
-- Núcleo compartido: `engine_shared::vulkan` (instancia, device, swapchain, `FrameTarget`, barreras, `GpuBuffer`/`GpuImage`); el 2D añade su renderer en `src/vulkan/` (scene target + atlas + pipelines).
+- Perfil **TwoD**: siempre **Vulkan** mediante Ash (`rer_engine_core::vulkan::SharedGpu`). El crate no depende de wgpu.
+- Núcleo compartido: `rer_engine_core::vulkan` (instancia, device, swapchain, `FrameTarget`, barreras, `GpuBuffer`/`GpuImage`); el 2D añade su renderer en `src/vulkan/` (scene target + atlas + pipelines).
 - **No** se usa OpenGL, EGL ni selección de backend por entorno. El 2D pide `VulkanOptions::default()` (sin ray tracing).
 - Inicializacion: `engine::State::new` → `vulkan::Vulkan2d::new(window)`; fallo → `EngineEvent::Error` (sin `panic`, sin `ready`).
 - **Una sola convención de Y** en todo el repo: viewport con altura negativa (y = `extent.height`, height = `-extent.height`); el blit del scene target muestrea `vec2(v_uv.x, 1.0 - v_uv.y)`.
@@ -21,16 +21,16 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 
 ## Ventana overlay (integracion con Electron)
 
-- Arranque: `--overlay <parent_id> <x> <y> <w> <h> [rel_x rel_y]` (alias legacy `--embed`). Ver `engine_shared::overlay`.
+- Arranque: `--overlay <parent_id> <x> <y> <w> <h> [rel_x rel_y]` (alias legacy `--embed`). Ver `rer_engine_core::overlay`.
 - **No** hay reparent (`with_embed_parent_window` eliminado): ventana hermana alineada por coordenadas de pantalla.
-- Sincronizacion: `engine_shared::platform` (position-tracker Win32).
+- Sincronizacion: `rer_engine_core::platform` (position-tracker Win32).
 - IPC `set_bounds` redimensiona y actualiza offset del tracker.
 
 ## Archivos fuente de verdad
 
 El runtime real 2D vive principalmente en estos archivos:
 
-- `engine_shared/src/vulkan/`: núcleo Ash compartido (contexto, swapchain, buffers/imágenes, barreras).
+- `core/src/vulkan/`: núcleo Ash compartido (contexto, swapchain, buffers/imágenes, barreras).
 - `src/vulkan/`: renderer Ash del 2D (escena offscreen, blit, atlas, rejilla, overlays y HUD).
 - `src/texture.rs`: shelf packing del atlas de sprites + subida a la imagen Vulkan.
 - `src/engine/mod.rs`: estado central del runtime, caches, undo/redo, scripting y flags del editor.
@@ -69,7 +69,7 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 - Callbacks Rhai usan **invoke pattern** (`run_ast_with_scope` + `update!(entity, dt);`, etc.) para que `engine` del preámbulo sea visible dentro de `fn update` / `on_trigger_enter` / controles.
 - **2D controles:** `engine.move_control(id, speed)` — el motor guarda la tecla del binding en `ScriptApiContext.control_binding_key`; no comparar `control_key` en el script.
 - **Triggers:** `on_trigger_enter(trigger, actor)` en execution areas.
-- Referencia API: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml). Implementación: `engine_shared/src/scripting/`.
+- Referencia API: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml). Implementación: `core/src/scripting/`.
 
 ## Atlas de texturas
 

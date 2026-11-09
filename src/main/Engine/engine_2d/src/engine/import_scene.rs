@@ -36,7 +36,7 @@ impl State {
         let gravity = payload
             .world
             .gravity
-            .unwrap_or(rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE);
+            .unwrap_or(rer_engine_core::DEFAULT_GRAVITY_MAGNITUDE);
         self.handle_command(EngineCommand::Common(EngineCommandCommon::SetGravity {
             gravity,
         }));

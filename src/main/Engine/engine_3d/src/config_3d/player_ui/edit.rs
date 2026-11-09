@@ -8,7 +8,7 @@ use crate::gizmo::{self, GizmoBuffer, GizmoVertex};
 use crate::ipc::{EngineEvent, send_event};
 use crate::vulkan::SharedGpu;
 
-pub(crate) use rer_engine_shared::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
+pub(crate) use rer_engine_core::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
 
 /// Snapshot del viewport de editor al entrar en ediciÃƒÂ³n UI.
 #[derive(Clone, Copy, Debug)]

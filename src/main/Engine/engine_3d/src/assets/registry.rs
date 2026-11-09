@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use rer_engine_shared::assets::AssetState;
+use rer_engine_core::assets::AssetState;
 
 #[derive(Clone, Debug)]
 pub struct ImportedModelEntry {

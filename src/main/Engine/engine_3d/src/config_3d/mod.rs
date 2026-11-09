@@ -1036,7 +1036,7 @@ impl State {
         }
 
         let gizmo_scale = self.transform_gizmo_world_scale().unwrap_or(1.0);
-        let len = rer_engine_shared::gizmo::axis_world_length(gizmo_scale);
+        let len = rer_engine_core::gizmo::axis_world_length(gizmo_scale);
         let axis_starts = self
             .transform_gizmo_axis_start_mesh()
             .unwrap_or([0.0, 0.0, 0.0]);

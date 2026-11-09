@@ -215,7 +215,7 @@ impl State {
         let imported_ready = self
             .imported_model_registry
             .get(&cache_key_base)
-            .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Ready);
+            .is_some_and(|e| e.state == rer_engine_core::assets::AssetState::Ready);
         let library_path = self.model_library_path_for(&asset_path);
         let catalog_path = self.model_path_key(&library_path);
         let is_gltf_source = crate::config_3d::is_gltf_model_path(&catalog_path)

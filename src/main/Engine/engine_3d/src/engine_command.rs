@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 
-pub use rer_engine_ipc_common::EngineCommandCommon;
+pub use rer_engine_core::ipc::EngineCommandCommon;
 
 use crate::ipc::{BlueprintPlacementMeta, PlayCameraFollowMode};
 
@@ -99,7 +99,7 @@ pub enum EngineCommand3dOnly {
         #[serde(default)]
         position: Option<[f32; 3]>,
         #[serde(default)]
-        position_axis: Option<rer_engine_ipc_common::AxisValue>,
+        position_axis: Option<rer_engine_core::ipc::AxisValue>,
         #[serde(default)]
         yaw: Option<f32>,
         #[serde(default)]

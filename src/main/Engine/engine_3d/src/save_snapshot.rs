@@ -8,7 +8,7 @@ use crate::save_entity_3d::{
     build_config_camera_snapshot, build_config_editor_camera_snapshot, build_entity_3d_snapshot,
     build_player_snapshot,
 };
-use rer_engine_shared::assets::AssetState;
+use rer_engine_core::assets::AssetState;
 
 impl State {
     pub(crate) fn export_save_snapshot(&self) {

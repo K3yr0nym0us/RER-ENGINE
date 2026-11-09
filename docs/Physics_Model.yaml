@@ -21,7 +21,7 @@ principle:
   backend: |
     Ambos binarios usan rapier3d. En 2D los ejes están restringidos a XY
     (dinámica estrictamente plana). Gravedad en -Y con magnitud positiva
-    configurable (DEFAULT_GRAVITY_MAGNITUDE = 15.0 u/s² en engine_shared).
+    configurable (DEFAULT_GRAVITY_MAGNITUDE = 15.0 u/s² en core).
 
 # ---------------------------------------------------------------------------
 # Mundo (gravedad y límites)
@@ -29,7 +29,7 @@ principle:
 
 world_config:
   gravity:
-    default: 15.0   # rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE
+    default: 15.0   # rer_engine_core::DEFAULT_GRAVITY_MAGNITUDE
     axis: Y negativo (hacia abajo en ambos motores)
     ui: WorldAccordion → WorldPhysicsAccordion (slider 0–50 u/s²)
     ipc: set_gravity { gravity }

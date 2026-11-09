@@ -1,1 +1,1 @@
-pub(crate) use rer_engine_shared::player_ui::ndc_draw::*;
+pub(crate) use rer_engine_core::player_ui::ndc_draw::*;

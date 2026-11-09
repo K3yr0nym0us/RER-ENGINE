@@ -406,7 +406,7 @@ impl State {
                 let proj_h = self.active_projectiles[idx].hardness;
                 let bounces_left = self.active_projectiles[idx].bounces_left;
                 let bounce_loss = self.active_projectiles[idx].bounce_speed_loss;
-                let outcome = rer_engine_shared::projectile_hardness::resolve_hardness_hit(
+                let outcome = rer_engine_core::projectile_hardness::resolve_hardness_hit(
                     proj_h,
                     entity_h,
                     bounces_left,
@@ -414,7 +414,7 @@ impl State {
                 );
 
                 match outcome {
-                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Ignore => {
+                    rer_engine_core::projectile_hardness::HardnessHitOutcome::Ignore => {
                         if let Some(id) = hit_entity {
                             let exclude = &mut self.active_projectiles[idx].exclude_entities;
                             if !exclude.contains(&id) {
@@ -425,7 +425,7 @@ impl State {
                         cursor = pos + dir * 0.01;
                         hits.push((entity_id, hit_entity, pos, false));
                     }
-                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Pierce {
+                    rer_engine_core::projectile_hardness::HardnessHitOutcome::Pierce {
                         speed_retain,
                     } => {
                         if let Some(id) = hit_entity {
@@ -441,7 +441,7 @@ impl State {
                         cursor = pos + dir * 0.01;
                         hits.push((entity_id, hit_entity, pos, false));
                     }
-                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Bounce {
+                    rer_engine_core::projectile_hardness::HardnessHitOutcome::Bounce {
                         speed_retain,
                     } => {
                         let v = self.active_projectiles[idx].velocity;
@@ -460,7 +460,7 @@ impl State {
                         hits.push((entity_id, hit_entity, pos, true));
                         break;
                     }
-                    rer_engine_shared::projectile_hardness::HardnessHitOutcome::Stop => {
+                    rer_engine_core::projectile_hardness::HardnessHitOutcome::Stop => {
                         cursor = pos;
                         remaining = Vec3::ZERO;
                         hits.push((entity_id, hit_entity, pos, false));

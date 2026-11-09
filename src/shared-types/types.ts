@@ -49,7 +49,7 @@ export interface ProjectConfig {
   gameStyle: GameStyle
 }
 
-/** Debe coincidir con `DEFAULT_GRAVITY_MAGNITUDE` en `engine_shared` (Rust). */
+/** Debe coincidir con `DEFAULT_GRAVITY_MAGNITUDE` en `core` (Rust). */
 export const DEFAULT_GRAVITY_MAGNITUDE = 15
 
 /** Rutas simbólicas de entidad (no son archivos en disco). */

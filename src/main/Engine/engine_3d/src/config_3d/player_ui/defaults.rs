@@ -8,7 +8,7 @@ use super::config::PlayerUiObject;
 impl State {
     /// Pantalla HUD + crosshair si el proyecto 3D aún no tiene Player UI (idempotente).
     pub(crate) fn ensure_default_3d_player_ui(&mut self) {
-        use rer_engine_shared::editor_defaults::player_ui::{
+        use rer_engine_core::editor_defaults::player_ui::{
             DEFAULT_3D_PLAYER_UI_SCREEN_ID, DEFAULT_3D_PLAYER_UI_SCREEN_NAME,
             DEFAULT_CROSSHAIR_FILL, DEFAULT_CROSSHAIR_H_OBJECT_ID, DEFAULT_CROSSHAIR_V_OBJECT_ID,
             default_crosshair_horizontal_vertices, default_crosshair_vertical_vertices,
@@ -56,7 +56,7 @@ impl State {
 }
 
 pub(crate) fn default_3d_project_ui_screens() -> Vec<SaveUiScreenSnapshot> {
-    use rer_engine_shared::editor_defaults::player_ui::{
+    use rer_engine_core::editor_defaults::player_ui::{
         DEFAULT_3D_PLAYER_UI_SCREEN_ID, DEFAULT_3D_PLAYER_UI_SCREEN_NAME,
     };
     vec![SaveUiScreenSnapshot {
@@ -67,7 +67,7 @@ pub(crate) fn default_3d_project_ui_screens() -> Vec<SaveUiScreenSnapshot> {
 }
 
 pub(crate) fn default_3d_project_ui_objects() -> Vec<SavePlayerUiObjectSnapshot> {
-    use rer_engine_shared::editor_defaults::player_ui::{
+    use rer_engine_core::editor_defaults::player_ui::{
         DEFAULT_3D_PLAYER_UI_SCREEN_ID, DEFAULT_CROSSHAIR_FILL, DEFAULT_CROSSHAIR_H_OBJECT_ID,
         DEFAULT_CROSSHAIR_V_OBJECT_ID, default_crosshair_horizontal_vertices,
         default_crosshair_vertical_vertices,

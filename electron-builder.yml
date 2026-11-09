@@ -16,7 +16,6 @@ extraResources:
     filter:
       - rer_engine_2d*
       - rer_engine_3d*
-      - rer_engine_shared*
       - rer_engine_editor*
   - from: src/main/Engine/Models
     to: engine/Models

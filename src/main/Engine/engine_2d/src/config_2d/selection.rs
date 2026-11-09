@@ -173,8 +173,8 @@ impl State {
 
         let len = self
             .transform_gizmo_world_scale_2d()
-            .map(rer_engine_shared::gizmo::axis_world_length)
-            .unwrap_or(rer_engine_shared::gizmo::GIZMO_MESH_AXIS_LENGTH);
+            .map(rer_engine_core::gizmo::axis_world_length)
+            .unwrap_or(rer_engine_core::gizmo::GIZMO_MESH_AXIS_LENGTH);
         const THRESH: f32 = 16.0;
         let dirs = [GlamVec3::X, GlamVec3::Y];
 

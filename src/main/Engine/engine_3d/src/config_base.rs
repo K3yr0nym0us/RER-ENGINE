@@ -310,7 +310,7 @@ impl State {
         let mut spawn_block =
             |position: [f32; 3], scale: [f32; 3], entity_category: Option<&str>| {
                 let base_label =
-                    rer_engine_shared::editor_defaults::entity_label_for_category(entity_category);
+                    rer_engine_core::editor_defaults::entity_label_for_category(entity_category);
                 let label = self.next_numbered_entity_name(base_label);
                 let id = self.world.spawn(Some(&label));
                 self.world.insert(
@@ -378,7 +378,7 @@ impl State {
 
         send_load_progress("Plantilla 3D lista", None, None);
         log::info!("Plantilla 3D por defecto lista");
-        let scene_name = rer_engine_shared::editor_defaults::default_scene_name(1);
+        let scene_name = rer_engine_core::editor_defaults::default_scene_name(1);
         self.editor_scenes_init_from_boot(&scene_name);
         send_event(&EngineEvent::Ready {
             gravity: self.physics.gravity_magnitude(),
@@ -716,10 +716,8 @@ impl State {
         position: [f32; 3],
         scale: [f32; 3],
     ) -> EntityId {
-        let label = self.resolve_entity_display_name(
-            name,
-            rer_engine_shared::editor_defaults::entity_label::BOX,
-        );
+        let label = self
+            .resolve_entity_display_name(name, rer_engine_core::editor_defaults::entity_label::BOX);
         let (block_mesh_idx, block_tex_idx) = self.ensure_editor_box_gpu_assets();
 
         let id = self.world.spawn(Some(&label));
@@ -771,7 +769,7 @@ impl State {
             });
             return;
         }
-        let label = rer_engine_shared::editor_defaults::entity_label::PLAYER.to_string();
+        let label = rer_engine_core::editor_defaults::entity_label::PLAYER.to_string();
         let id = self.world.spawn(Some(&label));
         log::info!("[load_character] jugador placeholder creado (id={id})");
         let feet = self.camera.target;

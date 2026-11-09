@@ -460,9 +460,9 @@ impl State {
                         let state = entry.model_id.as_ref().and_then(|id| {
                             self.imported_model_registry.get(id).map(|e| {
                                 match e.state {
-                                    rer_engine_shared::assets::AssetState::Importing => "importing",
-                                    rer_engine_shared::assets::AssetState::Ready => "ready",
-                                    rer_engine_shared::assets::AssetState::Failed => "failed",
+                                    rer_engine_core::assets::AssetState::Importing => "importing",
+                                    rer_engine_core::assets::AssetState::Ready => "ready",
+                                    rer_engine_core::assets::AssetState::Failed => "failed",
                                 }
                                 .to_string()
                             })
@@ -1422,7 +1422,7 @@ impl State {
                 self.export_save_snapshot();
             }
             EngineCommand::Common(EngineCommandCommon::GetDefaultSceneName { id }) => {
-                let name = rer_engine_shared::editor_defaults::default_scene_name(id);
+                let name = rer_engine_core::editor_defaults::default_scene_name(id);
                 send_event(&EngineEvent::DefaultSceneNameReady { id, name });
             }
             EngineCommand::Only3d(EngineCommand3dOnly::CreateEditorScene { name }) => {

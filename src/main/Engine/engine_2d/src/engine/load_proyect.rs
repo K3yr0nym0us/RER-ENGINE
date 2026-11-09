@@ -856,7 +856,7 @@ fn build_import_scene_payload(
             gravity: Some(
                 view.world
                     .gravity
-                    .unwrap_or(rer_engine_shared::DEFAULT_GRAVITY_MAGNITUDE),
+                    .unwrap_or(rer_engine_core::DEFAULT_GRAVITY_MAGNITUDE),
             ),
             target_fps,
         },
@@ -1141,7 +1141,7 @@ impl State {
         send_load_progress("Plantilla 2D lista", None, None);
         log::info!("Plantilla 2D por defecto lista");
 
-        let scene_name = rer_engine_shared::editor_defaults::default_scene_name(1);
+        let scene_name = rer_engine_core::editor_defaults::default_scene_name(1);
         let camera2d = self.camera_2d.as_ref().map(|c| ProjectLoaded2dCamera2d {
             x: c.x,
             y: c.y,

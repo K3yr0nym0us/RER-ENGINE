@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 
-pub use rer_engine_ipc_common::EngineCommandCommon;
+pub use rer_engine_core::ipc::EngineCommandCommon;
 
 use crate::ipc::ImportScenePayload;
 

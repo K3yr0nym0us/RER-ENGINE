@@ -1,6 +1,6 @@
 //! Política GPU del motor: **Vulkan** exclusivo (2D y 3D; Windows).
 //!
-//! El backend real lo crea `engine_shared::vulkan` (Ash). Este módulo solo expone la etiqueta
+//! El backend real lo crea `rer_engine_core::vulkan` (Ash). Este módulo solo expone la etiqueta
 //! común y el error de arranque que comparten los binarios.
 
 use std::fmt;

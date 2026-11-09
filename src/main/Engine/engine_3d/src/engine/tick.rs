@@ -184,29 +184,29 @@ impl State {
         let half = self.selection_world_half_extents()?;
         let scale = self.transform_gizmo_world_scale()?;
         let anchor = self.selection_center()?;
-        let gap_world = rer_engine_shared::gizmo::axis_gap_world(
+        let gap_world = rer_engine_core::gizmo::axis_gap_world(
             self.camera_world_position(),
             anchor,
             self.camera.fov_y,
             self.size.height,
         );
         Some([
-            rer_engine_shared::gizmo::axis_start_mesh_units(half.x, gap_world, scale),
-            rer_engine_shared::gizmo::axis_start_mesh_units(half.y, gap_world, scale),
-            rer_engine_shared::gizmo::axis_start_mesh_units(half.z, gap_world, scale),
+            rer_engine_core::gizmo::axis_start_mesh_units(half.x, gap_world, scale),
+            rer_engine_core::gizmo::axis_start_mesh_units(half.y, gap_world, scale),
+            rer_engine_core::gizmo::axis_start_mesh_units(half.z, gap_world, scale),
         ])
     }
 
     /// Escala del gizmo de transformación (pantalla + tope por tamaño de selección).
     pub(crate) fn transform_gizmo_world_scale(&self) -> Option<f32> {
         let anchor = self.selection_center()?;
-        let screen = rer_engine_shared::gizmo::world_scale_perspective(
+        let screen = rer_engine_core::gizmo::world_scale_perspective(
             self.camera_world_position(),
             anchor,
             self.camera.fov_y,
             self.size.height,
         );
-        Some(rer_engine_shared::gizmo::clamp_scale_for_selection(
+        Some(rer_engine_core::gizmo::clamp_scale_for_selection(
             screen,
             self.selection_max_extent(),
         ))
@@ -217,7 +217,7 @@ impl State {
         let base = self.transform_gizmo_world_scale()?;
         let half = self.selection_world_half_extents()?;
         let anchor = self.selection_center()?;
-        let gap_world = rer_engine_shared::gizmo::axis_gap_world(
+        let gap_world = rer_engine_core::gizmo::axis_gap_world(
             self.camera_world_position(),
             anchor,
             self.camera.fov_y,

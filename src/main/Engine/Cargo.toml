@@ -1,10 +1,9 @@
 [workspace]
 members = [
+	"core",
 	"engine_2d",
 	"engine_3d",
 	"engine_editor",
-	"engine_shared",
-	"engine_ipc_common",
 ]
 resolver = "2"
 
@@ -14,7 +13,7 @@ edition = "2024"
 
 [workspace.dependencies]
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
-# Backends en runtime (`engine_shared::gpu`): solo Vulkan (2D y 3D) sobre Ash.
+# Backends en runtime (`rer_engine_core::backend_policy`): solo Vulkan (2D y 3D) sobre Ash.
 pollster = "0.4"
 glam = "0.33"
 bytemuck = { version = "1", features = ["derive"] }

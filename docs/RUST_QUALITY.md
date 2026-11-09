@@ -2,7 +2,7 @@
 
 Gate estricto para el workspace Cargo en `src/main/Engine/`.
 
-Crates: `rer-engine-2d`, `rer-engine-3d`, `rer-engine-shared`, `rer-engine-ipc-common`.
+Crates: `rer-engine-core`, `rer-engine-2d`, `rer-engine-3d`, `rer-engine-editor`.
 
 ## Comandos
 

@@ -1,6 +1,6 @@
 # Formato binario de assets importados
 #
-# Implementación: engine_shared/src/assets/
+# Implementación: core/src/assets/
 # Pipeline 3D: engine_3d/src/assets/
 #
 # Relacionado con:
@@ -21,7 +21,7 @@ editor_contract:
     texture_format: 0  # Rgba8UnormSrgb
     compression_type: 0  # None — mips son RGBA8 crudos consecutivos
   integrity: |
-    Serialización alineada en engine_shared/src/assets/rtex.rs (header meta 5 bytes).
+    Serialización alineada en core/src/assets/rtex.rs (header meta 5 bytes).
     Roundtrip bake ↔ load preserva píxeles idénticos al guardar y reabrir proyecto.
 
 rerasset:
@@ -136,6 +136,6 @@ manifest_v2:
         importer_version: 1
 
 implementation:
-  rtex: src/main/Engine/engine_shared/src/assets/rtex.rs
-  rerasset: src/main/Engine/engine_shared/src/assets/rerasset.rs
+  rtex: src/main/Engine/core/src/assets/rtex.rs
+  rerasset: src/main/Engine/core/src/assets/rerasset.rs
   tests: rtex_roundtrip en rtex.rs

@@ -24,10 +24,10 @@ viewport_overlay:
       viewportRef.getBoundingClientRect() × devicePixelRatio → set_bounds
       offset_x/offset_y = offset del hueco dentro del content area (Win32 tracker)
     main: viewportToScreenBounds convierte coords cliente → pantalla
-    motor: engine_shared/src/overlay.rs + platform position-tracker (Win32)
+    motor: core/src/overlay.rs + platform position-tracker (Win32)
   files:
-    - src/main/Engine/engine_shared/src/overlay.rs
-    - src/main/Engine/engine_shared/src/platform.rs
+    - src/main/Engine/core/src/overlay.rs
+    - src/main/Engine/core/src/platform.rs
     - src/main/index.ts (spawn motor, viewport-bounds IPC)
     - src/renderer/src/pages/EngineView/EngineView.tsx
 
@@ -46,10 +46,10 @@ gpu_policy:
     Electron deshabilita aceleración GPU de Chromium en el editor para evitar
     contención con el motor Vulkan del viewport.
   init_errors: |
-    GpuInitError en engine_shared/src/gpu.rs con mensajes orientados al usuario
+    GpuInitError en core/src/gpu.rs con mensajes orientados al usuario
     (drivers, Vulkan runtime). Main reenvía error al renderer si falla arranque.
   files:
-    - src/main/Engine/engine_shared/src/gpu.rs
+    - src/main/Engine/core/src/gpu.rs
     - src/main/Engine/engine_2d/src/engine/init.rs
     - src/main/Engine/engine_3d/src/engine/init.rs
 
@@ -61,7 +61,7 @@ input_routing:
 
 metrics:
   motor: debug_metrics ~1 Hz (fps, frame_time, draw_calls, cpu_percent, gpu_percent?)
-  sampler: engine_shared/src/process_metrics.rs
+  sampler: core/src/process_metrics.rs
   electron_gpu: "src/main/gpuProcessUsage.ts (Windows: contadores GPU Engine por PID)"
   ui: MetricsPanel.tsx
 

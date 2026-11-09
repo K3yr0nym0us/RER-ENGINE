@@ -2,7 +2,7 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** noviembre 2026 (motores 2D y 3D sobre Ash/Vulkan; el 2D ya no depende de wgpu y comparte el núcleo Vulkan de `engine_shared`; reflejos, sondas, MSAA, sombras y TAA del 3D actualizados a la implementación real). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
+**Última revisión:** noviembre 2026 (motores 2D y 3D sobre Ash/Vulkan; el 2D ya no depende de wgpu y comparte el núcleo Vulkan de `core`; reflejos, sondas, MSAA, sombras y TAA del 3D actualizados a la implementación real). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
 
 ---
 
@@ -12,7 +12,7 @@
 |-----------|-----------|
 | [Engine_Runtime_Foundation.yaml](./Engine_Runtime_Foundation.yaml) | Viewport overlay winit, GPU Vulkan, métricas (Windows) |
 | [Engine_Context.yaml](./Engine_Context.yaml) | `EngineProvider`, refs, `createEngineActions` / `createEngineEventHandler` |
-| [IPC_Protocol.yaml](./IPC_Protocol.yaml) | `engine:cmd` / `engine:event`, catálogo por motor, `engine_ipc_common` |
+| [IPC_Protocol.yaml](./IPC_Protocol.yaml) | `engine:cmd` / `engine:event`, catálogo por motor, `core/src/ipc` |
 | [MODAL_ELECTRON.yaml](./MODAL_ELECTRON.yaml) | Ventanas hijas (propiedades, blueprint, player UI, scripting) |
 
 ---

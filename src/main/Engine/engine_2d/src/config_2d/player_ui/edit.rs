@@ -5,7 +5,7 @@ use crate::engine::State;
 use crate::gizmo::{self, GizmoBuffer, GizmoVertex};
 use crate::ipc::{EngineEvent, send_event};
 
-pub(crate) use rer_engine_shared::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
+pub(crate) use rer_engine_core::player_ui::grid::{player_ui_grid_steps, snap_ndc_point_to_grid};
 
 impl State {
     pub(crate) fn rebuild_player_ui_screen_grid(&mut self) {
@@ -85,7 +85,7 @@ fn build_player_ui_screen_grid(viewport_w: f32, viewport_h: f32) -> GizmoBuffer 
 
     let extent = 1.0_f32;
     let (step_x, step_y) =
-        rer_engine_shared::player_ui::grid::player_ui_grid_steps(viewport_w, viewport_h);
+        rer_engine_core::player_ui::grid::player_ui_grid_steps(viewport_w, viewport_h);
     let z = 0.0_f32;
 
     let gc = [0.42_f32, 0.42, 0.52, 0.38];

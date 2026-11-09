@@ -35,11 +35,11 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
-use rer_engine_shared::overlay::{OverlayConfig, parse_overlay_config};
-use rer_engine_shared::platform::TrackerOffset;
-use rer_engine_shared::platform::query_shift_held_os;
-use rer_engine_shared::platform::setup_overlay_win32;
-use rer_engine_shared::wgpu_surface::SurfacePresentError;
+use rer_engine_core::overlay::{OverlayConfig, parse_overlay_config};
+use rer_engine_core::platform::TrackerOffset;
+use rer_engine_core::platform::query_shift_held_os;
+use rer_engine_core::platform::setup_overlay_win32;
+use rer_engine_core::surface::SurfacePresentError;
 
 // ---------------------------------------------------------------------------
 // Consulta de Ctrl en el OS (sin depender del foco de ventana del motor)
@@ -266,7 +266,7 @@ impl ApplicationHandler<EngineCommand> for App {
         // Atributos base
         let mut attrs = Window::default_attributes()
             .with_title("RER-ENGINE - Viewport")
-            .with_window_icon(rer_engine_shared::platform::app_window_icon());
+            .with_window_icon(rer_engine_core::platform::app_window_icon());
 
         if let Some(overlay) = &self.overlay {
             // ── Modo overlay: ventana separada alineada al hueco del editor ───
@@ -810,7 +810,7 @@ impl ApplicationHandler<EngineCommand> for App {
 }
 fn main() {
     // Logs van a stderr; IPC usa stdout.
-    rer_engine_shared::logging::init(
+    rer_engine_core::logging::init(
         // `rer_engine_2d=info` permite ver logs de colisión/física sin RUST_LOG.
         "rer_engine_2d=info,warn",
     );

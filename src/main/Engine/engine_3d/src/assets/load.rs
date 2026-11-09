@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use rer_engine_shared::assets::{ChunkType, RerassetFile, read_rerasset};
+use rer_engine_core::assets::{ChunkType, RerassetFile, read_rerasset};
 
 use crate::config_3d::mesh_3d::{CpuModelMeshPart, prepare_cpu_parts_textures_for_gpu};
 use crate::config_3d::model_asset::{
@@ -253,7 +253,7 @@ pub fn load_rerasset_cpu(path: &Path) -> Result<LoadedRerassetCpu, String> {
     let mut play_parts = if file
         .header
         .flags
-        .contains(rer_engine_shared::assets::AssetFlags::HAS_PLAY_CHARACTER)
+        .contains(rer_engine_core::assets::AssetFlags::HAS_PLAY_CHARACTER)
     {
         Some(load_static_parts(
             &file,

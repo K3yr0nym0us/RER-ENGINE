@@ -11,7 +11,7 @@ use std::sync::Arc;
 use glam::{Mat4, Vec3 as GlamVec3};
 use winit::dpi::PhysicalSize;
 
-use rer_engine_shared::wgpu_surface::{SurfacePresentError, SurfacePresentError::*};
+use rer_engine_core::surface::{SurfacePresentError, SurfacePresentError::*};
 
 use crate::bvh::{RtMaterialGpu, RtSceneBlob, RtTriangle};
 use crate::config_3d::reflection_graphics::ReflectionTier;

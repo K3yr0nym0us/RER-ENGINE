@@ -5,7 +5,7 @@
 #   - docs/RHAI_API.yaml
 #   - src/main/Engine/engine_2d/src/config_2d/projectiles.rs
 #   - src/main/Engine/engine_2d/src/physics_2d.rs (raycast_projectile_hit_xy)
-#   - src/main/Engine/engine_shared/src/projectile_hardness.rs
+#   - src/main/Engine/core/src/projectile_hardness.rs
 
 summary: |
   Sistema de proyectiles 2D (`kind: projectile`): plantilla sprite en escena +
@@ -22,7 +22,7 @@ overview: |
   5. Los clones NO se guardan en el `.save`.
 
 hardness_rules: |
-  Igual que Projectiles_3D.yaml (resolve_hardness_hit en engine_shared).
+  Igual que Projectiles_3D.yaml (resolve_hardness_hit en core).
 
 projectile_config:
   speed: number # m/s, default 20

@@ -5,7 +5,7 @@
 #   - docs/Sockets_3D.yaml
 #   - docs/RHAI_API.yaml
 #   - src/main/Engine/engine_3d/src/config_3d/projectiles.rs
-#   - src/main/Engine/engine_shared/src/projectile_hardness.rs
+#   - src/main/Engine/core/src/projectile_hardness.rs
 
 summary: |
   Sistema de proyectiles 3D (categoría `projectile`): plantilla en escena +

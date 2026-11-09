@@ -3,7 +3,7 @@
 use ash::vk;
 use glam::Mat4;
 
-pub use rer_engine_shared::player_ui::screen_hud_atlas::ScreenHudPackedImage;
+pub use rer_engine_core::player_ui::screen_hud_atlas::ScreenHudPackedImage;
 
 use crate::mesh;
 use crate::vulkan::{GpuImage, SharedGpu, VulkanError};

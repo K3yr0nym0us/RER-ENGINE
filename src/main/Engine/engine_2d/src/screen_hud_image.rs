@@ -2,13 +2,13 @@
 //!
 //! El empaquetado y la colocación viven aquí; la imagen y el sampler son del renderer Ash
 //! (`upload_hud_atlas_region`). `ScreenHudPackedImage` y los helpers de layout son compartidos con
-//! el 3D desde `rer_engine_shared::player_ui`.
+//! el 3D desde `rer_engine_core::player_ui`.
 
 use std::sync::Arc;
 
 use glam::Mat4;
 
-pub use rer_engine_shared::player_ui::screen_hud_atlas::ScreenHudPackedImage;
+pub use rer_engine_core::player_ui::screen_hud_atlas::ScreenHudPackedImage;
 
 use crate::mesh;
 use crate::texture::ShelfPacker;

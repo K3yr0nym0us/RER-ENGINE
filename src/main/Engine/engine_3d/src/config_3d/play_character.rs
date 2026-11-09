@@ -733,7 +733,7 @@ impl State {
             if self
                 .imported_model_registry
                 .get(model_id)
-                .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Failed)
+                .is_some_and(|e| e.state == rer_engine_core::assets::AssetState::Failed)
             {
                 return false;
             }

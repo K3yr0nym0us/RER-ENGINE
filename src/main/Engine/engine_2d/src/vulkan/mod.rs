@@ -1,6 +1,6 @@
 //! Ruta de render Vulkan (Ash) del motor 2D.
 //!
-//! El contexto no reimplementa Vulkan: reutiliza `engine_shared::vulkan`, el mismo núcleo que usa
+//! El contexto no reimplementa Vulkan: reutiliza `rer_engine_core::vulkan`, el mismo núcleo que usa
 //! el 3D (instancia, device, swapchain, `FrameTarget`, barreras). Aquí solo está lo propio del 2D:
 //! pedir **sin** trazado, el atlas de sprites y el orden de pases del frame.
 //!
@@ -10,8 +10,8 @@
 
 use std::sync::Mutex;
 
-use rer_engine_shared::vulkan::{FrameAcquire, SharedGpu, VulkanError, VulkanOptions};
-use rer_engine_shared::wgpu_surface::SurfacePresentError;
+use rer_engine_core::surface::SurfacePresentError;
+use rer_engine_core::vulkan::{FrameAcquire, SharedGpu, VulkanError, VulkanOptions};
 use winit::window::Window;
 
 mod layout;

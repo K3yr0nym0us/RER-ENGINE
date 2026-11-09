@@ -19,4 +19,4 @@ pub(crate) mod text_input;
 pub(crate) mod text_render;
 
 pub(crate) use config::{PlayerUiButton, PlayerUiImage, PlayerUiObject, PlayerUiTextBox};
-pub(crate) use rer_engine_shared::player_ui::text_input::PlayerUiTextDrag;
+pub(crate) use rer_engine_core::player_ui::text_input::PlayerUiTextDrag;

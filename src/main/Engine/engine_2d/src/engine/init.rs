@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
 
-use rer_engine_shared::gpu::GpuInitError;
+use rer_engine_core::backend_policy::GpuInitError;
 use winit::window::Window;
 
 use crate::config_2d::{ActiveTool, GridConfig, PhysicsWorld2D};
@@ -21,11 +21,11 @@ impl State {
     pub fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
 
-        let vulkan2d = Arc::new(
-            crate::vulkan::Vulkan2d::new(window.as_ref()).map_err(|error| GpuInitError {
+        let vulkan2d = Arc::new(crate::vulkan::Vulkan2d::new(window.as_ref()).map_err(
+            |error| GpuInitError {
                 message: error.to_string(),
-            })?,
-        );
+            },
+        )?);
 
         // ── Atlas de sprites ──────────────────────────────────────────────────
         let mut atlas = crate::texture::TextureAtlas::new(vulkan2d.clone());
@@ -237,8 +237,7 @@ impl State {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             is_applying_undo: false,
-            process_metrics_sampler: rer_engine_shared::process_metrics::ProcessMetricsSampler::new(
-            ),
+            process_metrics_sampler: rer_engine_core::process_metrics::ProcessMetricsSampler::new(),
             metrics_last_emit: Instant::now(),
             metrics_frame_count: 0,
             last_draw_calls: 0,

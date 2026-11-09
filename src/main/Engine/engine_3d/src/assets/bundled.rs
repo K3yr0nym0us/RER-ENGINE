@@ -2,8 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
-use rer_engine_shared::assets::{AssetState, RER_IMPORTER_VERSION};
-use rer_engine_shared::bundled_models::{
+use rer_engine_core::assets::{AssetState, RER_IMPORTER_VERSION};
+use rer_engine_core::bundled_models::{
     DEFAULT_PLAY_CHARACTER_FBX, DEFAULT_PLAY_CHARACTER_MODEL_ID, DEFAULT_PLAY_CHARACTER_NAME,
     DEFAULT_PLAY_CHARACTER_RERASSET,
 };

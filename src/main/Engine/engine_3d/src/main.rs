@@ -39,12 +39,12 @@ use winit::{
 };
 
 use ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
-use rer_engine_shared::gpu::{EngineGpuProfile, resolve_backend};
-use rer_engine_shared::overlay::{OverlayConfig, parse_overlay_config};
-use rer_engine_shared::platform::TrackerOffset;
-use rer_engine_shared::platform::setup_overlay_win32;
-use rer_engine_shared::platform::{query_ctrl_held_os, query_shift_held_os};
-use rer_engine_shared::wgpu_surface::SurfacePresentError;
+use rer_engine_core::backend_policy::{EngineGpuProfile, resolve_backend};
+use rer_engine_core::overlay::{OverlayConfig, parse_overlay_config};
+use rer_engine_core::platform::TrackerOffset;
+use rer_engine_core::platform::setup_overlay_win32;
+use rer_engine_core::platform::{query_ctrl_held_os, query_shift_held_os};
+use rer_engine_core::surface::SurfacePresentError;
 
 use crate::config_3d::editor_viewport_controls::{self, GIZMO_CENTER_AXIS};
 use crate::config_3d::plane_tool_rotate_dbg;
@@ -648,7 +648,7 @@ impl ApplicationHandler<EngineCommand> for App {
         // Atributos base
         let mut attrs = Window::default_attributes()
             .with_title("RER-ENGINE - Viewport")
-            .with_window_icon(rer_engine_shared::platform::app_window_icon());
+            .with_window_icon(rer_engine_core::platform::app_window_icon());
 
         if let Some(overlay) = &self.overlay {
             attrs = attrs
@@ -1451,7 +1451,7 @@ impl ApplicationHandler<EngineCommand> for App {
 }
 fn main() {
     // Logs van a stderr; IPC usa stdout.
-    // La capa de validación y el contexto Ash viven ahora en engine_shared::vulkan. Sin listar ese
+    // La capa de validación y el contexto Ash viven ahora en rer_engine_core::vulkan. Sin listar ese
     // módulo, sus [vulkan-validación] (nivel warn) quedan filtrados por rer_engine_3d=warn: son justo
     // los mensajes que delatan un layout de imagen mal declarado.
     const DEFAULT_LOG_FILTER: &str = "rer_engine_3d=warn,rer_engine_3d::config_base=info,rer_engine_3d::config_3d::skin_diag=info,\
@@ -1460,9 +1460,9 @@ rer_engine_3d::config_3d::reflection_settings=info,\
 rer_engine_3d::engine::commands=info,\
 rer_engine_3d::reflections=info,\
 rer_engine_3d::engine::render=info,\
- rer_engine_shared::vulkan=info";
+ rer_engine_core::vulkan=info";
 
-    rer_engine_shared::logging::init(DEFAULT_LOG_FILTER);
+    rer_engine_core::logging::init(DEFAULT_LOG_FILTER);
 
     // Canal IPC: hilo stdin → event loop vía EventLoopProxy (despierta el loop inmediatamente)
     let event_loop = EventLoop::<EngineCommand>::with_user_event()

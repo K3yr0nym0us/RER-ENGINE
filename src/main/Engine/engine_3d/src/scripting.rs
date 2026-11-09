@@ -1,1 +1,1 @@
-pub use rer_engine_shared::scripting::*;
+pub use rer_engine_core::scripting::*;

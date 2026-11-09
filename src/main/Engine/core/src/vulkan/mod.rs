@@ -15,6 +15,6 @@ pub mod select;
 
 pub use error::VulkanError;
 pub use gpu::{
-    FrameAcquire, FrameTarget, GpuBuffer, GpuImage, MemoryLocation, RtProperties, SharedGpu,
-    VulkanOptions, FRAMES_IN_FLIGHT,
+    FRAMES_IN_FLIGHT, FrameAcquire, FrameTarget, GpuBuffer, GpuImage, MemoryLocation, RtProperties,
+    SharedGpu, VulkanOptions,
 };

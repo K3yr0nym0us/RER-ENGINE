@@ -1,8 +1,9 @@
 pub mod assets;
+pub mod backend_policy;
 pub mod bundled_models;
 pub mod editor_defaults;
 pub mod gizmo;
-pub mod gpu;
+pub mod ipc;
 pub mod logging;
 pub mod overlay;
 pub mod platform;
@@ -10,9 +11,9 @@ pub mod player_ui;
 pub mod process_metrics;
 pub mod projectile_hardness;
 pub mod scripting;
+pub mod surface;
 #[cfg(feature = "vulkan")]
 pub mod vulkan;
-pub mod wgpu_surface;
 
 /// Magnitud de gravedad por defecto del mundo (m/s², positiva = hacia abajo).
 pub const DEFAULT_GRAVITY_MAGNITUDE: f32 = 15.0;

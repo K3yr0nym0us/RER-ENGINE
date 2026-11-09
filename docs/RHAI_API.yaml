@@ -286,7 +286,7 @@ sandbox: |
 # ── Implementación ────────────────────────────────────────────────────────────
 
 implementation:
-  shared: src/main/Engine/engine_shared/src/scripting/
+  shared: src/main/Engine/core/src/scripting/
   modules:
     - ScriptEngine
     - api.rs

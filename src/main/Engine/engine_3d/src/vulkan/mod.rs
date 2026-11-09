@@ -1,7 +1,7 @@
 //! Vulkan crudo (Ash) del motor 3D.
 //!
 //! El núcleo (contexto, swapchain, buffers, imágenes, selección de formato) ya no está aquí: vive
-//! en `rer_engine_shared::vulkan` y se comparte con el motor 2D. Estos alias de módulo mantienen
+//! en `rer_engine_core::vulkan` y se comparte con el motor 2D. Estos alias de módulo mantienen
 //! vivas las rutas `super::gpu::…`, `super::error::…` y `super::select::…` que usan `frame.rs` y
 //! `accel.rs`, así que la extracción no obligó a reescribir el renderer.
 //!
@@ -16,21 +16,21 @@ mod accel;
 mod frame;
 
 pub(crate) mod error {
-    pub use rer_engine_shared::vulkan::error::*;
+    pub use rer_engine_core::vulkan::error::*;
 }
 
 pub(crate) mod gpu {
-    pub use rer_engine_shared::vulkan::gpu::*;
+    pub use rer_engine_core::vulkan::gpu::*;
 }
 
 pub(crate) mod select {
-    pub use rer_engine_shared::vulkan::select::*;
+    pub use rer_engine_core::vulkan::select::*;
 }
 
 pub use frame::{
     FrameInput, FrameRenderer, GizmoBatch, MeshBatch, ProbeCapture, RtBatch, SkinnedBatch,
 };
 
-pub use rer_engine_shared::vulkan::{
+pub use rer_engine_core::vulkan::{
     FrameAcquire, GpuBuffer, GpuImage, SharedGpu, VulkanError, VulkanOptions,
 };

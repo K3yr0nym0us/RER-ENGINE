@@ -14,7 +14,7 @@ use crate::ipc::{
     BlueprintPlacementMeta, EngineEvent, SaveAnimationSnapshot, SaveScriptSnapshot, send_event,
 };
 use crate::mesh;
-use rer_engine_shared::editor_defaults::entity_label_for_category;
+use rer_engine_core::editor_defaults::entity_label_for_category;
 
 pub(crate) const GHOST_OFFSCREEN: f32 = -99999.0;
 const GHOST_ALPHA: f32 = 0.38;
@@ -86,7 +86,7 @@ fn infer_category_from_template(template_name: &str, category: Option<&str>) -> 
     category
         .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c)))
         .or_else(|| {
-            rer_engine_shared::editor_defaults::infer_entity_category_from_numbered_name(
+            rer_engine_core::editor_defaults::infer_entity_category_from_numbered_name(
                 template_name,
             )
             .and_then(|c| crate::ipc::normalize_placement_entity_category(Some(c)))

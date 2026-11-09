@@ -25,8 +25,8 @@ use crate::ecs::{EntityId, MeshComponent, SurfacePbr, Transform};
 use crate::engine::State;
 use crate::entity_save_meta::EntitySaveMeta;
 use crate::ipc::{EngineEvent, send_event, send_load_progress};
-use rer_engine_shared::assets::read_rerasset;
-use rer_engine_shared::editor_defaults::entity_label_for_spawn;
+use rer_engine_core::assets::read_rerasset;
+use rer_engine_core::editor_defaults::entity_label_for_spawn;
 
 #[derive(Clone, Copy)]
 pub(crate) struct CachedStaticModelPart {
@@ -151,7 +151,7 @@ impl State {
         let model_id = self.imported_model_registry.model_id_for_path(&key);
         if let Some(ref id) = model_id {
             self.imported_model_registry
-                .set_state(id, rer_engine_shared::assets::AssetState::Failed);
+                .set_state(id, rer_engine_core::assets::AssetState::Failed);
         }
         send_event(&EngineEvent::ModelAssetLoadFailed {
             path: key,
@@ -175,7 +175,7 @@ impl State {
             && self
                 .imported_model_registry
                 .get(&id)
-                .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Ready)
+                .is_some_and(|e| e.state == rer_engine_core::assets::AssetState::Ready)
         {
             return id;
         }
@@ -292,7 +292,7 @@ impl State {
         let Some(entry) = self.imported_model_registry.get(model_id) else {
             return false;
         };
-        if entry.state != rer_engine_shared::assets::AssetState::Ready {
+        if entry.state != rer_engine_core::assets::AssetState::Ready {
             return false;
         }
         let Ok(loaded) = crate::assets::load::load_rerasset_cpu(&entry.rerasset_path) else {
@@ -336,7 +336,7 @@ impl State {
         cache_key: &str,
     ) -> Option<Vec<CpuModelMeshPart>> {
         let entry = self.imported_model_registry.get(cache_key)?;
-        if entry.state != rer_engine_shared::assets::AssetState::Ready {
+        if entry.state != rer_engine_core::assets::AssetState::Ready {
             return None;
         }
         load_rerasset_cpu(&entry.rerasset_path)
@@ -392,7 +392,7 @@ impl State {
                 Err((path, message)) => {
                     if path.starts_with("model_") {
                         self.imported_model_registry
-                            .set_state(&path, rer_engine_shared::assets::AssetState::Failed);
+                            .set_state(&path, rer_engine_core::assets::AssetState::Failed);
                     }
                     self.emit_model_asset_load_failed(&path, message);
                 }
@@ -446,7 +446,7 @@ impl State {
             return Some(layer);
         }
         let entry = self.imported_model_registry.get(model_id)?;
-        if entry.state != rer_engine_shared::assets::AssetState::Ready {
+        if entry.state != rer_engine_core::assets::AssetState::Ready {
             return None;
         }
         let loaded = load_rerasset_cpu(&entry.rerasset_path).ok()?;
@@ -633,7 +633,7 @@ impl State {
             if self
                 .imported_model_registry
                 .get(key)
-                .is_some_and(|e| e.state == rer_engine_shared::assets::AssetState::Failed)
+                .is_some_and(|e| e.state == rer_engine_core::assets::AssetState::Failed)
             {
                 return Err(format!("Carga del modelo fallÃ³: {key}"));
             }
@@ -840,7 +840,7 @@ impl State {
         };
 
         if let Some(entry) =
-            ready_entry.filter(|e| e.state == rer_engine_shared::assets::AssetState::Ready)
+            ready_entry.filter(|e| e.state == rer_engine_core::assets::AssetState::Ready)
         {
             let is_character = entry.category.as_deref() == Some("character");
             let model_id = entry.model_id.clone();

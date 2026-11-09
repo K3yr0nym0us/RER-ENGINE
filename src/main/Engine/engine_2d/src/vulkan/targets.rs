@@ -5,8 +5,8 @@
 //! booleano "ya se muestreó", que es el fallo que produce cuadros negros.
 
 use ash::vk;
-use rer_engine_shared::vulkan::gpu::cmd_image_barrier;
-use rer_engine_shared::vulkan::{GpuImage, SharedGpu, VulkanError};
+use rer_engine_core::vulkan::gpu::cmd_image_barrier;
+use rer_engine_core::vulkan::{GpuImage, SharedGpu, VulkanError};
 
 /// Formato de profundidad del 2D: el mismo que el 3D (D32 con aspect DEPTH).
 pub(crate) const DEPTH_FORMAT: vk::Format = vk::Format::D32_SFLOAT;

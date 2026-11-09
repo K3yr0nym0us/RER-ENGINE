@@ -16,7 +16,7 @@ use crate::ipc::{
 use super::State;
 use crate::assets::registry::{relative_rerasset_manifest_path, resolve_manifest_asset_path};
 use crate::config_3d::static_model_cache::MODEL_GPU_PARTS_DURING_SAVE_LOAD;
-use rer_engine_shared::assets::AssetState;
+use rer_engine_core::assets::AssetState;
 
 const SCRIPT_FILE_PREFIX: &str = "@file:";
 const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
@@ -1510,7 +1510,7 @@ fn apply_loaded_proyect_3d_with_scene(
                     category: crate::ipc::normalize_model_library_category(Some(
                         res.model_type.as_str(),
                     )),
-                    state: rer_engine_shared::assets::AssetState::Ready,
+                    state: rer_engine_core::assets::AssetState::Ready,
                     rerasset_path: asset_disk.clone(),
                     source_path: source_path.clone(),
                     source_size: 0,

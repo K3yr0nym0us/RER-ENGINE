@@ -10,7 +10,7 @@ use gpu_allocator::MemoryLocation;
 
 use crate::vulkan::{GpuBuffer, SharedGpu};
 
-pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
+pub use rer_engine_core::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 
 /// Filas del uniform `GizmoUniforms` (view_proj + model + flags + axis_start), espejo de
 /// `shaders/raster/gizmo.vert`.

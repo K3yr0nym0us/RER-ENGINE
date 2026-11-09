@@ -1,14 +1,10 @@
 [package]
-name = "rer-engine-shared"
+name = "rer-engine-core"
 version.workspace = true
 edition.workspace = true
 
 [lints]
 workspace = true
-
-[[bin]]
-name = "rer_engine_shared"
-path = "src/main.rs"
 
 [lib]
 path = "src/lib.rs"
@@ -33,7 +29,7 @@ raw-window-handle = { workspace = true, optional = true }
 gpu-allocator = { workspace = true, optional = true }
 
 [features]
-# `engine_shared::vulkan`: contexto Ash, swapchain, `GpuBuffer`/`GpuImage` y selección de
+# `core::vulkan`: contexto Ash, swapchain, `GpuBuffer`/`GpuImage` y selección de
 # formatos/present mode. Es el mismo código del que el 3D partía en `src/vulkan/`.
 vulkan = ["dep:ash", "dep:ash-window", "dep:raw-window-handle", "dep:gpu-allocator"]
 

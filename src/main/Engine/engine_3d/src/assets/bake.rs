@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
-use rer_engine_shared::assets::{
+use rer_engine_core::assets::{
     BakeInput, BakeMeshPart, BakeSkinnedPart, CompressionType, MaterialDesc, RER_IMPORTER_VERSION,
     RtexData, SourceExt, TextureFormat, write_rerasset_atomic,
 };
@@ -82,10 +82,10 @@ fn collect_textures_from_editor_and_play(
 }
 
 fn part_to_bake(part: &CpuModelMeshPart, part_index: u16) -> BakeMeshPart {
-    let vertices: Vec<rer_engine_shared::assets::StaticMeshVertex> = part
+    let vertices: Vec<rer_engine_core::assets::StaticMeshVertex> = part
         .vertices
         .iter()
-        .map(|v| rer_engine_shared::assets::StaticMeshVertex {
+        .map(|v| rer_engine_core::assets::StaticMeshVertex {
             position: v.position,
             normal: v.normal,
             uv: v.uv,
@@ -108,9 +108,9 @@ fn skinned_part_to_bake(
     vertices: &[SkinnedVertex],
     indices: &[u32],
 ) -> BakeSkinnedPart {
-    let verts: Vec<rer_engine_shared::assets::SkinnedMeshVertex> = vertices
+    let verts: Vec<rer_engine_core::assets::SkinnedMeshVertex> = vertices
         .iter()
-        .map(|v| rer_engine_shared::assets::SkinnedMeshVertex {
+        .map(|v| rer_engine_core::assets::SkinnedMeshVertex {
             position: v.position,
             normal: v.normal,
             uv: v.uv,
@@ -170,7 +170,7 @@ pub fn build_bake_input(
             .collect::<Vec<_>>()
     });
 
-    let skeleton = anim_asset.map(|asset| rer_engine_shared::assets::ImportedSkeleton {
+    let skeleton = anim_asset.map(|asset| rer_engine_core::assets::ImportedSkeleton {
         blob: super::model_asset_blob::serialize_skeleton(asset),
     });
 
@@ -179,7 +179,7 @@ pub fn build_bake_input(
             asset
                 .clips
                 .iter()
-                .map(|clip| rer_engine_shared::assets::ImportedAnimationClip {
+                .map(|clip| rer_engine_core::assets::ImportedAnimationClip {
                     name: clip.name.clone(),
                     duration_s: clip.duration_s,
                     fps: clip.fps,

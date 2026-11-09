@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::types::{
+use crate::ipc::types::{
     AddPlayerUiButtonPayload, AnimScriptData, AnimationFrameData, ControlBindingsData,
     EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform,
     PlayerUiScreenInfo,

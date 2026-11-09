@@ -2492,8 +2492,7 @@ dependencies = [
  "log",
  "rapier3d",
  "raw-window-handle",
- "rer-engine-ipc-common",
- "rer-engine-shared",
+ "rer-engine-core",
  "rodio",
  "serde",
  "serde_json",
@@ -2522,8 +2521,7 @@ dependencies = [
  "rapier3d",
  "raw-window-handle",
  "rayon",
- "rer-engine-ipc-common",
- "rer-engine-shared",
+ "rer-engine-core",
  "rodio",
  "serde",
  "serde_json",
@@ -2531,6 +2529,29 @@ dependencies = [
  "ufbx",
  "windows",
  "winit",
+]
+
+[[package]]
+name = "rer-engine-core"
+version = "0.1.0"
+dependencies = [
+ "ash",
+ "ash-window",
+ "bitflags 2.13.2",
+ "bytemuck",
+ "env_logger",
+ "glam 0.33.1",
+ "gpu-allocator",
+ "image",
+ "log",
+ "raw-window-handle",
+ "rhai",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "windows",
+ "winit",
+ "zip",
 ]
 
 [[package]]
@@ -2551,37 +2572,6 @@ dependencies = [
  "rfd",
  "serde",
  "serde_json",
- "windows",
- "winit",
- "zip",
-]
-
-[[package]]
-name = "rer-engine-ipc-common"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "rer-engine-shared"
-version = "0.1.0"
-dependencies = [
- "ash",
- "ash-window",
- "bitflags 2.13.2",
- "bytemuck",
- "env_logger",
- "glam 0.33.1",
- "gpu-allocator",
- "image",
- "log",
- "raw-window-handle",
- "rhai",
- "serde",
- "serde_json",
- "sysinfo",
  "windows",
  "winit",
  "zip",

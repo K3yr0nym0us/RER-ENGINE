@@ -8,7 +8,7 @@ use winit::event_loop::EventLoopProxy;
 use serde::{Deserialize, Serialize};
 
 pub use crate::engine_command::{EngineCommand, EngineCommand3dOnly};
-pub use rer_engine_ipc_common::{
+pub use rer_engine_core::ipc::{
     AddPlayerUiButtonPayload, AnimScriptData, AnimationFrameData, AxisValue, ControlBindingsData,
     ControlScriptData, EngineCommandCommon, EntityRestorePhysics, EntityRestoreTransform,
     PlayerUiScreenInfo, RotationEulerDelta,
@@ -26,7 +26,7 @@ pub enum PlayCameraFollowMode {
 }
 
 // ---------------------------------------------------------------------------
-// Tipos y eventos exclusivos del motor 3D (comandos comunes -> engine_ipc_common)
+// Tipos y eventos exclusivos del motor 3D (comandos comunes -> core/src/ipc)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize, Clone)]

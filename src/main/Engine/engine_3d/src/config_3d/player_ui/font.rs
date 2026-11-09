@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use ab_glyph::{Font, FontArc, PxScale, ScaleFont, point};
-use rer_engine_shared::player_ui::viewport::ndc_transform_top_left;
+use rer_engine_core::player_ui::viewport::ndc_transform_top_left;
 
 use super::config::UiHudRect;
 use crate::mesh;

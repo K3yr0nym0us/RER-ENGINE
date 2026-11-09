@@ -12,7 +12,7 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 ## Relacion con `engine_2d`
 
 - `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos.
-- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`engine_shared`), no un enum de comandos unico ni la logica de juego.
+- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`core`), no un enum de comandos unico ni la logica de juego.
 - Contrato por motor: `engine_3d/src/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, cámara play character, glTF/GLB). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
@@ -22,10 +22,10 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 
 ## Politica GPU
 
-- **3D**: Vulkan crudo con `ash` en `src/vulkan/` (sin wgpu). El motor 2D y la fachada
-  `rer_engine_shared::gpu` siguen en wgpu y no cambian.
-- `wgpu` permanece como dependencia del crate 3D solo por el macro compartido
-  `impl_player_ui_text_input!` (genera `wgpu::CommandEncoder`/`TextureView`).
+- **2D y 3D**: Vulkan crudo con `ash`. El núcleo compartido (instancia, device, swapchain,
+  `FrameTarget`, `GpuBuffer`/`GpuImage`) vive en `rer-engine-core::vulkan`.
+- El crate 3D conserva su renderer en `src/vulkan/` (G-buffer, MSAA, TAA, SSR, sondas y
+  sombras) y `accel.rs` (BLAS/TLAS).
 - Shaders: GLSL en `engine_3d/shaders/` (`raster/`, `rt/`, `bvh/`) compilados a SPIR-V
   por `build.rs` con `glslc` del Vulkan SDK. Son la única fuente: los `.wgsl` heredados del
   motor wgpu se borraron, y las variantes de pantalla del 2D viven en `engine_2d/`.
@@ -93,17 +93,18 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
 
 ## Ventana overlay
 
-- Identico al 2D: `--overlay`, ventana winit separada, tracker en `engine_shared::platform`.
+- Identico al 2D: `--overlay`, ventana winit separada, tracker en `rer_engine_core::platform`.
 - Ver `engine_2d/ARCHITECTURE.md` (seccion overlay) para detalle Win32.
 
 ## Archivos fuente de verdad
 
-- `engine_shared/src/gpu.rs`: fachada wgpu del motor 2D (`resolve_backend`, `init_gpu`); el 3D no la usa.
+- `core/src/backend_policy.rs`: política de backend del motor (siempre Vulkan).
 - `src/main.rs`: bucle winit, input, gizmo, play (cámara play character), setup overlay.
 - `src/engine.rs` + `src/engine/mod.rs`: `State` (GPU Ash, ECS, caches, undo/redo, scripting).
 - `src/engine/init.rs`: `SharedGpu::new` (Ash), texture array y `FrameRenderer::new`.
-- `src/vulkan/`: contexto Vulkan, swapchain Win32, BLAS/TLAS y `FrameRenderer` (sombras,
-  forward, TAA, SSR, denoise, reflejos RT/BVH, gizmo y HUD).
+- `src/vulkan/`: `FrameRenderer` (sombras, forward, TAA, SSR, denoise, reflejos RT/BVH,
+  gizmo y HUD) y `accel.rs` (BLAS/TLAS). El contexto y la swapchain viven en
+  `rer-engine-core::vulkan`.
 - `src/bvh.rs`: BVH binario en CPU y layouts GPU del fallback por software.
 - `src/engine/commands.rs`: IPC y mutaciones de estado.
 - `src/engine/render.rs`: mundo 3D, batches estáticos y skinned, escena RT cacheada
@@ -136,7 +137,7 @@ Soporte: `mesh.rs`, `gizmo.rs`, `texture.rs`, `scripting.rs`, `build.rs` y `shad
 - Implementacion 3D nueva → `config_3d/` o `engine/`.
 - No reintroducir variantes 2D en el enum IPC 3D “por compatibilidad”.
 
-`src/config_shared.rs` reexporta utilidades de `engine_shared`.
+`src/config_shared.rs` reexporta utilidades de `core`.
 
 ## Modos de camara y render
 
@@ -192,7 +193,7 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 ### Scripting
 
 - `update_scripts()` solo ejecuta el tick Rhai de entidades cuando `preview_playing` es true. Los control scripts (`on_press` / `on_keep`) ya estaban acotados a play.
-- Callbacks Rhai usan **invoke pattern** en `engine_shared/src/scripting/script_engine.rs` (mismo contrato que 2D).
+- Callbacks Rhai usan **invoke pattern** en `core/src/scripting/script_engine.rs` (mismo contrato que 2D).
 - **Triggers 3D:** `on_trigger_enter(trigger, actor)` en execution areas planas; detección en `execution_areas_3d.rs`.
 - **Control scripts play character:** tras ejecutar el script del binding, `engine/scripts.rs` auto-inyecta `fp_press_key` con la tecla del binding cuando el script no lo hace. Scripts típicos: solo `fp_set_walk_speed`, `fp_set_sprint_multiplier`, `fp_jump`.
 - Referencia: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml).

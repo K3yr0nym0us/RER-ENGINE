@@ -16,7 +16,7 @@ mod tests {
 
     use crate::engine::types::{SceneUniforms, ScreenHudSceneUniforms};
     use crate::mesh::{InstanceData, Vertex};
-    use rer_engine_shared::player_ui::ndc_draw::NdcVertex;
+    use rer_engine_core::player_ui::ndc_draw::NdcVertex;
 
     #[test]
     fn ndc_vertex_layout_matches_gizmo_glsl() {

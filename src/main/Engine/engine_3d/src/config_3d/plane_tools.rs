@@ -49,8 +49,8 @@ impl PlaneToolKind {
 
     fn label_base(self) -> &'static str {
         match self {
-            Self::Collider => rer_engine_shared::editor_defaults::entity_label::COLLIDER,
-            Self::ExecutionArea => rer_engine_shared::editor_defaults::entity_label::EXECUTION_AREA,
+            Self::Collider => rer_engine_core::editor_defaults::entity_label::COLLIDER,
+            Self::ExecutionArea => rer_engine_core::editor_defaults::entity_label::EXECUTION_AREA,
         }
     }
 
@@ -179,7 +179,7 @@ impl State {
     }
 
     pub(crate) fn focus_editor_window(&self) {
-        rer_engine_shared::platform::focus_overlay_parent_window(self.editor_parent_id);
+        rer_engine_core::platform::focus_overlay_parent_window(self.editor_parent_id);
     }
 
     pub(crate) fn sync_plane_tool_from_set_active(&mut self, kind: PlaneToolKind, size: [f32; 2]) {

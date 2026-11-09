@@ -2,7 +2,7 @@ import type { ProjectType } from './types'
 
 /**
  * Nombres `cmd` IPC alineados con Rust:
- * - `engine_ipc_common::EngineCommandCommon`
+ * - `rer_engine_core::ipc::EngineCommandCommon`
  * - `engine_2d/src/engine_command.rs` (Only2d)
  * - `engine_3d/src/engine_command.rs` (Only3d)
  *
