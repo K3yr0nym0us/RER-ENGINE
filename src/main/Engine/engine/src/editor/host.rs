@@ -75,8 +75,11 @@ impl EditorWindow {
         })
     }
 
-    /// Construye el motor 3D dentro del proceso del editor, reutilizando su `SharedGpu`.
-    fn start_in_process_engine(&mut self, proxy: EventLoopProxy<UserEvent>) -> Result<(), String> {
+    /// Lanza la construcción del motor 3D en un hilo aparte.
+    ///
+    /// El event loop sigue libre: la UI pinta el spinner y la consola recibe los
+    /// `load_progress` del motor en vivo. Al terminar llega `UserEvent::EngineReady`.
+    fn spawn_engine_loader(&mut self, proxy: EventLoopProxy<UserEvent>) -> Result<(), String> {
         let cli = self.app.cli.clone();
         // El cargador de proyectos lee estas variables, igual que el proceso standalone.
         if let Some(save_path) = &cli.save_path {
@@ -93,27 +96,7 @@ impl EditorWindow {
         let (sink_tx, sink_rx) = mpsc::channel::<String>();
         crate::engine3d::ipc::install_event_sink(sink_tx);
 
-        let mut state = crate::engine3d::engine::State::with_context(
-            Arc::clone(&self.window),
-            self.gpu.shared_gpu(),
-        )
-        .map_err(|error| error.message)?;
-
-        let from_save = std::env::var("RER_3D_START_FROM_SAVE")
-            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-        if from_save {
-            state.setup_empty_3d();
-            crate::engine3d::ipc::send_event(&crate::engine3d::ipc::EngineEvent::Ready {
-                gravity: state.physics.gravity_magnitude(),
-            });
-        } else {
-            state.setup_default_3d_scene();
-        }
-        state.editor_parent_id = 0;
-
-        self.engine = Some(crate::engine3d::host::App::new_in_editor(state));
-
+        let events_proxy = proxy.clone();
         std::thread::Builder::new()
             .name("engine-events".into())
             .spawn(move || {
@@ -121,7 +104,9 @@ impl EditorWindow {
                     // Mismo JSON hacia Electron: las modales no cambian.
                     crate::editor::bridge::forward_line(&line);
                     if let Ok(value) = serde_json::from_str::<Value>(&line)
-                        && proxy.send_event(UserEvent::EngineEvent(value)).is_err()
+                        && events_proxy
+                            .send_event(UserEvent::EngineEvent(value))
+                            .is_err()
                     {
                         break;
                     }
@@ -129,7 +114,55 @@ impl EditorWindow {
             })
             .map_err(|error| format!("no se pudo crear el hilo de eventos del motor: {error}"))?;
 
+        let window = Arc::clone(&self.window);
+        let gpu = self.gpu.shared_gpu();
+        std::thread::Builder::new()
+            .name("engine-init".into())
+            .spawn(move || {
+                let result = crate::engine3d::engine::State::with_context(window, gpu);
+                match result {
+                    Ok(mut state) => {
+                        let from_save = std::env::var("RER_3D_START_FROM_SAVE")
+                            .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+                            .unwrap_or(false);
+                        if from_save {
+                            state.setup_empty_3d();
+                            crate::engine3d::ipc::send_event(
+                                &crate::engine3d::ipc::EngineEvent::Ready {
+                                    gravity: state.physics.gravity_magnitude(),
+                                },
+                            );
+                        } else {
+                            state.setup_default_3d_scene();
+                        }
+                        state.editor_parent_id = 0;
+                        let _ = proxy.send_event(UserEvent::EngineReady(Box::new(state)));
+                    }
+                    Err(error) => {
+                        let _ = proxy.send_event(UserEvent::EngineFailed(error.message));
+                    }
+                }
+            })
+            .map_err(|error| format!("no se pudo crear el hilo de carga del motor: {error}"))?;
+
         Ok(())
+    }
+
+    /// El hilo de carga terminó: el motor pasa a ser propiedad del editor.
+    fn attach_engine(&mut self, state: crate::engine3d::engine::State) {
+        self.engine = Some(crate::engine3d::host::App::new_in_editor(state));
+        self.app.engine_loading = false;
+        self.app.engine_error = None;
+        self.window.request_redraw();
+    }
+
+    fn fail_engine(&mut self, message: String) {
+        log::error!("[editor] {message}");
+        self.app.engine_loading = false;
+        self.app.engine_error = Some(message.clone());
+        self.app.status = EditorStatus::Error;
+        self.app.push_log(format!("[Editor] {message}"), true);
+        self.window.request_redraw();
     }
 
     /// Comando de Electron que debe llegar al motor en proceso.
@@ -271,9 +304,6 @@ struct EditorApplication {
     engine_tx: Option<Sender<Value>>,
     next_frame_at: Instant,
     target_fps: u64,
-    /// El motor 3D se construye tras el primer frame (la UI ya está visible).
-    engine_pending: bool,
-    first_frame_rendered: bool,
 }
 
 impl EditorApplication {
@@ -485,13 +515,16 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 self.editor = Some(editor);
 
                 if self.cli.context.is_3d() {
-                    // La UI se pinta primero; el motor se construye justo después del primer frame.
+                    // La UI se pinta ya; el motor se construye en un hilo y avisa al terminar.
                     if let Some(editor) = self.editor.as_mut() {
                         editor.app.proxy = Some(self.proxy.clone());
                         editor.app.engine_loading = true;
+                        editor.app.engine_error = None;
                         editor.app.push_log("[Editor] cargando motor 3D…", false);
+                        if let Err(message) = editor.spawn_engine_loader(self.proxy.clone()) {
+                            editor.fail_engine(message);
+                        }
                     }
-                    self.engine_pending = true;
                 } else {
                     match EngineHost::spawn(&self.cli, self.proxy.clone()) {
                         Ok(host) => {
@@ -562,6 +595,17 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                     editor.app.request_world_sync();
                     editor.app.request_asset_sync();
                     editor.window.request_redraw();
+                }
+            }
+            UserEvent::EngineReady(state) => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.attach_engine(*state);
+                    editor.app.push_log("[Editor] motor 3D listo", false);
+                }
+            }
+            UserEvent::EngineFailed(message) => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.fail_engine(message);
                 }
             }
         }
@@ -639,7 +683,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 if let Err(error) = editor.render() {
                     log::error!("[editor] {error}");
                 }
-                self.first_frame_rendered = true;
             }
             _ => {}
         }
@@ -648,24 +691,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
     /// Mantiene el editor a ~60 fps: el motor en proceso necesita frames continuos y
     /// egui solo pide repintar cuando hay animaciones o cambios.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // La UI ya se dibujó al menos una vez: ahora se construye el motor (bloquea unos segundos).
-        if self.engine_pending && self.first_frame_rendered {
-            self.engine_pending = false;
-            if let Some(editor) = self.editor.as_mut() {
-                match editor.start_in_process_engine(self.proxy.clone()) {
-                    Ok(()) => editor.app.push_log("[Editor] motor 3D en proceso", false),
-                    Err(message) => {
-                        log::error!("[editor] {message}");
-                        editor.app.status = EditorStatus::Error;
-                        editor.app.push_log(format!("[Editor] {message}"), true);
-                        editor.app.engine_error = Some(message);
-                    }
-                }
-                editor.app.engine_loading = false;
-                editor.window.request_redraw();
-            }
-        }
-
         let frame_duration = Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
         let now = Instant::now();
         if now >= self.next_frame_at {
@@ -723,8 +748,6 @@ pub fn run() {
         engine_tx: None,
         next_frame_at: Instant::now(),
         target_fps: 60,
-        engine_pending: false,
-        first_frame_rendered: false,
     };
     event_loop
         .run_app(&mut application)

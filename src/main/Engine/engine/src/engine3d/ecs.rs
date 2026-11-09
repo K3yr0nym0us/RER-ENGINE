@@ -181,13 +181,13 @@ impl<T> ComponentStorage<T> {
 
 // ── Trait object para borrar tipo ─────────────────────────────────────────────
 
-trait AnyStorage: Any {
+trait AnyStorage: Any + Send {
     fn remove_entity(&mut self, entity: EntityId);
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl<T: 'static> AnyStorage for ComponentStorage<T> {
+impl<T: 'static + Send> AnyStorage for ComponentStorage<T> {
     fn remove_entity(&mut self, entity: EntityId) {
         self.remove(entity);
     }
@@ -235,7 +235,7 @@ impl World {
     }
 
     /// Registra un tipo de componente. Llamar antes de usar insert/get.
-    pub fn register<T: 'static>(&mut self) {
+    pub fn register<T: 'static + Send>(&mut self) {
         self.storages
             .entry(TypeId::of::<T>())
             .or_insert_with(|| Box::new(ComponentStorage::<T>::default()));
@@ -301,7 +301,7 @@ impl World {
 
     // ── Componentes ──────────────────────────────────────────────────────────
 
-    pub fn insert<T: 'static>(&mut self, entity: EntityId, component: T) {
+    pub fn insert<T: 'static + Send>(&mut self, entity: EntityId, component: T) {
         self.register::<T>();
         let storage = self
             .storages
@@ -313,7 +313,7 @@ impl World {
         storage.insert(entity, component);
     }
 
-    pub fn get<T: 'static>(&self, entity: EntityId) -> Option<&T> {
+    pub fn get<T: 'static + Send>(&self, entity: EntityId) -> Option<&T> {
         self.storages
             .get(&TypeId::of::<T>())?
             .as_any()
@@ -321,7 +321,7 @@ impl World {
             .get(entity)
     }
 
-    pub fn get_mut<T: 'static>(&mut self, entity: EntityId) -> Option<&mut T> {
+    pub fn get_mut<T: 'static + Send>(&mut self, entity: EntityId) -> Option<&mut T> {
         self.storages
             .get_mut(&TypeId::of::<T>())?
             .as_any_mut()
@@ -330,7 +330,7 @@ impl World {
     }
 
     #[allow(dead_code)]
-    pub fn remove_component<T: 'static>(&mut self, entity: EntityId) {
+    pub fn remove_component<T: 'static + Send>(&mut self, entity: EntityId) {
         if let Some(s) = self.storages.get_mut(&TypeId::of::<T>()) {
             s.remove_entity(entity);
         }
@@ -338,7 +338,7 @@ impl World {
 
     /// Itera sobre todos los (EntityId, &T) de un tipo de componente.
     #[allow(dead_code)]
-    pub fn query<T: 'static>(&self) -> impl Iterator<Item = (EntityId, &T)> {
+    pub fn query<T: 'static + Send>(&self) -> impl Iterator<Item = (EntityId, &T)> {
         self.storages
             .get(&TypeId::of::<T>())
             .and_then(|s| s.as_any().downcast_ref::<ComponentStorage<T>>())
@@ -348,7 +348,7 @@ impl World {
     }
 
     #[allow(dead_code)]
-    pub fn query_mut<T: 'static>(&mut self) -> impl Iterator<Item = (EntityId, &mut T)> {
+    pub fn query_mut<T: 'static + Send>(&mut self) -> impl Iterator<Item = (EntityId, &mut T)> {
         self.storages
             .get_mut(&TypeId::of::<T>())
             .and_then(|s| s.as_any_mut().downcast_mut::<ComponentStorage<T>>())
@@ -378,7 +378,9 @@ impl World {
     /// Recorre el storage de A y hace lookup O(1) de B por cada entidad.
     /// Más eficiente que filtrar `entities()` cuando A es el componente menos frecuente.
     #[allow(dead_code)]
-    pub fn query2<A: 'static, B: 'static>(&self) -> impl Iterator<Item = (EntityId, &A, &B)> {
+    pub fn query2<A: 'static + Send, B: 'static + Send>(
+        &self,
+    ) -> impl Iterator<Item = (EntityId, &A, &B)> {
         let storage_a = self
             .storages
             .get(&TypeId::of::<A>())
@@ -406,7 +408,7 @@ impl World {
     /// Itera sobre entidades que tienen los tres componentes A, B y C.
     /// Recorre el storage de A y hace lookup O(1) de B y C por cada entidad.
     #[allow(dead_code)]
-    pub fn query3<A: 'static, B: 'static, C: 'static>(
+    pub fn query3<A: 'static + Send, B: 'static + Send, C: 'static + Send>(
         &self,
     ) -> impl Iterator<Item = (EntityId, &A, &B, &C)> {
         let storage_a = self

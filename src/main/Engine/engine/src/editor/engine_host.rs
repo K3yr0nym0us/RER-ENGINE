@@ -16,7 +16,6 @@ use crate::editor::cli::Cli;
 use crate::editor::context::ProjectType;
 
 /// Eventos que llegan al event loop del editor desde otros hilos.
-#[derive(Debug, Clone)]
 pub enum UserEvent {
     /// Línea JSON emitida por el motor.
     EngineEvent(Value),
@@ -28,6 +27,10 @@ pub enum UserEvent {
     SaveTimeout(u64),
     /// Pide sincronizar los ajustes de mundo desde el motor.
     WorldSync,
+    /// El motor 3D terminó de construirse en el hilo de carga.
+    EngineReady(Box<crate::engine3d::engine::State>),
+    /// El motor 3D no pudo arrancar.
+    EngineFailed(String),
 }
 
 pub struct EngineHost {

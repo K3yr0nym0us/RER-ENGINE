@@ -59,26 +59,28 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         .show(ui, |ui| {
             let rect = ui.max_rect();
             app.viewport_rect = Some(rect);
-            let (message, color) = if app.engine_loading {
-                (
-                    Some(text.loading_engine.to_string()),
+            if app.engine_loading {
+                // Spinner + texto centrados solo en el área del viewport.
+                let center = rect.center();
+                let spinner = egui::Rect::from_center_size(
+                    center - egui::vec2(0.0, 22.0),
+                    egui::vec2(28.0, 28.0),
+                );
+                ui.put(spinner, egui::Spinner::new().size(26.0));
+                ui.painter().text(
+                    center + egui::vec2(0.0, 16.0),
+                    egui::Align2::CENTER_CENTER,
+                    text.loading_engine,
+                    egui::FontId::proportional(16.0),
                     crate::editor::theme::TEXT_MUTED,
-                )
+                );
             } else if let Some(error) = app.engine_error.as_deref() {
-                (
-                    Some(format!("{}: {error}", text.engine_error)),
-                    crate::editor::theme::DANGER,
-                )
-            } else {
-                (None, crate::editor::theme::TEXT_MUTED)
-            };
-            if let Some(message) = message {
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    message,
+                    format!("{}: {error}", text.engine_error),
                     egui::FontId::proportional(16.0),
-                    color,
+                    crate::editor::theme::DANGER,
                 );
             }
         });
