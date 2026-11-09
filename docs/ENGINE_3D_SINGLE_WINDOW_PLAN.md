@@ -376,16 +376,16 @@ Solo cambia el proceso Rust del editor/motor, no la lógica de proyecto ni las m
 
 ## Fase 7 — Motor 2D
 
-Estado: el 2D ya usa Ash y `rer_engine_core::vulkan::SharedGpu`, y vive en
-`engine/src/engine2d/` (feature `engine2d`, bin `rer_engine_2d`). Queda la parte de
-ventana única:
+Estado: completada. El 2D usa Ash y `rer_engine_core::vulkan::SharedGpu`, y vive en
+`engine/src/engine2d/` (feature `engine2d`, bin `rer_engine_2d`). El editor construye el
+`State` 2D sobre el `SharedGpu` compartido, renderiza el scene target en el sub-rect del
+`CentralPanel` en el mismo command buffer que egui y traduce el input del rect.
 
-1. Construir el `State` 2D sobre el `SharedGpu` del editor (sin crear swapchain propia).
-2. Renderizar el scene target 2D al viewport del `CentralPanel` en el mismo frame que egui.
-3. Traducir el input del rect y despachar los comandos 2D por el host in-process.
-
-Mientras eso no esté, el editor sigue lanzando `rer_engine_2d` como proceso con ventana
-overlay; el 3D ya va in-process.
+- `editor` activa `engine3d` + `engine2d`; `InProcessEngine` elige el motor del proyecto.
+- El render usa `State::render_into` + `Vulkan2d::render_into`: deja la imagen en
+  `COLOR_ATTACHMENT_OPTIMAL` para que egui componga encima.
+- Los comandos de la UI se encolan y se drenan a `handle_command` antes de `update()`.
+- Fallback al proceso separado con `RER_LEGACY_2D_WINDOW=1`.
 
 ---
 

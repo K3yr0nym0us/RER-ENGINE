@@ -236,8 +236,11 @@ macro principal mantiene su firma y expande sub-macros `__rer_player_ui_text_*!`
   con `--no-default-features --features <motor>`).
 - `engine2d/host.rs` conserva el host winit; el bin solo llama a `host::run()`.
 - Shaders en `engine/shaders/2d/`, compilados solo si la feature está activa.
-- Pendiente de la ventana única: hospedar el 2D en el editor (hoy el editor abre el
-  proceso 2D y el 3D in-process).
+- Ventana única completada: `editor` activa `engine3d` + `engine2d`;
+  `InProcessEngine` construye el motor del proyecto sobre el `SharedGpu` del editor y
+  graba en el sub-rect del `CentralPanel`. El input se traduce al rect del viewport y
+  los comandos de la UI se drenan antes de actualizar el motor.
+- Fallback 2D por proceso: `RER_LEGACY_2D_WINDOW=1` mantiene el host/overlay antiguo.
 
 ## Riesgos
 

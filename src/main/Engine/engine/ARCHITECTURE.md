@@ -21,6 +21,18 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
 - Contrato del 2D: `src/engine2d/ARCHITECTURE.md`.
 
+## Ventana única (editor)
+
+- El editor activa `engine3d` + `engine2d`; `InProcessEngine` construye el motor del
+  proyecto sobre el `SharedGpu` de la ventana y lo actualiza en el hilo del editor.
+- El motor graba en el sub-rect del `CentralPanel` (`State::render_into`) y egui compone
+  encima en el mismo command buffer.
+- El input de winit se traduce al rect del viewport; los comandos emitidos por la UI se
+  drenan a `handle_command` antes de actualizar el motor.
+- En modo embebido los motores ignoran `set_bounds`/`resize`/`set_vsync` sobre la ventana
+  compartida: el tamaño lo fija el editor.
+- Fallback 2D por proceso: `RER_LEGACY_2D_WINDOW=1`.
+
 Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mallas glTF/GLB. El tipo de cámara en play (`gameStyle`) se elige en el acordeón Camera.
 
 ## Politica GPU
