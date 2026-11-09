@@ -194,7 +194,8 @@ pub struct FrameRenderer {
     pipelines: Vec<vk::Pipeline>,
     pool: vk::DescriptorPool,
     /// Los `VkDescriptorSetLayout` del renderer. Se guardan porque hay que destruirlos: el leak que
-    /// reportaba `vkDestroyDevice(): N leaked objects` al cerrar eran exactamente estos.
+    /// reportaba `vkDestroyDevice(): N leaked objects` al cerrar eran exactamente estos. Son 12
+    /// campos pero 11 objetos (`taa` comparte layout con `full`).
     set_layouts: SetLayouts,
     samplers: Vec<vk::Sampler>,
     sets: DescriptorSets,
@@ -2866,9 +2867,11 @@ fn host_buffer(gpu: &SharedGpu, size: u64, name: &str) -> Result<GpuBuffer, Vulk
 }
 
 impl SetLayouts {
-    /// Destruye los 12 layouts. Se llama en `Drop` del renderer, después de destruir los pipeline
+    /// Destruye los layouts. Se llama en `Drop` del renderer, después de destruir los pipeline
     /// layouts y el descriptor pool, que son los únicos objetos que los referencian.
     fn destroy(&self, device: &ash::Device) {
+        use ash::vk::Handle;
+
         let all = [
             self.scene,
             self.albedo,
@@ -2883,7 +2886,16 @@ impl SetLayouts {
             self.rt,
             self.bvh,
         ];
+        // Hay que deduplicar: 12 campos no son 12 objetos. `create_sets` hace `let taa = full;`
+        // (los dos comparten layout), así que sin esto se destruía el mismo handle dos veces y la
+        // validación lo devolvía como `vkDestroyDescriptorSetLayout(): ... Invalid Object`.
+        let mut seen: Vec<u64> = Vec::with_capacity(all.len());
         for layout in all {
+            let raw = layout.as_raw();
+            if seen.contains(&raw) {
+                continue;
+            }
+            seen.push(raw);
             unsafe { device.destroy_descriptor_set_layout(layout, None) };
         }
     }
@@ -2988,6 +3000,8 @@ fn create_sets(
             ),
         ],
     )?;
+    // TAA y denoise comparten forma (3 samplers de color en set 0), así que reutilizan el MISMO
+    // layout: `SetLayouts` tiene 12 campos pero 11 objetos, y `SetLayouts::destroy` deduplica.
     let taa = full;
     let denoise = set_layout(
         device,
