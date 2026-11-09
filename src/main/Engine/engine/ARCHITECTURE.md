@@ -13,7 +13,7 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 
 - `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos.
 - Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`core`), no un enum de comandos unico ni la logica de juego.
-- Contrato por motor: `engine/src/engine3d/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
+- Contrato por motor: `engine/src/engine3d/ipc/`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, cámara play character, glTF/GLB). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
 - Este documento no describe ni prescribe comportamiento del motor 2D.
@@ -106,7 +106,7 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   gizmo y HUD) y `accel.rs` (BLAS/TLAS). El contexto y la swapchain viven en
   `rer-engine-core::vulkan`.
 - `src/engine3d/bvh.rs`: BVH binario en CPU y layouts GPU del fallback por software.
-- `src/engine3d/engine/commands.rs`: IPC y mutaciones de estado.
+- `src/engine3d/engine/commands/`: IPC y mutaciones de estado, por dominio.
 - `src/engine3d/engine/render.rs`: mundo 3D, batches estáticos y skinned, escena RT cacheada
   (instancias/materiales/BVH), overlays gizmo, HUD y `FrameInput`.
 - `src/engine3d/engine/tick.rs`: delta time, metricas, fade del hint Esc.
@@ -126,13 +126,36 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
 - `src/engine3d/config_3d/world_bounds.rs`: limites y culling AABB.
 - `src/engine3d/config_base.rs`: `setup_default_3d_scene`, `reset_runtime_scene_3d`.
 - `src/engine3d/ecs.rs`: `Transform`, `MeshComponent`, marcadores.
-- `src/engine3d/ipc.rs`: comandos y eventos JSON.
+- `src/engine3d/ipc/`: comandos y eventos JSON (`types` y `events`).
 
 Soporte: `mesh.rs`, `gizmo.rs`, `texture.rs`, `scripting.rs`, `build.rs` y `shaders/`.
 
+## Mapa de modulos (Fase 6)
+
+Los ficheros grandes se dividieron por funcionalidad. Para un cambio concreto se abre el
+submodulo, no el arbol completo:
+
+| Modulo | Contenido |
+|---|---|
+| `src/engine3d/vulkan/frame/` | `mod` (FrameRenderer/record), `targets`, `forward`, `present`, `rt`, `reflections`, `shadow`, `commands`, `layouts`, `pipelines` |
+| `src/engine3d/engine/commands/` | `system`, `scenes`, `entities`, `assets`, `graphics`, `world`, `player_ui`, `animation`, `scripts`, `sockets` |
+| `src/engine3d/engine/load_proyect/` | `schema`, `manifest`, `paths`, `restore`, `scene`, `events`, `snapshot` |
+| `src/engine3d/config_3d/model_asset/` | `types`, `material`, `import`, `asset`, `animation`, `skeleton`, `play` |
+| `src/engine3d/ipc/` | `types` (payloads), `events` (EngineEvent y transporte) |
+| `core/vulkan/gpu/` (crate `core`) | `context`, `swapchain`, `memory`, `frame` |
+
+Cada `mod.rs` reexporta las rutas publicas anteriores (`load_proyect::SavedScene`,
+`model_asset::MAX_JOINTS`, `commands::handle_command`, etc.), asi que el resto del
+codigo no cambia. Las reglas de cada split:
+
+- Un fichero = una responsabilidad (pase, dominio de comandos, fase de carga).
+- Los helpers compartidos viven en el `mod.rs` de su grupo o en un submodulo comun.
+- El dispatcher de comandos pasa el `EngineCommand` de dominio en dominio; cada
+  dominio devuelve `None` si lo atendio o `Some(cmd)` si no era suyo.
+
 ## Soporte interno 3D (no es IPC del otro motor)
 
-`src/engine3d/config_compat/` agrupa tipos de herramientas del editor 3D (`ActiveTool`, `GridConfig`) y utilidades de quick-build/plane tools. **No** es un submotor 2D ni un lugar para stubs de comandos IPC ajenos; esos comandos ya no existen en `ipc.rs` 3D.
+`src/engine3d/config_compat/` agrupa tipos de herramientas del editor 3D (`ActiveTool`, `GridConfig`) y utilidades de quick-build/plane tools. **No** es un submotor 2D ni un lugar para stubs de comandos IPC ajenos; esos comandos ya no existen en `ipc/` 3D.
 
 - Implementacion 3D nueva → `config_3d/` o `engine/`.
 - No reintroducir variantes 2D en el enum IPC 3D “por compatibilidad”.
@@ -169,7 +192,7 @@ El frontend **no** debe derivar centro de cuerpo, quaterniones ni forward de mal
 | Electron → motor | `set_play_character_view` | Pies, `yaw`, `pitch`; opcional `fov_y`, `frustum_distance`. Aplica camara + cuerpo y emite evento. |
 | Motor → Electron | `play_character_view_changed` | Estado confirmado: pies, orientacion de camara, FOV/frustum, `body_center`, `body_rotation`, `body_scale`, `player_id`. |
 
-Implementacion: `apply_play_character_view()` / `emit_play_character_view_changed()` en `config_3d/fps_camera.rs`; handler en `engine/commands.rs`.
+Implementacion: `apply_play_character_view()` / `emit_play_character_view_changed()` en `config_3d/fps_camera.rs`; handler en `engine/commands/`.
 
 El motor emite `play_character_view_changed` tras, entre otros:
 
@@ -257,7 +280,7 @@ Sistema de **pantallas HUD** para el jugador en proyectos **3D** (cámara play c
 
 **Undo/redo (Ctrl+Z / Ctrl+Y):** snapshots de la pantalla en edición (`hud_undo.rs`, `UndoAction::RestorePlayerUiHud`). Se registra antes de cada punto de polígono, alta/baja de elementos, props (`set_player_ui_hud_element_props`) e inicio de arrastre/resize.
 
-**IPC relevante (ver `ipc.rs`):**
+**IPC relevante (ver `ipc/`):**
 
 | Comando | Rol |
 |---------|-----|
@@ -271,6 +294,6 @@ Sistema de **pantallas HUD** para el jugador en proyectos **3D** (cámara play c
 
 Lista unificada al editor: evento `player_ui_text_boxes_list` (texto, botones, imágenes y objetos de la pantalla en edición).
 
-**Persistencia (`.save`):** `export_save_snapshot` incluye `player_ui_text_boxes`, `player_ui_buttons`, `player_ui_images`, `player_ui_objects` y `playerUiScreens`; restauración en `load_proyect.rs`.
+**Persistencia (`.save`):** `export_save_snapshot` incluye `player_ui_text_boxes`, `player_ui_buttons`, `player_ui_images`, `player_ui_objects` y `playerUiScreens`; restauración en `load_proyect/`.
 
 **Scripting:** `set_active_player_ui`, `set_active_player_ui_by_name`, `clear_active_player_ui` (`scripting.rs`).

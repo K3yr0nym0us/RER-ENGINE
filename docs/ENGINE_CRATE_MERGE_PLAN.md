@@ -200,21 +200,25 @@ Sin la fase de "convertir el 3D en librería" (ya son módulos del mismo crate):
 
 ### Fase 6 — Repartir ficheros grandes
 
-| Fichero | Líneas | Destino |
-|---|---|---|
-| `engine3d/render/frame.rs` | 3995 | `render/{targets,pipelines,descriptors}.rs` + `render/passes/*` |
-| `config_3d/model_asset.rs` | 2360 | `config/model/{store,clips,materials,textures,fbx}.rs` |
-| `engine/load_proyect.rs` | 2360 | `loader/{manifest,entities,scripts,assets,scenes}.rs` |
-| `engine3d/ipc/commands.rs` | 2171 | `ipc/commands/{scene,assets,camera,physics,ui,graphics}.rs` |
-| `core/vulkan/gpu.rs` | 1757 | `vulkan/{context,surface,swapchain,memory,buffer,image,upload,frame_sync}.rs` |
-| `engine_3d/main.rs` | 1436 | `host/{app,input,overlay,preview}.rs` (Fase 2/5) |
-| `editor/ui/sidebar_left.rs` | 1432 | `ui/left/*.rs` por sección |
-| `config_3d/mod.rs` | 1397 | `config/{camera,world,bounds,execution}.rs` |
-| `engine3d/scene/render.rs` | 1256 | `scene/render/{gather,record,debug}.rs` |
-| `editor/ui/sidebar_right.rs` | 1170 | `ui/right/*.rs` por acordeón |
-| `static_model_cache.rs` | 1084 | `assets/model_cache/{store,preload,states}.rs` |
-| `editor/app.rs` | 969 | `app/{state,events,save,logs,selection,metrics}.rs` |
-| `core/player_ui/text_input` | 1056 | `text_input/{types,hit_test,drag,render}.rs` |
+> Estado: en curso. Hecho: `vulkan/frame`, `ipc`, `core/vulkan/gpu`, `commands`,
+> `load_proyect`, `config_3d/model_asset`, los sidebars y `app` del editor.
+> Pendiente: `config_3d/mod.rs`, `engine/render.rs`, `static_model_cache.rs` y
+> `core/player_ui/text_input`.
+
+| Antes | Ahora |
+|---|---|
+| `engine3d/vulkan/frame.rs` 3.995 | `vulkan/frame/{mod,commands,layouts,pipelines,targets,forward,present,rt,reflections,shadow}.rs` |
+| `engine3d/engine/commands.rs` 2.171 | `engine/commands/{mod,system,scenes,entities,assets,graphics,world,player_ui,animation,scripts,sockets}.rs` |
+| `engine3d/engine/load_proyect.rs` 2.360 | `engine/load_proyect/{mod,schema,manifest,paths,restore,scene,events,snapshot}.rs` |
+| `config_3d/model_asset.rs` 2.360 | `config_3d/model_asset/{mod,types,material,import,asset,animation,skeleton,play}.rs` |
+| `core/vulkan/gpu.rs` 1.757 | `core/vulkan/gpu/{mod,context,swapchain,memory,frame}.rs` |
+| `engine3d/ipc.rs` 1.372 | `engine3d/ipc/{mod,types,events}.rs` |
+| `editor/ui/sidebar_left.rs` 1.432 | `ui/sidebar_left/{mod,scenes,camera,resources,entities,interface,tools,controls}.rs` |
+| `editor/ui/sidebar_right.rs` 1.170 | `ui/sidebar_right/{mod,workspace,grid,lighting,textures,reflections,shadows,msaa,taa,gravity,fps,tiers,metrics}.rs` |
+| `editor/app.rs` 969 | `editor/app/{mod,events,logs,save}.rs` |
+
+Regla: los `mod.rs` conservan los re-exports de las rutas públicas, así que los
+consumidores no cambian aunque el código viva en otro fichero.
 
 ### Fase 7 — Sumar el 2D
 
