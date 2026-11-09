@@ -368,7 +368,7 @@ impl State {
             });
             pass.set_pipeline(&self.screen_hud_pipeline);
             pass.set_bind_group(0, &self.hud_scene_bind_group, &[]);
-            pass.set_bind_group(1, self.player_ui_text_atlas.bind_group.as_ref(), &[]);
+            pass.set_bind_group(1, self.player_ui_text_atlas.bind_group(), &[]);
             pass.set_vertex_buffer(0, self.hud_quad_mesh.vertex_buffer.slice(..));
             pass.set_vertex_buffer(1, inst_buf.slice(..));
             pass.set_index_buffer(

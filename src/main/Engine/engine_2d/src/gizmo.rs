@@ -12,6 +12,10 @@ pub use rer_engine_shared::player_ui::ndc_draw::NdcVertex as GizmoVertex;
 pub struct GizmoBuffer {
     pub vertex_buffer: wgpu::Buffer,
     pub vertex_count: u32,
+    /// Copia CPU de los vértices. La ruta Vulkan (fase 5b) no puede leer los buffers de wgpu, así
+    /// que reutiliza estos datos para sus propios `VkBuffer`. Son overlays pequeños (rejilla de
+    /// pantalla, texto, cursor, herramienta), así que mantenerlos es barato.
+    pub vertices: Vec<GizmoVertex>,
 }
 
 fn push_tri(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3], color: [f32; 4]) {
@@ -151,6 +155,7 @@ pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
     GizmoBuffer {
         vertex_buffer,
         vertex_count: verts.len() as u32,
+        vertices: verts,
     }
 }
 
@@ -170,5 +175,6 @@ pub fn build_from_vertices(device: &wgpu::Device, verts: &[GizmoVertex]) -> Gizm
     GizmoBuffer {
         vertex_buffer,
         vertex_count: verts.len() as u32,
+        vertices: verts.to_vec(),
     }
 }

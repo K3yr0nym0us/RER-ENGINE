@@ -13,13 +13,14 @@
 //!    los `begin_rendering` consecutivos que documentó el CSM).
 
 use ash::vk;
+use rer_engine_shared::player_ui::grid::NDC_SCREEN_UNIFORM;
 use rer_engine_shared::player_ui::ndc_draw::NdcVertex;
 use rer_engine_shared::vulkan::gpu::cmd_image_barrier;
 use rer_engine_shared::vulkan::{
     FRAMES_IN_FLIGHT, GpuBuffer, GpuImage, MemoryLocation, SharedGpu, VulkanError,
 };
 
-use crate::engine::types::SceneUniforms;
+use crate::engine::types::{SceneUniforms, ScreenHudSceneUniforms};
 use crate::gizmo;
 use crate::mesh::{InstanceData, Mesh, Vertex};
 
@@ -27,6 +28,11 @@ use super::targets::{COLOR_FORMAT, DEPTH_FORMAT, SceneTargets};
 
 const ATLAS_SIZE: u32 = 4096;
 const ATLAS_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
+
+/// Uniformes NDC compartidos por la rejilla de pantalla y todos los overlays de Player UI:
+/// `view_proj` + `model` identidad + `flags` (-1,-1,0,0). Los dos `NDC_IDENTITY` que usaba wgpu
+/// eran idénticos a `NDC_SCREEN_UNIFORM`, así que aquí se usa uno solo.
+const NDC_UNIFORM: [[f32; 4]; 9] = NDC_SCREEN_UNIFORM;
 
 /// Un batch de rejilla: uniformes + vértices de línea.
 pub(crate) struct GridBatch<'a> {
@@ -39,6 +45,24 @@ pub(crate) struct GizmoBatch {
     pub uniforms: [[f32; 4]; 9],
 }
 
+/// Overlays NDC de Player UI. Todo lo que va aquí ya está en espacio de pantalla.
+pub(crate) struct NdcOverlay<'a> {
+    /// Rejilla de edición de UI (líneas, `LINE_LIST`).
+    pub screen_grid: &'a [NdcVertex],
+    /// Overlay de dibujo de objetos (triángulos).
+    pub object: &'a [NdcVertex],
+    /// Marco de selección de cuadros de texto (triángulos).
+    pub text: &'a [NdcVertex],
+    /// Cursor de edición de texto (triángulos).
+    pub caret: &'a [NdcVertex],
+}
+
+/// Glyphs HUD instanciados sobre el quad unitario (`screen_hud_pipeline`).
+pub(crate) struct HudBatch<'a> {
+    pub instances: &'a [InstanceData],
+    pub quad: &'a Mesh,
+}
+
 /// Datos CPU de un frame. Se construyen en `render_vulkan` desde el `State`, sin depender de wgpu.
 pub(crate) struct FrameInput<'a> {
     pub clear: [f32; 4],
@@ -48,7 +72,13 @@ pub(crate) struct FrameInput<'a> {
     pub meshes: &'a [Mesh],
     pub grid: Option<GridBatch<'a>>,
     pub collision: &'a [NdcVertex],
+    /// Cruces y líneas de construcción de la herramienta activa (mundo, mismo pass que la rejilla).
+    pub tool_overlay: &'a [NdcVertex],
     pub gizmo: Option<GizmoBatch>,
+    /// PNG del hint de snap: (índice de malla canónica, instancia).
+    pub snap_hint: Option<(usize, InstanceData)>,
+    pub ui: NdcOverlay<'a>,
+    pub hud: Option<HudBatch<'a>>,
 }
 
 struct VkMesh {
@@ -66,12 +96,17 @@ pub(crate) struct Renderer {
     gpu: SharedGpu,
     scene: SceneTargets,
     atlas: Atlas,
+    /// Atlas de glyphs/UI de pantalla (espejo del atlas wgpu de `ScreenHudAtlas`).
+    hud_atlas: Atlas,
     meshes: Vec<VkMesh>,
     mesh_signature: (usize, u64),
+    hud_quad: Option<VkMesh>,
+    hud_quad_signature: (usize, usize, u32),
 
     shaders: Vec<vk::ShaderModule>,
     sampler_atlas: vk::Sampler,
     sampler_blit: vk::Sampler,
+    sampler_hud: vk::Sampler,
 
     set_layout_scene: vk::DescriptorSetLayout,
     set_layout_atlas: vk::DescriptorSetLayout,
@@ -80,19 +115,29 @@ pub(crate) struct Renderer {
     layout_scene: vk::PipelineLayout,
     layout_line: vk::PipelineLayout,
     layout_blit: vk::PipelineLayout,
+    layout_hud: vk::PipelineLayout,
     pool: vk::DescriptorPool,
 
     scene_sets: Vec<vk::DescriptorSet>,
     line_sets: Vec<vk::DescriptorSet>,
     gizmo_sets: Vec<vk::DescriptorSet>,
+    ndc_sets: Vec<vk::DescriptorSet>,
+    hud_scene_sets: Vec<vk::DescriptorSet>,
     atlas_set: vk::DescriptorSet,
+    hud_atlas_set: vk::DescriptorSet,
     blit_set: vk::DescriptorSet,
 
     scene_uniforms: Vec<GpuBuffer>,
     line_uniforms: Vec<GpuBuffer>,
     gizmo_uniforms: Vec<GpuBuffer>,
+    ndc_uniforms: Vec<GpuBuffer>,
+    hud_scene_uniforms: Vec<GpuBuffer>,
     instance_buffers: Vec<GpuBuffer>,
     line_buffers: Vec<GpuBuffer>,
+    ndc_line_buffers: Vec<GpuBuffer>,
+    ndc_tri_buffers: Vec<GpuBuffer>,
+    snap_buffers: Vec<GpuBuffer>,
+    hud_instance_buffers: Vec<GpuBuffer>,
     gizmo_vertices: GpuBuffer,
     gizmo_vertex_count: u32,
 
@@ -101,6 +146,8 @@ pub(crate) struct Renderer {
     pipe_blit: vk::Pipeline,
     pipe_line: vk::Pipeline,
     pipe_gizmo: vk::Pipeline,
+    pipe_snap_hint: vk::Pipeline,
+    pipe_hud: vk::Pipeline,
 }
 
 impl Renderer {
@@ -120,9 +167,21 @@ impl Renderer {
             vk::ImageAspectFlags::COLOR,
             "2d-atlas",
         )?;
+        // Espejo del atlas wgpu de glyphs/UI de pantalla: mismo tamaño y formato que la ruta wgpu.
+        let hud_atlas_image = gpu.create_image(
+            vk::Extent2D {
+                width: ATLAS_SIZE,
+                height: ATLAS_SIZE,
+            },
+            ATLAS_FORMAT,
+            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+            vk::ImageAspectFlags::COLOR,
+            "2d-hud-atlas",
+        )?;
 
         let sampler_atlas = make_sampler(device, vk::SamplerAddressMode::CLAMP_TO_EDGE)?;
         let sampler_blit = make_sampler(device, vk::SamplerAddressMode::CLAMP_TO_EDGE)?;
+        let sampler_hud = make_sampler(device, vk::SamplerAddressMode::CLAMP_TO_EDGE)?;
 
         let set_layout_scene = set_layout(
             device,
@@ -160,15 +219,17 @@ impl Renderer {
         let layout_scene = pipeline_layout(device, &[set_layout_scene, set_layout_atlas])?;
         let layout_line = pipeline_layout(device, &[set_layout_line])?;
         let layout_blit = pipeline_layout(device, &[set_layout_blit])?;
+        // El HUD reutiliza el bloque uniforme de escena (set 0) y el muestreador del atlas (set 1).
+        let layout_hud = pipeline_layout(device, &[set_layout_scene, set_layout_atlas])?;
 
         let pool = unsafe {
             device.create_descriptor_pool(
                 &vk::DescriptorPoolCreateInfo::default()
-                    .max_sets(16)
+                    .max_sets(32)
                     .pool_sizes(&[
                         vk::DescriptorPoolSize {
                             ty: vk::DescriptorType::UNIFORM_BUFFER,
-                            descriptor_count: 8,
+                            descriptor_count: 16,
                         },
                         vk::DescriptorPoolSize {
                             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -183,12 +244,17 @@ impl Renderer {
         let mut scene_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut line_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut gizmo_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut ndc_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut hud_scene_sets = Vec::with_capacity(FRAMES_IN_FLIGHT);
         for _ in 0..FRAMES_IN_FLIGHT {
             scene_sets.push(alloc_set(device, pool, set_layout_scene)?);
             line_sets.push(alloc_set(device, pool, set_layout_line)?);
             gizmo_sets.push(alloc_set(device, pool, set_layout_line)?);
+            ndc_sets.push(alloc_set(device, pool, set_layout_line)?);
+            hud_scene_sets.push(alloc_set(device, pool, set_layout_scene)?);
         }
         let atlas_set = alloc_set(device, pool, set_layout_atlas)?;
+        let hud_atlas_set = alloc_set(device, pool, set_layout_atlas)?;
         let blit_set = alloc_set(device, pool, set_layout_blit)?;
 
         let mut shaders = Vec::new();
@@ -220,6 +286,16 @@ impl Renderer {
         let frag_line = shader(
             device,
             include_bytes!(concat!(env!("OUT_DIR"), "/gizmo.frag.spv")),
+            &mut shaders,
+        )?;
+        let vert_hud = shader(
+            device,
+            include_bytes!(concat!(env!("OUT_DIR"), "/shader_screen_hud.vert.spv")),
+            &mut shaders,
+        )?;
+        let frag_hud = shader(
+            device,
+            include_bytes!(concat!(env!("OUT_DIR"), "/shader_screen_hud.frag.spv")),
             &mut shaders,
         )?;
 
@@ -320,11 +396,51 @@ impl Renderer {
             vk::PrimitiveTopology::TRIANGLE_LIST,
         )?;
 
+        // Hint de snap: instancia el quad canónico con el shader de escena sobre el swapchain. En
+        // wgpu el pass llevaba el depth del scene target con `ALWAYS` y sin escritura, así que
+        // omitirlo aquí produce exactamente el mismo resultado.
+        let pipe_snap_hint = make_pipeline(
+            device,
+            layout_scene,
+            vert_scene,
+            frag_scene,
+            &scene_bindings,
+            &scene_attributes,
+            &[swapchain_format],
+            None,
+            true,
+            vk::CullModeFlags::NONE,
+            vk::PrimitiveTopology::TRIANGLE_LIST,
+        )?;
+
+        // Glyphs HUD de pantalla: mismo layout de vértice/instancia que la escena, pero muestrea
+        // el atlas de UI y usa los uniformes NDC (`ScreenHudSceneUniforms::ndc_identity`).
+        let pipe_hud = make_pipeline(
+            device,
+            layout_hud,
+            vert_hud,
+            frag_hud,
+            &scene_bindings,
+            &scene_attributes,
+            &[swapchain_format],
+            None,
+            true,
+            vk::CullModeFlags::NONE,
+            vk::PrimitiveTopology::TRIANGLE_LIST,
+        )?;
+
         let mut scene_uniforms = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut line_uniforms = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut gizmo_uniforms = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut ndc_uniforms = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut hud_scene_uniforms = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut instance_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut line_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut ndc_line_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut ndc_tri_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut snap_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let mut hud_instance_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
+        let hud_identity = ScreenHudSceneUniforms::ndc_identity();
         for _ in 0..FRAMES_IN_FLIGHT {
             scene_uniforms.push(gpu.create_buffer(
                 std::mem::size_of::<SceneUniforms>() as u64,
@@ -344,6 +460,18 @@ impl Renderer {
                 MemoryLocation::CpuToGpu,
                 "2d-gizmo-uniforms",
             )?);
+            ndc_uniforms.push(gpu.create_buffer_with_data(
+                bytemuck::bytes_of(&NDC_UNIFORM),
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-ndc-uniforms",
+            )?);
+            hud_scene_uniforms.push(gpu.create_buffer_with_data(
+                bytemuck::bytes_of(&hud_identity),
+                vk::BufferUsageFlags::UNIFORM_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-hud-scene-uniforms",
+            )?);
             instance_buffers.push(gpu.create_buffer(
                 4,
                 vk::BufferUsageFlags::VERTEX_BUFFER,
@@ -355,6 +483,30 @@ impl Renderer {
                 vk::BufferUsageFlags::VERTEX_BUFFER,
                 MemoryLocation::CpuToGpu,
                 "2d-lines",
+            )?);
+            ndc_line_buffers.push(gpu.create_buffer(
+                4,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-ndc-lines",
+            )?);
+            ndc_tri_buffers.push(gpu.create_buffer(
+                4,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-ndc-tris",
+            )?);
+            snap_buffers.push(gpu.create_buffer(
+                4,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-snap-instance",
+            )?);
+            hud_instance_buffers.push(gpu.create_buffer(
+                4,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-hud-instances",
             )?);
         }
 
@@ -370,11 +522,17 @@ impl Renderer {
             gpu: gpu.clone(),
             scene,
             atlas: Atlas { image: atlas_image },
+            hud_atlas: Atlas {
+                image: hud_atlas_image,
+            },
             meshes: Vec::new(),
             mesh_signature: (usize::MAX, 0),
+            hud_quad: None,
+            hud_quad_signature: (usize::MAX, 0, 0),
             shaders,
             sampler_atlas,
             sampler_blit,
+            sampler_hud,
             set_layout_scene,
             set_layout_atlas,
             set_layout_line,
@@ -382,17 +540,27 @@ impl Renderer {
             layout_scene,
             layout_line,
             layout_blit,
+            layout_hud,
             pool,
             scene_sets,
             line_sets,
             gizmo_sets,
+            ndc_sets,
+            hud_scene_sets,
             atlas_set,
+            hud_atlas_set,
             blit_set,
             scene_uniforms,
             line_uniforms,
             gizmo_uniforms,
+            ndc_uniforms,
+            hud_scene_uniforms,
             instance_buffers,
             line_buffers,
+            ndc_line_buffers,
+            ndc_tri_buffers,
+            snap_buffers,
+            hud_instance_buffers,
             gizmo_vertices,
             gizmo_vertex_count: gizmo_verts.len() as u32,
             pipe_scene_opaque,
@@ -400,6 +568,8 @@ impl Renderer {
             pipe_blit,
             pipe_line,
             pipe_gizmo,
+            pipe_snap_hint,
+            pipe_hud,
         };
         renderer.write_static_descriptors()?;
         Ok(renderer)
@@ -419,11 +589,24 @@ impl Renderer {
         for (slot, set) in self.gizmo_sets.iter().enumerate() {
             write_uniform(device, *set, &self.gizmo_uniforms[slot])?;
         }
+        for (slot, set) in self.ndc_sets.iter().enumerate() {
+            write_uniform(device, *set, &self.ndc_uniforms[slot])?;
+        }
+        for (slot, set) in self.hud_scene_sets.iter().enumerate() {
+            write_uniform(device, *set, &self.hud_scene_uniforms[slot])?;
+        }
         write_sampled(
             device,
             self.atlas_set,
             self.atlas.image.view,
             self.sampler_atlas,
+            vk::ImageLayout::GENERAL,
+        )?;
+        write_sampled(
+            device,
+            self.hud_atlas_set,
+            self.hud_atlas.image.view,
+            self.sampler_hud,
             vk::ImageLayout::GENERAL,
         )?;
         self.rewrite_blit_descriptor()
@@ -470,6 +653,19 @@ impl Renderer {
             .upload_rgba_region(&self.atlas.image, x, y, width, height, rgba)
     }
 
+    /// Espejo del atlas de glyphs/UI de pantalla. Mismos píxeles y coordenadas que el atlas wgpu.
+    pub(crate) fn upload_hud_atlas_region(
+        &self,
+        rgba: &[u8],
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(), VulkanError> {
+        self.gpu
+            .upload_rgba_region(&self.hud_atlas.image, x, y, width, height, rgba)
+    }
+
     pub(crate) fn render(
         &mut self,
         frame: &rer_engine_shared::vulkan::FrameTarget,
@@ -508,12 +704,13 @@ impl Renderer {
             self.instance_buffers[slot].write(0, bytemuck::cast_slice(&flat))?;
         }
 
-        // Rejilla + colisiones en un solo buffer de líneas; dos draws con distinto `first_vertex`.
+        // Rejilla + colisiones + overlay de herramienta en un solo buffer de líneas de mundo; tres
+        // draws con distinto `first_vertex` y el mismo uniform (igual que la ruta wgpu).
         let grid_verts = input.grid.as_ref().map(|g| g.vertices).unwrap_or(&[]);
         if let Some(grid) = &input.grid {
             self.line_uniforms[slot].write(0, bytemuck::bytes_of(&grid.uniforms))?;
         }
-        let line_total = grid_verts.len() + input.collision.len();
+        let line_total = grid_verts.len() + input.collision.len() + input.tool_overlay.len();
         let line_bytes = line_total * std::mem::size_of::<NdcVertex>();
         if self.line_buffers[slot].size < line_bytes.max(4) as u64 {
             self.line_buffers[slot] = self.gpu.create_buffer(
@@ -527,7 +724,77 @@ impl Renderer {
             let mut verts: Vec<NdcVertex> = Vec::with_capacity(line_total);
             verts.extend_from_slice(grid_verts);
             verts.extend_from_slice(input.collision);
+            verts.extend_from_slice(input.tool_overlay);
             self.line_buffers[slot].write(0, bytemuck::cast_slice(&verts))?;
+        }
+
+        // Overlays NDC: rejilla de pantalla como líneas y objeto/texto/cursor como triángulos.
+        let ndc_line_bytes = std::mem::size_of_val(input.ui.screen_grid);
+        if self.ndc_line_buffers[slot].size < ndc_line_bytes.max(4) as u64 {
+            self.ndc_line_buffers[slot] = self.gpu.create_buffer(
+                ndc_line_bytes.max(4) as u64,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-ndc-lines",
+            )?;
+        }
+        if !input.ui.screen_grid.is_empty() {
+            self.ndc_line_buffers[slot].write(0, bytemuck::cast_slice(input.ui.screen_grid))?;
+        }
+
+        let object_len = input.ui.object.len();
+        let text_len = input.ui.text.len();
+        let caret_len = input.ui.caret.len();
+        let tri_total = object_len + text_len + caret_len;
+        let tri_bytes = tri_total * std::mem::size_of::<NdcVertex>();
+        if self.ndc_tri_buffers[slot].size < tri_bytes.max(4) as u64 {
+            self.ndc_tri_buffers[slot] = self.gpu.create_buffer(
+                tri_bytes.max(4) as u64,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-ndc-tris",
+            )?;
+        }
+        if tri_total > 0 {
+            let mut verts: Vec<NdcVertex> = Vec::with_capacity(tri_total);
+            verts.extend_from_slice(input.ui.object);
+            verts.extend_from_slice(input.ui.text);
+            verts.extend_from_slice(input.ui.caret);
+            self.ndc_tri_buffers[slot].write(0, bytemuck::cast_slice(&verts))?;
+        }
+
+        let snap_instance_bytes = std::mem::size_of::<InstanceData>();
+        if self.snap_buffers[slot].size < snap_instance_bytes as u64 {
+            self.snap_buffers[slot] = self.gpu.create_buffer(
+                snap_instance_bytes as u64,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-snap-instance",
+            )?;
+        }
+        if let Some((_, instance)) = &input.snap_hint {
+            self.snap_buffers[slot].write(0, bytemuck::bytes_of(instance))?;
+        }
+
+        let hud_instance_count = input
+            .hud
+            .as_ref()
+            .map(|hud| hud.instances.len())
+            .unwrap_or(0);
+        let hud_bytes = hud_instance_count * std::mem::size_of::<InstanceData>();
+        if self.hud_instance_buffers[slot].size < hud_bytes.max(4) as u64 {
+            self.hud_instance_buffers[slot] = self.gpu.create_buffer(
+                hud_bytes.max(4) as u64,
+                vk::BufferUsageFlags::VERTEX_BUFFER,
+                MemoryLocation::CpuToGpu,
+                "2d-hud-instances",
+            )?;
+        }
+        if let Some(hud) = &input.hud {
+            self.ensure_hud_quad(hud.quad)?;
+            if !hud.instances.is_empty() {
+                self.hud_instance_buffers[slot].write(0, bytemuck::cast_slice(hud.instances))?;
+            }
         }
 
         if let Some(gz) = &input.gizmo {
@@ -652,7 +919,7 @@ impl Renderer {
             );
             device.cmd_draw(cmd, 3, 1, 0, 0);
 
-            // Rejilla y colisiones comparten uniform y pipeline de líneas.
+            // Rejilla, colisiones y overlay de herramienta comparten uniform y pipeline de líneas.
             if line_total > 0 {
                 device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_line);
                 device.cmd_bind_descriptor_sets(
@@ -676,6 +943,100 @@ impl Renderer {
                         0,
                     );
                 }
+                if !input.tool_overlay.is_empty() {
+                    device.cmd_draw(
+                        cmd,
+                        input.tool_overlay.len() as u32,
+                        1,
+                        (grid_verts.len() + input.collision.len()) as u32,
+                        0,
+                    );
+                }
+            }
+
+            // Hint de snap: quad canónico instanciado con el shader de escena.
+            if let Some((mesh_idx, _)) = &input.snap_hint
+                && let Some(mesh) = self.meshes.get(*mesh_idx)
+            {
+                device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_snap_hint);
+                device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.layout_scene,
+                    0,
+                    &[self.scene_sets[slot], self.atlas_set],
+                    &[],
+                );
+                device.cmd_bind_vertex_buffers(
+                    cmd,
+                    0,
+                    &[mesh.vertex.buffer, self.snap_buffers[slot].buffer],
+                    &[0, 0],
+                );
+                device.cmd_bind_index_buffer(cmd, mesh.index.buffer, 0, vk::IndexType::UINT32);
+                device.cmd_draw_indexed(cmd, mesh.index_count, 1, 0, 0, 0);
+            }
+
+            // Rejilla NDC de edición de UI (uniform NDC, pipeline de líneas).
+            if !input.ui.screen_grid.is_empty() {
+                device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_line);
+                device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.layout_line,
+                    0,
+                    &[self.ndc_sets[slot]],
+                    &[],
+                );
+                device.cmd_bind_vertex_buffers(cmd, 0, &[self.ndc_line_buffers[slot].buffer], &[0]);
+                device.cmd_draw(cmd, input.ui.screen_grid.len() as u32, 1, 0, 0);
+            }
+
+            // Overlays NDC triangulados: objeto, texto y cursor (mismo uniform y pipeline).
+            if tri_total > 0 {
+                device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_gizmo);
+                device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.layout_line,
+                    0,
+                    &[self.ndc_sets[slot]],
+                    &[],
+                );
+                device.cmd_bind_vertex_buffers(cmd, 0, &[self.ndc_tri_buffers[slot].buffer], &[0]);
+                for (count, first) in [
+                    (object_len, 0u32),
+                    (text_len, object_len as u32),
+                    (caret_len, (object_len + text_len) as u32),
+                ] {
+                    if count > 0 {
+                        device.cmd_draw(cmd, count as u32, 1, first, 0);
+                    }
+                }
+            }
+
+            // Glyphs HUD de pantalla: quad unitario instanciado, atlas de UI y uniformes NDC.
+            if let Some(hud) = &input.hud
+                && !hud.instances.is_empty()
+                && let Some(quad) = &self.hud_quad
+            {
+                device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_hud);
+                device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.layout_hud,
+                    0,
+                    &[self.hud_scene_sets[slot], self.hud_atlas_set],
+                    &[],
+                );
+                device.cmd_bind_vertex_buffers(
+                    cmd,
+                    0,
+                    &[quad.vertex.buffer, self.hud_instance_buffers[slot].buffer],
+                    &[0, 0],
+                );
+                device.cmd_bind_index_buffer(cmd, quad.index.buffer, 0, vk::IndexType::UINT32);
+                device.cmd_draw_indexed(cmd, quad.index_count, hud.instances.len() as u32, 0, 0, 0);
             }
 
             if let Some(gz) = &input.gizmo {
@@ -749,6 +1110,33 @@ impl Renderer {
         self.mesh_signature = signature;
         Ok(())
     }
+
+    /// Sube el quad unitario que instancia el pase HUD. Solo cambia si cambia la geometría.
+    fn ensure_hud_quad(&mut self, quad: &Mesh) -> Result<(), VulkanError> {
+        let signature = (quad.vertices.len(), quad.indices.len(), quad.index_count);
+        if signature == self.hud_quad_signature {
+            return Ok(());
+        }
+        let vertex = self.gpu.create_buffer_with_data(
+            bytemuck::cast_slice(&quad.vertices),
+            vk::BufferUsageFlags::VERTEX_BUFFER,
+            MemoryLocation::CpuToGpu,
+            "2d-hud-quad-vertices",
+        )?;
+        let index = self.gpu.create_buffer_with_data(
+            bytemuck::cast_slice(&quad.indices),
+            vk::BufferUsageFlags::INDEX_BUFFER,
+            MemoryLocation::CpuToGpu,
+            "2d-hud-quad-indices",
+        )?;
+        self.hud_quad = Some(VkMesh {
+            vertex,
+            index,
+            index_count: quad.index_count,
+        });
+        self.hud_quad_signature = signature;
+        Ok(())
+    }
 }
 
 impl Drop for Renderer {
@@ -761,10 +1149,17 @@ impl Drop for Renderer {
                 self.pipe_blit,
                 self.pipe_line,
                 self.pipe_gizmo,
+                self.pipe_snap_hint,
+                self.pipe_hud,
             ] {
                 device.destroy_pipeline(pipeline, None);
             }
-            for layout in [self.layout_scene, self.layout_line, self.layout_blit] {
+            for layout in [
+                self.layout_scene,
+                self.layout_line,
+                self.layout_blit,
+                self.layout_hud,
+            ] {
                 device.destroy_pipeline_layout(layout, None);
             }
             for layout in [
@@ -778,6 +1173,7 @@ impl Drop for Renderer {
             device.destroy_descriptor_pool(self.pool, None);
             device.destroy_sampler(self.sampler_atlas, None);
             device.destroy_sampler(self.sampler_blit, None);
+            device.destroy_sampler(self.sampler_hud, None);
             for shader in self.shaders.drain(..) {
                 device.destroy_shader_module(shader, None);
             }

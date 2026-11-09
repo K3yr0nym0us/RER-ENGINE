@@ -458,8 +458,12 @@ impl State {
         let player_ui_object_draw_overlay = gizmo::build_from_vertices(&device, &[]);
 
         let screen_hud_bgl = crate::screen_hud_image::ScreenHudAtlas::bind_group_layout(&device);
-        let player_ui_text_atlas =
-            crate::screen_hud_image::ScreenHudAtlas::new(&device, &queue, &screen_hud_bgl);
+        let player_ui_text_atlas = crate::screen_hud_image::ScreenHudAtlas::new(
+            &device,
+            &queue,
+            &screen_hud_bgl,
+            vulkan2d.clone(),
+        );
 
         let screen_hud_shader =
             device.create_shader_module(include_wgsl!("../shader_screen_hud.wgsl"));

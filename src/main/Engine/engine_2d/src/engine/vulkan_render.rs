@@ -10,7 +10,7 @@ use std::sync::Arc;
 use glam::{Mat4, Vec3};
 use rer_engine_shared::wgpu_surface::SurfacePresentError;
 
-use crate::vulkan::{FrameInput, GizmoBatch, GridBatch, Vulkan2d};
+use crate::vulkan::{FrameInput, GizmoBatch, GridBatch, HudBatch, NdcOverlay, Vulkan2d};
 
 use super::State;
 use super::render_helpers::{build_scene_uniforms, build_scene_uniforms_2d};
@@ -100,6 +100,65 @@ impl State {
                 None
             };
 
+            // ── Overlays de Player UI (fase 5b) ──────────────────────────────
+            // La ruta wgpu los dibuja en pases separados; aquí se extrae el mismo dato CPU y el
+            // renderer los emite en el único pase del swapchain, en el mismo orden.
+            let hud_visible = self.player_ui_hud_visible();
+            let has_gizmo = hud_visible && !self.player_ui_text_overlay_buffer.vertices.is_empty();
+            let has_glyphs = hud_visible && !self.player_ui_glyph_instances.is_empty();
+            let hud_active = has_gizmo || has_glyphs;
+            let caret_visible = hud_active
+                && self.player_ui_text_editing_id.is_some()
+                && self.player_ui_caret_blink_visible();
+            // El cursor se reconstruye en el momento de dibujar, igual que `draw_player_ui_hud`.
+            // Va antes de tomar los préstamos inmutables de abajo para no solaparlos.
+            if caret_visible && let Some(edit_id) = self.player_ui_text_editing_id {
+                crate::config_2d::player_ui::text_render::rebuild_caret_buffer(self, edit_id);
+            }
+
+            let tool_overlay: &[rer_engine_shared::player_ui::ndc_draw::NdcVertex] =
+                if !self.preview_playing && vp_2d.is_some() {
+                    &self.tool_overlay_buffer.vertices
+                } else {
+                    &[]
+                };
+
+            let ui = NdcOverlay {
+                screen_grid: if self.player_ui_edit_active {
+                    &self.ui_work_grid_buffer.vertices
+                } else {
+                    &[]
+                },
+                object: if self.player_ui_edit_active {
+                    &self.player_ui_object_draw_overlay.vertices
+                } else {
+                    &[]
+                },
+                text: if has_gizmo {
+                    &self.player_ui_text_overlay_buffer.vertices
+                } else {
+                    &[]
+                },
+                caret: if caret_visible {
+                    &self.player_ui_caret_buffer.vertices
+                } else {
+                    &[]
+                },
+            };
+
+            let snap_hint = self
+                .build_snap_hint_instance_2d()
+                .map(|instance| (self.canonical_quad_idx, instance));
+
+            let hud = if has_glyphs {
+                Some(HudBatch {
+                    instances: &self.player_ui_glyph_instances,
+                    quad: &self.hud_quad_mesh,
+                })
+            } else {
+                None
+            };
+
             let input = FrameInput {
                 clear,
                 scene_uniforms: &scene_uniforms,
@@ -108,17 +167,31 @@ impl State {
                 meshes: &self.meshes,
                 grid,
                 collision: &collision,
+                tool_overlay,
                 gizmo,
+                snap_hint,
+                ui,
+                hud,
             };
 
-            // Un draw por batch + blit + rejilla/colisiones + gizmo. Solo es estadística para el
-            // IPC (`draw_calls`); no decide nada del frame.
+            // Un draw por batch + blit + cada overlay no vacío. Solo es estadística para el IPC
+            // (`draw_calls`); no decide nada del frame.
             let mut calls = batches.len() as u32 + 1;
-            if !grid_vertices.is_empty() || !collision.is_empty() {
-                calls += 1;
-            }
-            if input.gizmo.is_some() {
-                calls += 1;
+            for non_empty in [
+                !grid_vertices.is_empty(),
+                !collision.is_empty(),
+                !tool_overlay.is_empty(),
+                input.snap_hint.is_some(),
+                !input.ui.screen_grid.is_empty(),
+                !input.ui.object.is_empty(),
+                !input.ui.text.is_empty(),
+                !input.ui.caret.is_empty(),
+                input.hud.is_some(),
+                input.gizmo.is_some(),
+            ] {
+                if non_empty {
+                    calls += 1;
+                }
             }
 
             vulkan.render(input)?;

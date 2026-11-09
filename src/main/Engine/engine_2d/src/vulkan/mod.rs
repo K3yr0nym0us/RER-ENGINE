@@ -22,7 +22,7 @@ mod layout;
 mod renderer;
 mod targets;
 
-pub(crate) use renderer::{FrameInput, GizmoBatch, GridBatch};
+pub(crate) use renderer::{FrameInput, GizmoBatch, GridBatch, HudBatch, NdcOverlay};
 
 /// ¿Debe usar el 2D la ruta Vulkan? Por defecto no: wgpu sigue mandando hasta la fase 6.
 pub(crate) fn enabled_from_env() -> bool {
@@ -101,6 +101,19 @@ impl Vulkan2d {
         height: u32,
     ) -> Result<(), VulkanError> {
         self.lock().upload_atlas_region(rgba, x, y, width, height)
+    }
+
+    /// Copia una región RGBA al atlas de glyphs/UI de pantalla (espejo del atlas wgpu).
+    pub(crate) fn upload_hud_atlas_region(
+        &self,
+        rgba: &[u8],
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(), VulkanError> {
+        self.lock()
+            .upload_hud_atlas_region(rgba, x, y, width, height)
     }
 
     /// Un frame completo: adquiere la imagen, graba escena + composición y presenta.
