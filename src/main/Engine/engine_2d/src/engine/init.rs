@@ -32,11 +32,11 @@ impl State {
         // presenta por Vulkan y el camino wgpu queda inactivo en `render()`; sin la variable esto
         // es `None` y el motor se comporta exactamente igual que antes.
         let vulkan2d = if crate::vulkan::enabled_from_env() {
-            Some(
+            Some(Arc::new(
                 crate::vulkan::Vulkan2d::new(window.as_ref()).map_err(|error| GpuInitError {
                     message: error.to_string(),
                 })?,
-            )
+            ))
         } else {
             None
         };

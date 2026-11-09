@@ -9,11 +9,16 @@
 //! el 3D (instancia, device, swapchain, `FrameTarget`, barreras). Aquí solo está lo propio del 2D:
 //! pedir **sin** trazado y el orden de layouts del swapchain.
 
+use std::sync::Mutex;
+
 use ash::vk;
 use rer_engine_shared::vulkan::gpu::cmd_image_barrier;
 use rer_engine_shared::vulkan::{FrameAcquire, SharedGpu, VulkanError, VulkanOptions};
 use rer_engine_shared::wgpu_surface::SurfacePresentError;
 use winit::window::Window;
+
+mod targets;
+use targets::{SampledTexture, SceneTargets};
 
 /// ¿Debe usar el 2D la ruta Vulkan? Por defecto no: wgpu sigue mandando hasta la fase 6.
 pub(crate) fn enabled_from_env() -> bool {
@@ -33,10 +38,13 @@ pub(crate) fn enabled_from_env() -> bool {
     })
 }
 
-/// Contexto Ash del 2D. Clonable como el del 3D: cada recurso guarda su `Arc` al device.
-#[derive(Clone)]
+/// Contexto Ash del 2D. Se comparte con `Arc` desde el `State`: el `resize` y el `render` tienen
+/// que ver los mismos objetivos, y `SceneTargets` no es clonable (posee imágenes con `Drop`).
 pub(crate) struct Vulkan2d {
     gpu: SharedGpu,
+    /// Objetivos fuera de pantalla. `Mutex` porque el contexto vive dentro de un `Arc` en el
+    /// `State` y el `resize` tiene que poder regenerarlos sin préstamo mutable.
+    scene: Mutex<SceneTargets>,
 }
 
 impl Vulkan2d {
@@ -47,19 +55,48 @@ impl Vulkan2d {
     /// handles de RT. Un error aquí es duro (no hay fallback a wgpu en caliente): se propaga al
     /// arranque como cualquier otro fallo de GPU.
     pub(crate) fn new(window: &Window) -> Result<Self, VulkanError> {
-        SharedGpu::new(window, &VulkanOptions::default()).map(|gpu| Self { gpu })
+        let gpu = SharedGpu::new(window, &VulkanOptions::default())?;
+        let scene = SceneTargets::new(&gpu, gpu.extent())?;
+        // Prueba de la subida por staging: crear una imagen muestreable, copiarle un píxel y
+        // volver a dejarla en GENERAL. Se suelta aquí a propósito (también ejercita el `Drop`
+        // de `GpuImage` con el device vivo); el atlas que sí permanece llega en la fase 5.
+        let white = SampledTexture::white(&gpu)?;
+        log::info!(
+            "[2d-vulkan] recursos listos: scene target {}x{} + textura de prueba {} subida por \
+             staging y liberada",
+            scene.extent().width,
+            scene.extent().height,
+            white.label()
+        );
+        drop(white);
+        Ok(Self {
+            gpu,
+            scene: Mutex::new(scene),
+        })
     }
 
-    /// Recrea el swapchain tras un `resize` de la ventana.
+    /// Recrea el swapchain y los objetivos tras un `resize` de la ventana.
     pub(crate) fn resize(&self, width: u32, height: u32) -> Result<(), VulkanError> {
-        self.gpu.resize(width, height)
+        self.gpu.resize(width, height)?;
+        let extent = self.gpu.extent();
+        let mut scene = self
+            .scene
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if let Err(error) = scene.resize(&self.gpu, extent) {
+            // Sin objetivos nuevos el frame seguiria usando el tamano viejo: se ve mal, no se
+            // cuelga. Se avisa una vez por fallo en vez de abortar el bucle de eventos.
+            log::warn!("[2d-vulkan] no se pudo recrear el scene target: {error}");
+        }
+        Ok(())
     }
 
-    /// Un frame: limpiar la imagen del swapchain al color de fondo y presentarla.
+    /// Un frame: limpiar el objetivo fuera de pantalla, limpiar y presentar el swapchain.
     ///
-    /// El orden de layouts es el mismo que usa el 3D, que es el que ya está validado:
-    /// `UNDEFINED → COLOR_ATTACHMENT` antes del pase y `COLOR_ATTACHMENT → PRESENT_SRC` al final,
-    /// dentro del mismo command buffer. `submit_and_present` espera la imagen en `PRESENT_SRC`.
+    /// El orden de layouts del swapchain es el mismo que usa el 3D, que es el que ya está
+    /// validado: `UNDEFINED → COLOR_ATTACHMENT` antes del pase y `COLOR_ATTACHMENT → PRESENT_SRC`
+    /// al final, dentro del mismo command buffer. `submit_and_present` espera la imagen en
+    /// `PRESENT_SRC`.
     pub(crate) fn present_clear(&self, color: [f32; 4]) -> Result<(), SurfacePresentError> {
         let frame = match self.gpu.begin_frame() {
             Ok(frame) => frame,
@@ -73,6 +110,17 @@ impl Vulkan2d {
         let cmd = frame.command;
         let extent = self.gpu.extent();
         let color_image = frame.color_image;
+
+        // Fase 3: ciclo completo sobre imágenes creadas a mano (adjunto → lectura), en el mismo
+        // command buffer del frame. Diferentes imágenes que el swapchain, así que no hace falta
+        // dependencia entre los dos pases.
+        {
+            let mut scene = self
+                .scene
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            scene.clear_pass(device, cmd, color);
+        }
 
         cmd_image_barrier(
             device,

@@ -58,8 +58,9 @@ pub struct State {
     pub(crate) size: PhysicalSize<u32>,
     pub(crate) clear_color: wgpu::Color,
     /// Contexto Ash del 2D cuando `RER_2D_VULKAN=1`. `None` = ruta wgpu de siempre (comportamiento
-    /// actual del motor, sin cambios).
-    pub(crate) vulkan2d: Option<crate::vulkan::Vulkan2d>,
+    /// actual del motor, sin cambios). En `Arc` porque `resize()` y `render()` comparten los mismos
+    /// objetivos fuera de pantalla.
+    pub(crate) vulkan2d: Option<Arc<crate::vulkan::Vulkan2d>>,
     pub(crate) render_pipeline: wgpu::RenderPipeline,
     /// Pipeline para modo 2D: sin depth-write, CompareFunction::Always.
     /// Permite que el alpha blending funcione correctamente con back-to-front sort.
