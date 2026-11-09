@@ -279,3 +279,79 @@ impl Drop for EditorGpu {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::scene_rect;
+    use ash::vk;
+
+    fn viewport() -> egui::Rect {
+        egui::Rect::from_min_size(egui::pos2(268.0, 46.0), egui::vec2(744.0, 554.0))
+    }
+
+    fn extent() -> vk::Extent2D {
+        vk::Extent2D {
+            width: 1600,
+            height: 1000,
+        }
+    }
+
+    #[test]
+    fn maps_viewport_at_100_percent() {
+        let area = scene_rect(viewport(), 1.0, extent()).unwrap();
+        assert_eq!(area.offset, vk::Offset2D { x: 268, y: 46 });
+        assert_eq!(
+            area.extent,
+            vk::Extent2D {
+                width: 744,
+                height: 554
+            }
+        );
+    }
+
+    #[test]
+    fn maps_viewport_at_125_percent() {
+        let area = scene_rect(viewport(), 1.25, extent()).unwrap();
+        assert_eq!(area.offset, vk::Offset2D { x: 335, y: 58 });
+        assert_eq!(
+            area.extent,
+            vk::Extent2D {
+                width: 930,
+                height: 693
+            }
+        );
+    }
+
+    #[test]
+    fn maps_viewport_at_150_percent() {
+        let area = scene_rect(viewport(), 1.5, extent()).unwrap();
+        assert_eq!(area.offset, vk::Offset2D { x: 402, y: 69 });
+        assert_eq!(
+            area.extent,
+            vk::Extent2D {
+                width: 1116,
+                height: 831
+            }
+        );
+    }
+
+    #[test]
+    fn clips_viewport_to_swapchain() {
+        let rect = egui::Rect::from_min_size(egui::pos2(1000.0, 900.0), egui::vec2(800.0, 400.0));
+        let area = scene_rect(rect, 1.0, extent()).unwrap();
+        assert_eq!(area.offset, vk::Offset2D { x: 1000, y: 900 });
+        assert_eq!(
+            area.extent,
+            vk::Extent2D {
+                width: 600,
+                height: 100
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_empty_viewport() {
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 10.0), egui::vec2(0.0, 100.0));
+        assert!(scene_rect(rect, 1.0, extent()).is_none());
+    }
+}
