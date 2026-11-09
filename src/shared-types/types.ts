@@ -261,7 +261,7 @@ export interface ConfigEditorCamera {
 
 export type ModelCategory = Entity3DCategory
 
-// ── 2D legacy (engine_2d) ───────────────────────────────────────────────────
+// ── 2D legacy (engine2d) ───────────────────────────────────────────────────
 
 export interface SavedEntity {
   id:               number

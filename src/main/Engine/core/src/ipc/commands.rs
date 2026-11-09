@@ -10,7 +10,7 @@ fn default_clip_loop() -> bool {
     true
 }
 
-/// Comandos IPC presentes en `engine_2d` y `engine_3d` (mismo JSON `cmd`).
+/// Comandos IPC presentes en los motores 2D y 3D (mismo JSON `cmd`).
 #[derive(Debug, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum EngineCommandCommon {

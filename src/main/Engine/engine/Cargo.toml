@@ -15,6 +15,11 @@ path = "src/bin/rer_engine_3d.rs"
 required-features = ["engine3d"]
 
 [[bin]]
+name = "rer_engine_2d"
+path = "src/bin/rer_engine_2d.rs"
+required-features = ["engine2d"]
+
+[[bin]]
 name = "rer_engine_editor"
 path = "src/bin/rer_engine_editor.rs"
 required-features = ["editor"]
@@ -56,8 +61,11 @@ gpu-allocator = { version = "0.27", default-features = false, features = ["vulka
 # `default` la mantiene durante la migración; el editor pedirá las features que necesite.
 # `default` mantiene el build local completo; los binarios se compilan con
 # `--no-default-features --features <motor>` para no enlazar el motor ajeno.
-default = ["engine3d", "editor"]
+default = ["engine2d", "engine3d", "editor"]
 engine3d = []
+# Motor 2D aislado: mismo nucleo Ash (`SharedGpu`) que el 3D, renderer propio.
+# Su binario se compila con `--no-default-features --features engine2d`.
+engine2d = []
 # Editor egui. Reutiliza el mismo `SharedGpu` que los motores y hospeda el 3D en proceso.
 editor = ["engine3d"]
 

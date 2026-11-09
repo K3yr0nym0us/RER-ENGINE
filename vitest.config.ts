@@ -3,10 +3,8 @@ import { defineConfig } from 'vitest/config'
 
 const engineRustGlobs = [
   'src/main/Engine/target/**',
-  'src/main/Engine/engine_2d/**',
-  'src/main/Engine/engine_3d/**',
-  'src/main/Engine/engine_shared/**',
-  'src/main/Engine/engine_ipc_common/**',
+  'src/main/Engine/engine/**',
+  'src/main/Engine/core/**',
   'src/main/Engine/Models/**',
   'src/main/Engine/assets/**',
 ] as const

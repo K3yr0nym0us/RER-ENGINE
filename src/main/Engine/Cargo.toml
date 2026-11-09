@@ -2,7 +2,6 @@
 members = [
 	"core",
 	"engine",
-	"engine_2d",
 ]
 resolver = "2"
 

@@ -1,8 +1,9 @@
-//! Supervisor del proceso del motor.
+//! Supervisor del proceso del motor 2D.
 //!
-//! El editor lanza `rer_engine_2d` / `rer_engine_3d`, es dueño de su
-//! `stdin`/`stdout` y le habla directamente en Rust. Electron ya no lanza ni
-//! controla el motor; solo recibe eventos reenviados para la UI React antigua.
+//! El editor lanza `rer_engine_2d` como proceso, es dueño de su
+//! `stdin`/`stdout` y le habla directamente en Rust. El 3D ya va in-process.
+//! Electron ya no lanza ni controla el motor; solo recibe eventos reenviados
+//! para la UI React antigua.
 
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};

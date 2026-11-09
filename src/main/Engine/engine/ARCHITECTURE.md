@@ -1,4 +1,4 @@
-# Arquitectura actual de `engine_3d`
+# Arquitectura del motor 3D (`engine3d`)
 
 Este documento fija el contrato tecnico actual del motor 3D para que el codigo no siga siendo la unica fuente de verdad implicita. Las tareas de producto pendientes no viven en un checklist aparte: estan marcadas en el codigo (`pendiente`, `not ported`) y en las secciones `status: pendiente` de `docs/`.
 
@@ -9,14 +9,17 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 - **`first-person`**: valor de `gameStyle` para el tipo de cámara «vista desde los ojos» (opción del select Camera).
 - **Play character / vista play character**: jugador `[Player]` + IPC `set_play_character_view` / `play_character_view_changed`.
 
-## Relacion con `engine_2d`
+## Relacion con el motor 2D
 
-- `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos.
-- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y crates de utilidades (`core`), no un enum de comandos unico ni la logica de juego.
-- Contrato por motor: `engine/src/engine3d/ipc/`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
-- **No se copia runtime entre motores**: la fase de reutilizar ideas del 2D en el 3D ya cerró; el 3D funciona con su propia pila (`config_3d/`, Rapier3D, cámara play character, glTF/GLB). Nuevas funciones 3D se implementan solo aqui.
+- `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos
+  (features `engine3d` / `engine2d` del mismo paquete `rer-engine`).
+- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y el crate de
+  utilidades (`rer-engine-core`), no un enum de comandos unico ni la logica de juego.
+- Contrato por motor: `engine/src/engine3d/ipc/` y `engine/src/engine2d/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
+- **No se copia runtime entre motores**: cada motor conserva su pila (`config_3d/` vs
+  `config_2d/`). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
-- Este documento no describe ni prescribe comportamiento del motor 2D.
+- Contrato del 2D: `src/engine2d/ARCHITECTURE.md`.
 
 Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mallas glTF/GLB. El tipo de cámara en play (`gameStyle`) se elige en el acordeón Camera.
 
@@ -26,9 +29,9 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
   `FrameTarget`, `GpuBuffer`/`GpuImage`) vive en `rer-engine-core::vulkan`.
 - El crate 3D conserva su renderer en `src/engine3d/vulkan/` (G-buffer, MSAA, TAA, SSR, sondas y
   sombras) y `accel.rs` (BLAS/TLAS).
-- Shaders: GLSL en `engine/shaders/` (`raster/`, `rt/`, `bvh/`) compilados a SPIR-V
+- Shaders: GLSL en `engine/shaders/` (`raster/`, `rt/`, `bvh/`, `2d/`) compilados a SPIR-V
   por `build.rs` con `glslc` del Vulkan SDK. Son la única fuente: los `.wgsl` heredados del
-  motor wgpu se borraron, y las variantes de pantalla del 2D viven en `engine_2d/`.
+  motor wgpu se borraron, y las variantes de pantalla del 2D viven en `shaders/2d/`.
 - Ray tracing: se piden juntas `VK_KHR_ray_tracing_pipeline`,
   `VK_KHR_acceleration_structure` y `VK_KHR_deferred_host_operations`. Si falta alguna
   extensión o sus features, `hw_rt = false` y los reflejos usan el BVH por software
@@ -94,7 +97,7 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
 ## Ventana overlay
 
 - Identico al 2D: `--overlay`, ventana winit separada, tracker en `rer_engine_core::platform`.
-- Ver `engine_2d/ARCHITECTURE.md` (seccion overlay) para detalle Win32.
+- Ver `src/engine2d/ARCHITECTURE.md` (seccion overlay) para detalle Win32.
 
 ## Archivos fuente de verdad
 
@@ -147,6 +150,7 @@ submodulo, no el arbol completo:
 | `src/engine3d/ipc/` | `types` (payloads), `events` (EngineEvent y transporte) |
 | `core/vulkan/gpu/` (crate `core`) | `context`, `swapchain`, `memory`, `frame` |
 | `core/src/player_ui/text_input/` (crate `core`) | `mod` (macro `impl_player_ui_text_input!`), `methods/{state,edit,drag,emit}` (sub-macros `__rer_player_ui_text_*!`) |
+| `src/engine2d/` | `host`, `engine/` (estado, IPC, fisica), `config_2d/` (escena y player UI), `vulkan/` (renderer Ash), `ipc.rs`, `texture.rs` |
 
 Cada `mod.rs` reexporta las rutas publicas anteriores (`load_proyect::SavedScene`,
 `model_asset::MAX_JOINTS`, `commands::handle_command`, etc.), asi que el resto del

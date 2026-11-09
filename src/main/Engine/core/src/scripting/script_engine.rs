@@ -889,7 +889,7 @@ mod tests {
         let repo = engine_root.join("../..");
         let mut sources: Vec<(ScriptEngineProfile, PathBuf, String)> = Vec::new();
 
-        let save_2d = engine_root.join("engine_2d/assets/DEMO_2d.save");
+        let save_2d = engine_root.join("engine/src/engine2d/assets/DEMO_2d.save");
         let save_3d = repo.join("DEMO_3d_FIRST_PERSON.save");
         let tmp_2d = repo.join(".tmp_demo2d");
         let tmp_3d = repo.join(".tmp_demo3d");

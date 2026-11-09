@@ -1,13 +1,18 @@
-//! Motor 3D de RER-ENGINE sobre Ash/Vulkan.
+//! Motores y editor de RER-ENGINE sobre Ash/Vulkan.
 //!
-//! El binario `rer_engine_3d` entra por [`engine3d::host::run`]. El editor podrá
-//! reutilizar el mismo crate como librería cuando la ventana única esté montada.
+//! Los binarios standalone entran por [`engine3d::host::run`] y
+//! [`engine2d::host::run`]. El editor reutiliza el 3D en proceso y hospedará el
+//! 2D cuando la ventana única esté montada.
 //!
-//! La feature `engine3d` mantiene el módulo aislado del resto de motores que se
-//! irán sumando a este paquete (2D) y del editor.
+//! Cada motor vive tras su feature (`engine3d` / `engine2d`) y el editor tras
+//! `editor`: los binarios se compilan con `--no-default-features --features
+//! <motor>` para no enlazar el motor ajeno.
 
 #[cfg(feature = "engine3d")]
 pub mod engine3d;
+
+#[cfg(feature = "engine2d")]
+pub mod engine2d;
 
 #[cfg(feature = "editor")]
 pub mod editor;

@@ -1,4 +1,4 @@
-//! Lógica compartida de Player UI entre `engine_2d` y `engine_3d`.
+//! Lógica compartida de Player UI entre los motores 2D y 3D.
 
 pub mod config;
 pub mod geometry;

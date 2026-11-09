@@ -2476,31 +2476,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rer-engine-2d"
-version = "0.1.0"
-dependencies = [
- "ab_glyph",
- "ash",
- "bytemuck",
- "getrandom 0.4.3",
- "gilrs",
- "glam 0.33.1",
- "gltf",
- "image",
- "log",
- "rapier3d",
- "raw-window-handle",
- "rer-engine-core",
- "rodio",
- "serde",
- "serde_json",
- "ttf-parser",
- "windows",
- "winit",
- "zip",
-]
-
-[[package]]
 name = "rer-engine-core"
 version = "0.1.0"
 dependencies = [
