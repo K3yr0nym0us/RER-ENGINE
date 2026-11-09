@@ -13,20 +13,12 @@ impl State {
     pub fn render(&mut self) -> Result<(), SurfacePresentError> {
         self.update_animations();
 
-        // Fase 2 de la migración a Ash (`RER_2D_VULKAN=1`): el frame se presenta por Vulkan y
-        // todavía no se dibuja ninguna entidad. Se sale antes de la ruta wgpu a propósito: no se
+        // Fase 5 de la migración a Ash (`RER_2D_VULKAN=1`): el frame completo (escena, rejilla,
+        // colisiones y gizmo) se dibuja por Vulkan. Se sale antes de la ruta wgpu a propósito: no se
         // pueden presentar dos swapchains sobre la misma ventana en un mismo frame. Sin la variable
         // `vulkan2d` es `None` y todo el bloque de abajo corre igual que siempre.
         if let Some(vulkan) = self.vulkan2d.clone() {
-            let color = self.clear_color;
-            // `wgpu::Color` trae r/g/b en 0..=255 y alfa en 0..=1; Vulkan quiere los cuatro en
-            // 0..=1. Se divide igual para que el color de fondo sea el mismo de la ruta wgpu.
-            return vulkan.present_clear([
-                (color.r / 255.0) as f32,
-                (color.g / 255.0) as f32,
-                (color.b / 255.0) as f32,
-                color.a as f32,
-            ]);
+            return self.render_vulkan(&vulkan);
         }
 
         let mut draw_calls: u32 = 0;
@@ -71,125 +63,18 @@ impl State {
 
         let scene_view = self.scene_target.scene_color_view();
 
-        // ── Paso 2: recopilar entidades visibles (culling 2D + sort layer+Z) ──
-        let aspect_fc = self.size.width as f32 / self.size.height as f32;
-        // query2<MeshComponent, Transform> itera solo entidades con ambos componentes,
-        // evitando el scan de todas las entidades + doble lookup de hash por entidad.
-        let visual_offsets = &self.visual_offsets;
-        let mut entities: Vec<(crate::ecs::EntityId, usize, usize, Mat4, i32, f32)> = self
-            .world
-            .query2::<MeshComponent, crate::ecs::Transform>()
-            .filter_map(|(id, mc, t)| {
-                let mesh_idx = mc.mesh_idx;
-                let tex_idx = mc.tex_idx;
-                // ── Culling por viewport 2D ──────────────────────────────────
-                // Para culling usamos la posición visual (con offset de pivot)
-                let visual_pos =
-                    transform_visual_center(t.position, visual_offsets.get(&id).copied());
-                let visible = self
-                    .camera_2d
-                    .as_ref()
-                    .map(|cam2d| is_visible_2d(cam2d, visual_pos, t.scale, aspect_fc))
-                    .unwrap_or(true);
-                if !visible {
-                    return None;
-                }
-                let model_mat = Mat4::from_scale_rotation_translation(
-                    t.scale,
-                    t.rotation,
-                    transform_visual_center(t.position, visual_offsets.get(&id).copied()),
-                );
-                let layer = self
-                    .world
-                    .get::<crate::ecs::RenderLayer>(id)
-                    .map(|rl| rl.value)
-                    .unwrap_or(0);
-                let z = t.position.z;
-                Some((id, mesh_idx, tex_idx, model_mat, layer, z))
-            })
-            .collect();
-        // Sort by (layer ASC, z ASC) — lower layer first, within layer sort by z (back-to-front)
-        entities.sort_by(|a, b| {
-            let layer_cmp = a.4.cmp(&b.4);
-            if layer_cmp != std::cmp::Ordering::Equal {
-                layer_cmp
-            } else {
-                a.5.partial_cmp(&b.5).unwrap_or(std::cmp::Ordering::Equal)
-            }
-        });
-
-        // ── Paso 3: agrupar en batches por mesh_idx ────────────────────────
-        // Con el atlas todas las entidades comparten el mismo bind group,
-        // así que solo agrupamos por geometría (mesh_idx).
-        // El UV rect viaja en cada instancia — no hay cambio de bind group entre batches.
-        struct Batch {
-            mesh_idx: usize,
-            instances: Vec<mesh::InstanceData>,
-        }
-        let mut batches: Vec<Batch> = Vec::new();
-        for (entity_id, mesh_idx, tex_idx, model_matrix, _layer, _z) in &entities {
-            if self.preview_playing
-                && !self.debug_mode
-                && (self.collider_entities.contains(entity_id)
-                    || self.execution_area_entities.contains(entity_id))
-            {
-                continue;
-            }
-            let is_selected = self.selected_entity == Some(*entity_id)
-                || self.selected_entities.contains(entity_id);
-            let flag = if self.preview_playing {
-                0.0_f32
-            } else if is_selected {
-                1.0_f32 // dorado
-            } else if self.hovered_entity == Some(*entity_id) {
-                2.0_f32 // cian
-            } else {
-                0.0_f32
-            };
-            // anim_overrides tiene prioridad sobre uv_rects[]:
-            // durante una animación activa evita mutar la UV base de la entidad.
-            let uv = self
-                .anim_overrides
-                .get(tex_idx)
-                .copied()
-                .or_else(|| self.uv_rects.get(*tex_idx).copied())
-                .unwrap_or(self.fallback_uv);
-            let mut inst = mesh::InstanceData::new(*model_matrix, flag, uv);
-            inst.flag_pad[2] = if self
-                .world
-                .get::<crate::config_2d::ColliderMarker>(*entity_id)
-                .is_some()
-            {
-                1.0_f32
-            } else if self
-                .world
-                .get::<crate::config_2d::ExecutionAreaMarker>(*entity_id)
-                .is_some()
-            {
-                2.0_f32
-            } else {
-                0.0_f32
-            };
-            // Extender el último batch si coincide mesh (mismo UV rect viaja por instancia)
-            let can_extend = batches.last().is_some_and(|b| b.mesh_idx == *mesh_idx);
-            if can_extend {
-                batches.last_mut().unwrap().instances.push(inst);
-            } else {
-                batches.push(Batch {
-                    mesh_idx: *mesh_idx,
-                    instances: vec![inst],
-                });
-            }
-        }
+        // ── Paso 2-3: recopilar entidades visibles y agrupar por malla ──────
+        // La misma función la usa la ruta Vulkan: culling, orden y flags viven en un único sitio.
+        let batches = self.collect_sprite_batches();
 
         // ── Paso 4: crear buffers de instancias en GPU ──────────────────────
         let instance_buffers: Vec<wgpu::Buffer> = batches
             .iter()
-            .map(|b| {
+            .map(|(_, instances)| {
                 self.device
                     .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some("inst-buf"),
-                        contents: bytemuck::cast_slice(&b.instances),
+                        contents: bytemuck::cast_slice(instances),
                         usage: wgpu::BufferUsages::VERTEX,
                     })
             })
@@ -235,14 +120,14 @@ impl State {
             // El bind group 1 (atlas) es compartido por TODOS los sprites — se setea UNA vez.
             pass.set_bind_group(1, self.atlas.bind_group.as_ref(), &[]);
 
-            for (batch, inst_buf) in batches.iter().zip(instance_buffers.iter()) {
-                let Some(mesh) = self.meshes.get(batch.mesh_idx) else {
+            for ((mesh_idx, instances), inst_buf) in batches.iter().zip(instance_buffers.iter()) {
+                let Some(mesh) = self.meshes.get(*mesh_idx) else {
                     continue;
                 };
                 pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 pass.set_vertex_buffer(1, inst_buf.slice(..));
                 pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                pass.draw_indexed(0..mesh.index_count, 0, 0..batch.instances.len() as u32);
+                pass.draw_indexed(0..mesh.index_count, 0, 0..instances.len() as u32);
                 draw_calls += 1;
             }
         }
@@ -461,5 +346,115 @@ impl State {
         self.last_draw_calls = draw_calls;
         output.present();
         Ok(())
+    }
+
+    /// Recopila los sprites visibles del frame y los agrupa por malla.
+    ///
+    /// Es el Paso 2-3 del render wgpu extraído a una función para que la ruta Ash dibuje los
+    /// mismos batches: culling por viewport 2D, orden por `(layer, z)` y flags de
+    /// selección/hover viven en un único sitio y no se pueden desincronizar.
+    pub(crate) fn collect_sprite_batches(&self) -> Vec<(usize, Vec<mesh::InstanceData>)> {
+        let aspect_fc = self.size.width as f32 / self.size.height as f32;
+        // query2<MeshComponent, Transform> itera solo entidades con ambos componentes,
+        // evitando el scan de todas las entidades + doble lookup de hash por entidad.
+        let visual_offsets = &self.visual_offsets;
+        let mut entities: Vec<(crate::ecs::EntityId, usize, usize, Mat4, i32, f32)> = self
+            .world
+            .query2::<MeshComponent, crate::ecs::Transform>()
+            .filter_map(|(id, mc, t)| {
+                let mesh_idx = mc.mesh_idx;
+                let tex_idx = mc.tex_idx;
+                // ── Culling por viewport 2D ──────────────────────────────────
+                // Para culling usamos la posición visual (con offset de pivot)
+                let visual_pos =
+                    transform_visual_center(t.position, visual_offsets.get(&id).copied());
+                let visible = self
+                    .camera_2d
+                    .as_ref()
+                    .map(|cam2d| is_visible_2d(cam2d, visual_pos, t.scale, aspect_fc))
+                    .unwrap_or(true);
+                if !visible {
+                    return None;
+                }
+                let model_mat = Mat4::from_scale_rotation_translation(
+                    t.scale,
+                    t.rotation,
+                    transform_visual_center(t.position, visual_offsets.get(&id).copied()),
+                );
+                let layer = self
+                    .world
+                    .get::<crate::ecs::RenderLayer>(id)
+                    .map(|rl| rl.value)
+                    .unwrap_or(0);
+                let z = t.position.z;
+                Some((id, mesh_idx, tex_idx, model_mat, layer, z))
+            })
+            .collect();
+        // Sort by (layer ASC, z ASC) — lower layer first, within layer sort by z (back-to-front)
+        entities.sort_by(|a, b| {
+            let layer_cmp = a.4.cmp(&b.4);
+            if layer_cmp != std::cmp::Ordering::Equal {
+                layer_cmp
+            } else {
+                a.5.partial_cmp(&b.5).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
+
+        // Con el atlas todas las entidades comparten el mismo bind group,
+        // así que solo agrupamos por geometría (mesh_idx).
+        // El UV rect viaja en cada instancia — no hay cambio de bind group entre batches.
+        let mut batches: Vec<(usize, Vec<mesh::InstanceData>)> = Vec::new();
+        for (entity_id, mesh_idx, tex_idx, model_matrix, _layer, _z) in &entities {
+            if self.preview_playing
+                && !self.debug_mode
+                && (self.collider_entities.contains(entity_id)
+                    || self.execution_area_entities.contains(entity_id))
+            {
+                continue;
+            }
+            let is_selected = self.selected_entity == Some(*entity_id)
+                || self.selected_entities.contains(entity_id);
+            let flag = if self.preview_playing {
+                0.0_f32
+            } else if is_selected {
+                1.0_f32 // dorado
+            } else if self.hovered_entity == Some(*entity_id) {
+                2.0_f32 // cian
+            } else {
+                0.0_f32
+            };
+            // anim_overrides tiene prioridad sobre uv_rects[]:
+            // durante una animación activa evita mutar la UV base de la entidad.
+            let uv = self
+                .anim_overrides
+                .get(tex_idx)
+                .copied()
+                .or_else(|| self.uv_rects.get(*tex_idx).copied())
+                .unwrap_or(self.fallback_uv);
+            let mut inst = mesh::InstanceData::new(*model_matrix, flag, uv);
+            inst.flag_pad[2] = if self
+                .world
+                .get::<crate::config_2d::ColliderMarker>(*entity_id)
+                .is_some()
+            {
+                1.0_f32
+            } else if self
+                .world
+                .get::<crate::config_2d::ExecutionAreaMarker>(*entity_id)
+                .is_some()
+            {
+                2.0_f32
+            } else {
+                0.0_f32
+            };
+            // Extender el último batch si coincide mesh (mismo UV rect viaja por instancia)
+            let can_extend = batches.last().is_some_and(|(m, _)| *m == *mesh_idx);
+            if can_extend {
+                batches.last_mut().unwrap().1.push(inst);
+            } else {
+                batches.push((*mesh_idx, vec![inst]));
+            }
+        }
+        batches
     }
 }

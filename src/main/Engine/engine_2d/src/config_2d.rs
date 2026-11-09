@@ -23,7 +23,7 @@ pub(crate) use world_xy::{
 
 #[path = "config_2d/grid_2d.rs"]
 pub(crate) mod grid_2d;
-pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid};
+pub(crate) use grid_2d::{GridBuffer, GridConfig, build_grid, grid_vertices};
 
 #[path = "config_2d/physics_2d/mod.rs"]
 pub(crate) mod physics_2d;
@@ -50,11 +50,11 @@ mod selection;
 
 #[path = "config_2d/player_ui/mod.rs"]
 pub(crate) mod player_ui;
-pub(crate) use overlay::build_scenario_collision_overlay;
 use overlay::{
     build_logical_area_overlay, build_pivot_edit_overlay_with_cross, build_tool_overlay,
     create_quad_xy,
 };
+pub(crate) use overlay::{build_scenario_collision_overlay, collision_overlay_vertices};
 
 // ── Componente exclusivo del modo 2D ─────────────────────────────────────────
 

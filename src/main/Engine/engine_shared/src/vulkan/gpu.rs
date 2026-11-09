@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use ash::vk;
-use gpu_allocator::MemoryLocation;
+pub use gpu_allocator::MemoryLocation;
 use gpu_allocator::vulkan::{
     Allocation, AllocationCreateDesc, AllocationScheme, Allocator, AllocatorCreateDesc,
 };
@@ -28,7 +28,9 @@ use super::select::{
     pick_surface_format,
 };
 
-const FRAMES_IN_FLIGHT: usize = 2;
+/// Número de frames que el núcleo mantiene en vuelo. Los consumidores necesitan un juego de
+/// recursos por slot (uniformes, instancias); exponerlo evita que cada motor duplique el `2`.
+pub const FRAMES_IN_FLIGHT: usize = 2;
 
 /// Nombre de la capa de validación de Khronos (Vulkan SDK).
 const VALIDATION_LAYER_NAME: &str = "VK_LAYER_KHRONOS_validation";

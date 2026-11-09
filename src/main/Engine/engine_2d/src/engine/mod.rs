@@ -24,6 +24,7 @@ mod snap_hint;
 mod tick;
 pub(crate) mod types;
 mod undo_entity;
+mod vulkan_render;
 
 use audio::AudioSlot;
 #[allow(unused_imports)]

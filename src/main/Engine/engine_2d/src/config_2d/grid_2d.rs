@@ -42,11 +42,14 @@ pub struct GridBuffer {
     pub vertex_count: u32,
 }
 
-/// Construye el vertex buffer de la cuadrícula a partir de la configuración actual.
+/// Construye los vértices de la cuadrícula a partir de la configuración actual.
 /// El eje Z de todas las líneas es 0.5 para que queden en el plano de la
 /// cuadrícula sin interferir con la geometría de escenario (Z=-1) o del
 /// personaje (Z=0).
-pub fn build_grid(device: &wgpu::Device, config: &GridConfig) -> GridBuffer {
+///
+/// Devuelve datos CPU para que las dos rutas de render (wgpu y Ash) generen su
+/// propio buffer desde la misma fuente.
+pub fn grid_vertices(config: &GridConfig) -> Vec<GizmoVertex> {
     let mut verts: Vec<GizmoVertex> = Vec::new();
 
     let hw = config.world_width * 0.5;
@@ -132,6 +135,12 @@ pub fn build_grid(device: &wgpu::Device, config: &GridConfig) -> GridBuffer {
         }
     }
 
+    verts
+}
+
+/// Sube `grid_vertices` al buffer de la ruta wgpu.
+pub fn build_grid(device: &wgpu::Device, config: &GridConfig) -> GridBuffer {
+    let verts = grid_vertices(config);
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("grid-vbuf"),
         contents: bytemuck::cast_slice(&verts),

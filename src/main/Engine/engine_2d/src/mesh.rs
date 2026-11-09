@@ -35,6 +35,11 @@ pub struct Mesh {
     pub vertex_buffer: wgpu::Buffer,
     pub index_buffer: wgpu::Buffer,
     pub index_count: u32,
+    /// Copia CPU de la geometría. La ruta Vulkan (fase 5) no puede leer los buffers de wgpu, así
+    /// que reutiliza estos datos para crear sus propios `VkBuffer`. Mantenerlos es barato: las
+    /// mallas del 2D son quads y el cubo de 24 vértices.
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -172,5 +177,7 @@ pub(crate) fn upload(
         vertex_buffer,
         index_buffer,
         index_count: indices.len() as u32,
+        vertices: vertices.to_vec(),
+        indices: indices.to_vec(),
     }
 }

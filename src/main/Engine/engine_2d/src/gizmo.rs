@@ -131,11 +131,16 @@ fn add_arrow_z(verts: &mut Vec<GizmoVertex>, length: f32, color: [f32; 4]) {
     push_tri(verts, b3, b0, apex, color);
 }
 
-pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
+pub fn axes_vertices(length: f32) -> Vec<GizmoVertex> {
     let mut verts = Vec::new();
     add_arrow_x(&mut verts, length, [1.0, 0.18, 0.18, 1.0]);
     add_arrow_y(&mut verts, length, [0.18, 1.0, 0.18, 1.0]);
     add_arrow_z(&mut verts, length, [0.18, 0.55, 1.0, 1.0]);
+    verts
+}
+
+pub fn build_axes(device: &wgpu::Device, length: f32) -> GizmoBuffer {
+    let verts = axes_vertices(length);
 
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("gizmo-vbo"),

@@ -16,6 +16,16 @@ mod tests {
 
     use crate::engine::types::{SceneUniforms, ScreenHudSceneUniforms};
     use crate::mesh::{InstanceData, Vertex};
+    use rer_engine_shared::player_ui::ndc_draw::NdcVertex;
+
+    #[test]
+    fn ndc_vertex_layout_matches_gizmo_glsl() {
+        // location 0: vec3 position; location 1: vec4 color. Rejilla, colisiones y gizmo
+        // comparten este layout (32 - 4 = 28 B: vec3 alineado a 4, sin padding final).
+        assert_eq!(size_of::<NdcVertex>(), 28);
+        assert_eq!(offset_of!(NdcVertex, position), 0);
+        assert_eq!(offset_of!(NdcVertex, color), 12);
+    }
 
     #[test]
     fn vertex_layout_matches_glsl_locations_0_to_2() {

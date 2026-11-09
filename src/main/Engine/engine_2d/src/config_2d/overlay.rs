@@ -267,12 +267,9 @@ pub(super) fn build_logical_area_overlay(
 /// Overlay de líneas para escenarios con colisión activa.
 /// Se dibuja como un contorno AABB para que el editor muestre claramente
 /// el área física del escenario y de los personajes, similar a las collision shapes visibles.
-pub(crate) fn build_scenario_collision_overlay(
-    device: &wgpu::Device,
-    state: &State,
-) -> gizmo::GizmoBuffer {
+pub(crate) fn collision_overlay_vertices(state: &State) -> Vec<GizmoVertex> {
     if (!state.debug_mode && state.preview_playing) || state.camera_2d.is_none() {
-        return gizmo::build_from_vertices(device, &[]);
+        return Vec::new();
     }
 
     let mut verts: Vec<GizmoVertex> = Vec::new();
@@ -385,5 +382,14 @@ pub(crate) fn build_scenario_collision_overlay(
         ]);
     }
 
+    verts
+}
+
+/// Overlay de líneas de colisión subido al buffer de la ruta wgpu.
+pub(crate) fn build_scenario_collision_overlay(
+    device: &wgpu::Device,
+    state: &State,
+) -> gizmo::GizmoBuffer {
+    let verts = collision_overlay_vertices(state);
     gizmo::build_from_vertices(device, &verts)
 }

@@ -112,7 +112,8 @@ impl State {
 
         // ── Bind group layout group 1 (textura) + atlas ─────────────────────────────
         let texture_bgl = GpuTexture::bind_group_layout(&device);
-        let mut atlas = crate::texture::TextureAtlas::new(&device, &queue, &texture_bgl);
+        let mut atlas =
+            crate::texture::TextureAtlas::new(&device, &queue, &texture_bgl, vulkan2d.clone());
         let fallback_uv = crate::texture::TextureAtlas::fallback_uv();
 
         // Checkerboard para el plano de suelo (tex_idx=0).

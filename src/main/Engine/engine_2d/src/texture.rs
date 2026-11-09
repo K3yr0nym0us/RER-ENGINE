@@ -180,6 +180,9 @@ pub struct TextureAtlas {
     _sampler: wgpu::Sampler,  // ídem
     /// Bind group compartido por TODOS los sprites (group 1 en el shader).
     pub bind_group: std::sync::Arc<wgpu::BindGroup>,
+    /// Espejo Vulkan (fase 5). Cuando `RER_2D_VULKAN=1` está activo, cada `pack`/`update`
+    /// copia los mismos píxeles a una imagen `VkImage`, así las dos rutas ven el mismo atlas.
+    vulkan: Option<std::sync::Arc<crate::vulkan::Vulkan2d>>,
     width: u32,
     height: u32,
     cursor_x: u32,
@@ -194,7 +197,12 @@ impl TextureAtlas {
 
     /// Crea el atlas vacío y empaca un pixel blanco 1×1 en la posición (0,0)
     /// que actúa como UV de fallback cuando un tex_idx es inválido.
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, bgl: &wgpu::BindGroupLayout) -> Self {
+    pub fn new(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        bgl: &wgpu::BindGroupLayout,
+        vulkan: Option<std::sync::Arc<crate::vulkan::Vulkan2d>>,
+    ) -> Self {
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("texture-atlas"),
             size: wgpu::Extent3d {
@@ -241,6 +249,7 @@ impl TextureAtlas {
             _view: view,
             _sampler: sampler,
             bind_group: bg,
+            vulkan,
             width: Self::SIZE,
             height: Self::SIZE,
             cursor_x: 0,
@@ -330,6 +339,12 @@ impl TextureAtlas {
             (self.cursor_x + w) as f32 / self.width as f32,
             (self.cursor_y + h) as f32 / self.height as f32,
         ];
+        // Espejo Vulkan: mismas coordenadas y mismos píxeles que acaban de escribirse en wgpu.
+        if let Some(vulkan) = &self.vulkan
+            && let Err(error) = vulkan.upload_atlas_region(rgba, self.cursor_x, self.cursor_y, w, h)
+        {
+            log::warn!("[TextureAtlas] no se pudo espejar la región en Vulkan: {error}");
+        }
         self.cursor_x += w;
         self.row_h = self.row_h.max(h);
         uv
@@ -364,5 +379,10 @@ impl TextureAtlas {
                 depth_or_array_layers: 1,
             },
         );
+        if let Some(vulkan) = &self.vulkan
+            && let Err(error) = vulkan.upload_atlas_region(rgba, x, y, w, h)
+        {
+            log::warn!("[TextureAtlas] no se pudo actualizar la región en Vulkan: {error}");
+        }
     }
 }
