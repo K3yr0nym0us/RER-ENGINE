@@ -4,7 +4,7 @@
 use glam::Vec3;
 
 use crate::config_3d::shadow_cascades::{
-    CascadeCamera, CascadeSet, MAX_SHADOW_CASCADES, cascade_set,
+    CascadeCamera, CascadeSet, MAX_SHADOW_CASCADES, cascade_override, cascade_set,
 };
 
 use crate::ecs::{EntityId, MeshComponent, Transform};
@@ -139,7 +139,9 @@ impl State {
     /// de vista, que es la autoridad tanto en órbita de editor como en FPS: sus filas son los ejes de
     /// vista expresados en mundo, así que hacia delante es `-fila(2)`.
     pub(crate) fn build_shadow_cascades(&self, aspect: f32) -> CascadeSet {
-        let count = self.shadow_tier.cascades().min(MAX_SHADOW_CASCADES);
+        let count = cascade_override()
+            .unwrap_or_else(|| self.shadow_tier.cascades())
+            .min(MAX_SHADOW_CASCADES);
         let view = self.camera_view_matrix().to_cols_array_2d();
         let row = |index: usize| {
             Vec3::new(view[0][index], view[1][index], view[2][index]).normalize_or_zero()

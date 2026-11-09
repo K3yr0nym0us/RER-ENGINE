@@ -163,6 +163,32 @@ pub fn fit_cascade(corners: &[Vec3; 8], light_dir: Vec3, map_size: u32) -> Optio
     Some(CascadeFit { view_proj, extent })
 }
 
+/// Tope de cascadas forzado por el usuario con `RER_SHADOW_CASCADES`.
+///
+/// Existe para poder separar fallos sin recompilar: con `1` el motor vuelve a dibujar UNA sola
+/// cascada (el comportamiento equivalente al antiguo mapa único), así que si con 1 las sombras van
+/// bien el problema está en el repartido por capas y si van mal está en la matemática/sombras
+/// compartida. Se lee una vez: no es un ajuste de rendimiento, es un diagóstico.
+#[must_use]
+pub fn cascade_override() -> Option<usize> {
+    use std::sync::OnceLock;
+    static OVERRIDE: OnceLock<Option<usize>> = OnceLock::new();
+    *OVERRIDE.get_or_init(|| match std::env::var("RER_SHADOW_CASCADES") {
+        Err(_) => None,
+        Ok(raw) => match raw.trim().parse::<usize>() {
+            Ok(value) if (1..=MAX_SHADOW_CASCADES).contains(&value) => Some(value),
+            Ok(value) => {
+                log::warn!(
+                    "[sombras] RER_SHADOW_CASCADES={value} fuera de 1..{MAX_SHADOW_CASCADES}: se \
+                     ignora y manda el tier"
+                );
+                None
+            }
+            Err(_) => None,
+        },
+    })
+}
+
 /// Ajuste completo de las cascadas de un frame, en forma de datos puros (sin `State` ni GPU).
 #[derive(Clone, Copy, Debug)]
 pub struct CascadeCamera {

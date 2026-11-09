@@ -1488,6 +1488,15 @@ pub enum FrameAcquire {
 }
 
 impl GpuBuffer {
+    /// Bytes ya mapeados del búfer, para leer resultados de una copia GPU→CPU.
+    ///
+    /// Sólo es válido después de que el trabajo que escribió el búfer haya terminado; el motor
+    /// espera al device por frame con `RER_VK_SYNC_FRAMES`, así que la sonda de sombras lee lo del
+    /// frame ANTERIOR, que para diagnóstico es suficiente.
+    pub fn mapped_bytes(&self) -> Option<&[u8]> {
+        self.allocation.as_ref()?.mapped_slice()
+    }
+
     pub fn write(&mut self, offset: usize, data: &[u8]) -> Result<(), VulkanError> {
         let Some(allocation) = self.allocation.as_mut() else {
             return Err(VulkanError::new(

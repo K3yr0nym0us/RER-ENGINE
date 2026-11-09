@@ -248,6 +248,10 @@ pub struct FrameRenderer {
     joint_bases: Vec<u32>,
     joint_bases_transparent: Vec<u32>,
     hud_offset: u64,
+    /// Sonda de diagnóstico (`RER_SHADOW_DEBUG=1`): copia de un cuadrado central de cada capa del
+    /// shadow map, para saber de verdad si una cascada se pinta o no.
+    shadow_probe: Option<GpuBuffer>,
+    shadow_probe_tick: u32,
     /// Layout REAL de las imágenes de profundidad. Fuente única de verdad para las barreras:
     /// si un descriptor declara un layout distinto al que tiene la imagen, el resultado es
     /// contenido indefinido (los bloques negros en el cielo) y la validación lo reporta.
@@ -790,6 +794,8 @@ impl FrameRenderer {
             joint_bases: Vec::new(),
             joint_bases_transparent: Vec::new(),
             hud_offset: 0,
+            shadow_probe: None,
+            shadow_probe_tick: 0,
             // `create_image` deja las imágenes de aspecto DEPTH en ATTACHMENT.
             shadow_layout: DEPTH_ATTACHMENT,
             depth_layout: DEPTH_ATTACHMENT,
@@ -1514,6 +1520,14 @@ impl FrameRenderer {
         // Limpieza de las 4 capas sin dibujar nada (1.0 = no ocluye).
         begin_depth(device, cmd, self.targets.shadow.view, extent, SHADOW_LAYERS);
         unsafe { device.cmd_end_rendering(cmd) };
+        transition_depth_layers(
+            device,
+            cmd,
+            shadow_image,
+            &mut self.shadow_layout,
+            DEPTH_READ_ONLY,
+            SHADOW_LAYERS,
+        );
         for cascade in 0..count {
             let Some(layer_view) = self.targets.shadow.layer_view(cascade as u32) else {
                 break;
@@ -1531,6 +1545,21 @@ impl FrameRenderer {
                 unsafe { device.cmd_update_buffer(cmd, self.scene_ubo[slot].buffer, 0, &scene) };
                 buffer_barrier(device, cmd, self.scene_ubo[slot].buffer);
             }
+            // Cada cascada es una INSTANCIA de renderizado nueva sobre la misma imagen. En dynamic
+            // rendering las instancias consecutivas de un mismo command buffer NO se ordenan solas:
+            // exige una dependencia explícita entre la última región escrita y la siguiente, y las
+            // transiciones válidas del core son ATTACHMENT -> READ_ONLY y su inversa. Sin esto el
+            // clear o la cascada anterior se solapan con la actual, la capa queda con profundidad ~0
+            // y el forward lo lee como "hay algo delante": escena entera en sombra salvo el radio de
+            // la primera cascada. Con un único shadow map nunca pasaba porque había una sola instancia.
+            transition_depth_layers(
+                device,
+                cmd,
+                shadow_image,
+                &mut self.shadow_layout,
+                DEPTH_ATTACHMENT,
+                SHADOW_LAYERS,
+            );
             begin_depth(device, cmd, layer_view, extent, 1);
             set_viewport(device, cmd, extent);
             self.draw_depth(
@@ -1544,6 +1573,14 @@ impl FrameRenderer {
                 cmd,
             );
             unsafe { device.cmd_end_rendering(cmd) };
+            transition_depth_layers(
+                device,
+                cmd,
+                shadow_image,
+                &mut self.shadow_layout,
+                DEPTH_READ_ONLY,
+                SHADOW_LAYERS,
+            );
         }
         // Se devuelve el bloque tal cual lo armó `State`: el forward elige cascada por profundidad,
         // así que necesita las 4 matrices, no la que quedó escrita en el último pase.
@@ -1559,7 +1596,158 @@ impl FrameRenderer {
             DEPTH_READ_ONLY,
             SHADOW_LAYERS,
         );
+        if shadow_debug_enabled() {
+            self.probe_shadow_layers(count, device, cmd);
+        }
         Ok(())
+    }
+
+    /// Copia el cuadrado central de cada capa del shadow map y registra estadísticas por capa.
+    ///
+    /// Cada capa se limpia a 1.0, así que `con_geometria` cuenta los texelos por debajo de 0.999:
+    /// 0 significa que ESE mapa no se dibujó, y un min/max sin sentido significa que se dibujó con
+    /// la matriz de otra cascada. Esa diferencia no se puede ver a ojo en la pantalla, y es justo
+    /// la que separa "el repartido por capas está roto" de "el sesgo PCF está mal por cascada".
+    ///
+    /// El informe corresponde al frame ANTERIOR: la copia del actual todavía no terminó. Con
+    /// `RER_VK_SYNC_FRAMES` (activado por defecto en debug) el device ya quedó esperados entre
+    /// frames, así que el búfer está listo sin necesidad de un wait explícito.
+    fn probe_shadow_layers(
+        &mut self,
+        cascades: usize,
+        device: &ash::Device,
+        cmd: vk::CommandBuffer,
+    ) {
+        let extent = self.targets.shadow.extent;
+        let image = self.targets.shadow.image;
+        let side = SHADOW_PROBE_SIDE
+            .min(extent.width)
+            .min(extent.height)
+            .max(1);
+        let stride = u64::from(side) * u64::from(side) * 4;
+        let needed = stride * u64::from(SHADOW_LAYERS);
+        if self
+            .shadow_probe
+            .as_ref()
+            .is_none_or(|probe| probe.size < needed)
+        {
+            match self.gpu.create_buffer(
+                needed,
+                vk::BufferUsageFlags::TRANSFER_DST,
+                MemoryLocation::CpuToGpu,
+                "shadow-probe",
+            ) {
+                Ok(buffer) => self.shadow_probe = Some(buffer),
+                Err(error) => {
+                    log::warn!("[sombras-debug] sin búfer de sonda: {error}");
+                    return;
+                }
+            }
+        }
+        let Some(probe_handle) = self.shadow_probe.as_ref().map(|probe| probe.buffer) else {
+            return;
+        };
+
+        self.shadow_probe_tick = self.shadow_probe_tick.wrapping_add(1);
+        if self.shadow_probe_tick % SHADOW_PROBE_REPORT_EVERY == 1 {
+            self.report_shadow_probe(cascades, extent, side, stride);
+        }
+
+        transition_depth_layers(
+            device,
+            cmd,
+            image,
+            &mut self.shadow_layout,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            SHADOW_LAYERS,
+        );
+        let offset_x = ((extent.width - side) / 2) as i32;
+        let offset_y = ((extent.height - side) / 2) as i32;
+        let regions: Vec<vk::BufferImageCopy> = (0..SHADOW_LAYERS)
+            .map(|layer| {
+                vk::BufferImageCopy::default()
+                    .buffer_offset(u64::from(layer) * stride)
+                    .image_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: vk::ImageAspectFlags::DEPTH,
+                        mip_level: 0,
+                        base_array_layer: layer,
+                        layer_count: 1,
+                    })
+                    .image_offset(vk::Offset3D {
+                        x: offset_x,
+                        y: offset_y,
+                        z: 0,
+                    })
+                    .image_extent(vk::Extent3D {
+                        width: side,
+                        height: side,
+                        depth: 1,
+                    })
+            })
+            .collect();
+        unsafe {
+            device.cmd_copy_image_to_buffer(
+                cmd,
+                image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                probe_handle,
+                &regions,
+            );
+        }
+        transition_depth_layers(
+            device,
+            cmd,
+            image,
+            &mut self.shadow_layout,
+            DEPTH_READ_ONLY,
+            SHADOW_LAYERS,
+        );
+    }
+
+    /// Vuelca las estadísticas de la última sonda copiada (frame anterior).
+    fn report_shadow_probe(&self, cascades: usize, extent: vk::Extent2D, side: u32, stride: u64) {
+        use std::fmt::Write;
+
+        let Some(bytes) = self
+            .shadow_probe
+            .as_ref()
+            .and_then(|probe| probe.mapped_bytes())
+        else {
+            return;
+        };
+        let mut summary = String::new();
+        for layer in 0..SHADOW_LAYERS {
+            let start = (u64::from(layer) * stride) as usize;
+            let Some(window) = bytes.get(start..start + stride as usize) else {
+                continue;
+            };
+            let (mut min, mut max) = (1.0f32, 0.0f32);
+            let (mut filled, mut total) = (0u32, 0u32);
+            for chunk in window.chunks_exact(4) {
+                let Ok(raw) = <[u8; 4]>::try_from(chunk) else {
+                    continue;
+                };
+                let value = f32::from_le_bytes(raw);
+                if !value.is_finite() {
+                    continue;
+                }
+                total += 1;
+                min = min.min(value);
+                max = max.max(value);
+                if value < 0.999 {
+                    filled += 1;
+                }
+            }
+            let _ = write!(
+                summary,
+                " | capa {layer}: [{min:.4}..{max:.4}] geometria={filled}/{total}"
+            );
+        }
+        log::warn!(
+            "[sombras-debug] mapa {}x{}, sonda central {side}x{side}, cascadas={cascades}{summary}",
+            extent.width,
+            extent.height
+        );
     }
 
     /// Captura una sonda completa (6 caras) dentro de su ranura del cubemap array.
@@ -2675,7 +2863,10 @@ fn create_shadow_array(gpu: &SharedGpu, size: u32) -> Result<GpuImage, VulkanErr
         SHADOW_LAYERS,
         1,
         DEPTH,
-        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
+        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+            | vk::ImageUsageFlags::SAMPLED
+            // Necesario solo para la sonda `RER_SHADOW_DEBUG`; no cambia el uso en el frame normal.
+            | vk::ImageUsageFlags::TRANSFER_SRC,
         vk::ImageAspectFlags::DEPTH,
         "shadow",
     )?;
@@ -2691,6 +2882,26 @@ fn create_shadow_array(gpu: &SharedGpu, size: u32) -> Result<GpuImage, VulkanErr
     log::info!("[sombras] array de {SHADOW_LAYERS} capas de {size}x{size} px creado");
     Ok(image)
 }
+
+/// Activa la sonda de capas del shadow map: `RER_SHADOW_DEBUG=1`.
+///
+/// Sin la variable no se crea el búfer ni se emite barrera ni copia alguna: coste cero en el frame
+/// normal. Es un diagnóstico puntual para responder "¿esta capa se pinta o no", que a ojo no se
+/// distingue de "se pinta con la matriz de otra cascada".
+fn shadow_debug_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("RER_SHADOW_DEBUG")
+            .map(|value| value.trim() == "1" || value.trim().eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    })
+}
+
+/// Lado del cuadrado central de cada capa que se copia en la sonda.
+const SHADOW_PROBE_SIDE: u32 = 32;
+/// Cada cuántas sondas se registra: la copia es barata pero el log no debe inundar la consola.
+const SHADOW_PROBE_REPORT_EVERY: u32 = 30;
 
 /// El descriptor y el adjunto declaran un layout; si la imagen no está realmente en ese layout,
 /// lo que lee la GPU es indefinido (los bloques negros del cielo) y la validación lo reporta.
