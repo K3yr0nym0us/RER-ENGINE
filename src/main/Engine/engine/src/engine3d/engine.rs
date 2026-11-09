@@ -113,8 +113,6 @@ pub struct State {
     pub(crate) plane_tool_rotate_right: bool,
     /// Ventana nativa con foco: rotación vía OS. Sin foco: flags IPC (sidebar Electron).
     pub(crate) engine_window_focused: bool,
-    /// HWND/XID de la ventana Electron (padre del overlay); devolver foco al colocar herramientas plano.
-    pub(crate) editor_parent_id: u64,
     /// El motor se hospeda en el editor (swapchain compartido): ignora resize/bounds.
     pub(crate) embedded: bool,
     /// Última posición del cursor en píxeles del viewport (ghost de herramientas).

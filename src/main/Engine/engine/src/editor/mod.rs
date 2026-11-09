@@ -8,8 +8,6 @@ mod assets;
 mod bridge;
 mod cli;
 mod context;
-mod engine_host;
-mod engine_viewport;
 mod i18n;
 mod project_state;
 mod render;
@@ -17,6 +15,7 @@ mod save;
 mod scenes;
 mod theme;
 mod ui;
+mod user_event;
 mod world;
 
 pub mod host;

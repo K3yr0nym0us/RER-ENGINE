@@ -25,19 +25,6 @@ impl Locale {
     }
 }
 
-/// Geometría física de la ventana del motor (coordenadas de pantalla + offsets
-/// relativos al contenido de Electron). La usa el editor para lanzar el motor
-/// en modo overlay.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EngineBounds {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-    pub rel_x: i32,
-    pub rel_y: i32,
-}
-
 /// Configuración de arranque del editor egui.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cli {
@@ -45,8 +32,6 @@ pub struct Cli {
     pub save_path: Option<String>,
     pub extract_dir: Option<String>,
     pub locale: Locale,
-    pub engine_parent_hwnd: u64,
-    pub engine_bounds: Option<EngineBounds>,
 }
 
 impl Default for Cli {
@@ -56,8 +41,6 @@ impl Default for Cli {
             save_path: None,
             extract_dir: None,
             locale: Locale::En,
-            engine_parent_hwnd: 0,
-            engine_bounds: None,
         }
     }
 }
@@ -82,13 +65,6 @@ impl Cli {
         let mut save_path: Option<String> = None;
         let mut extract_dir: Option<String> = None;
         let mut locale = Locale::En;
-        let mut engine_parent_hwnd: u64 = 0;
-        let mut engine_x: i32 = 0;
-        let mut engine_y: i32 = 0;
-        let mut engine_width: Option<u32> = None;
-        let mut engine_height: Option<u32> = None;
-        let mut engine_rel_x: i32 = 0;
-        let mut engine_rel_y: i32 = 0;
 
         let mut index = 1;
         while index < args.len() {
@@ -132,48 +108,6 @@ impl Cli {
                         index += 1;
                     }
                 }
-                "--parent-hwnd" => {
-                    if let Some(value) = value {
-                        engine_parent_hwnd = value.parse().unwrap_or(0);
-                        index += 1;
-                    }
-                }
-                "--engine-x" => {
-                    if let Some(value) = value {
-                        engine_x = value.parse().unwrap_or(0);
-                        index += 1;
-                    }
-                }
-                "--engine-y" => {
-                    if let Some(value) = value {
-                        engine_y = value.parse().unwrap_or(0);
-                        index += 1;
-                    }
-                }
-                "--engine-width" => {
-                    if let Some(value) = value {
-                        engine_width = value.parse().ok();
-                        index += 1;
-                    }
-                }
-                "--engine-height" => {
-                    if let Some(value) = value {
-                        engine_height = value.parse().ok();
-                        index += 1;
-                    }
-                }
-                "--engine-rel-x" => {
-                    if let Some(value) = value {
-                        engine_rel_x = value.parse().unwrap_or(0);
-                        index += 1;
-                    }
-                }
-                "--engine-rel-y" => {
-                    if let Some(value) = value {
-                        engine_rel_y = value.parse().unwrap_or(0);
-                        index += 1;
-                    }
-                }
                 _ => {}
             }
 
@@ -185,26 +119,12 @@ impl Cli {
             save_path,
             extract_dir,
             locale,
-            engine_parent_hwnd,
-            engine_bounds: match (engine_width, engine_height) {
-                (Some(width), Some(height)) if width > 0 && height > 0 => Some(EngineBounds {
-                    x: engine_x,
-                    y: engine_y,
-                    width,
-                    height,
-                    rel_x: engine_rel_x,
-                    rel_y: engine_rel_y,
-                }),
-                _ => None,
-            },
         }
     }
 
     pub fn usage() -> &'static str {
         "rer_engine_editor --project-type <2D|3D> [--game-style <estilo>] \
-[--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] \
-[--parent-hwnd <u64> --engine-x <i32> --engine-y <i32> \
---engine-width <u32> --engine-height <u32> --engine-rel-x <i32> --engine-rel-y <i32>]"
+[--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>]"
     }
 }
 
@@ -294,39 +214,5 @@ mod tests {
         assert_eq!(Locale::parse("en"), Locale::En);
         assert_eq!(Locale::parse("ES"), Locale::Es);
         assert_eq!(Locale::parse("fr"), Locale::En);
-    }
-
-    #[test]
-    fn parses_engine_geometry() {
-        let cli = Cli::parse_from([
-            "rer_engine_editor",
-            "--parent-hwnd",
-            "123456",
-            "--engine-x",
-            "-20",
-            "--engine-y",
-            "30",
-            "--engine-width",
-            "800",
-            "--engine-height",
-            "600",
-            "--engine-rel-x",
-            "12",
-            "--engine-rel-y",
-            "34",
-        ]);
-
-        assert_eq!(cli.engine_parent_hwnd, 123456);
-        assert_eq!(
-            cli.engine_bounds,
-            Some(EngineBounds {
-                x: -20,
-                y: 30,
-                width: 800,
-                height: 600,
-                rel_x: 12,
-                rel_y: 34,
-            })
-        );
     }
 }

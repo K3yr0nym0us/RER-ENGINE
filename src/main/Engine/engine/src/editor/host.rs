@@ -2,7 +2,7 @@
 
 use std::io::BufRead;
 use std::sync::Arc;
-use std::sync::mpsc::{self, Sender};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -16,7 +16,7 @@ use winit::{
 
 use crate::editor::app::{EditorApp, EditorStatus};
 use crate::editor::cli::Cli;
-use crate::editor::engine_host::{EngineHost, UserEvent};
+use crate::editor::user_event::UserEvent;
 use rer_engine_core::vulkan::VulkanOptions;
 
 const DEFAULT_LOG_FILTER: &str =
@@ -83,10 +83,17 @@ impl InProcessEngine {
 /// Icono de ventana, el mismo PNG que usa Electron (`src/resources/RER-ENGINE-LOGO.png`).
 const APP_ICON_PNG: &[u8] = include_bytes!("../../../../../../src/resources/RER-ENGINE-LOGO.png");
 
-fn legacy_2d_window() -> bool {
-    std::env::var("RER_LEGACY_2D_WINDOW")
-        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+/// Tamaño inicial del viewport central antes del primer layout de egui.
+fn initial_viewport_size(window: &Window) -> PhysicalSize<u32> {
+    let inner = window.inner_size();
+    let scale = window.scale_factor() as f32;
+    let sidebar = (crate::editor::theme::SIDEBAR_WIDTH * scale).round() as u32;
+    let top = (crate::editor::theme::TOP_BAR_HEIGHT * scale).round() as u32;
+    let console = (inner.height as f32 * 0.25).max(120.0 * scale) as u32;
+    PhysicalSize::new(
+        inner.width.saturating_sub(sidebar * 2).max(1),
+        inner.height.saturating_sub(top + console).max(1),
+    )
 }
 
 fn app_window_icon() -> Option<winit::window::Icon> {
@@ -213,7 +220,6 @@ impl EditorWindow {
                         } else {
                             state.setup_default_3d_scene();
                         }
-                        state.editor_parent_id = 0;
                         let _ = proxy.send_event(UserEvent::EngineReady(Box::new(state)));
                     }
                     Err(error) => {
@@ -264,9 +270,7 @@ impl EditorWindow {
         std::thread::Builder::new()
             .name("engine2d-init".into())
             .spawn(move || {
-                let size = crate::editor::engine_viewport::central_viewport(window.as_ref())
-                    .map(|viewport| PhysicalSize::new(viewport.width, viewport.height))
-                    .unwrap_or_else(|| window.inner_size());
+                let size = initial_viewport_size(window.as_ref());
                 let result = (|| -> Result<_, String> {
                     let vulkan = Arc::new(
                         crate::engine2d::vulkan::Vulkan2d::with_gpu(gpu)
@@ -430,23 +434,7 @@ impl EditorWindow {
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), String> {
-        self.gpu.resize(size)?;
-        self.update_engine_viewport();
-        Ok(())
-    }
-
-    /// Recoloca el overlay del motor tras un resize/cambio de escala.
-    fn update_engine_viewport(&mut self) {
-        // Los motores in-process dibujan en el swapchain del editor; el overlay solo
-        // existe para el fallback 2D por proceso.
-        if self.app.cli.context.is_3d() || !legacy_2d_window() {
-            return;
-        }
-        if let Some(viewport) =
-            crate::editor::engine_viewport::central_viewport(self.window.as_ref())
-        {
-            self.app.send_engine(viewport.set_bounds_command());
-        }
+        self.gpu.resize(size)
     }
 
     fn render(&mut self) -> Result<(), String> {
@@ -488,23 +476,20 @@ struct EditorApplication {
     cli: Cli,
     proxy: EventLoopProxy<UserEvent>,
     editor: Option<EditorWindow>,
-    engine_host: Option<EngineHost>,
-    engine_tx: Option<Sender<Value>>,
     next_frame_at: Instant,
     target_fps: u64,
 }
 
 impl EditorApplication {
     fn send_engine(&mut self, command: Value) {
-        // En proceso 3D el comando se despacha directamente; en 2D va al hijo por stdin.
-        if let Some(editor) = self.editor.as_mut()
-            && editor.engine.is_some()
-        {
-            editor.handle_engine_command(&command);
-            return;
-        }
-        if let Some(tx) = &self.engine_tx {
-            let _ = tx.send(command);
+        // Motor in-process: si ya está cargado se despacha ya; si no, se encola para
+        // el primer frame tras `attach_engine`.
+        if let Some(editor) = self.editor.as_mut() {
+            if editor.engine.is_some() {
+                editor.handle_engine_command(&command);
+            } else {
+                editor.app.send_engine(command);
+            }
         }
     }
 
@@ -531,8 +516,7 @@ impl EditorApplication {
                 }
             }
             "viewport_bounds" => {
-                // El editor egui es ahora dueño de la geometría del motor; el
-                // viewport de Electron ya no reposiciona el overlay.
+                // La geometría del motor la manda el editor; ya no hay overlay que mover.
             }
             "editor_state" => {
                 if let Some(editor) = self.editor.as_mut() {
@@ -676,22 +660,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 .expect("No se pudo crear la ventana del editor"),
         );
 
-        // El motor se cuelga de la ventana egui, no de Electron: usamos el HWND
-        // del editor y el rectángulo central del marco.
-        if let Some(viewport) = crate::editor::engine_viewport::central_viewport(window.as_ref()) {
-            self.cli.engine_parent_hwnd = viewport.parent_hwnd;
-            self.cli.engine_bounds = Some(viewport.engine_bounds());
-            log::info!(
-                "[editor] viewport del motor: {}x{} en rel ({}, {})",
-                viewport.width,
-                viewport.height,
-                viewport.rel_x,
-                viewport.rel_y
-            );
-        } else {
-            log::warn!("[editor] no se pudo calcular el viewport del motor");
-        }
-
         match EditorWindow::new(Arc::clone(&window), self.cli.clone()) {
             Ok(editor) => {
                 log::info!(
@@ -702,40 +670,17 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 );
                 self.editor = Some(editor);
 
-                if self.cli.context.is_3d() || !legacy_2d_window() {
-                    // La UI se pinta ya; el motor se construye en un hilo y avisa al terminar.
-                    if let Some(editor) = self.editor.as_mut() {
-                        editor.app.proxy = Some(self.proxy.clone());
-                        editor.app.engine_loading = true;
-                        editor.app.engine_error = None;
-                        let engine_label = if self.cli.context.is_3d() { "3D" } else { "2D" };
-                        editor
-                            .app
-                            .push_log(format!("[Editor] cargando motor {engine_label}…"), false);
-                        if let Err(message) = editor.spawn_engine_loader(self.proxy.clone()) {
-                            editor.fail_engine(message);
-                        }
-                    }
-                } else {
-                    match EngineHost::spawn(&self.cli, self.proxy.clone()) {
-                        Ok(host) => {
-                            let tx = host.sender();
-                            if let Some(editor) = self.editor.as_mut() {
-                                editor.app.engine_tx = Some(tx.clone());
-                                editor.app.proxy = Some(self.proxy.clone());
-                                editor.app.push_log("[Editor] ventana lista", false);
-                                editor.app.push_log("[Editor] motor iniciado", false);
-                            }
-                            self.engine_tx = Some(tx);
-                            self.engine_host = Some(host);
-                        }
-                        Err(message) => {
-                            log::error!("[editor] {message}");
-                            if let Some(editor) = self.editor.as_mut() {
-                                editor.app.status = EditorStatus::Error;
-                                editor.app.push_log(format!("[Editor] {message}"), true);
-                            }
-                        }
+                // La UI se pinta ya; el motor se construye en un hilo y avisa al terminar.
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.app.proxy = Some(self.proxy.clone());
+                    editor.app.engine_loading = true;
+                    editor.app.engine_error = None;
+                    let engine_label = if self.cli.context.is_3d() { "3D" } else { "2D" };
+                    editor
+                        .app
+                        .push_log(format!("[Editor] cargando motor {engine_label}…"), false);
+                    if let Err(message) = editor.spawn_engine_loader(self.proxy.clone()) {
+                        editor.fail_engine(message);
                     }
                 }
 
@@ -865,7 +810,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 if let Err(error) = editor.resize(size) {
                     log::error!("[editor] {error}");
                 }
-                editor.update_engine_viewport();
                 editor.window.request_redraw();
             }
             WindowEvent::ScaleFactorChanged { .. } => {
@@ -873,7 +817,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 if let Err(error) = editor.resize(size) {
                     log::error!("[editor] {error}");
                 }
-                editor.update_engine_viewport();
                 editor.window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
@@ -955,8 +898,6 @@ pub fn run() {
         cli,
         proxy,
         editor: None,
-        engine_host: None,
-        engine_tx: None,
         next_frame_at: Instant::now(),
         target_fps: 60,
     };

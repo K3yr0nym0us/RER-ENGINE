@@ -93,9 +93,6 @@ const extractedProjectDirs = new Set<string>()
 // Ventana secundaria del editor de scripts Rhai
 // (eliminada — el editor ahora vive en un modal de Bootstrap dentro del renderer)
 
-// Últimos bounds efectivos del motor (para restaurarlo tras ocultarlo)
-let lastEffectiveBounds: ViewportBounds | null = null
-
 /** true tras recibir `ready` del proceso motor de la sesión actual. */
 let engineReceivedReady = false
 
@@ -266,20 +263,6 @@ function failEditorAndQuit(message: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Extraer HWND nativo de la ventana principal (Windows)
-// ---------------------------------------------------------------------------
-function getMainWindowHWND(): string {
-  if (!mainWindow) return '0'
-  const handle = mainWindow.getNativeWindowHandle()
-  // En Windows 64-bit, HWND es un puntero de 8 bytes (little-endian)
-  if (handle.length >= 8) {
-    return handle.readBigUInt64LE(0).toString()
-  }
-  // Fallback 32-bit (improbable en la práctica)
-  return handle.readUInt32LE(0).toString()
-}
-
-// ---------------------------------------------------------------------------
 // Proceso del motor Rust
 // ---------------------------------------------------------------------------
 interface ViewportBounds {
@@ -401,12 +384,12 @@ function handleEngineLine(line: string): void {
  * Inicia una sesión de motor. El proceso del motor lo lanza y controla el
  * editor Rust; Electron solo sigue recibiendo eventos para la UI React antigua.
  */
-function startEngineSession(embed?: ViewportBounds): void {
+function startEngineSession(): void {
   engineReceivedReady = false
   engine2dStartupSceneSent = false
   engine3dStartupSceneSent = false
   lastEngineBinary = engineBinaryLabel()
-  startEditorFrame(embed)
+  startEditorFrame()
 }
 
 // ---------------------------------------------------------------------------
@@ -423,7 +406,7 @@ function editorFrameBinaryName(): string {
  * ventana es totalmente independiente: no se acopla, no se reposiciona y no
  * usa HWND padre.
  */
-function startEditorFrame(embed?: ViewportBounds): void {
+function startEditorFrame(): void {
   if (editorFrameLaunched) return
   editorFrameLaunched = true
 
@@ -439,26 +422,6 @@ function startEditorFrame(embed?: ViewportBounds): void {
   const extractDir = currentProjectExtractDir ?? currentProjectSessionDir
   if (extractDir) args.push('--extract-dir', extractDir)
   args.push('--locale', currentLocale)
-
-  // El editor lanza el motor. En Windows le pasamos el HWND y la geometría
-  // inicial para que el overlay se alinee al viewport de Electron.
-  if (embed && process.platform === 'win32') {
-    const x = Math.round(embed.x)
-    const y = Math.round(embed.y)
-    const width = Math.max(1, Math.round(embed.width))
-    const height = Math.max(1, Math.round(embed.height))
-    const relX = Math.max(0, Math.round(embed.rel_x ?? 0))
-    const relY = Math.max(0, Math.round(embed.rel_y ?? 0))
-    args.push(
-      '--parent-hwnd', getMainWindowHWND(),
-      '--engine-x', String(x),
-      '--engine-y', String(y),
-      '--engine-width', String(width),
-      '--engine-height', String(height),
-      '--engine-rel-x', String(relX),
-      '--engine-rel-y', String(relY),
-    )
-  }
 
   editorFrameProcess = spawn(editorPath, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -564,7 +527,6 @@ function stopEngine(): void {
   stopEditorFrame()
   engineReceivedReady = false
   engineStarted = false
-  engineViewportHidden = true
 }
 
 // ---------------------------------------------------------------------------
@@ -793,41 +755,10 @@ ipcMain.handle('get-image-data-url', async (_event, filePath: string): Promise<s
   }
 })
 
-function sendEngineViewportBounds(bounds: ViewportBounds): void {
-  const MAX_VIEWPORT_DIM = 8192
-  const clampDim = (value: number) =>
-    Math.max(1, Math.min(MAX_VIEWPORT_DIM, Math.round(value)))
-  const width = clampDim(bounds.width)
-  const height = clampDim(bounds.height)
-  if (width !== Math.round(bounds.width) || height !== Math.round(bounds.height)) {
-    console.warn(
-      `[editor] viewport bounds recortados: ${bounds.width}x${bounds.height} → ${width}x${height}`,
-    )
-  }
-  sendToEngine({
-    cmd:    'set_bounds',
-    x:      Math.round(bounds.x),
-    y:      Math.round(bounds.y),
-    width,
-    height,
-    offset_x: lastRelativeBounds ? Math.round(lastRelativeBounds.x) : undefined,
-    offset_y: lastRelativeBounds ? Math.round(lastRelativeBounds.y) : undefined,
-  })
-}
-
-function collapsedViewportBounds(bounds: ViewportBounds): ViewportBounds {
-  return { ...bounds, width: 1, height: 1 }
-}
-
 // Oculta el motor (para que no tape modales del renderer)
 ipcMain.on('hide-engine-viewport', () => {
-  if (!engineStarted) return
-  engineViewportHidden = true
-  const bounds = lastEffectiveBounds ?? { x: 0, y: 0, width: 1, height: 1 }
-  sendEngineViewportBounds(collapsedViewportBounds(bounds))
-})
-
-// ---------------------------------------------------------------------------
+  // El motor vive en la ventana del editor; no hay overlay que ocultar.
+})// ---------------------------------------------------------------------------
 // Modal Electron (singleton, encima del motor sin hideEngineViewport)
 // ---------------------------------------------------------------------------
 
@@ -994,17 +925,8 @@ ipcMain.on('modal-electron:result', (_event, data: ModalElectronResultPayload) =
 })
 
 // Restaura el motor a los últimos bounds conocidos
-ipcMain.on('restore-engine-viewport', (_event, bounds) => {
-  if (!engineStarted) return
-  let useBounds = null
-  if (bounds && typeof bounds.x === 'number' && typeof bounds.y === 'number' && typeof bounds.width === 'number' && typeof bounds.height === 'number') {
-    useBounds = bounds
-  } else if (lastEffectiveBounds) {
-    useBounds = lastEffectiveBounds
-  }
-  if (!useBounds) return
-  engineViewportHidden = false
-  sendEngineViewportBounds(useBounds)
+ipcMain.on('restore-engine-viewport', () => {
+  // El motor vive en la ventana del editor; no hay overlay que restaurar.
 })
 
 // ---------------------------------------------------------------------------
@@ -2355,33 +2277,12 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
-// Al primer mensaje arrancamos el motor con las coordenadas correctas.
+// Se usan para posicionar el overlay del asistente IA y para arrancar el editor.
 let engineStarted = false
-/** Motor arrancado en 1×1 hasta `restore-engine-viewport` (tras `ready` / fin de carga). */
-let engineViewportHidden = true
 
 // Caché de los bounds relativos del viewport (posición dentro del contenido de Electron,
 // pre-DPR). Se actualiza en cada 'viewport-bounds'.
 let lastRelativeBounds: ViewportBounds | null = null
-
-// El motor overlay usa coordenadas de pantalla absolutas (popup separado).
-// Convierte los bounds DPR-escalados del renderer (relativos al contenido de
-// Electron) a coordenadas físicas de pantalla.
-function viewportToScreenBounds(bounds: ViewportBounds): ViewportBounds {
-  if (!mainWindow) return bounds
-  const cb          = mainWindow.getContentBounds()
-  const scaleFactor = electronScreen.getDisplayMatching(mainWindow.getBounds()).scaleFactor
-  return {
-    x:      Math.round(cb.x * scaleFactor + bounds.x),
-    y:      Math.round(cb.y * scaleFactor + bounds.y),
-    width:  bounds.width,
-    height: bounds.height,
-    // Pasar los offsets físicos del renderer tal cual (sin conversión DPI adicional).
-    // El position-tracker Rust los usa como offset relativo al área de contenido.
-    rel_x:  Math.round(bounds.x),
-    rel_y:  Math.round(bounds.y),
-  }
-}
 
 /** Origen en pantalla (DIP) de la esquina superior izquierda del viewport del motor. */
 function getEngineViewportScreenOrigin(): { x: number; y: number } | null {
@@ -2401,24 +2302,16 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   // Si el proceso murió limpiamente, permitir relanzar
   if (engineStarted && !editorFrameProcess) {
     engineStarted = false
-    engineViewportHidden = true
   }
 
-  const effectiveBounds = viewportToScreenBounds(bounds)
-  lastEffectiveBounds = effectiveBounds
   repositionAiAssistantOverlayIfOpen()
 
   if (engineStarted) {
-    if (engineViewportHidden) {
-      return
-    }
-    sendEngineViewportBounds(effectiveBounds)
     return
   }
-  // Primera vez (o relanzar tras muerte): arrancar oculto (1×1) hasta `restore-engine-viewport`
+  // Primera vez (o relanzar tras muerte): arrancar el editor in-process.
   engineStarted = true
-  engineViewportHidden = true
-  startEngineSession(collapsedViewportBounds(effectiveBounds))
+  startEngineSession()
 })
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,6 @@ pub mod editor_defaults;
 pub mod gizmo;
 pub mod ipc;
 pub mod logging;
-pub mod overlay;
 pub mod platform;
 pub mod player_ui;
 pub mod process_metrics;

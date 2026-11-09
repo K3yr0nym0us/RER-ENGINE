@@ -4,7 +4,6 @@ pub use self::events::{ControlSummary, DebugMetrics, PlayView, SelectedEntity};
 pub use self::logs::LogEntry;
 pub use self::save::PendingSave;
 use std::path::PathBuf;
-use std::sync::mpsc::Sender;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -12,12 +11,12 @@ use winit::event_loop::EventLoopProxy;
 
 use crate::editor::assets::AssetLists;
 use crate::editor::cli::Cli;
-use crate::editor::engine_host::UserEvent;
 use crate::editor::project_state::ProjectState;
 use crate::editor::save::SaveSuccess;
 use crate::editor::scenes::SceneList;
 use crate::editor::ui::sidebar_left::SidebarLeftState;
 use crate::editor::ui::sidebar_right::SidebarRightState;
+use crate::editor::user_event::UserEvent;
 use crate::editor::world::WorldSettings;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,11 +57,9 @@ pub struct EditorApp {
     pub proxy: Option<EventLoopProxy<UserEvent>>,
     pub left_sidebar: SidebarLeftState,
     pub right_sidebar: SidebarRightState,
-    /// Canal de comandos hacia el motor (lo conecta `main` al lanzarlo).
-    pub engine_tx: Option<Sender<Value>>,
     /// Rectángulo central (en puntos) donde el motor dibuja la escena.
     pub viewport_rect: Option<egui::Rect>,
-    /// Comandos emitidos por la UI que el host drena hacia el motor in-process.
+    /// Canal de comandos hacia el motor in-process (se drena en cada frame).
     pub pending_engine: std::cell::RefCell<Vec<Value>>,
     /// El motor del proyecto se está construyendo; el viewport muestra un placeholder.
     pub engine_loading: bool,
@@ -102,7 +99,6 @@ impl EditorApp {
             proxy: None,
             left_sidebar: SidebarLeftState::default(),
             right_sidebar: SidebarRightState::default(),
-            engine_tx: None,
             viewport_rect: None,
             pending_engine: std::cell::RefCell::new(Vec::new()),
             engine_loading: false,
@@ -119,12 +115,8 @@ impl EditorApp {
     }
 
     pub fn send_engine(&self, command: Value) {
-        // Motor hijo (fallback 2D): stdin. Motor in-process: el host drena la cola.
-        if let Some(tx) = &self.engine_tx {
-            let _ = tx.send(command);
-        } else {
-            self.pending_engine.borrow_mut().push(command);
-        }
+        // El host drena la cola hacia el motor in-process en el siguiente frame.
+        self.pending_engine.borrow_mut().push(command);
     }
 }
 

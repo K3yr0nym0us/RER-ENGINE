@@ -16,9 +16,6 @@ use winit::{
 
 use crate::engine3d::ipc::{EngineCommand, EngineCommandCommon, EngineEvent};
 use rer_engine_core::backend_policy::{EngineGpuProfile, resolve_backend};
-use rer_engine_core::overlay::{OverlayConfig, parse_overlay_config};
-use rer_engine_core::platform::TrackerOffset;
-use rer_engine_core::platform::setup_overlay_win32;
 use rer_engine_core::platform::{query_ctrl_held_os, query_shift_held_os};
 use rer_engine_core::surface::SurfacePresentError;
 
@@ -446,7 +443,6 @@ fn finish_entity_grab_confirm(
 // ---------------------------------------------------------------------------
 pub struct App {
     state: Option<crate::engine3d::engine::State>,
-    overlay: Option<OverlayConfig>,
     // ── Cámara orbital (Blender: MMB + modificadores)
     mouse_middle: bool,
     /// ── Cámara libre del editor: RMB mantiene pulsado el "mirar alrededor".
@@ -473,8 +469,6 @@ pub struct App {
     // Frame rate cap: tiempo objetivo del próximo frame (evita busy loop)
     next_frame_at: std::time::Instant,
     target_fps: u64,
-    tracker_offset: TrackerOffset,
-    tracker_parent_id: u64,
     cursor_captured: bool,
 }
 
@@ -484,7 +478,6 @@ impl App {
     pub(crate) fn new_in_editor(state: crate::engine3d::engine::State) -> Self {
         Self {
             state: Some(state),
-            overlay: None,
             mouse_middle: false,
             mouse_right: false,
             editor_keys: HashSet::new(),
@@ -502,11 +495,6 @@ impl App {
             gamepad_pressed: HashSet::new(),
             next_frame_at: std::time::Instant::now(),
             target_fps: 60,
-            tracker_offset: std::sync::Arc::new((
-                std::sync::atomic::AtomicI32::new(0),
-                std::sync::atomic::AtomicI32::new(0),
-            )),
-            tracker_parent_id: 0,
             cursor_captured: false,
         }
     }
@@ -592,62 +580,6 @@ impl App {
 }
 
 impl App {
-    fn initial_tracker_offset(overlay: &OverlayConfig) -> TrackerOffset {
-        std::sync::Arc::new((
-            std::sync::atomic::AtomicI32::new(overlay.rel_x),
-            std::sync::atomic::AtomicI32::new(overlay.rel_y),
-        ))
-    }
-
-    fn setup_overlay_tracking(&mut self, window: &Window) {
-        let Some(overlay) = self.overlay.as_ref() else {
-            return;
-        };
-        if overlay.parent_id == 0 {
-            return;
-        }
-        use raw_window_handle::HasWindowHandle;
-        let Ok(handle) = window.window_handle() else {
-            return;
-        };
-
-        let offset = Self::initial_tracker_offset(overlay);
-        self.tracker_offset = std::sync::Arc::clone(&offset);
-        self.tracker_parent_id = overlay.parent_id;
-
-        use raw_window_handle::RawWindowHandle;
-        if let RawWindowHandle::Win32(h) = handle.as_raw() {
-            setup_overlay_win32(h.hwnd.get(), overlay.parent_id as isize, offset);
-        }
-    }
-
-    fn update_tracker_offset(
-        &mut self,
-        x: i32,
-        y: i32,
-        offset_x: Option<i32>,
-        offset_y: Option<i32>,
-    ) {
-        if self.tracker_parent_id == 0 {
-            return;
-        }
-        use std::sync::atomic::Ordering;
-        if let (Some(ox), Some(oy)) = (offset_x, offset_y) {
-            self.tracker_offset.0.store(ox, Ordering::Relaxed);
-            self.tracker_offset.1.store(oy, Ordering::Relaxed);
-            return;
-        }
-        use windows::Win32::Foundation::{HWND, POINT};
-        use windows::Win32::Graphics::Gdi::ClientToScreen;
-        unsafe {
-            let mut pt = POINT { x: 0, y: 0 };
-            if ClientToScreen(HWND(self.tracker_parent_id as *mut _), &mut pt).as_bool() {
-                self.tracker_offset.0.store(x - pt.x, Ordering::Relaxed);
-                self.tracker_offset.1.store(y - pt.y, Ordering::Relaxed);
-            }
-        }
-    }
-
     fn reset_preview_input_state(&mut self, state: &mut crate::engine3d::engine::State) {
         self.last_cursor = None;
         self.mouse_middle = false;
@@ -751,16 +683,6 @@ impl App {
         if let EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) = &cmd {
             self.target_fps = (*fps).clamp(1, 1000);
             self.next_frame_at = std::time::Instant::now();
-        }
-        if let EngineCommand::Common(EngineCommandCommon::SetBounds {
-            x,
-            y,
-            offset_x,
-            offset_y,
-            ..
-        }) = &cmd
-        {
-            self.update_tracker_offset(*x, *y, *offset_x, *offset_y);
         }
         let mut preview_toggle = None;
         match cmd {
@@ -1443,26 +1365,15 @@ impl ApplicationHandler<EngineCommand> for App {
             .with_title("RER-ENGINE - Viewport")
             .with_window_icon(rer_engine_core::platform::app_window_icon());
 
-        if let Some(overlay) = &self.overlay {
-            attrs = attrs
-                .with_inner_size(winit::dpi::PhysicalSize::new(overlay.width, overlay.height))
-                .with_position(winit::dpi::PhysicalPosition::new(overlay.x, overlay.y))
-                .with_decorations(false)
-                .with_resizable(false);
-        } else {
-            // ── Modo standalone ──────────────────────────────────────────────
-            attrs = attrs
-                .with_inner_size(winit::dpi::LogicalSize::new(1280u32, 720u32))
-                .with_decorations(true);
-        }
+        attrs = attrs
+            .with_inner_size(winit::dpi::LogicalSize::new(1280u32, 720u32))
+            .with_decorations(true);
 
         let window = Arc::new(
             event_loop
                 .create_window(attrs)
                 .expect("No se pudo crear la ventana"),
         );
-
-        self.setup_overlay_tracking(&window);
 
         match pollster::block_on(crate::engine3d::engine::State::new(Arc::clone(&window))) {
             Ok(mut state) => {
@@ -1477,7 +1388,6 @@ impl ApplicationHandler<EngineCommand> for App {
                 } else {
                     state.setup_default_3d_scene();
                 }
-                state.editor_parent_id = self.tracker_parent_id;
                 log::info!(
                     "[editor] navegación del viewport: RMB mirar · WASD volar · Space/C subir/bajar · Shift sprint · MMB órbita · Shift+MMB paneo · Ctrl+MMB dolly · rueda zoom · Numpad. encuadrar selección"
                 );
@@ -1582,17 +1492,11 @@ rer_engine_core::vulkan=info";
     // ControlFlow se gestiona dinámicamente en about_to_wait con WaitUntil(next_frame).
     // NO usar Poll aquí: Poll + request_redraw en RedrawRequested = busy loop al 100% CPU.
 
-    let overlay = parse_overlay_config();
     let gpu = resolve_backend(EngineGpuProfile::ThreeD).label();
-    if overlay.is_some() {
-        log::info!("Modo overlay activado (GPU: {gpu})");
-    } else {
-        log::info!("Modo standalone (GPU: {gpu})");
-    }
+    log::info!("Modo standalone (GPU: {gpu})");
 
     let mut app = App {
         state: None,
-        overlay,
         mouse_middle: false,
         mouse_right: false,
         editor_keys: HashSet::new(),
@@ -1610,11 +1514,6 @@ rer_engine_core::vulkan=info";
         gamepad_pressed: HashSet::new(),
         next_frame_at: std::time::Instant::now(),
         target_fps: 60,
-        tracker_offset: std::sync::Arc::new((
-            std::sync::atomic::AtomicI32::new(0),
-            std::sync::atomic::AtomicI32::new(0),
-        )),
-        tracker_parent_id: 0,
         cursor_captured: false,
     };
     event_loop

@@ -14,7 +14,6 @@ export const ENGINE_COMMANDS_SHARED = [
   'shutdown',
   'set_clear_color',
   'resize',
-  'set_bounds',
   'load_model',
   'replace_entity_model',
   'set_transform',

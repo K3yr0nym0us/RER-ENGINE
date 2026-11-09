@@ -25,16 +25,6 @@ pub enum EngineCommandCommon {
         width: u32,
         height: u32,
     },
-    SetBounds {
-        x: i32,
-        y: i32,
-        width: u32,
-        height: u32,
-        #[serde(default)]
-        offset_x: Option<i32>,
-        #[serde(default)]
-        offset_y: Option<i32>,
-    },
     LoadModel {
         path: String,
         #[serde(default)]

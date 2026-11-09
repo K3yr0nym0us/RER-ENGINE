@@ -26,16 +26,14 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
   compartida: no crea instancia, device ni swapchain propios.
 - `State::with_vulkan` + `Vulkan2d::with_gpu` reutilizan el contexto del editor;
   `render_into` graba en el sub-rect del viewport y deja la imagen para egui.
-- En modo embebido `resize`/`set_bounds`/`set_vsync` no tocan la ventana ni el swapchain
-  del editor; el tamaño del scene target lo fija `set_viewport_size`.
-- `RER_LEGACY_2D_WINDOW=1` recupera el modo proceso con ventana overlay.
+- En modo embebido `resize`/`set_vsync` no tocan la ventana ni el swapchain del editor;
+  el tamaño del scene target lo fija `set_viewport_size`.
+- No hay fallback por proceso ni overlay: el motor siempre vive en el editor.
 
-## Ventana overlay (integracion con Electron)
+## Ventana standalone
 
-- Arranque: `--overlay <parent_id> <x> <y> <w> <h> [rel_x rel_y]` (alias legacy `--embed`). Ver `rer_engine_core::overlay`.
-- **No** hay reparent (`with_embed_parent_window` eliminado): ventana hermana alineada por coordenadas de pantalla.
-- Sincronizacion: `rer_engine_core::platform` (position-tracker Win32).
-- IPC `set_bounds` redimensiona y actualiza offset del tracker.
+- `rer_engine_2d` abre su propia ventana winit de debug (1280×720).
+- Ya no existe `--overlay`, tracker Win32 ni desplazamiento por `set_bounds`.
 
 ## Archivos fuente de verdad
 

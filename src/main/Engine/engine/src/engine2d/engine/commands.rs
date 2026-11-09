@@ -29,23 +29,6 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::Resize { width, height }) => {
                 self.resize(PhysicalSize::new(width, height));
             }
-            EngineCommand::Common(EngineCommandCommon::SetBounds {
-                x,
-                y,
-                width,
-                height,
-                ..
-            }) => {
-                // En el editor el motor comparte la ventana: el tamaño lo manda el viewport.
-                if !self.embedded {
-                    self.window
-                        .set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
-                    self.resize(PhysicalSize::new(width, height));
-                    let _ = self
-                        .window
-                        .request_inner_size(winit::dpi::PhysicalSize::new(width, height));
-                }
-            }
             EngineCommand::Common(EngineCommandCommon::LoadModel { path, .. }) => {
                 send_event(&EngineEvent::Error {
                     message: format!("Este binario es 2D: carga de modelos no disponible ({path})"),

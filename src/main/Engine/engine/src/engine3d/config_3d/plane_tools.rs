@@ -175,7 +175,7 @@ impl State {
     }
 
     pub(crate) fn focus_editor_window(&self) {
-        rer_engine_core::platform::focus_overlay_parent_window(self.editor_parent_id);
+        // La colocación ya no devuelve foco a Electron: el motor vive en el editor.
     }
 
     pub(crate) fn sync_plane_tool_from_set_active(&mut self, kind: PlaneToolKind, size: [f32; 2]) {

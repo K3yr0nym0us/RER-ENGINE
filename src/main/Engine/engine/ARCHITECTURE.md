@@ -34,9 +34,9 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
   frecuencia del monitor (picos de 200 FPS).
 - `forward_input` combina `egui_is_using_pointer()` y `layer_id_at()`: el `consumed`
   global de egui también es true sobre el viewport vacío, así que no se usa solo.
-- En modo embebido los motores ignoran `set_bounds`/`resize`/`set_vsync` sobre la ventana
+- En modo embebido los motores ignoran `resize`/`set_vsync` sobre la ventana
   compartida: el tamaño lo fija el editor.
-- Fallback 2D por proceso: `RER_LEGACY_2D_WINDOW=1`.
+- No hay fallback por proceso ni overlay: el motor siempre vive en el editor.
 
 Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mallas glTF/GLB. El tipo de cámara en play (`gameStyle`) se elige en el acordeón Camera.
 
@@ -111,10 +111,10 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   para ver qué devuelve el pase. Los nombres de la era wgpu (`trace_strength`, `probe_layers`,
   `metallic`) ya no existen: cayeron con `src/engine3d/reflections/`.
 
-## Ventana overlay
+## Ventana standalone
 
-- Identico al 2D: `--overlay`, ventana winit separada, tracker en `rer_engine_core::platform`.
-- Ver `src/engine2d/ARCHITECTURE.md` (seccion overlay) para detalle Win32.
+- Los binarios `rer_engine_2d` / `rer_engine_3d` abren su propia ventana winit de debug.
+- Ya no existe `--overlay`, tracker Win32 ni `set_bounds`; el editor es la única ruta integrada.
 
 ## Archivos fuente de verdad
 
@@ -263,7 +263,7 @@ Herramientas del acordeón **Tools** en proyectos 3D (no son el dibujo por punto
 | Rotación | **Q / E** en el motor (polling OS + swallow winit); yaw persistido en `Transform.rotation`. |
 | Colisionador | Marcador `[Colisionador]`; Rapier static orientado; invisible en play (salvo debug). |
 | Trigger | Marcador `[ExecutionArea]`; sin física; invisible en play; scripts/nodos vía Rhai. |
-| Foco | Al activar herramienta → foco ventana overlay; al colocar → `focus_overlay_parent_window` + `mainWindow.focus()` en Electron. |
+| Foco | El motor vive en la ventana del editor; al colocar la herramienta se devuelve el foco al viewport winit. |
 | `.save` | Posición, escala y **rotación** (quaternion) en snapshot; restauración vía `restore_*_plane_from_save` + `apply_entity_restore`. |
 | Render | `render_kind = 0.25`: iluminación normal, sin recibir ni proyectar sombras (excluidos del shadow pass). |
 | Play | `update_execution_areas_3d` en tick; eventos `trigger_entered` / `trigger_exited`; panel front `[trigger]` con `has_attached_script`. |
