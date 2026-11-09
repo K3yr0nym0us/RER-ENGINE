@@ -1451,16 +1451,16 @@ impl ApplicationHandler<EngineCommand> for App {
 }
 fn main() {
     // Logs van a stderr; IPC usa stdout.
-    // wgpu_hal::vulkan genera spam de "Suboptimal present" y warnings de capas
-    // en entornos sin GPU hardware — subirlos a error los silencia.
+    // La capa de validación y el contexto Ash viven ahora en engine_shared::vulkan. Sin listar ese
+    // módulo, sus [vulkan-validación] (nivel warn) quedan filtrados por rer_engine_3d=warn: son justo
+    // los mensajes que delatan un layout de imagen mal declarado.
     const DEFAULT_LOG_FILTER: &str = "rer_engine_3d=warn,rer_engine_3d::config_base=info,rer_engine_3d::config_3d::skin_diag=info,\
 rer_engine_3d::config_3d::model_asset=info,\
 rer_engine_3d::config_3d::reflection_settings=info,\
 rer_engine_3d::engine::commands=info,\
 rer_engine_3d::reflections=info,\
 rer_engine_3d::engine::render=info,\
-wgpu_core::instance=error,wgpu_hal::vulkan::conv=error,\
-wgpu_hal::vulkan::instance=error,wgpu_core=warn,wgpu_hal=warn,naga=warn";
+ rer_engine_shared::vulkan=info";
 
     rer_engine_shared::logging::init(DEFAULT_LOG_FILTER);
 
