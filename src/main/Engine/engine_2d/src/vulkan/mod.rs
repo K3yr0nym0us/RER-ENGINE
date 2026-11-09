@@ -17,6 +17,7 @@ use rer_engine_shared::vulkan::{FrameAcquire, SharedGpu, VulkanError, VulkanOpti
 use rer_engine_shared::wgpu_surface::SurfacePresentError;
 use winit::window::Window;
 
+mod layout;
 mod targets;
 use targets::{SampledTexture, SceneTargets};
 
