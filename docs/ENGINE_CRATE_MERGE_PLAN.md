@@ -200,10 +200,9 @@ Sin la fase de "convertir el 3D en librería" (ya son módulos del mismo crate):
 
 ### Fase 6 — Repartir ficheros grandes
 
-> Estado: en curso. Hecho: `vulkan/frame`, `ipc`, `core/vulkan/gpu`, `commands`,
-> `load_proyect`, `config_3d/model_asset`, los sidebars y `app` del editor.
-> Pendiente: `config_3d/mod.rs`, `engine/render.rs`, `static_model_cache.rs` y
-> `core/player_ui/text_input`.
+> Estado: casi cerrada. Hecho: `vulkan/frame`, `ipc`, `core/vulkan/gpu`, `commands`,
+> `load_proyect`, `config_3d/model_asset`, `static_model_cache`, `engine/render`,
+> `config_3d/mod`, los sidebars y `app` del editor. Pendiente: `core/player_ui/text_input`.
 
 | Antes | Ahora |
 |---|---|
@@ -212,7 +211,10 @@ Sin la fase de "convertir el 3D en librería" (ya son módulos del mismo crate):
 | `engine3d/engine/load_proyect.rs` 2.360 | `engine/load_proyect/{mod,schema,manifest,paths,restore,scene,events,snapshot}.rs` |
 | `config_3d/model_asset.rs` 2.360 | `config_3d/model_asset/{mod,types,material,import,asset,animation,skeleton,play}.rs` |
 | `core/vulkan/gpu.rs` 1.757 | `core/vulkan/gpu/{mod,context,swapchain,memory,frame}.rs` |
+| `engine3d/config_3d/mod.rs` 1.397 | `config_3d/{mod,helpers,model_ops,picking,gizmo_drag}.rs` |
 | `engine3d/ipc.rs` 1.372 | `engine3d/ipc/{mod,types,events}.rs` |
+| `engine3d/engine/render.rs` 1.256 | `engine/render/{mod,batches,rt,skinned,frustum}.rs` |
+| `config_3d/static_model_cache.rs` 1.084 | `config_3d/static_model_cache/{mod,types,registry,preload,spawn}.rs` |
 | `editor/ui/sidebar_left.rs` 1.432 | `ui/sidebar_left/{mod,scenes,camera,resources,entities,interface,tools,controls}.rs` |
 | `editor/ui/sidebar_right.rs` 1.170 | `ui/sidebar_right/{mod,workspace,grid,lighting,textures,reflections,shadows,msaa,taa,gravity,fps,tiers,metrics}.rs` |
 | `editor/app.rs` 969 | `editor/app/{mod,events,logs,save}.rs` |

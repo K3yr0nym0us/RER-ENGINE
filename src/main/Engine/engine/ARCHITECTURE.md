@@ -141,6 +141,9 @@ submodulo, no el arbol completo:
 | `src/engine3d/engine/commands/` | `system`, `scenes`, `entities`, `assets`, `graphics`, `world`, `player_ui`, `animation`, `scripts`, `sockets` |
 | `src/engine3d/engine/load_proyect/` | `schema`, `manifest`, `paths`, `restore`, `scene`, `events`, `snapshot` |
 | `src/engine3d/config_3d/model_asset/` | `types`, `material`, `import`, `asset`, `animation`, `skeleton`, `play` |
+| `src/engine3d/config_3d/static_model_cache/` | `types`, `registry`, `preload`, `spawn` |
+| `src/engine3d/config_3d/` (raíz) | `mod.rs` (declaraciones), `helpers`, `model_ops`, `picking`, `gizmo_drag` |
+| `src/engine3d/engine/render/` | `mod` (frame), `batches`, `rt`, `skinned`, `frustum` |
 | `src/engine3d/ipc/` | `types` (payloads), `events` (EngineEvent y transporte) |
 | `core/vulkan/gpu/` (crate `core`) | `context`, `swapchain`, `memory`, `frame` |
 
