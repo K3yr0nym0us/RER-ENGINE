@@ -1380,11 +1380,13 @@ pub fn send_load_progress(message: &str, step_ms: Option<u64>, total_ms: Option<
 static EVENT_SINK: OnceLock<mpsc::Sender<String>> = OnceLock::new();
 
 /// Instala el sink de eventos del editor. Solo tiene efecto la primera vez.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
 pub fn install_event_sink(tx: mpsc::Sender<String>) {
     let _ = EVENT_SINK.set(tx);
 }
 
 /// Parsea un comando IPC desde el JSON que envía Electron.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
 pub fn parse_command(value: &serde_json::Value) -> Option<EngineCommand> {
     serde_json::from_value(value.clone()).ok()
 }
