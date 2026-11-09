@@ -83,7 +83,6 @@ pub struct RtProperties {
 
 struct FrameSync {
     acquire: vk::Semaphore,
-    render_finished: vk::Semaphore,
     fence: vk::Fence,
     command: vk::CommandBuffer,
 }
@@ -94,6 +93,9 @@ struct SwapchainState {
     extent: vk::Extent2D,
     views: Vec<vk::ImageView>,
     images: Vec<vk::Image>,
+    /// Un semáforo de presentación por imagen: reutilizar uno por frame slot podía
+    /// señalarlo mientras la imagen anterior seguía en uso por el swapchain.
+    render_finished: Vec<vk::Semaphore>,
     vsync: bool,
 }
 
@@ -114,6 +116,10 @@ struct GpuInner {
     /// Se suelta a mano en `Drop`, antes de `destroy_device`.
     allocator: ManuallyDrop<Mutex<Allocator>>,
     command_pool: vk::CommandPool,
+    /// Pool exclusivo de `one_shot`, para que el hilo de carga del motor y el frame de
+    /// espera del editor no compartan el mismo command pool.
+    one_shot_pool: vk::CommandPool,
+    one_shot_lock: Mutex<()>,
     frames: Mutex<[FrameSync; FRAMES_IN_FLIGHT]>,
     frame_slot: AtomicUsize,
     accel: Option<ash::khr::acceleration_structure::Device>,
@@ -138,11 +144,11 @@ impl Drop for GpuInner {
                     .unwrap_or_else(|poison| poison.into_inner());
                 for frame in frames.iter() {
                     self.device.destroy_semaphore(frame.acquire, None);
-                    self.device.destroy_semaphore(frame.render_finished, None);
                     self.device.destroy_fence(frame.fence, None);
                 }
             }
             self.device.destroy_command_pool(self.command_pool, None);
+            self.device.destroy_command_pool(self.one_shot_pool, None);
             {
                 let swapchain = self
                     .swapchain
@@ -150,6 +156,9 @@ impl Drop for GpuInner {
                     .unwrap_or_else(|poison| poison.into_inner());
                 for view in swapchain.views.drain(..) {
                     self.device.destroy_image_view(view, None);
+                }
+                for semaphore in swapchain.render_finished.drain(..) {
+                    self.device.destroy_semaphore(semaphore, None);
                 }
                 self.swapchain_loader
                     .destroy_swapchain(swapchain.handle, None);
@@ -574,6 +583,14 @@ impl SharedGpu {
             )
             .map_err(|error| vk_error("crear el command pool", error))?;
         let frames = create_frames(&device, command_pool)?;
+        let one_shot_pool = device
+            .create_command_pool(
+                &vk::CommandPoolCreateInfo::default()
+                    .queue_family_index(queue_family)
+                    .flags(vk::CommandPoolCreateFlags::TRANSIENT),
+                None,
+            )
+            .map_err(|error| vk_error("crear el command pool de un solo uso", error))?;
 
         let (accel, rt_pipeline, rt_props) = if hw_rt {
             let accel = ash::khr::acceleration_structure::Device::new(&instance, &device);
@@ -615,6 +632,8 @@ impl SharedGpu {
                 swapchain: Mutex::new(swapchain),
                 allocator: ManuallyDrop::new(Mutex::new(allocator)),
                 command_pool,
+                one_shot_pool,
+                one_shot_lock: Mutex::new(()),
                 frames: Mutex::new(frames),
                 frame_slot: AtomicUsize::new(0),
                 accel,
@@ -759,6 +778,9 @@ impl SharedGpu {
         unsafe {
             for view in swapchain.views.drain(..) {
                 self.inner.device.destroy_image_view(view, None);
+            }
+            for semaphore in swapchain.render_finished.drain(..) {
+                self.inner.device.destroy_semaphore(semaphore, None);
             }
             self.inner.swapchain_loader.destroy_swapchain(old, None);
         }
@@ -1263,10 +1285,15 @@ impl SharedGpu {
         &self,
         record: impl FnOnce(&ash::Device, vk::CommandBuffer),
     ) -> Result<(), VulkanError> {
+        let _guard = self
+            .inner
+            .one_shot_lock
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         let command = unsafe {
             self.inner.device.allocate_command_buffers(
                 &vk::CommandBufferAllocateInfo::default()
-                    .command_pool(self.inner.command_pool)
+                    .command_pool(self.inner.one_shot_pool)
                     .level(vk::CommandBufferLevel::PRIMARY)
                     .command_buffer_count(1),
             )
@@ -1318,7 +1345,7 @@ impl SharedGpu {
             self.inner.device.destroy_fence(fence, None);
             self.inner
                 .device
-                .free_command_buffers(self.inner.command_pool, &[command]);
+                .free_command_buffers(self.inner.one_shot_pool, &[command]);
         }
         Ok(())
     }
@@ -1423,8 +1450,13 @@ impl SharedGpu {
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let sync = &frames[frame.slot];
+        let swapchain = self
+            .inner
+            .swapchain
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
         let wait_semaphores = [sync.acquire];
-        let signal_semaphores = [sync.render_finished];
+        let signal_semaphores = [swapchain.render_finished[frame.image_index as usize]];
         let wait_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
         let command_buffers = [frame.command];
         let submit = vk::SubmitInfo::default()
@@ -1443,11 +1475,6 @@ impl SharedGpu {
                 .queue_submit(*queue, &[submit], sync.fence)
                 .map_err(|error| FrameAcquire::Fail(vk_error("enviar el frame", error)))?;
         }
-        let swapchain = self
-            .inner
-            .swapchain
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
         let indices = [frame.image_index];
         let swapchains = [swapchain.handle];
         let present = vk::PresentInfoKHR::default()
@@ -1761,12 +1788,23 @@ fn create_swapchain(
                 .map_err(|error| vk_error("crear la vista del swapchain", error))?;
             views.push(view);
         }
+        let mut render_finished = Vec::with_capacity(images.len());
+        for _ in &images {
+            render_finished.push(
+                device
+                    .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
+                    .map_err(|error| {
+                        vk_error("crear el semáforo de presentación del swapchain", error)
+                    })?,
+            );
+        }
         Ok(SwapchainState {
             handle,
             format: format.format,
             extent,
             views,
             images,
+            render_finished,
             vsync,
         })
     }
@@ -1789,9 +1827,6 @@ unsafe fn create_frames(
         let acquire = device
             .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
             .map_err(|error| vk_error("crear el semáforo de adquisición", error))?;
-        let render_finished = device
-            .create_semaphore(&vk::SemaphoreCreateInfo::default(), None)
-            .map_err(|error| vk_error("crear el semáforo de presentación", error))?;
         let fence = device
             .create_fence(
                 &vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED),
@@ -1800,7 +1835,6 @@ unsafe fn create_frames(
             .map_err(|error| vk_error("crear el fence del frame", error))?;
         frames.push(FrameSync {
             acquire,
-            render_finished,
             fence,
             command,
         });

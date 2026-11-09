@@ -92,6 +92,10 @@ impl EditorWindow {
             unsafe { std::env::set_var("RER_PROJECT_EXTRACT_DIR", extract_dir) };
         }
 
+        // El hilo de carga y el frame de espera comparten device: se desactiva el wait
+        // serializado para que no se pisen queue/device mientras se construye el motor.
+        unsafe { std::env::set_var("RER_VK_SYNC_FRAMES", "0") };
+
         // El sink debe existir antes de construir el estado: la carga inicial ya emite eventos.
         let (sink_tx, sink_rx) = mpsc::channel::<String>();
         crate::engine3d::ipc::install_event_sink(sink_tx);
@@ -150,6 +154,7 @@ impl EditorWindow {
 
     /// El hilo de carga terminó: el motor pasa a ser propiedad del editor.
     fn attach_engine(&mut self, state: crate::engine3d::engine::State) {
+        unsafe { std::env::remove_var("RER_VK_SYNC_FRAMES") };
         self.engine = Some(crate::engine3d::host::App::new_in_editor(state));
         self.app.engine_loading = false;
         self.app.engine_error = None;
@@ -157,6 +162,7 @@ impl EditorWindow {
     }
 
     fn fail_engine(&mut self, message: String) {
+        unsafe { std::env::remove_var("RER_VK_SYNC_FRAMES") };
         log::error!("[editor] {message}");
         self.app.engine_loading = false;
         self.app.engine_error = Some(message.clone());
