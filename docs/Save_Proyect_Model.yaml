@@ -8,7 +8,7 @@
 #   - src/renderer/.../ResourcesAccordion/   (UI de bibliotecas)
 #   - src/main/index.ts                        (empaquetar / extraer .save)
 #   - engine_2d|3d/.../load_proyect.rs         (carga en stores del motor)
-#   - src/renderer/defaults/buildProjectSaveFromEngine.ts
+#   - src/renderer/src/defaults/buildProjectSaveFromEngine.ts
 
 principle:
   owner_ui: Resources_accordion
@@ -181,7 +181,7 @@ runtime_caches:
 save_flow:
   steps:
     1_build_manifest:
-      file: src/renderer/defaults/buildProjectSaveFromEngine.ts
+      file: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
       action: |
         export_save_snapshot del motor + merge con metadatos del editor.
         Fuentes del manifest:
@@ -211,7 +211,7 @@ save_flow:
         copyImportedAssetsToStaging + copySourceAssetsToStaging (dev) →
         copyAssetsToDir → remapPaths → serializeScriptsToFiles
       pack_layout:
-        assets/: sprites, fondos genéricos, frames de animación (v1: también modelos 3D fuente)
+        "assets/": "sprites, fondos genéricos, frames de animación (v1: también modelos 3D fuente)"
         imported/models/: .rerasset (manifest v2)
         source/models/: GLB/GLTF espejo fuente (solo dev al guardar)
         sounds/: audio
@@ -245,7 +245,7 @@ manifest_layers:
       player del manifest es el jugador play character (cámara `first-person` en gameStyle); entidades category=player en entities[] se ignoran en carga 3D.
   future_per_scene_resources:
     status: pendiente
-    ref: CHECKLIST.md — recursos por escena + carga lazy al cambiar escena activa
+    description: recursos por escena + carga lazy al cambiar escena activa
 
 # ---------------------------------------------------------------------------
 # Cargar .save
@@ -277,20 +277,18 @@ load_flow:
       - v1: upsert_model_store_entry + kickoff_preload_models_for_save + ensure_model_cached
       - v2: imported_model_registry desde resources.models[]; carga lazy (sin precarga global)
       - entity_source_model_path: model_id → source_path del registro para spawn/caché
-      - burst_load (escena con entidades o cámara play character con player): instancia entidades y
-        ensure_static_model_cached bajo demanda (desde .rerasset si Ready)
+      - "burst_load (escena con entidades o cámara play character con player): instancia entidades y ensure_static_model_cached bajo demanda (desde .rerasset si Ready)"
       - import_player_ui_* con paths ya resueltos
       - load_progress: mensajes [Carga] / pasos con tiempos
   motor_2d:
     file: engine_2d/.../load_proyect.rs
     steps:
       - resolve_loaded_paths (relativas; limpia raíz si scenes[])
-      - load_project_asset_stores: sounds, fonts, backgrounds (biblioteca global)
-      - import_scene: sprites de escena, backgroundPath, entidades; resolve_entity_restore
-        hereda metadatos de project.blueprints[] si blueprint_id (Blueprints_Model_2D.yaml)
+      - "load_project_asset_stores: sounds, fonts, backgrounds (biblioteca global)"
+      - "import_scene: sprites de escena, backgroundPath, entidades; resolve_entity_restore hereda metadatos de project.blueprints[] si blueprint_id (Blueprints_Model_2D.yaml)"
       - project_loaded_2d → metadata al renderer
       - project_load_2d_complete → front sincroniza con export_save_snapshot
-      - load_progress: mensajes [Carga] en panel (misma semántica que 3D)
+      - "load_progress: mensajes [Carga] en panel (misma semántica que 3D)"
   renderer_sync:
     events: project_loaded_2d | project_loaded_3d | project_load_2d_complete | project_load_3d_complete | load_progress
     action: "SET_* en React + get_*_list al motor para alinear UI Resources (sin get_hud_images_list en 2D)."

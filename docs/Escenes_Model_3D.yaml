@@ -68,15 +68,15 @@ commands_motor_in:
 
 events_motor_out:
   editor_scene_created:
-    payload: { id, name, scenes[] }
+    payload: "{ id, name, scenes[] }"
     scenes_item: { id, name, dirty }
   editor_scene_switched:
-    payload: { active_scene_id, scenes[] }
+    payload: "{ active_scene_id, scenes[] }"
   editor_scene_switch_blocked:
     payload: { reason, active_scene_id, target_scene_id }
     note: "Respaldo en renderer si dirty no estaba sincronizado; la UI principal ya muestra modal de guardar antes."
   editor_scenes_updated:
-    payload: { active_scene_id, scenes[], update_reason }
+    payload: "{ active_scene_id, scenes[], update_reason }"
     scenes_item: { id, name, dirty }
     update_reason_values:
       boot: "Proyecto 3D nuevo."

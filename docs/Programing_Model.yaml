@@ -179,7 +179,7 @@ nodes:
         }
     engine_3d_fp:
       auto_key_inject: |
-        After a control script runs, engine_3d/scripts.rs auto-injects fp_press_key
+        After a control script runs, engine_3d/src/engine/scripts.rs auto-injects fp_press_key
         for the play character when the script does not call it. Scripts only set
         walk/sprint/jump parameters; no fp_press_key("W") per binding.
       example_bare_body: |

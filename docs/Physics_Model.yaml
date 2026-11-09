@@ -151,7 +151,7 @@ tools:
   2d:
     accordion: ToolsAccordion
     hooks: usePointDrawing (4 puntos)
-    ipc: set_active_tool { tool: draw_collider | draw_execution_area | "" }
+    ipc: "set_active_tool { tool: draw_collider | draw_execution_area | \"\" }"
     events: collider_created, execution_area_created, drawing_progress
   3d:
     context: PlaneToolContext
@@ -207,7 +207,7 @@ persistence:
     collider_points: en entidades kind collider / execution_area
   world:
     gravity: number
-    worldWidth / worldHeight / worldDepth (3D)
+    size_fields: "worldWidth / worldHeight / worldDepth (3D)"
   blueprint:
     fields: [colision, physics_enabled, physics_type]
 

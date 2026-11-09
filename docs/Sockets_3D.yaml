@@ -44,13 +44,13 @@ editor:
       - collider
       - execution_area
       - ground / sun (entity3dCategory)
-    child_cannot_be: el mismo host
+    child_cannot_be_self: el mismo host
 
 engine:
   module: engine_3d/src/config_3d/entity_sockets.rs
   state:
     entity_sockets: HashMap<EntityId, Vec<EntitySocket>>  # definición en el host
-    entity_attachments: AttachmentAnchor::Socket { host_entity_id, socket_name }
+    entity_attachments: "AttachmentAnchor::Socket { host_entity_id, socket_name }"
   sync: |
     sync_socket_attached_children() cada frame: posición mundial del socket desde
     bone_world_transform + offset local; el hijo hereda escala y offset guardados al vincular.

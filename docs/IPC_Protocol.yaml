@@ -95,10 +95,10 @@ lifecycle:
     note: Ver docs/Engine_Runtime_Foundation.yaml
   startup_2d:
     trigger: motor listo tras spawn
-    cmd: set_scene { scene: "2D", save_path: extract_dir }
+    cmd: 'set_scene { scene: "2D", save_path: extract_dir }'
   startup_3d:
     trigger: proyecto con extract_dir (o plantilla si proyecto nuevo)
-    cmd: set_scene { scene: gameStyle | "3D" | DEFAULT, save_path: extract_dir }
+    cmd: 'set_scene { scene: gameStyle | "3D" | DEFAULT, save_path: extract_dir }'
     note: |
       gameStyle en manifest = modo de cámara 3D (p. ej. first-person). Proyecto nuevo 3D
       abre el editor directo; el usuario cambia la cámara en acordeón Camera (sidebar).
@@ -108,9 +108,10 @@ lifecycle:
 
 command_categories:
   viewport:
-    - set_bounds
-    - resize
-    - set_clear_color
+    cmds:
+      - set_bounds
+      - resize
+      - set_clear_color
     note: set_bounds incluye offset_x/offset_y (DPI físico del hueco en renderer)
   scene_and_project:
     2d:

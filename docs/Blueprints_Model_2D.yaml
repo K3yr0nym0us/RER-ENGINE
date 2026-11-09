@@ -64,7 +64,7 @@ sprite_resolution:
   helpers:
     file: src/renderer/src/utils/blueprintModelPath.ts
     functions:
-      resolveBlueprintModelPath: path principal (2D: path / visualModelPath)
+      resolveBlueprintModelPath: "path principal (2D: path / visualModelPath)"
       buildQuickBuildPendingRestore: metadatos restore al colocar
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ persistence:
   location: project.blueprints[] (raíz manifest; global al proyecto)
   entities: entities[].blueprint_id en cada escena (scenes[].entities)
   save_2d:
-    file: src/renderer/defaults/buildProjectSaveFromEngine.ts
+    file: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
     rule: |
       Proyecto 2D: serializa blueprints[] del editor tal cual (BluePrintEntry).
       No aplica blueprintToSave ni model_id (solo proyectos 3D).

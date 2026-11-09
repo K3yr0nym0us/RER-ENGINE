@@ -40,7 +40,7 @@ projectile_config:
     Campo `hardness` en entidad del `.save` (default 0). IPC `set_entity_hardness`.
 
 runtime:
-  templates: entidades `kind: projectile` con ProjectileMarker
+  templates: "entidades `kind: projectile` con ProjectileMarker"
   active_instances: |
     ActiveProjectile: entity_id, velocity (Vec2), age, lifetime_s,
     gravity, align, visual_angle_offset, bounces_left, bounce_speed_loss,

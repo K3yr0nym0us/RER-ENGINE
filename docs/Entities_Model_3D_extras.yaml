@@ -81,7 +81,7 @@ player_glb_orientation:
   ipc: replace_entity_model → entity_model_replaced (quita overlay de carga)
   qa_manual: |
     Validar con varios GLB Mixamo reales en cámara play character (~1.7 m, de pie,
-    sin regresión skinning). Pendiente en CHECKLIST-3D.
+    sin regresión skinning). Pendiente: registrado aquí, no en un checklist aparte.
 
 editor_flow_3d:
   new_project: editor directo sin GameStyleSelector; gameStyle = modo de cámara en manifest

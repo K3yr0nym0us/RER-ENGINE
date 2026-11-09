@@ -1,8 +1,8 @@
 # Documentación RER-ENGINE
 
-Índice de contratos y modelos del editor. Los checklists (`CHECKLIST*.md`) listan **solo trabajo pendiente**; lo ya implementado vive aquí.
+Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT)
+**Última revisión:** noviembre 2026 (motor 3D sobre Ash/Vulkan: reflejos, sondas, MSAA, sombras y TAA actualizados a la implementación real; lo de la era wgpu queda marcado como histórico en `Reflections_Diagnostics.yaml`). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
 
 ---
 
@@ -35,9 +35,9 @@
 | [Reflections_3D.yaml](./Reflections_3D.yaml) | Índice reflejos: tiers, toggles, frame, IPC |
 | [Reflections_SSR.yaml](./Reflections_SSR.yaml) | Screen-space reflections por tier |
 | [Reflections_Probes.yaml](./Reflections_Probes.yaml) | Cubemap probes, captura, forward IBL |
-| [Reflections_RT.yaml](./Reflections_RT.yaml) | Ray tracing HW, quality preset, denoise |
-| [Reflections_Diagnostics.yaml](./Reflections_Diagnostics.yaml) | Auditoría y pruebas manuales |
-| [TAA_3D.yaml](./TAA_3D.yaml) | Anti-aliasing temporal: blend, jitter, pipeline, IPC |
+| [Reflections_RT.yaml](./Reflections_RT.yaml) | Ray tracing HW (Ash), fallback BVH, denoise; lo no portado de wgpu |
+| [Reflections_Diagnostics.yaml](./Reflections_Diagnostics.yaml) | Auditoría Ash con capa de validación + historial wgpu |
+| [TAA_3D.yaml](./TAA_3D.yaml) | Anti-aliasing temporal: blend, historial ping-pong, formatos G-buffer, IPC |
 | [MSAA_3D.yaml](./MSAA_3D.yaml) | MSAA forward 3D por tier, resolve a G-buffers 1×, IPC |
 | [Shadows_3D.yaml](./Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
 
@@ -89,7 +89,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [CHECKLIST-TEXTURAS-3D.md](../CHECKLIST-TEXTURAS-3D.md) | Perfiles BC7/ASTC recomendados para build final (no editor) |
+| [Rerasset_Format.yaml](./Rerasset_Format.yaml) | Sección `export_profiles`: perfiles BC7/ASTC reservados para el build final (no editor) |
 
 ---
 

@@ -64,7 +64,7 @@ model_resolution:
       blueprintFromSave: restaura model_id si model ya es model_*
       buildBlueprintPlacementMeta: IPC register_blueprint / quick_build
   save_flow:
-    file: src/renderer/defaults/buildProjectSaveFromEngine.ts
+    file: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
     steps:
       - attachModelIdsToBlueprints desde resources.models[]
       - rewriteImportedBlueprintPaths: blueprint.model ← model_id (marcadores excluidos)

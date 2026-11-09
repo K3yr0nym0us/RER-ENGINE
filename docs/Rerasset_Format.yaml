@@ -5,7 +5,7 @@
 #
 # Relacionado con:
 #   - docs/Save_Proyect_Model.yaml (manifest v2 resources.models)
-#   - CHECKLIST-TEXTURAS-3D.md (perfiles GPU solo en exportación final)
+#   - docs/Rerasset_Format.yaml `export_profiles` (perfiles GPU solo en exportación final)
 
 constants:
   RER_ASSET_VERSION: 1
@@ -119,7 +119,7 @@ rtex:
       read_rtex en editor solo acepta compression_type=0.
 
   export_profiles:
-    ref: CHECKLIST-TEXTURAS-3D.md
+    status: aplazado (el checklist que los listaba se retiró del repo)
     when: pipeline Editor → Save → Build → Ejecutable (aplazado)
     cook_at_build_time: |
       El artista importa una vez; el .save conserva RGBA8 editable; variantes BC7/ASTC

@@ -7,8 +7,8 @@ updated: 2026-06-04
 summary: |
   Guía breve para escribir scripts en entidades. El motor 2D y el 3D comparten la misma forma
   de script; algunas funciones solo existen en uno de los dos.
-  Render del motor: Rust + wgpu — rer_engine_2d y rer_engine_3d usan Vulkan (Windows;
-  sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Rhai no
+  Render del motor: Rust — rer_engine_2d usa wgpu y rer_engine_3d usa Ash, ambos sobre Vulkan
+  (Windows; sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Rhai no
   configuran la GPU; solo llaman a la API engine.* de gameplay.
 
 # ── Forma de un script ────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ entity_fields:
     - name: id
       description: ID numérico
     - name: x, y
-      description: Posición en el plano de juego (2D: mundo XY; 3D: uso principal en XZ del suelo)
+      description: "Posición en el plano de juego (2D: mundo XY; 3D: uso principal en XZ del suelo)"
     - name: scale_x, scale_y
       description: Escala
     - name: animations

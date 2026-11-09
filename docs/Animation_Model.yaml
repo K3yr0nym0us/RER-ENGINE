@@ -39,7 +39,7 @@ modes:
   gltf_clips_3d:
     applies_to: Modelos .glb/.gltf con joints y clips
     visual: GPU skinning (model_animation.rs)
-    metadata: embedded_in_model: true en manifest y entityMeta
+    metadata: "embedded_in_model: true en manifest y entityMeta"
     binding: try_bind_model_animations al cargar/reemplazar modelo
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,8 @@ logical_size_resolution:
 
 gltf_clips:
   discovery: list_gltf_clip_infos / load_model_asset con skinning
-  event: model_clips_ready
+  event:
+    name: model_clips_ready
     payload:
       id: entity_id
       path: model_path
@@ -197,7 +198,6 @@ rhai:
     usa animación visual del modelo pero movimiento vía play_controller (cápsula).
   planned_root_motion:
     status: pendiente
-    ref: CHECKLIST-3D.md
     ui_label_es: "Esta animación controla el movimiento"
     description: |
       Flag opcional por clip embebido: al reproducir, extraer delta de posición

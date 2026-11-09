@@ -42,7 +42,7 @@ element_types:
     fields: [id, image_path, center, size, z_index, locked]
     ref: hudImages library
   object:
-    fields: [id, vertices[], fill_color, texture_path?, z_index, locked]
+    fields: "[id, vertices[], fill_color, texture_path?, z_index, locked]"
     drawing: set_player_ui_object_draw + clic en viewport
     ref_texture: hudImages (opcional)
 

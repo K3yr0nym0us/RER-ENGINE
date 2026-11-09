@@ -9,8 +9,15 @@
 #   - docs/Entity_Properties_Modal.yaml
 #   - docs/IPC_Protocol.yaml
 
-version: 1
-updated: 2026-06-10
+version: 2
+updated: 2026-11-08
+status: |
+  Desactualizado parcialmente y marcado como tal: el panel de UI (`EntityTexturesPanel.tsx`,
+  `showTexturesTab`) y los comandos `list_entity_textures` / `set_entity_texture_*` ya NO existen
+  en el repo (ni en `engine_ipc_common` ni en el renderer). Lo que sobrevive es el mecanismo de
+  calidad gráfica por mundo (`graphics_texture_tier`, `texture_detail_distance_m` en el world del
+  .save) y el snapshot persistido por entidad (`SaveEntityTextureLodSnapshot` en engine_3d/src/ipc.rs),
+  usado al restaurar modelos GLB/GLTF. El resto de este documento describe el diseño original.
 
 principle:
   owner: motor_3d
@@ -84,9 +91,10 @@ persistence:
     - materials[]: { material_index, tier_assignments }
 
 ui:
+  status: no presente en el repo actual (ver `status` arriba); se conserva como referencia de diseño
   entry: Propiedades de entidad → pestaña Texturas (solo si showTexturesTab)
-  panel: EntityTexturesPanel.tsx
-  modal_host: EntityPropertiesModalContent.tsx (ventana modal Electron)
+  panel: EntityTexturesPanel.tsx  # inexistente hoy
+  modal_host: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/EntityPropertiesModalContent.tsx
   open_flow: |
     1. buildEntityPropertiesState pone showTexturesTab si hay GLB/GLTF
     2. Al montar la pestaña → send list_entity_textures
@@ -98,11 +106,13 @@ key_files:
   motor_load: src/main/Engine/engine_3d/src/config_3d/gltf_texture_load.rs
   motor_save: src/main/Engine/engine_3d/src/save_entity_3d.rs
   ipc: src/main/Engine/engine_3d/src/ipc.rs
-  ui_panel: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/EntityTexturesPanel.tsx
+  ui_panel: inexistente (EntityTexturesPanel.tsx ya no está en el repo)
   event_handler: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
 
 engine_2d:
-  note: Los comandos list_entity_textures / set_entity_texture_* son no-op en engine_2d.
+  note: |
+    Sin soporte de catálogo de texturas por entidad: el motor 2D no expone estos comandos
+    (hoy tampoco existen en el IPC del 3D; ver `status`).
 
 do_not:
   - Catálogo de texturas solo en glTF/GLB embebido

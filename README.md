@@ -140,13 +140,10 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine_2d=debug`.
 | [docs/Plugins_Model.yaml](./docs/Plugins_Model.yaml) | Plugins opcionales (catálogo, IPC, persistencia) |
 | [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.yaml) | Plugin asistente IA local (Qwen3, llama.cpp, chat) |
 | [docs/README.md](./docs/README.md) | Índice de documentación (funcionalidad implementada) |
-| [CHECKLIST.md](./CHECKLIST.md) | Backlog global pendiente |
-| [CHECKLIST-2D.md](./CHECKLIST-2D.md) | Pendiente motor / editor 2D |
-| [CHECKLIST-3D.md](./CHECKLIST-3D.md) | Pendiente motor / editor 3D |
 | [`src/main/Engine/engine_2d/ARCHITECTURE.md`](src/main/Engine/engine_2d/ARCHITECTURE.md) | Contrato del motor 2D |
 | [`src/main/Engine/engine_3d/ARCHITECTURE.md`](src/main/Engine/engine_3d/ARCHITECTURE.md) | Contrato del motor 3D |
 | [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) | Rol del frontend y qué no duplicar |
-| [`.cursor/rules/rer-engine-project.mdc`](.cursor/rules/rer-engine-project.mdc) | Convenciones permanentes para agentes Cursor (inglés) |
+| [`.cursor/rules/project.mdc`](.cursor/rules/project.mdc) | Reglas del proyecto (índice de reglas: `engine`, `frontend`, `rust-quality`, `frontend-quality`) |
 
 ---
 
