@@ -1,8 +1,12 @@
-//! Adquisición de textura de swapchain (wgpu 29+: `CurrentSurfaceTexture`).
+//! Resultados de presentación de la superficie. El enum va siempre (el motor 3D lo usa para
+//! decidir si reconfigurar o saltar un frame); las dos funciones que hablan con wgpu dependen de
+//! la feature `gpu`.
 
+#[cfg(feature = "gpu")]
 use winit::dpi::PhysicalSize;
 
 /// Limita el tamaño físico de la superficie a lo que admite el adaptador (evita panic en `configure`).
+#[cfg(feature = "gpu")]
 pub fn clamp_surface_physical_size(
     device: &wgpu::Device,
     size: PhysicalSize<u32>,
@@ -23,6 +27,7 @@ pub enum SurfacePresentError {
 }
 
 /// Obtiene la textura de presentación o indica cómo proceder.
+#[cfg(feature = "gpu")]
 pub fn acquire_surface_texture(
     surface: &wgpu::Surface,
 ) -> Result<wgpu::SurfaceTexture, SurfacePresentError> {

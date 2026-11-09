@@ -1,11 +1,18 @@
 //! Atlas GPU y helpers NDC para imágenes HUD en espacio de pantalla.
+//!
+//! El empaquetado y la colocación son puros; el atlas con textura wgpu (`ScreenHudAtlas`) depende
+//! de la feature `gpu`, que el motor 3D no activa (usa su propio atlas en Vulkan).
 
+#[cfg(feature = "gpu")]
 use std::path::PathBuf;
+
+#[cfg(feature = "gpu")]
 use std::sync::Arc;
 
 use glam::Mat4;
 
 /// Atlas 2D dedicado a overlays de pantalla (shelf packing, sin deformar a cuadrado fijo).
+#[cfg(feature = "gpu")]
 pub struct ScreenHudAtlas {
     texture: wgpu::Texture,
     _view: wgpu::TextureView,
@@ -48,6 +55,7 @@ impl Default for ScreenHudBottomLeftLayout {
     }
 }
 
+#[cfg(feature = "gpu")]
 impl ScreenHudAtlas {
     pub const SIZE: u32 = 4096;
 

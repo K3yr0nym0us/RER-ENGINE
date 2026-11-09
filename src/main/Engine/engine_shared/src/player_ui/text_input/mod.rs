@@ -1097,14 +1097,6 @@ impl State {
         );
     }
 
-    pub(crate) fn draw_player_ui_text_boxes(
-        &mut self,
-        enc: &mut wgpu::CommandEncoder,
-        view: &wgpu::TextureView,
-    ) -> u32 {
-        self.draw_player_ui_hud(enc, view)
-    }
-
     fn hit_test_text_handle(&self, selected_id: u32, ndc: [f32; 2]) -> Option<rer_engine_shared::player_ui::config::PlayerUiResizeHandle> {
         let key = self.player_ui_text_key()?;
         let boxes = self.player_ui_text_boxes.get(&key)?;
@@ -1131,5 +1123,28 @@ impl State {
         let objects = self.player_ui_objects.get(&key).map(|v| v.as_slice()).unwrap_or(&[]);
         rer_engine_shared::player_ui::text_input::hit_test::hit_test_top_hud(texts, buttons, images, objects, ndc)
     }}
+    };
+}
+
+/// Genera SOLO el método que dibuja los cuadros de texto con wgpu. Existe aparte de
+/// `impl_player_ui_text_input!` porque la edición de texto (picking, arrastre, caret, IME) es
+/// idéntica en los dos motores, pero el dibujado no: el 2D lo hace aquí con encoder de wgpu y el
+/// 3D lo hace en su `FrameRenderer` de Vulkan. Sin esta separación el crate 3D se vería obligado a
+/// enlazar wgpu solo para satisfacer una firma que nunca usa.
+///
+/// `$state` se recibe como ruta en lugar de `use crate::engine::State`: el macro se expande en el
+/// mismo módulo que `impl_player_ui_text_input!`, que ya importó ese nombre.
+#[macro_export]
+macro_rules! impl_player_ui_text_input_gpu_draw {
+    ($state:path) => {
+        impl $state {
+            pub(crate) fn draw_player_ui_text_boxes(
+                &mut self,
+                enc: &mut wgpu::CommandEncoder,
+                view: &wgpu::TextureView,
+            ) -> u32 {
+                self.draw_player_ui_hud(enc, view)
+            }
+        }
     };
 }

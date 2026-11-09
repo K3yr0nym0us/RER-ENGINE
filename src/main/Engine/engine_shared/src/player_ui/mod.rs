@@ -29,8 +29,10 @@ pub use ndc_draw::{
     NdcVertex, append_rect_fill, append_rect_outline, push_handle_disc, push_line_segment,
     push_quad,
 };
+#[cfg(feature = "gpu")]
+pub use screen_hud_atlas::ScreenHudAtlas;
 pub use screen_hud_atlas::{
-    ScreenHudAtlas, ScreenHudBottomLeftLayout, ScreenHudPackedImage, ndc_transform_bottom_left,
+    ScreenHudBottomLeftLayout, ScreenHudPackedImage, ndc_transform_bottom_left,
     pick_localized_screen_hud,
 };
 pub use viewport::{ndc_transform_top_left, pixel_to_ndc};

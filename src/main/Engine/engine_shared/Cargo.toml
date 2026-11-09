@@ -16,7 +16,10 @@ path = "src/lib.rs"
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-wgpu.workspace = true
+# `wgpu` es OPCIONAL a propósito: el motor 3D renderiza con Ash/Vulkan y no debe enlazar wgpu
+# ni de rebote. La feature `gpu` (activada por defecto) trae de vuelta la fachada wgpu que usan
+# el 2D y el editor, así que ningún crate cambia sus rutas de import.
+wgpu = { workspace = true, optional = true }
 winit.workspace = true
 log.workspace = true
 env_logger.workspace = true
@@ -26,6 +29,13 @@ glam.workspace = true
 bytemuck.workspace = true
 bitflags = "2"
 image.workspace = true
+
+[features]
+default = ["gpu"]
+# Fachada de init GPU, superficie de presentación y atlas HUD en wgpu (`gpu::init_gpu`,
+# `wgpu_surface::acquire_surface_texture`, `player_ui::{ndc_draw::NdcVertex::desc,
+# screen_hud_atlas::ScreenHudAtlas}`).
+gpu = ["dep:wgpu"]
 
 [dev-dependencies]
 zip.workspace = true

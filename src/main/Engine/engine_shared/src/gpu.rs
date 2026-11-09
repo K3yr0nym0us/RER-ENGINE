@@ -3,8 +3,11 @@
 //! Sin OpenGL, sin `Backends::all()` ni otros backends wgpu.
 
 use std::fmt;
-use std::sync::Arc;
 
+// Sólo del lado wgpu: sin la feature `gpu` el crate no enlaza wgpu y estos imports sobraban.
+#[cfg(feature = "gpu")]
+use std::sync::Arc;
+#[cfg(feature = "gpu")]
 use winit::window::Window;
 
 /// Perfil del binario que solicita GPU (2D vs 3D).
@@ -21,6 +24,7 @@ pub enum EngineGpuBackend {
 }
 
 impl EngineGpuBackend {
+    #[cfg(feature = "gpu")]
     pub fn wgpu_backends(self) -> wgpu::Backends {
         let _ = self;
         wgpu::Backends::VULKAN
@@ -31,6 +35,7 @@ impl EngineGpuBackend {
         "Vulkan"
     }
 
+    #[cfg(feature = "gpu")]
     fn expected_wgpu_backend(self) -> wgpu::Backend {
         let _ = self;
         wgpu::Backend::Vulkan
@@ -55,6 +60,7 @@ impl fmt::Display for GpuInitError {
 
 impl std::error::Error for GpuInitError {}
 
+#[cfg(feature = "gpu")]
 fn user_facing_message(backend: EngineGpuBackend, detail: &str) -> String {
     let _ = backend;
     let hints = "\
@@ -71,6 +77,7 @@ fn user_facing_message(backend: EngineGpuBackend, detail: &str) -> String {
 }
 
 /// Crea instancia wgpu, surface y adapter para el perfil indicado.
+#[cfg(feature = "gpu")]
 pub async fn init_gpu(
     window: Arc<Window>,
     profile: EngineGpuProfile,
