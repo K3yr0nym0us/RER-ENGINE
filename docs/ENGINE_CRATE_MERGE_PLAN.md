@@ -200,9 +200,9 @@ Sin la fase de "convertir el 3D en librería" (ya son módulos del mismo crate):
 
 ### Fase 6 — Repartir ficheros grandes
 
-> Estado: casi cerrada. Hecho: `vulkan/frame`, `ipc`, `core/vulkan/gpu`, `commands`,
+> Estado: completada. Hecho: `vulkan/frame`, `ipc`, `core/vulkan/gpu`, `commands`,
 > `load_proyect`, `config_3d/model_asset`, `static_model_cache`, `engine/render`,
-> `config_3d/mod`, los sidebars y `app` del editor. Pendiente: `core/player_ui/text_input`.
+> `config_3d/mod`, los sidebars, `app` del editor y `core/player_ui/text_input`.
 
 | Antes | Ahora |
 |---|---|
@@ -218,9 +218,12 @@ Sin la fase de "convertir el 3D en librería" (ya son módulos del mismo crate):
 | `editor/ui/sidebar_left.rs` 1.432 | `ui/sidebar_left/{mod,scenes,camera,resources,entities,interface,tools,controls}.rs` |
 | `editor/ui/sidebar_right.rs` 1.170 | `ui/sidebar_right/{mod,workspace,grid,lighting,textures,reflections,shadows,msaa,taa,gravity,fps,tiers,metrics}.rs` |
 | `editor/app.rs` 969 | `editor/app/{mod,events,logs,save}.rs` |
+| `core/player_ui/text_input/mod.rs` 1.056 | `text_input/{mod,methods/{state,edit,drag,emit}}.rs` |
 
 Regla: los `mod.rs` conservan los re-exports de las rutas públicas, así que los
-consumidores no cambian aunque el código viva en otro fichero.
+consumidores no cambian aunque el código viva en otro fichero. En `text_input` el
+macro principal mantiene su firma y expande sub-macros `__rer_player_ui_text_*!`
+(exportados con `#[macro_export]` y resueltos vía `$crate::`).
 
 ### Fase 7 — Sumar el 2D
 

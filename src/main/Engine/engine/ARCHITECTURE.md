@@ -146,6 +146,7 @@ submodulo, no el arbol completo:
 | `src/engine3d/engine/render/` | `mod` (frame), `batches`, `rt`, `skinned`, `frustum` |
 | `src/engine3d/ipc/` | `types` (payloads), `events` (EngineEvent y transporte) |
 | `core/vulkan/gpu/` (crate `core`) | `context`, `swapchain`, `memory`, `frame` |
+| `core/src/player_ui/text_input/` (crate `core`) | `mod` (macro `impl_player_ui_text_input!`), `methods/{state,edit,drag,emit}` (sub-macros `__rer_player_ui_text_*!`) |
 
 Cada `mod.rs` reexporta las rutas publicas anteriores (`load_proyect::SavedScene`,
 `model_asset::MAX_JOINTS`, `commands::handle_command`, etc.), asi que el resto del
