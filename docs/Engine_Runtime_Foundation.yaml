@@ -4,35 +4,30 @@
 # editor Electron, y la política gráfica compartida 2D/3D.
 #
 # Relacionado con:
-#   - docs/IPC_Protocol.yaml (set_bounds, resize)
+#   - docs/IPC_Protocol.yaml (resize, comandos de escena)
 #   - docs/Engine_Context.yaml (reportBounds)
 #   - .cursor/rules/rer-engine-project.mdc
 
 version: 1
 updated: 2026-06-10
 
-viewport_overlay:
+editor_window:
   principle: |
-    El juego NO se renderiza dentro de Chromium. Electron reserva un hueco
-    en EngineView; el binario rer_engine_2d | rer_engine_3d abre una ventana
-    winit hermana (--overlay) sincronizada en posición y tamaño.
+    El editor egui (rer_engine_editor) abre su propia ventana winit y hospeda el
+    motor 2D/3D in-process sobre el mismo SharedGpu y swapchain. Electron queda
+    como selector de proyecto y host de modales; no hay ventana overlay.
   spawn_args: |
-    --overlay <parent_window_id> <screen_x> <screen_y> <width> <height> [rel_x rel_y]
-    --embed es alias legacy de --overlay
-  alignment:
-    renderer: |
-      viewportRef.getBoundingClientRect() × devicePixelRatio → set_bounds
-      offset_x/offset_y = offset del hueco dentro del content area (Win32 tracker)
-    main: viewportToScreenBounds convierte coords cliente → pantalla
-    motor: core/src/overlay.rs + platform position-tracker (Win32)
+    rer_engine_editor --project-type <2D|3D> [--game-style <estilo>]
+      [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>]
   files:
-    - src/main/Engine/core/src/overlay.rs
-    - src/main/Engine/core/src/platform.rs
-    - src/main/index.ts (spawn motor, viewport-bounds IPC)
+    - src/main/Engine/engine/src/editor/host.rs
+    - src/main/Engine/engine/src/editor/render.rs
+    - src/main/Engine/engine/src/editor/user_event.rs
+    - src/main/index.ts (lanza el editor)
     - src/renderer/src/pages/EngineView/EngineView.tsx
 
 gpu_policy:
-  backend: Vulkan exclusivo — 2D vía wgpu (`Backends::VULKAN`), 3D vía Ash (`engine/src/engine3d/vulkan/`)
+  backend: Vulkan exclusivo — 2D y 3D usan Ash y rer_engine_core::vulkan::SharedGpu
   profiles:
     - EngineGpuProfile::TwoD  → rer_engine_2d
     - EngineGpuProfile::ThreeD → rer_engine_3d
@@ -55,7 +50,7 @@ gpu_policy:
 
 input_routing:
   note: |
-    La ventana overlay winit recibe ratón para viewport 3D/2D. Teclado Ctrl y
+    La ventana winit del editor recibe ratón para el viewport 3D/2D. Teclado Ctrl y
     algunos atajos llegan vía set_ctrl_held desde Electron porque el foco
     puede estar en el editor Chromium.
 

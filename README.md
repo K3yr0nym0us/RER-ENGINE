@@ -20,31 +20,13 @@ Hay **dos motores independientes**, no uno híbrido:
 - `rer_engine_2d` — sprites, plano XY, colliders y execution areas.
 - `rer_engine_3d` — mallas glTF/GLB, cámara orbital en editor, cámara play character en play (modo `first-person` en manifest), editor **Player UI HUD** (pantallas, texto, botones, imágenes, objetos 2D en NDC).
 
-Electron arranca el binario que corresponda según el tipo de proyecto. Comparten protocolo IPC y utilidades (`engine_shared`), pero **no comparten runtime de juego**.
+Electron lanza el editor (`rer_engine_editor`); el editor hospeda el motor 2D o 3D in-process según el tipo de proyecto. Comparten protocolo IPC y utilidades (`rer-engine-core`), pero **no comparten runtime de juego**.
 
-### Viewport: overlay (no embebido en Chromium)
+### Viewport: ventana única del editor
 
-El render **no** ocurre dentro del DOM de Electron. Es un **proceso hijo** con ventana nativa (winit) alineada al hueco del editor:
+El editor egui (`rer_engine_editor`) abre su propia ventana winit y hospeda el motor 2D/3D **in-process** sobre el mismo `SharedGpu` y swapchain. Electron queda como host del selector de proyecto y de las modales; ya no hay ventana overlay ni tracker Win32.
 
-```
-┌────────────────────────────────────────────────────────────┐
-│  Electron (BrowserWindow — UI React)                       │
-│  ┌─────────────┐  ┌─────────────────────────────────────┐  │
-│  │ Sidebars,   │  │ <main class="engine-viewport-area"> │  │
-│  │ tabs, log   │  │  (div transparente — “hueco”)       │  │
-│  └─────────────┘  └─────────────────────────────────────┘  │
-└────────────────────────────────────────────────────────────┘
-         │  getBoundingClientRect × DPR
-         ▼  IPC viewport-bounds / set_bounds
-┌─────────────────────────────────────────────────────────┐
-│  rer_engine_2d | rer_engine_3d (ventana winit overlay)  │
-│  rer_engine_2d | rer_engine_3d — Vulkan (Windows)       │
-└─────────────────────────────────────────────────────────┘
-```
-
-| Plataforma | Comportamiento |
-|------------|----------------|
-| **Windows** | Popup separado; `GWLP_HWNDPARENT` + position-tracker (WinEventHook). |
+Los binarios `rer_engine_2d` / `rer_engine_3d` siguen existiendo como standalone de debug, con ventana propia y sin overlay.
 
 Principio **engine-first**: posiciones, cámaras, física y convenciones espaciales las resuelve el motor; el frontend envía intención y refleja eventos. Detalle en [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) y en los `ARCHITECTURE.md` de cada crate.
 
@@ -61,7 +43,7 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 
 Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 
-### Implementación (`engine_shared/src/gpu.rs`)
+### Implementación (`core/src/vulkan/gpu/`)
 
 | Pieza | Rol |
 |-------|-----|

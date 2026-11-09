@@ -72,17 +72,17 @@ state_slices:
 
 boot_sequence:
   1: EngineProvider monta con projectType, initialSavePath, initialExtractDir
-  2: useEngineEffects reporta viewport bounds (set_bounds) al redimensionar
-  3: Main spawnea motor con --overlay
+  2: useEngineEffects reporta viewport bounds (solo posiciona el overlay IA)
+  3: Main lanza el editor egui; el motor se construye in-process
   4: Evento ready → ping; main envía set_scene según 2D/3D
   5: project_loaded_* o plantilla por defecto → estado inicial del editor
 
 viewport_sync:
   hook: reportBounds en useContextEngine
-  cmd: set_bounds { x, y, width, height, offset_x?, offset_y? }
+  cmd: viewport_bounds { x, y, width, height }
   note: |
-    offset_* = posición del hueco dentro del content area × devicePixelRatio.
-    Usado por position-tracker Win32 para alinear overlay winit.
+    Los bounds ya no mueven el motor: el editor es dueño de su ventana.
+    Se usan para posicionar el overlay del asistente IA.
 
 scene_import:
   files:

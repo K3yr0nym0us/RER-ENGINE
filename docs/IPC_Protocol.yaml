@@ -47,10 +47,10 @@ principle:
     Renderer: engine/engineSend.ts — send2d, send3d, sendMotor(projectType, cmd), createEngineSend.
 
 core_crate:
-  role: biblioteca Rust (rer-engine-core), dependencia de engine_2d y engine_3d
+  role: biblioteca Rust (rer-engine-core), dependencia de los motores 2D/3D y del editor
   not_ipc: |
-    No lee stdin ni define EngineCommand. Código compartido: gpu, overlay winit,
-    scripting Rhai, formato .rerasset, player_ui (macros), process_metrics, etc.
+    No lee stdin ni define EngineCommand. Código compartido: gpu, scripting Rhai,
+    formato .rerasset, player_ui (macros), process_metrics, etc.
   no_binary: |
     Es solo biblioteca: no produce ni empaqueta un binario propio.
   relation_to_shared_commands: |
@@ -89,11 +89,11 @@ flow: |
 
 lifecycle:
   spawn:
-    binary: rer_engine_2d | rer_engine_3d según projectType
-    args: --overlay <parent_hwnd> <x> <y> <w> <h> [rel_x rel_y]
-    note: Ver docs/Engine_Runtime_Foundation.yaml
+    binary: rer_engine_editor
+    args: --project-type <2D|3D> [--game-style <estilo>] [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>]
+    note: El editor construye el motor in-process; no hay overlay ni proceso de motor separado.
   startup_2d:
-    trigger: motor listo tras spawn
+    trigger: editor listo (motor 2D in-process)
     cmd: 'set_scene { scene: "2D", save_path: extract_dir }'
   startup_3d:
     trigger: proyecto con extract_dir (o plantilla si proyecto nuevo)
@@ -103,15 +103,16 @@ lifecycle:
       abre el editor directo; el usuario cambia la cámara en acordeón Camera (sidebar).
   shutdown:
     cmd: shutdown
-    fallback: kill del proceso tras 2 s si no cierra
+    fallback: cierre del editor; el motor se libera con el process
 
 command_categories:
   viewport:
     cmds:
-      - set_bounds
       - resize
       - set_clear_color
-    note: set_bounds incluye offset_x/offset_y (DPI físico del hueco en renderer)
+    note: |
+      El editor fija el tamaño del viewport in-process; resize/set_vsync se ignoran en
+      modo embebido. Ya no existe set_bounds ni overlay que mover.
   scene_and_project:
     2d:
       - set_scene

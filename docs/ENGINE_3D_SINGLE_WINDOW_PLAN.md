@@ -385,7 +385,7 @@ Estado: completada. El 2D usa Ash y `rer_engine_core::vulkan::SharedGpu`, y vive
 - El render usa `State::render_into` + `Vulkan2d::render_into`: deja la imagen en
   `COLOR_ATTACHMENT_OPTIMAL` para que egui componga encima.
 - Los comandos de la UI se encolan y se drenan a `handle_command` antes de `update()`.
-- Fallback al proceso separado con `RER_LEGACY_2D_WINDOW=1`.
+- Fallback al proceso separado eliminado en la Fase 8: el motor siempre vive en el editor.
 - El demo 2D embebido usa `targetFps: 60`; antes traía 240 y el editor lo respetaba,
   disparando CPU en el proyecto nuevo.
 
@@ -393,7 +393,12 @@ Estado: completada. El 2D usa Ash y `rer_engine_core::vulkan::SharedGpu`, y vive
 
 ## Fase 8 — Eliminación de la arquitectura vieja
 
-Eliminar cuando la ventana única esté validada:
+> Estado: completada. Se eliminaron `engine_viewport.rs`, `engine_host.rs`, `overlay.rs`,
+> `setup_overlay_win32`, `start_position_tracker` y el tracker Win32, el spawn del motor
+> como proceso, `set_bounds`, la ventana overlay y `RER_LEGACY_2D_WINDOW`. Los binarios
+> standalone conservan su ventana de debug sin overlay.
+
+Eliminado:
 
 - `engine_viewport.rs`
 - `setup_overlay_win32`
@@ -405,7 +410,7 @@ Eliminar cuando la ventana única esté validada:
 - IPC de `set_bounds`
 - ventana overlay del motor
 
-Mantener el binario standalone para debug, si se desea.
+Los binarios standalone se mantienen para debug.
 
 ---
 
@@ -425,10 +430,10 @@ Mantener el binario standalone para debug, si se desea.
 
 ## Criterios de aceptación
 
-> Verificado: 1–6, 8 y 10. Criterio 9: `create_scene` probado end-to-end con `yarn dev`;
-> los 7 tipos usan el mismo `legacy_window_request` y el handler React los cubre.
+> Verificado: 1–8 y 10. Criterio 9 parcial: `create_scene` probado end-to-end con
+> `yarn dev`; los 7 tipos usan el mismo `legacy_window_request` y el handler React los cubre.
+> Fase 8 completada: sin overlay, tracker, `set_bounds` ni proceso 2D legacy.
 > DPI: mapeo cubierto por tests en `editor/render.rs` (100/125/150 %) y 125 % en runtime.
-> Pendiente: 7 (Fase 8) y el click-through del resto de modales.
 > El criterio 8 se implementa con `egui_is_using_pointer()` + `layer_id_at()`:
 > `response.consumed` a secas también es true sobre el viewport vacío.
 

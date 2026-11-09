@@ -240,7 +240,7 @@ macro principal mantiene su firma y expande sub-macros `__rer_player_ui_text_*!`
   `InProcessEngine` construye el motor del proyecto sobre el `SharedGpu` del editor y
   graba en el sub-rect del `CentralPanel`. El input se traduce al rect del viewport y
   los comandos de la UI se drenan antes de actualizar el motor.
-- Fallback 2D por proceso: `RER_LEGACY_2D_WINDOW=1` mantiene el host/overlay antiguo.
+- Fallback 2D por proceso eliminado en la Fase 8; el motor siempre va in-process.
 
 ## Riesgos
 
