@@ -1,8 +1,10 @@
 //! Ajustes globales de reflejos (tier UI + debug views).
 //!
 //! El tier ya controla el render: `FrameRenderer` usa `reflections` para la cadena
-//! SSR/denoise/composite y el trazado RT. Lo que sigue pendiente es la vista de debug
-//! (`reflection_debug_view`) y el tamaño de cubemap por tier.
+//! SSR/denoise/composite y el trazado RT, y `reflection_debug_view` está cableado (presenta el
+//! SSR/trazado en crudo). Lo que NO existe en Ash: presets de calidad por tier (pasos, distancia,
+//! radio de denoise) y variación del tamaño de cubemap por tier; todo eso era de la era wgpu y
+//! está listado como no portado en docs/Reflections_*.yaml.
 
 use crate::config_3d::reflection_graphics::{
     DEFAULT_REFLECTION_TIER, ReflectionDebugView, ReflectionTier,
@@ -11,7 +13,7 @@ use crate::engine::State;
 use crate::ipc::{EngineEvent, send_event};
 
 impl State {
-    /// Fuerza captura burst del cubemap si los reflejos estÃ¡n activos (p. ej. nuevas sondas).
+    /// Fuerza captura burst del cubemap si los reflejos están activos (p. ej. nuevas sondas).
     pub(crate) fn request_probe_capture_burst_if_reflections_active(&mut self) {
         if self.reflection_tier != ReflectionTier::Off && self.reflection_probes_enabled {
             self.probe_capture_burst_all = true;
@@ -80,9 +82,9 @@ impl State {
         use crate::probe_registry::{self, DEFAULT_REFLECTION_PROBE_INFLUENCE_M, MAX_PROBES};
 
         if probe_registry::reflection_probe_entities(&self.save_registry).len() >= MAX_PROBES {
-            log::warn!("[reflexiones] spawn probe: lÃ­mite de {MAX_PROBES} sondas alcanzado");
+            log::warn!("[reflexiones] spawn probe: límite de {MAX_PROBES} sondas alcanzado");
             crate::ipc::send_event(&crate::ipc::EngineEvent::Error {
-                message: format!("LÃ­mite de {MAX_PROBES} reflection probes en la escena."),
+                message: format!("Límite de {MAX_PROBES} reflection probes en la escena."),
             });
             return None;
         }
@@ -117,7 +119,8 @@ impl State {
         );
         if tier != ReflectionTier::Off {
             log::info!(
-                "[reflexiones] diagnÃ³stico: usa debug roughness/metallic/trace_strength/ssr_hits o probe_layers"
+                "[reflexiones] diagnóstico: usa set_reflection_debug_view \"ssr_debug\" para ver la \
+                 imagen SSR/trazada en crudo (\"final\" vuelve al composite)"
             );
         }
     }

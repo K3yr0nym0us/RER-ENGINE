@@ -292,6 +292,9 @@ impl State {
             probe_capture_cooldown: 0,
             rt_skinned_triangles: Vec::new(),
             rt_skinned_materials: Vec::new(),
+            rt_skinned_vertices: std::collections::HashMap::new(),
+            rt_skinned_instances: Vec::new(),
+            rt_skinned_rebuild: false,
             rt_skinned_tick: 0,
 
             shadow_tier,

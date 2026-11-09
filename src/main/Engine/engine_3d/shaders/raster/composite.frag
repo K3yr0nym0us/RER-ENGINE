@@ -1,5 +1,8 @@
 #version 450
 
+// Umbral compartido con ssr.frag / reflect.rgen / trace.comp: por debajo, el reflejo lo da SSR.
+const float REFL_MIRROR_ROUGHNESS_MAX = 0.04;
+
 layout(location = 0) in vec2 v_uv;
 layout(set = 0, binding = 0) uniform sampler2D scene_tex;
 layout(set = 0, binding = 1) uniform sampler2D reflection_tex;
@@ -17,7 +20,7 @@ void main() {
     float roughness = texture(normal_tex, su).w;
     vec3 reflection = rt.a > 0.01 ? rt.rgb : ssr.rgb;
     float confidence = rt.a > 0.01 ? rt.a : ssr.a;
-    if (roughness <= 0.04) {
+    if (roughness <= REFL_MIRROR_ROUGHNESS_MAX) {
         reflection = ssr.rgb;
         confidence = ssr.a;
     }

@@ -8,8 +8,8 @@
 #   - docs/Reflections_Probes.yaml (fallback cubemap en miss SSR)
 #   - docs/TAA_3D.yaml (G-buffer, depth prepass)
 
-version: 3
-updated: 2026-11-08
+version: 5
+updated: 2026-11-09
 status: implemented
 
 principle:
@@ -24,9 +24,11 @@ principle:
     wgpu (`reflections/quality_preset.rs`) y no se portaron: hoy la marcha es fija
     (pasos i = 2..16 a radio 1× viewport) y el denoise usa radio de 1 texel.
   opt_in: |
-    Superficies con roughness dentro de la banda del shader: `ssr.frag` descarta
-    roughness > 0.45 y roughness ≤ 0.04; `composite.frag` fuerza SSR puro en
-    roughness ≤ 0.04; el trazado (`reflect.rgen`, `trace.comp`) descarta roughness > 0.65.
+    Umbrales compartidos como constantes GLSL en `ssr.frag`, `composite.frag`, `reflect.rgen` y
+    `trace.comp`: `REFL_MIRROR_ROUGHNESS_MAX = 0.04` y `REFL_MAX_ROUGHNESS = 0.70`.
+    `ssr.frag` marcha para roughness ≤ 0.70, espejos incluidos; `composite.frag` fuerza SSR puro en
+    roughness ≤ 0.04; el trazado (`reflect.rgen`, `trace.comp`) salta roughness ≤ 0.04 (espejo =
+    SSR) y roughness > 0.70.
 
 source_of_truth:
   rust:
@@ -79,9 +81,11 @@ orientation_note: |
 
 rt_hybrid_when_enabled:
   mirror_surfaces: |
-    roughness ≤ 0.04 → composite usa solo SSR (`composite.frag`); el shader de reflejos
-    descarta roughness > 0.65, así que en el rango 0.45–0.65 no hay ni SSR ni trazado.
-    Umbral sin unificar entre pases: pendiente de alineación post-migración.
+    roughness ≤ 0.04 → composite usa solo SSR (`composite.frag`) y los shaders de reflejos saltan
+    esa franja a propósito (`reflect.rgen`, `trace.comp`), de modo que el espejo no se doblega.
+    Entre 0.04 y 0.70 SSR y trazado conviven y composite elige por confianza. Los umbrales ya no
+    están desalineados: eran 0.45/0.65 por paso y dejaban una banda muerta sin ningún reflejo; hoy
+    son las constantes GLSL `REFL_MIRROR_ROUGHNESS_MAX` / `REFL_MAX_ROUGHNESS` en los cuatro shaders.
   rough_surfaces: composite elige RT/BVH si su alpha (confianza) > 0.01, si no SSR.
 
 known_issues:

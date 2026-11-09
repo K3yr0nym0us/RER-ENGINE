@@ -73,17 +73,22 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   influencia (`scale.x * 0.5`); `-1` = fuera de todo volumen → el shader cae al cielo
   procedural. Se captura en burst cuando cambia el conjunto de sondas y luego una sonda cada
   ~30 frames.
-- **Geometría trazable skinned**: las entidades animadas también entran en el **BVH por software**.
-  Sus triángulos se deforman en CPU con el mismo palette que usa `skinned.vert`
-  (`model * (Σ pesos·palette[joint]·posición)`) y se cachean, refrescándose cada
+- **Geometría trazable skinned**: las entidades animadas entran en **ambos** caminos, BVH por
+  software y TLAS de hardware. Sus triángulos se deforman en CPU con el mismo palette que usa
+  `skinned.vert` (`model * (Σ pesos·palette[joint]·posición)`) y se cachean, refrescándose cada
   `SKINNED_TRACE_REFRESH_FRAMES` (4) frames y con un tope de `SKINNED_TRACE_MAX_TRIANGLES`
   (24 000): rehacer el BVH cada frame con un personaje animado cuesta más de lo que un reflejo
-  agradece. El hash de la escena cacheada incluye el tick del refresco. Pendiente para el camino de
-  `VK_KHR_ray_tracing_pipeline`: ahí el TLAS sigue armando BLAS sólo con lotes estáticos, porque
-  una malla skinned necesita refit del BLAS por frame (o un scratch deformado en GPU) y el `RtBatch`
-  actual indexa el BLAS por malla, no por instancia poseída.
-- **Vista de debug** (`set_reflection_debug_view`): `ssr_hits` presenta la imagen SSR/trazada en
-  crudo como fuente del `present`, saltando el composite y el TAA, para ver qué devuelve el pase.
+  agradece. El hash de la escena cacheada incluye el tick del refresco.
+  Para el TLAS se sube además un buffer de sólo posiciones ya poseadas (`create_trace_vertex_buffer`,
+  12 bytes por vértice, mismo orden de vértices que el VBO skinned, así se reutiliza su índice) y
+  `refresh_skinned_rt_geometry` arma una `RtBatch` por entidad y pieza, con clave
+  `(gpu_mesh_idx) | (1 << 63)` para no colisionar con las mallas estáticas; el BLAS sólo se
+  reconstruye en el frame en que cambió la pose. Las poses las calcula el mismo bucle que alimenta
+  el BVH, así que HW y SW trazan exactamente la misma silueta.
+- **Vista de debug** (`set_reflection_debug_view`): solo hay `final` y `ssr_debug`. `ssr_debug`
+  presenta la imagen SSR/trazada en crudo como fuente del `present`, saltando el composite y el TAA,
+  para ver qué devuelve el pase. Los nombres de la era wgpu (`trace_strength`, `probe_layers`,
+  `metallic`) ya no existen: cayeron con `src/reflections/`.
 
 ## Ventana overlay
 

@@ -1,6 +1,11 @@
 #version 460
 layout(local_size_x = 8, local_size_y = 8) in;
 
+// Mismos umbrales que el trazado por hardware (reflect.rgen) y que SSR/composite, para que el
+// fallback por software y el camino de RT no delimiten superficies distintas.
+const float REFL_MIRROR_ROUGHNESS_MAX = 0.04;
+const float REFL_MAX_ROUGHNESS = 0.70;
+
 struct BvhNode {
     vec4 bbox_min;
     vec4 bbox_max;
@@ -135,7 +140,8 @@ void main() {
             return;
         }
         vec4 nr = texture(normal_tex, uv);
-        if (nr.w > 0.65) {
+        // Espejos y materiales mates se resuelven en SSR/composite; mismos umbrales que el resto.
+        if (nr.w <= REFL_MIRROR_ROUGHNESS_MAX || nr.w > REFL_MAX_ROUGHNESS) {
             imageStore(image_out, pix, vec4(0.0));
             return;
         }

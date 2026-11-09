@@ -20,6 +20,25 @@ pub const MAX_RT_TRIANGLES: usize = 262_144;
 /// Triángulos por hoja. Mantiene la pila del shader (`stack[32]`) holgada.
 const LEAF_TRIANGLES: usize = 4;
 
+/// Pieza skinned lista para el trazado por hardware: el BLAS se construye desde el buffer de
+/// posiciones locales ya poseadas de `State::rt_skinned_vertices`, y la instancia aplica el
+/// `transform` de la entidad.
+///
+/// `material_slot` es el índice en la lista de `RtMaterialGpu` y tiene que coincidir con el orden
+/// de `build_skinned_trace`: por eso ambos recorridos usan la lista ordenada de
+/// `collect_skinned_trace_targets`, no el orden de iteración de un `HashMap`.
+#[derive(Clone, Copy, Debug)]
+pub struct SkinnedRtInstance {
+    /// Índice en `State::skinned_gpu_meshes` (único por entidad y pieza).
+    pub gpu_mesh_idx: usize,
+    /// Transform 3x4 fila-major que espera el TLAS.
+    pub transform: [f32; 12],
+    /// Posiciones locales poseídas de esta pieza (stride 12 B).
+    pub vertex_count: u32,
+    /// Índice dentro de `State::rt_skinned_materials`.
+    pub material_slot: u32,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct RtTriangle {
     pub v0: Vec3,

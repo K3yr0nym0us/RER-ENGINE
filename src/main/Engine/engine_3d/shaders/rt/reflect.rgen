@@ -1,6 +1,12 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
+// Umbrales de la cadena de reflejos, compartidos con ssr.frag / composite.frag / trace.comp:
+// por encima de REFL_MAX_ROUGHNESS no hay reflejo; por debajo de REFL_MIRROR_ROUGHNESS_MAX el
+// reflejo lo da SSR (composite lo fuerza asi), no el rayo.
+const float REFL_MIRROR_ROUGHNESS_MAX = 0.04;
+const float REFL_MAX_ROUGHNESS = 0.70;
+
 layout(location = 0) rayPayloadEXT vec3 payload;
 
 layout(set = 0, binding = 0) uniform Camera {
@@ -26,7 +32,10 @@ void main() {
     }
     vec3 normal = texture(normal_tex, uv).xyz * 2.0 - 1.0;
     float roughness = texture(normal_tex, uv).w;
-    if (roughness > 0.65) {
+    // Mismos umbrales que el trazado por hardware y que el marchado SSR: por encima de
+    // REFL_MAX_ROUGHNESS no hay reflejo, y por debajo de REFL_MIRROR_ROUGHNESS_MAX el reflejo lo
+    // da SSR (composite lo fuerza así), no el rayo.
+    if (roughness <= REFL_MIRROR_ROUGHNESS_MAX || roughness > REFL_MAX_ROUGHNESS) {
         imageStore(image_out, pix, vec4(0.0, 0.0, 0.0, 0.0));
         return;
     }

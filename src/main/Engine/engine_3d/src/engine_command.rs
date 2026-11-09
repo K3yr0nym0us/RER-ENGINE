@@ -330,11 +330,11 @@ mod tests {
 
     #[test]
     fn deserialize_set_reflection_debug_view_command() {
-        let json = r#"{"cmd":"set_reflection_debug_view","view":"ssr_hits"}"#;
+        let json = r#"{"cmd":"set_reflection_debug_view","view":"ssr_debug"}"#;
         let cmd: EngineCommand = serde_json::from_str(json).expect("set_reflection_debug_view IPC");
         match cmd {
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionDebugView { view }) => {
-                assert_eq!(view, "ssr_hits");
+                assert_eq!(view, "ssr_debug");
             }
             other => panic!("expected Only3d SetReflectionDebugView, got {other:?}"),
         }

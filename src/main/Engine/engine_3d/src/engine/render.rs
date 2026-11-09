@@ -152,20 +152,30 @@ const SKINNED_TRACE_REFRESH_FRAMES: u32 = 4;
 /// Techo de triángulos skinned trazables por escena: protege el frame en rigs con mallas pesadas.
 const SKINNED_TRACE_MAX_TRIANGLES: usize = 24_000;
 
-/// Deforma en CPU las mallas skinned visibles y devuelve sus triángulos en espacio mundo con sus
-/// materiales.
+/// Una pieza skinned visible, con todo lo necesario para trazarse.
+#[derive(Clone)]
+struct SkinnedTraceTarget {
+    entity_id: crate::ecs::EntityId,
+    gpu_mesh_idx: usize,
+    part_index: usize,
+    model_matrix: Mat4,
+    probe_layer: i32,
+    /// Clave en `State::model_assets` para llegar a los vértices de bind pose.
+    asset_path: String,
+}
+
+/// Piezas skinned visibles, **ordenadas** por (entidad, pieza).
 ///
-/// Usa la misma fórmula que `shaders/raster/skinned.vert`
-/// (`model * (Σ pesos·palette[joint] · posición)`), así la silueta que trazan el BVH y el RT
-/// coincide con la rasterizada. Los materiales se numeran desde 0: `build_rt_scene` les suma el
-/// desplazamiento de los lotes estáticos.
-fn build_skinned_trace(
+/// El orden no es cosmético: `build_skinned_trace` numera los materiales siguiendo esta lista y
+/// `refresh_skinned_rt_geometry` crea las instancias del TLAS en el mismo orden. Iterar
+/// `model_animation_bindings` (un `HashMap`) dos veces puede dar órdenes distintos y desalinear
+/// material con geometría, porque el hit shader indexa `mats[slot]` con el índice de instancia.
+fn collect_skinned_trace_targets(
     state: &State,
     frustum_vp: &Mat4,
     probe_fields: &[crate::probe_registry::ProbeField],
-) -> (Vec<crate::bvh::RtTriangle>, Vec<RtMaterialGpu>) {
-    let mut triangles: Vec<crate::bvh::RtTriangle> = Vec::new();
-    let mut materials: Vec<RtMaterialGpu> = Vec::new();
+) -> Vec<SkinnedTraceTarget> {
+    let mut out: Vec<SkinnedTraceTarget> = Vec::new();
     for (&id, binding) in &state.model_animation_bindings {
         let Some(transform) = state.world.get::<crate::ecs::Transform>(id) else {
             continue;
@@ -178,72 +188,208 @@ fn build_skinned_trace(
         if !is_aabb_visible_3d(frustum_vp, center, half) {
             continue;
         }
-        let Some(asset) = state.model_assets.get(&binding.asset_path) else {
+        if !state.model_assets.contains_key(&binding.asset_path) {
             continue;
-        };
+        }
         let probe_layer = crate::probe_registry::select_probe_slot(probe_fields, center)
             .map(|slot| slot as i32)
             .unwrap_or(-1);
-        for (part_index, &gpu_idx) in binding.part_gpu_indices.iter().enumerate() {
-            let (Some(entry), Some(part)) = (
-                state.skinned_gpu_meshes.get(gpu_idx),
-                asset.parts.get(part_index),
-            ) else {
-                continue;
-            };
-            if triangles.len() >= SKINNED_TRACE_MAX_TRIANGLES {
-                return (triangles, materials);
+        for (part_index, &gpu_mesh_idx) in binding.part_gpu_indices.iter().enumerate() {
+            if state
+                .skinned_gpu_meshes
+                .get(gpu_mesh_idx)
+                .is_some_and(|entry| !entry.joint_palette.is_empty())
+            {
+                out.push(SkinnedTraceTarget {
+                    entity_id: id,
+                    gpu_mesh_idx,
+                    part_index,
+                    model_matrix,
+                    probe_layer,
+                    asset_path: binding.asset_path.clone(),
+                });
             }
-            let palette: Vec<Mat4> = entry
-                .joint_palette
-                .iter()
-                .map(Mat4::from_cols_array_2d)
-                .collect();
-            if palette.is_empty() {
-                continue;
-            }
-            let record = RtInstanceRecord {
-                mesh_idx: 0,
-                entity_id: id,
-                transform: model_matrix,
-                probe_layer,
+        }
+    }
+    out.sort_by_key(|target| (target.entity_id, target.part_index));
+    out
+}
+
+/// Deforma en CPU las mallas skinned visibles y devuelve sus triángulos en espacio mundo con sus
+/// materiales.
+///
+/// Usa la misma fórmula que `shaders/raster/skinned.vert`
+/// (`model * (Σ pesos·palette[joint] · posición)`), así la silueta que trazan el BVH y el RT
+/// coincide con la rasterizada. Los materiales se numeran desde 0: `build_rt_scene` les suma el
+/// desplazamiento de los lotes estáticos.
+fn build_skinned_trace(
+    state: &State,
+    targets: &[SkinnedTraceTarget],
+) -> (Vec<crate::bvh::RtTriangle>, Vec<RtMaterialGpu>) {
+    let mut triangles: Vec<crate::bvh::RtTriangle> = Vec::new();
+    let mut materials: Vec<RtMaterialGpu> = Vec::new();
+    for (index, target) in targets.iter().enumerate() {
+        // Un material por objetivo, siempre y en este orden: `refresh_skinned_rt_geometry` numera
+        // sus instancias con el índice del objetivo, y un hueco aquí desalinearía materiales.
+        let record = RtInstanceRecord {
+            mesh_idx: 0,
+            entity_id: target.entity_id,
+            transform: target.model_matrix,
+            probe_layer: target.probe_layer,
+        };
+        materials.push(rt_material(state, &record));
+        let Some(asset) = state.model_assets.get(&target.asset_path) else {
+            continue;
+        };
+        let (Some(entry), Some(part)) = (
+            state.skinned_gpu_meshes.get(target.gpu_mesh_idx),
+            asset.parts.get(target.part_index),
+        ) else {
+            continue;
+        };
+        if triangles.len() >= SKINNED_TRACE_MAX_TRIANGLES {
+            return (triangles, materials);
+        }
+        let palette: Vec<Mat4> = entry
+            .joint_palette
+            .iter()
+            .map(Mat4::from_cols_array_2d)
+            .collect();
+        if palette.is_empty() {
+            continue;
+        }
+        let vertices = &part.mesh.vertices;
+        for chunk in part.mesh.indices.chunks_exact(3) {
+            let mut tri = crate::bvh::RtTriangle {
+                v0: GlamVec3::ZERO,
+                v1: GlamVec3::ZERO,
+                v2: GlamVec3::ZERO,
+                uv0: [0.0; 2],
+                uv1: [0.0; 2],
+                uv2: [0.0; 2],
+                material_slot: index as u32,
             };
-            let slot = materials.len() as u32;
-            materials.push(rt_material(state, &record));
-            let vertices = &part.mesh.vertices;
-            for chunk in part.mesh.indices.chunks_exact(3) {
-                let mut tri = crate::bvh::RtTriangle {
-                    v0: GlamVec3::ZERO,
-                    v1: GlamVec3::ZERO,
-                    v2: GlamVec3::ZERO,
-                    uv0: [0.0; 2],
-                    uv1: [0.0; 2],
-                    uv2: [0.0; 2],
-                    material_slot: slot,
+            let mut ok = true;
+            for (out_pos, out_uv, src_uv) in [
+                (&mut tri.v0, &mut tri.uv0, 0usize),
+                (&mut tri.v1, &mut tri.uv1, 1usize),
+                (&mut tri.v2, &mut tri.uv2, 2usize),
+            ] {
+                let index = chunk[src_uv] as usize;
+                let Some(vertex) = vertices.get(index) else {
+                    ok = false;
+                    break;
                 };
-                let mut ok = true;
-                for (out_pos, out_uv, src_uv) in [
-                    (&mut tri.v0, &mut tri.uv0, 0usize),
-                    (&mut tri.v1, &mut tri.uv1, 1usize),
-                    (&mut tri.v2, &mut tri.uv2, 2usize),
-                ] {
-                    let index = chunk[src_uv] as usize;
-                    let Some(vertex) = vertices.get(index) else {
-                        ok = false;
-                        break;
-                    };
-                    let local =
-                        crate::config_3d::model_asset::skinned_vertex_position(&palette, vertex);
-                    *out_pos = model_matrix.transform_point3(local);
-                    *out_uv = vertex.uv;
-                }
-                if ok {
-                    triangles.push(tri);
-                }
+                let local =
+                    crate::config_3d::model_asset::skinned_vertex_position(&palette, vertex);
+                *out_pos = target.model_matrix.transform_point3(local);
+                *out_uv = vertex.uv;
+            }
+            if ok {
+                triangles.push(tri);
             }
         }
     }
     (triangles, materials)
+}
+
+/// Escribe en GPU las posiciones locales ya poseadas de cada pieza skinned y prepara las
+/// instancias para el TLAS (camino de hardware).
+///
+/// Devuelve `true` si este frame reescribió alguna pose: solo entonces hay que reconstruir esos
+/// BLAS, porque el resto de frames se reutilizan los cacheados en `FrameRenderer`. Sin esto, el
+/// personaje animado no aparecía en los reflejos trazados por hardware (solo en el BVH).
+///
+/// El buffer guarda solo posiciones (`stride` 12 bytes) y conserva el orden de vértices del VBO
+/// skinned, así se reutiliza su propio índice. `material_slot` sigue el orden de `targets`, el
+/// mismo que usó `build_skinned_trace`.
+fn refresh_skinned_rt_geometry(state: &mut State, targets: &[SkinnedTraceTarget]) -> bool {
+    let material_count = state.rt_skinned_materials.len();
+    let mut pending: Vec<(usize, Vec<u8>, u32, usize)> = Vec::new();
+    for (index, target) in targets.iter().enumerate() {
+        // Sin material asignado no hay instancia posible: `build_skinned_trace` pudo truncar la
+        // lista por el tope de triángulos.
+        if index >= material_count {
+            break;
+        }
+        let Some(asset) = state.model_assets.get(&target.asset_path) else {
+            continue;
+        };
+        let (Some(entry), Some(part)) = (
+            state.skinned_gpu_meshes.get(target.gpu_mesh_idx),
+            asset.parts.get(target.part_index),
+        ) else {
+            continue;
+        };
+        let palette: Vec<Mat4> = entry
+            .joint_palette
+            .iter()
+            .map(Mat4::from_cols_array_2d)
+            .collect();
+        if palette.is_empty() || part.mesh.indices.len() < 3 {
+            continue;
+        }
+        let mut bytes = Vec::with_capacity(part.mesh.vertices.len() * 12);
+        for vertex in &part.mesh.vertices {
+            let posed = crate::config_3d::model_asset::skinned_vertex_position(&palette, vertex);
+            bytes.extend_from_slice(bytemuck::bytes_of(&posed.to_array()));
+        }
+        if bytes.is_empty() {
+            continue;
+        }
+        let vertex_count = (bytes.len() / 12) as u32;
+        pending.push((target.gpu_mesh_idx, bytes, vertex_count, index));
+    }
+
+    let mut instances: Vec<crate::bvh::SkinnedRtInstance> = Vec::with_capacity(pending.len());
+    let mut refreshed = false;
+    for (gpu_mesh_idx, bytes, vertex_count, order) in pending {
+        let needed = bytes.len() as u64;
+        let must_create = match state.rt_skinned_vertices.get(&gpu_mesh_idx) {
+            Some(buffer) => buffer.size < needed,
+            None => true,
+        };
+        if must_create {
+            match state
+                .vulkan
+                .create_trace_vertex_buffer(needed, "rt-skinned-vertices")
+            {
+                Ok(buffer) => {
+                    state.rt_skinned_vertices.insert(gpu_mesh_idx, buffer);
+                }
+                Err(error) => {
+                    // Sin buffer no hay instancia: el frame sigue dibujando, solo pierde ese
+                    // reflejo. Se avisa una vez por pieza.
+                    log::warn!(
+                        "[reflexiones] sin buffer de pose para la pieza skinned {gpu_mesh_idx}: {error}"
+                    );
+                    continue;
+                }
+            }
+        }
+        let Some(buffer) = state.rt_skinned_vertices.get_mut(&gpu_mesh_idx) else {
+            continue;
+        };
+        if let Err(error) = buffer.write(0, &bytes) {
+            log::warn!(
+                "[reflexiones] no se pudo subir la pose de la pieza {gpu_mesh_idx}: {error}"
+            );
+            continue;
+        }
+        let Some(target) = targets.get(order) else {
+            continue;
+        };
+        instances.push(crate::bvh::SkinnedRtInstance {
+            gpu_mesh_idx,
+            transform: mat4_to_tlas_transform(target.model_matrix),
+            vertex_count,
+            // El índice del objetivo = su posición en `rt_skinned_materials`.
+            material_slot: order as u32,
+        });
+        refreshed = true;
+    }
+    state.rt_skinned_instances = instances;
+    refreshed
 }
 
 /// Triángulos en espacio mundo + materiales por instancia → BVH y buffers GPU.
@@ -604,6 +750,35 @@ impl State {
             Vec::new()
         };
 
+        // Geometría skinned trazable: se re-deforma cada pocos frames (ver
+        // `SKINNED_TRACE_REFRESH_FRAMES`) porque rehacer el BVH en cada frame con un personaje
+        // animado cuesta más de lo que un reflejo puede notar. El TLAS reutiliza esas mismas poses,
+        // así que BVH y hardware ven exactamente la misma silueta.
+        //
+        // Va aquí, antes de enlazar `self.meshes`/texturas en los lotes: este paso crea y escribe
+        // buffers GPU (necesita `&mut self`) y a partir de `static_batches` el `State` está
+        // prestado hasta el final del frame.
+        self.rt_skinned_tick = self.rt_skinned_tick.wrapping_add(1);
+        self.rt_skinned_rebuild = false;
+        if raytracing {
+            let refresh_now = self
+                .rt_skinned_tick
+                .is_multiple_of(SKINNED_TRACE_REFRESH_FRAMES)
+                || self.rt_skinned_triangles.is_empty();
+            if refresh_now {
+                let targets = collect_skinned_trace_targets(self, &frustum_vp, &probe_fields);
+                let (triangles, materials) = build_skinned_trace(self, &targets);
+                self.rt_skinned_triangles = triangles;
+                self.rt_skinned_materials = materials;
+                let rebuilt = refresh_skinned_rt_geometry(self, &targets);
+                self.rt_skinned_rebuild = rebuilt;
+            }
+        } else {
+            self.rt_skinned_triangles.clear();
+            self.rt_skinned_materials.clear();
+            self.rt_skinned_instances.clear();
+        }
+
         let mut static_batches: Vec<MeshBatch> = Vec::new();
         for b in &opaque_batches {
             let Some(mesh) = self.meshes.get(b.mesh_idx) else {
@@ -925,25 +1100,6 @@ impl State {
             None
         };
 
-        // Geometría skinned trazable: se re-deforma cada pocos frames (ver
-        // `SKINNED_TRACE_REFRESH_FRAMES`) porque rehacer el BVH en cada frame con un personaje
-        // animado cuesta más de lo que un reflejo puede notar.
-        self.rt_skinned_tick = self.rt_skinned_tick.wrapping_add(1);
-        if raytracing {
-            if self
-                .rt_skinned_tick
-                .is_multiple_of(SKINNED_TRACE_REFRESH_FRAMES)
-                || self.rt_skinned_triangles.is_empty()
-            {
-                let (triangles, materials) = build_skinned_trace(self, &frustum_vp, &probe_fields);
-                self.rt_skinned_triangles = triangles;
-                self.rt_skinned_materials = materials;
-            }
-        } else {
-            self.rt_skinned_triangles.clear();
-            self.rt_skinned_materials.clear();
-        }
-
         let rt_records = if raytracing {
             collect_rt_instances(self, &opaque_batches)
         } else {
@@ -969,7 +1125,7 @@ impl State {
         };
 
         let mut rt: Vec<RtBatch> = Vec::with_capacity(rt_records.len());
-        for rec in &rt_records {
+        for (index, rec) in rt_records.iter().enumerate() {
             let Some(mesh) = self.meshes.get(rec.mesh_idx) else {
                 continue;
             };
@@ -982,6 +1138,36 @@ impl State {
                 index_count: mesh.rt_index_count(),
                 transform: mat4_to_tlas_transform(rec.transform),
                 rebuild: false,
+                material_slot: index,
+            });
+        }
+        // Reflejos trazados por hardware para lo skinned: mismas poses que ya calculó el
+        // refresco del BVH, con su propio BLAS (rebuild solo en el frame que cambió la pose).
+        // La clave no colisiona con `mesh_idx` de los lotes estáticos por el bit alto.
+        let skinned_base = rt_records.len();
+        for instance in &self.rt_skinned_instances {
+            let Some(entry) = self.skinned_gpu_meshes.get(instance.gpu_mesh_idx) else {
+                continue;
+            };
+            let Some(buffer) = self.rt_skinned_vertices.get(&instance.gpu_mesh_idx) else {
+                continue;
+            };
+            if instance.vertex_count == 0
+                || entry.mesh.index_count < 3
+                || buffer.size < u64::from(instance.vertex_count) * 12
+            {
+                continue;
+            }
+            rt.push(RtBatch {
+                key: (instance.gpu_mesh_idx as u64) | (1 << 63),
+                vertex: buffer,
+                index: &entry.mesh.index_buffer,
+                vertex_stride: 12,
+                vertex_count: instance.vertex_count,
+                index_count: entry.mesh.index_count,
+                transform: instance.transform,
+                rebuild: self.rt_skinned_rebuild,
+                material_slot: skinned_base + instance.material_slot as usize,
             });
         }
 

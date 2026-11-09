@@ -1,5 +1,10 @@
 #version 450
 
+// Mismos umbrales que el trazado (RT/BVH) y que composite, para que no queden bandas sin nadie
+// que las resuelva. Ver docs/Reflections_SSR.yaml.
+const float REFL_MIRROR_ROUGHNESS_MAX = 0.04;
+const float REFL_MAX_ROUGHNESS = 0.70;
+
 layout(location = 0) in vec2 v_uv;
 layout(set = 0, binding = 0) uniform sampler2D depth_tex;
 layout(set = 0, binding = 1) uniform sampler2D normal_tex;
@@ -18,7 +23,10 @@ void main() {
         return;
     }
     vec4 nr = texture(normal_tex, su);
-    if (nr.w > 0.45 || nr.w <= 0.04) {
+    // Hasta REFL_MAX_ROUGHNESS; los espejos (<= REFL_MIRROR_ROUGHNESS_MAX) TAMBIEN se marchan aqui,
+    // porque `composite.frag` delega en SSR justo esa banda. Antes SSR rechazaba <= 0.04 y > 0.45,
+    // asi que cromo/agua/vidro no recibian ningun reflejo y entre 0.45 y 0.65 no habia ni SSR ni RT.
+    if (nr.w > REFL_MAX_ROUGHNESS) {
         out_color = vec4(0.0);
         return;
     }

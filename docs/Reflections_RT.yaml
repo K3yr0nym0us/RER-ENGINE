@@ -8,8 +8,8 @@
 #   - docs/Reflections_SSR.yaml (SSR en pantalla y composite final)
 #   - docs/Shadows_3D.yaml (no hay shadow rays en RT)
 
-version: 3
-updated: 2026-11-08
+version: 4
+updated: 2026-11-09
 status: implemented
 validated: 2026-11-08  # RTX 3060, capa de validación sin errores de API en el camino RT
 
@@ -90,12 +90,16 @@ denoise:
 sampling:
   primary_ray: un rayo por píxel desde `inv_view_proj` (cámara) o desde el G-buffer (reflejo)
   roughness_gate: |
-    `reflect.rgen` y el modo 1 del BVH descartan roughness > 0.65 (alpha 0); `ssr.frag` descarta
-    > 0.45 y ≤ 0.04; `composite.frag` fuerza SSR puro en roughness ≤ 0.04. Son tres umbrales
-    distintos sin unificar: conocido post-migración.
+    Cuatro shaders comparten dos constantes GLSL: `REFL_MIRROR_ROUGHNESS_MAX = 0.04` y
+    `REFL_MAX_ROUGHNESS = 0.70`. `reflect.rgen` y el modo 1 del BVH escriben alpha 0 fuera de
+    (0.04, 0.70]; `ssr.frag` descarta roughness > 0.70 (los espejos sí se marchan);
+    `composite.frag` fuerza SSR puro en roughness ≤ 0.04. Antes cada paso tenía su umbral (0.45 /
+    0.65) y dejaba bandas sin ningún reflejo; se unificó tras la migración.
   mirror_bypass: |
-    El bypass de espejos de la era wgpu (`REFL_MIRROR_ROUGHNESS_MAX` dentro del shader RT) se
-    sustituyó por la regla de composite: los píxeles ≤ 0.04 se resuelven con SSR.
+    Los espejos (roughness ≤ 0.04) los resuelve SSR: `composite.frag` ignora el rayo ahí y
+    `reflect.rgen`/`trace.comp` salen con alpha 0, así no se paga un trazado que aportaría menos
+    que el marchado de pantalla. Es el mismo ruleteo que la era wgpu, ahora con las constantes
+    compartidas en lugar de duplicadas por shader.
   miss: |
     `primary.rmiss` devuelve el color de cielo (0.72, 0.86, 0.98), el mismo del viewport y del
     fallback procedural del IBL.
@@ -105,11 +109,13 @@ geometry:
     Lotes estáticos visibles con ≥ 3 índices: posiciones bind-pose en CPU + transform de entidad
     (mismo blob alimenta BVH y TLAS; se reutiliza solo si el hash de la escena no cambió).
   skinned: |
-    Las entidades animadas entran al BVH con triángulos deformados en CPU usando el mismo palette
-    que `skinned.vert`, cacheados y refrescados cada 4 frames (tope 24 000 triángulos). En el
-    camino de hardware el TLAS sigue armando BLAS solo con lotes estáticos: hace falta refit por
-    frame (o un scratch deformado en GPU) y el `RtBatch` indexa el BLAS por malla, no por instancia
-    poseída.
+    Las entidades animadas entran a ambos caminos con triángulos deformados en CPU usando el mismo
+    palette que `skinned.vert`, cacheados y refrescados cada 4 frames (tope 24 000 triángulos).
+    Para el TLAS, `refresh_skinned_rt_geometry` sube un buffer de sólo posiciones poseadas (stride
+    12 bytes, mismo orden de vértices que el VBO skinned, así se reutiliza su índice) y arma una
+    `RtBatch` por entidad y pieza con clave `(gpu_mesh_idx) | (1 << 63)`; el BLAS se reconstruye
+    solo en el frame en que cambió la pose (`State::rt_skinned_rebuild`). Las poses son las
+    mismas que alimentan el BVH, así HW y SW ven la misma silueta.
 
 ipc:
   commands:

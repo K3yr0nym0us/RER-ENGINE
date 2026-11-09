@@ -7,8 +7,8 @@
 #
 # FASE Ash (2026-11): ver `ash_validation_audit`. Validación visual manual sigue pendiente.
 
-version: 4
-updated: 2026-11-08
+version: 5
+updated: 2026-11-09
 
 ash_validation_audit:
   method: |
@@ -107,9 +107,12 @@ ash_validation_audit:
     - |
       Eco/duplicado en reflejos SSR: separar con la vista de debug `ssr_debug` (presenta `targets.ssr`
       en crudo). Si el eco aparece ahí, es del marchado en espacio de pantalla; si no, de la capa A.
+
+  resolved_post_migration:
     - |
-      Umbrales de roughness sin unificar entre pases (ssr 0.45/0.04, reflect.rgen 0.65,
-      composite 0.04): deja bandas sin SSR ni trazado en 0.45–0.65.
+      Umbrales de roughness: unificados en dos constantes GLSL (`REFL_MIRROR_ROUGHNESS_MAX = 0.04`,
+      `REFL_MAX_ROUGHNESS = 0.70`) en `ssr.frag`, `composite.frag`, `reflect.rgen` y `trace.comp`.
+      La banda 0.45–0.65 sin reflejo ya no existe.
 
 reference:
   rtiow: https://raytracing.github.io/books/RayTracingInOneWeekend.html

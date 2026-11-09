@@ -328,6 +328,15 @@ pub struct State {
     pub(crate) rt_skinned_triangles: Vec<crate::bvh::RtTriangle>,
     /// Materiales de `rt_skinned_triangles`, en el mismo orden (se añaden tras los estáticos).
     pub(crate) rt_skinned_materials: Vec<crate::bvh::RtMaterialGpu>,
+    /// Posiciones locales ya poseadas por pieza skinned (stride 12 B), para el BLAS del camino de
+    /// hardware. Clave = índice en `skinned_gpu_meshes`, que ya es único por entidad+pieza.
+    pub(crate) rt_skinned_vertices: std::collections::HashMap<usize, crate::vulkan::GpuBuffer>,
+    /// Instancias skinned listas para el TLAS (una por entidad+pieza), en el mismo orden que
+    /// `rt_skinned_materials`.
+    pub(crate) rt_skinned_instances: Vec<crate::bvh::SkinnedRtInstance>,
+    /// Cierto solo en el frame en que se reescribieron las posiciones poseídas: ese frame fuerza el
+    /// rebuild del BLAS; en los demás se reutiliza el cacheado.
+    pub(crate) rt_skinned_rebuild: bool,
     /// Contador de frames para el refresco periódico de la geometría skinned trazable.
     pub(crate) rt_skinned_tick: u32,
     /// Distancia (m) a la cÃ¡mara con textura al tope del tier activo.

@@ -13,8 +13,8 @@
 #   - docs/Shadows_3D.yaml
 #   - docs/Reflections_Diagnostics.yaml
 
-version: 7
-updated: 2026-11-08
+version: 8
+updated: 2026-11-09
 
 principle:
   owner: motor_3d

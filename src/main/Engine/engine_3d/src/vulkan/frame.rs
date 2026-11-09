@@ -90,6 +90,10 @@ pub struct RtBatch<'a> {
     pub index_count: u32,
     pub transform: [f32; 12],
     pub rebuild: bool,
+    /// Índice en `FrameInput::materials`. Se pasa explícito porque los lotes skinned van despues
+    /// de los estáticos y el BLAS de una pieza puede caer (buffer no creado, índice corto): si se
+    /// dedujera del índice de lote, un salto desalinearía todos los materiales siguientes.
+    pub material_slot: usize,
 }
 
 /// Captura de una sonda: centro de la esfera y ranura de cubemap (`slot * 6` es la primera capa).
@@ -1102,7 +1106,7 @@ impl FrameRenderer {
         let mut geos = Vec::with_capacity(input.rt.len());
         let mut materials = Vec::with_capacity(input.rt.len());
         let stride = std::mem::size_of::<RtMaterialGpu>();
-        for (index, batch) in input.rt.iter().enumerate() {
+        for batch in input.rt.iter() {
             if batch.rebuild {
                 self.blas_cache.remove(&batch.key);
             }
@@ -1129,9 +1133,10 @@ impl FrameRenderer {
                 geos.extend_from_slice(&batch.index.address.to_le_bytes());
                 geos.extend_from_slice(&(batch.vertex_stride as u32).to_le_bytes());
                 geos.extend_from_slice(&4u32.to_le_bytes());
-                // Material del mismo índice que el lote; así `gl_InstanceCustomIndexEXT`
-                // indexa `mats` y `geos` de forma consistente aunque se omita algún BLAS.
-                let start = index * stride;
+                // El material que declara el lote se copia en la posición de esta instancia, así
+                // `gl_InstanceCustomIndexEXT` indexa `mats` y `geos` en paralelo aunque un BLAS se
+                // caiga: índice de lote != índice de material, justo el caso de las piezas skinned.
+                let start = batch.material_slot * stride;
                 if let Some(material) = input.materials.get(start..start + stride) {
                     materials.extend_from_slice(material);
                 }

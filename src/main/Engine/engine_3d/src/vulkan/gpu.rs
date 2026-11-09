@@ -691,6 +691,27 @@ impl SharedGpu {
         Ok(())
     }
 
+    /// Buffer de vertices para trazado: posiciones ya poseadas de una malla skinned, leidas por el
+    /// BLAS. Necesita `SHADER_DEVICE_ADDRESS` (el hit shader las carga por puntero) y
+    /// `ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR`; esa combinacion vive aqui, en el modulo
+    /// Vulkan, para que el resto del crate no maneje banderas de Ash.
+    pub fn create_trace_vertex_buffer(
+        &self,
+        size: u64,
+        name: &str,
+    ) -> Result<GpuBuffer, VulkanError> {
+        self.create_buffer(
+            size,
+            vk::BufferUsageFlags::VERTEX_BUFFER
+                | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR
+                | vk::BufferUsageFlags::TRANSFER_DST
+                | vk::BufferUsageFlags::STORAGE_BUFFER,
+            MemoryLocation::CpuToGpu,
+            name,
+        )
+    }
+
     pub fn create_buffer(
         &self,
         size: u64,
