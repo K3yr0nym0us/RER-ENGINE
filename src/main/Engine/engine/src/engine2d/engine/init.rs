@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use rer_engine_core::backend_policy::GpuInitError;
+use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
 use crate::engine2d::config_2d::{ActiveTool, GridConfig, PhysicsWorld2D};
@@ -20,7 +21,6 @@ impl State {
     /// Inicializa el contexto Vulkan (Ash) y los recursos CPU del motor.
     pub fn new(window: Arc<Window>) -> Result<Self, GpuInitError> {
         let size = window.inner_size();
-
         let vulkan2d = Arc::new(
             crate::engine2d::vulkan::Vulkan2d::new(window.as_ref()).map_err(|error| {
                 GpuInitError {
@@ -28,7 +28,16 @@ impl State {
                 }
             })?,
         );
+        Self::with_vulkan(window, vulkan2d, size)
+    }
 
+    /// Construye el estado sobre un contexto ya creado (el `SharedGpu` del editor).
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn with_vulkan(
+        window: Arc<Window>,
+        vulkan2d: Arc<crate::engine2d::vulkan::Vulkan2d>,
+        size: PhysicalSize<u32>,
+    ) -> Result<Self, GpuInitError> {
         // ── Atlas de sprites ──────────────────────────────────────────────────
         let mut atlas = crate::engine2d::texture::TextureAtlas::new(vulkan2d.clone());
         let fallback_uv = crate::engine2d::texture::TextureAtlas::fallback_uv();
@@ -136,6 +145,7 @@ impl State {
         Ok(Self {
             window,
             size,
+            embedded: false,
             clear_color: [0.06, 0.06, 0.10, 1.0],
             vulkan2d,
             atlas,

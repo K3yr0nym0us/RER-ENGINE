@@ -52,6 +52,8 @@ use crate::engine2d::ecs::EntityId;
 pub struct State {
     pub(crate) window: Arc<Window>,
     pub(crate) size: PhysicalSize<u32>,
+    /// El motor se hospeda en el editor (swapchain compartido): ignora resize/bounds.
+    pub(crate) embedded: bool,
     /// Color de fondo en 0..=1 (r, g, b, a).
     pub(crate) clear_color: [f32; 4],
     /// Contexto Ash del 2D: swapchain, escena fuera de pantalla y todos los pipelines. En `Arc`
@@ -536,6 +538,10 @@ impl State {
         if new_size.width == 0 || new_size.height == 0 {
             return;
         }
+        // En el editor el tamaño lo fija `set_viewport_size`; no tocar el swapchain compartido.
+        if self.embedded {
+            return;
+        }
         self.size = new_size;
         if let Err(error) = self.vulkan2d.resize(new_size.width, new_size.height) {
             log::warn!("[2d-vulkan] no se pudo recrear el swapchain: {error}");
@@ -545,9 +551,31 @@ impl State {
         }
     }
 
+    /// Fija el tamaño lógico del viewport sin tocar el swapchain.
+    ///
+    /// Lo usa el editor: el swapchain es de la ventana completa y la escena 2D se dibuja
+    /// en un sub-rectángulo, así que solo hay que redimensionar el scene target.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn set_viewport_size(&mut self, new_size: PhysicalSize<u32>) {
+        if new_size.width == 0 || new_size.height == 0 || self.size == new_size {
+            return;
+        }
+        self.size = new_size;
+        if let Err(error) = self.vulkan2d.resize_scene(new_size.width, new_size.height) {
+            log::warn!("[2d-vulkan] no se pudo recrear el scene target: {error}");
+        }
+        if self.player_ui_edit_active {
+            self.rebuild_player_ui_screen_grid();
+        }
+    }
+
     /// Activa o desactiva V-Sync recreando el swapchain con el present mode adecuado.
     pub fn set_vsync(&mut self, enabled: bool) {
         self.vsync_enabled = enabled;
+        // En el editor el swapchain es de la ventana compartida: no se recrea aquí.
+        if self.embedded {
+            return;
+        }
         if let Err(error) = self.vulkan2d.set_vsync(enabled) {
             log::warn!("[vsync] no se pudo recrear el swapchain: {error}");
         }

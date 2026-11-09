@@ -30,6 +30,8 @@ pub enum UserEvent {
     WorldSync,
     /// El motor 3D terminó de construirse en el hilo de carga.
     EngineReady(Box<crate::engine3d::engine::State>),
+    /// El motor 2D terminó de construirse en el hilo de carga.
+    Engine2dReady(Box<crate::engine2d::engine::State>),
     /// El motor 3D no pudo arrancar.
     EngineFailed(String),
 }

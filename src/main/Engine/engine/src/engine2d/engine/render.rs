@@ -12,7 +12,18 @@ impl State {
     pub fn render(&mut self) -> Result<(), SurfacePresentError> {
         self.update_animations();
         let vulkan = self.vulkan2d.clone();
-        self.render_vulkan(&vulkan)
+        self.render_vulkan_with(&vulkan, None)
+    }
+
+    /// Graba el frame 2D en el `FrameTarget` del editor (sin presentar).
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn render_into(
+        &mut self,
+        frame: &rer_engine_core::vulkan::FrameTarget,
+    ) -> Result<(), SurfacePresentError> {
+        self.update_animations();
+        let vulkan = self.vulkan2d.clone();
+        self.render_vulkan_with(&vulkan, Some(frame))
     }
 
     /// Recopila los sprites visibles del frame y los agrupa por malla.

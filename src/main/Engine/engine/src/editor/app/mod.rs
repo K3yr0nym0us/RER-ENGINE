@@ -62,7 +62,9 @@ pub struct EditorApp {
     pub engine_tx: Option<Sender<Value>>,
     /// Rectángulo central (en puntos) donde el motor dibuja la escena.
     pub viewport_rect: Option<egui::Rect>,
-    /// El motor 3D se está construyendo; el viewport muestra un placeholder.
+    /// Comandos emitidos por la UI que el host drena hacia el motor in-process.
+    pub pending_engine: std::cell::RefCell<Vec<Value>>,
+    /// El motor del proyecto se está construyendo; el viewport muestra un placeholder.
     pub engine_loading: bool,
     /// Error de arranque del motor, mostrado en el viewport.
     pub engine_error: Option<String>,
@@ -102,6 +104,7 @@ impl EditorApp {
             right_sidebar: SidebarRightState::default(),
             engine_tx: None,
             viewport_rect: None,
+            pending_engine: std::cell::RefCell::new(Vec::new()),
             engine_loading: false,
             engine_error: None,
         }
@@ -116,8 +119,11 @@ impl EditorApp {
     }
 
     pub fn send_engine(&self, command: Value) {
+        // Motor hijo (fallback 2D): stdin. Motor in-process: el host drena la cola.
         if let Some(tx) = &self.engine_tx {
             let _ = tx.send(command);
+        } else {
+            self.pending_engine.borrow_mut().push(command);
         }
     }
 }

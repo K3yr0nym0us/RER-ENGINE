@@ -22,8 +22,72 @@ use rer_engine_core::vulkan::VulkanOptions;
 const DEFAULT_LOG_FILTER: &str =
     "rer_engine::editor=info,rer_engine_core::vulkan=info,ash=warn,egui_ash_renderer=warn";
 
+/// Motor in-process del editor: 3D o 2D según el tipo de proyecto.
+pub(crate) enum InProcessEngine {
+    Three(Box<crate::engine3d::host::App>),
+    Two(Box<crate::engine2d::host::App>),
+}
+
+impl InProcessEngine {
+    pub(crate) fn tick(&mut self) {
+        if let Self::Three(app) = self {
+            app.tick();
+        }
+    }
+
+    pub(crate) fn frame_update(&mut self) {
+        match self {
+            Self::Three(app) => app.frame_update(),
+            Self::Two(app) => app.frame_update(),
+        }
+    }
+
+    pub(crate) fn handle_command(&mut self, command: &Value) {
+        match self {
+            Self::Three(app) => {
+                if let Some(parsed) = crate::engine3d::ipc::parse_command(command) {
+                    app.handle_command(parsed);
+                }
+            }
+            Self::Two(app) => {
+                if let Some(parsed) = crate::engine2d::ipc::parse_command(command) {
+                    app.handle_command(parsed);
+                }
+            }
+        }
+    }
+
+    pub(crate) fn handle_window_event(&mut self, event: WindowEvent) {
+        match self {
+            Self::Three(app) => {
+                app.handle_window_event(event);
+            }
+            Self::Two(app) => app.handle_window_event(event),
+        }
+    }
+
+    pub(crate) fn handle_device_motion(&mut self, delta_x: f32, delta_y: f32) {
+        if let Self::Three(app) = self {
+            app.handle_device_motion(delta_x, delta_y);
+        }
+    }
+
+    pub(crate) fn is_preview_playing(&self) -> bool {
+        match self {
+            Self::Three(app) => app.is_preview_playing(),
+            Self::Two(app) => app.is_preview_playing(),
+        }
+    }
+}
+
 /// Icono de ventana, el mismo PNG que usa Electron (`src/resources/RER-ENGINE-LOGO.png`).
 const APP_ICON_PNG: &[u8] = include_bytes!("../../../../../../src/resources/RER-ENGINE-LOGO.png");
+
+fn legacy_2d_window() -> bool {
+    std::env::var("RER_LEGACY_2D_WINDOW")
+        .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
 
 fn app_window_icon() -> Option<winit::window::Icon> {
     let image = image::load_from_memory(APP_ICON_PNG).ok()?;
@@ -35,9 +99,9 @@ fn app_window_icon() -> Option<winit::window::Icon> {
 
 struct EditorWindow {
     window: Arc<Window>,
-    /// Motor 3D en proceso (solo proyectos 3D). Se declara antes que `gpu` para que sus
+    /// Motor in-process (solo proyectos 3D o 2D). Se declara antes que `gpu` para que sus
     /// recursos Vulkan se liberen antes del device compartido.
-    engine: Option<crate::engine3d::host::App>,
+    engine: Option<InProcessEngine>,
     gpu: crate::editor::render::EditorGpu,
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
@@ -75,11 +139,20 @@ impl EditorWindow {
         })
     }
 
+    /// Lanza la construcción del motor del proyecto en un hilo aparte.
+    fn spawn_engine_loader(&mut self, proxy: EventLoopProxy<UserEvent>) -> Result<(), String> {
+        if self.app.cli.context.is_3d() {
+            self.spawn_engine3d_loader(proxy)
+        } else {
+            self.spawn_engine2d_loader(proxy)
+        }
+    }
+
     /// Lanza la construcción del motor 3D en un hilo aparte.
     ///
     /// El event loop sigue libre: la UI pinta el spinner y la consola recibe los
     /// `load_progress` del motor en vivo. Al terminar llega `UserEvent::EngineReady`.
-    fn spawn_engine_loader(&mut self, proxy: EventLoopProxy<UserEvent>) -> Result<(), String> {
+    fn spawn_engine3d_loader(&mut self, proxy: EventLoopProxy<UserEvent>) -> Result<(), String> {
         let cli = self.app.cli.clone();
         // El cargador de proyectos lee estas variables, igual que el proceso standalone.
         if let Some(save_path) = &cli.save_path {
@@ -126,6 +199,7 @@ impl EditorWindow {
                 let result = crate::engine3d::engine::State::with_context(window, gpu);
                 match result {
                     Ok(mut state) => {
+                        state.embedded = true;
                         let from_save = std::env::var("RER_3D_START_FROM_SAVE")
                             .map(|value| value == "1" || value.eq_ignore_ascii_case("true"))
                             .unwrap_or(false);
@@ -152,10 +226,97 @@ impl EditorWindow {
         Ok(())
     }
 
+    /// Lanza la construcción del motor 2D en un hilo aparte sobre el `SharedGpu` del editor.
+    fn spawn_engine2d_loader(&mut self, proxy: EventLoopProxy<UserEvent>) -> Result<(), String> {
+        let cli = self.app.cli.clone();
+        if let Some(save_path) = &cli.save_path {
+            unsafe { std::env::set_var("RER_PROJECT_SAVE_PATH", save_path) };
+        }
+        if let Some(extract_dir) = &cli.extract_dir {
+            unsafe { std::env::set_var("RER_PROJECT_EXTRACT_DIR", extract_dir) };
+        }
+        unsafe { std::env::set_var("RER_VK_SYNC_FRAMES", "0") };
+
+        let (sink_tx, sink_rx) = mpsc::channel::<String>();
+        crate::engine2d::ipc::install_event_sink(sink_tx);
+
+        let events_proxy = proxy.clone();
+        std::thread::Builder::new()
+            .name("engine2d-events".into())
+            .spawn(move || {
+                for line in sink_rx {
+                    crate::editor::bridge::forward_line(&line);
+                    if let Ok(value) = serde_json::from_str::<Value>(&line)
+                        && events_proxy
+                            .send_event(UserEvent::EngineEvent(value))
+                            .is_err()
+                    {
+                        break;
+                    }
+                }
+            })
+            .map_err(|error| format!("no se pudo crear el hilo de eventos 2D: {error}"))?;
+
+        let window = Arc::clone(&self.window);
+        let gpu = self.gpu.shared_gpu();
+        let save_path = cli.save_path.clone();
+        let extract_dir = cli.extract_dir.clone();
+        std::thread::Builder::new()
+            .name("engine2d-init".into())
+            .spawn(move || {
+                let size = crate::editor::engine_viewport::central_viewport(window.as_ref())
+                    .map(|viewport| PhysicalSize::new(viewport.width, viewport.height))
+                    .unwrap_or_else(|| window.inner_size());
+                let result = (|| -> Result<_, String> {
+                    let vulkan = Arc::new(
+                        crate::engine2d::vulkan::Vulkan2d::with_gpu(gpu)
+                            .map_err(|error| error.to_string())?,
+                    );
+                    let mut state = crate::engine2d::engine::State::with_vulkan(
+                        Arc::clone(&window),
+                        vulkan,
+                        size,
+                    )
+                    .map_err(|error| error.message)?;
+                    state.embedded = true;
+                    state.setup_editor_project(save_path.as_deref(), extract_dir.as_deref());
+                    Ok(state)
+                })();
+                match result {
+                    Ok(state) => {
+                        crate::engine2d::ipc::send_event(
+                            &crate::engine2d::ipc::EngineEvent::Ready {
+                                gravity: state.physics_2d.gravity_magnitude(),
+                            },
+                        );
+                        let _ = proxy.send_event(UserEvent::Engine2dReady(Box::new(state)));
+                    }
+                    Err(message) => {
+                        let _ = proxy.send_event(UserEvent::EngineFailed(message));
+                    }
+                }
+            })
+            .map_err(|error| format!("no se pudo crear el hilo de carga 2D: {error}"))?;
+        Ok(())
+    }
+
     /// El hilo de carga terminó: el motor pasa a ser propiedad del editor.
     fn attach_engine(&mut self, state: crate::engine3d::engine::State) {
         unsafe { std::env::remove_var("RER_VK_SYNC_FRAMES") };
-        self.engine = Some(crate::engine3d::host::App::new_in_editor(state));
+        self.engine = Some(InProcessEngine::Three(Box::new(
+            crate::engine3d::host::App::new_in_editor(state),
+        )));
+        self.app.engine_loading = false;
+        self.app.engine_error = None;
+        self.window.request_redraw();
+    }
+
+    /// El hilo de carga 2D terminó: el motor pasa a ser propiedad del editor.
+    fn attach_engine2d(&mut self, state: crate::engine2d::engine::State) {
+        unsafe { std::env::remove_var("RER_VK_SYNC_FRAMES") };
+        self.engine = Some(InProcessEngine::Two(Box::new(
+            crate::engine2d::host::App::new_in_editor(state),
+        )));
         self.app.engine_loading = false;
         self.app.engine_error = None;
         self.window.request_redraw();
@@ -173,10 +334,8 @@ impl EditorWindow {
 
     /// Comando de Electron que debe llegar al motor en proceso.
     fn handle_engine_command(&mut self, command: &Value) {
-        if let Some(engine) = self.engine.as_mut()
-            && let Some(parsed) = crate::engine3d::ipc::parse_command(command)
-        {
-            engine.handle_command(parsed);
+        if let Some(engine) = self.engine.as_mut() {
+            engine.handle_command(command);
         }
     }
 
@@ -258,11 +417,18 @@ impl EditorWindow {
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), String> {
-        self.gpu.resize(size)
+        self.gpu.resize(size)?;
+        self.update_engine_viewport();
+        Ok(())
     }
 
     /// Recoloca el overlay del motor tras un resize/cambio de escala.
     fn update_engine_viewport(&mut self) {
+        // Los motores in-process dibujan en el swapchain del editor; el overlay solo
+        // existe para el fallback 2D por proceso.
+        if self.app.cli.context.is_3d() || !legacy_2d_window() {
+            return;
+        }
         if let Some(viewport) =
             crate::editor::engine_viewport::central_viewport(self.window.as_ref())
         {
@@ -281,6 +447,10 @@ impl EditorWindow {
         } = self;
 
         if let Some(engine) = engine.as_mut() {
+            let pending: Vec<Value> = app.pending_engine.borrow_mut().drain(..).collect();
+            for command in pending {
+                engine.handle_command(&command);
+            }
             engine.tick();
             engine.frame_update();
         }
@@ -520,13 +690,16 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 );
                 self.editor = Some(editor);
 
-                if self.cli.context.is_3d() {
+                if self.cli.context.is_3d() || !legacy_2d_window() {
                     // La UI se pinta ya; el motor se construye en un hilo y avisa al terminar.
                     if let Some(editor) = self.editor.as_mut() {
                         editor.app.proxy = Some(self.proxy.clone());
                         editor.app.engine_loading = true;
                         editor.app.engine_error = None;
-                        editor.app.push_log("[Editor] cargando motor 3D…", false);
+                        let engine_label = if self.cli.context.is_3d() { "3D" } else { "2D" };
+                        editor
+                            .app
+                            .push_log(format!("[Editor] cargando motor {engine_label}…"), false);
                         if let Err(message) = editor.spawn_engine_loader(self.proxy.clone()) {
                             editor.fail_engine(message);
                         }
@@ -607,6 +780,12 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 if let Some(editor) = self.editor.as_mut() {
                     editor.attach_engine(*state);
                     editor.app.push_log("[Editor] motor 3D listo", false);
+                }
+            }
+            UserEvent::Engine2dReady(state) => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.attach_engine2d(*state);
+                    editor.app.push_log("[Editor] motor 2D listo", false);
                 }
             }
             UserEvent::EngineFailed(message) => {

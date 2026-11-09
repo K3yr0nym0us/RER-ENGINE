@@ -187,6 +187,7 @@ impl State {
             plane_tool_rotate_right: false,
             engine_window_focused: true,
             editor_parent_id: 0,
+            embedded: false,
             tool_cursor_pixels: None,
             quick_build_preview_path: None,
             quick_build_preview_kind: None,

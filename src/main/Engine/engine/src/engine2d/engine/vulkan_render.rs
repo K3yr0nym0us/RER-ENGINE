@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rer_engine_core::surface::SurfacePresentError;
+use rer_engine_core::vulkan::FrameTarget;
 
 use crate::engine2d::vulkan::{FrameInput, GizmoBatch, GridBatch, HudBatch, NdcOverlay, Vulkan2d};
 
@@ -16,11 +17,11 @@ use super::State;
 use super::render_helpers::{build_scene_uniforms, build_scene_uniforms_2d};
 
 impl State {
-    /// Dibuja y presenta un frame por Vulkan. Los errores de swapchain se mapean al mismo
-    /// `SurfacePresentError` que usa la ruta wgpu para que el bucle de eventos los trate igual.
-    pub(crate) fn render_vulkan(
+    /// Variante que graba en un `FrameTarget` externo (editor) en vez de presentar.
+    pub(crate) fn render_vulkan_with(
         &mut self,
         vulkan: &Arc<Vulkan2d>,
+        frame: Option<&FrameTarget>,
     ) -> Result<(), SurfacePresentError> {
         // El color de fondo ya se guarda en 0..=1 (el IPC manda f64 y se convierte al asignar).
         let clear = self.clear_color;
@@ -190,7 +191,10 @@ impl State {
                 }
             }
 
-            vulkan.render(input)?;
+            match frame {
+                Some(frame) => vulkan.render_into(frame, input)?,
+                None => vulkan.render(input)?,
+            }
             calls
         };
 

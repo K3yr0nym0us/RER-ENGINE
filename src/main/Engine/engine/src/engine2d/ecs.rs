@@ -148,13 +148,13 @@ impl<T> ComponentStorage<T> {
 
 // ── Trait object para borrar tipo ─────────────────────────────────────────────
 
-trait AnyStorage: Any {
+trait AnyStorage: Any + Send {
     fn remove_entity(&mut self, entity: EntityId);
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-impl<T: 'static> AnyStorage for ComponentStorage<T> {
+impl<T: 'static + Send> AnyStorage for ComponentStorage<T> {
     fn remove_entity(&mut self, entity: EntityId) {
         self.remove(entity);
     }
@@ -201,7 +201,7 @@ impl World {
     }
 
     /// Registra un tipo de componente. Llamar antes de usar insert/get.
-    pub fn register<T: 'static>(&mut self) {
+    pub fn register<T: 'static + Send>(&mut self) {
         self.storages
             .entry(TypeId::of::<T>())
             .or_insert_with(|| Box::new(ComponentStorage::<T>::default()));
@@ -267,7 +267,7 @@ impl World {
 
     // ── Componentes ──────────────────────────────────────────────────────────
 
-    pub fn insert<T: 'static>(&mut self, entity: EntityId, component: T) {
+    pub fn insert<T: 'static + Send>(&mut self, entity: EntityId, component: T) {
         self.register::<T>();
         let storage = self
             .storages

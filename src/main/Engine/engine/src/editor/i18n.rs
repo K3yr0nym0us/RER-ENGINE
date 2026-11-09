@@ -33,7 +33,7 @@ pub fn text(locale: Locale) -> Text {
     match locale {
         Locale::Es => Text {
             window_title: "RER-ENGINE — Editor (egui)",
-            loading_engine: "Cargando motor 3D…",
+            loading_engine: "Cargando motor…",
             engine_error: "No se pudo iniciar el motor",
             play: "Reproducir",
             stop: "Detener",
@@ -52,7 +52,7 @@ pub fn text(locale: Locale) -> Text {
         },
         Locale::En => Text {
             window_title: "RER-ENGINE — Editor (egui)",
-            loading_engine: "Loading 3D engine…",
+            loading_engine: "Loading engine…",
             engine_error: "The engine could not start",
             play: "Play",
             stop: "Stop",

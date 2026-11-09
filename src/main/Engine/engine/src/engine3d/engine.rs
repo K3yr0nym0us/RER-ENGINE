@@ -115,6 +115,8 @@ pub struct State {
     pub(crate) engine_window_focused: bool,
     /// HWND/XID de la ventana Electron (padre del overlay); devolver foco al colocar herramientas plano.
     pub(crate) editor_parent_id: u64,
+    /// El motor se hospeda en el editor (swapchain compartido): ignora resize/bounds.
+    pub(crate) embedded: bool,
     /// Última posición del cursor en píxeles del viewport (ghost de herramientas).
     pub(crate) tool_cursor_pixels: Option<(f32, f32)>,
     pub(crate) quick_build_preview_path: Option<String>,
@@ -475,6 +477,10 @@ impl State {
     /// Activa o desactiva V-Sync reconfigurando el swapchain de Ash.
     pub fn set_vsync(&mut self, enabled: bool) {
         self.vsync_enabled = enabled;
+        // En el editor el swapchain es de la ventana compartida: no se recrea aquí.
+        if self.embedded {
+            return;
+        }
         if let Err(e) = self.vulkan.set_vsync(enabled) {
             log::warn!("[vsync] no se pudo reconfigurar el swapchain: {e}");
         } else {

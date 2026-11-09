@@ -97,7 +97,7 @@ impl EditorGpu {
         egui_ctx: &egui::Context,
         egui_state: &mut egui_winit::State,
         build: impl FnMut(&mut egui::Ui),
-        engine: Option<&mut crate::engine3d::host::App>,
+        engine: Option<&mut crate::editor::host::InProcessEngine>,
         viewport: Option<egui::Rect>,
     ) -> Result<bool, String> {
         let raw_input = egui_state.take_egui_input(window);
@@ -145,7 +145,15 @@ impl EditorGpu {
                         extent: area.extent,
                         ..frame
                     };
-                    match app.render_scene(&scene_frame) {
+                    let result = match app {
+                        crate::editor::host::InProcessEngine::Three(app) => {
+                            app.render_scene(&scene_frame)
+                        }
+                        crate::editor::host::InProcessEngine::Two(app) => {
+                            app.render_scene(&scene_frame)
+                        }
+                    };
+                    match result {
                         Ok(()) => Some(area),
                         Err(error) => {
                             log::warn!("[editor] no se pudo grabar la escena: {error:?}");

@@ -1,5 +1,6 @@
 use std::{
     io::{self, BufRead, Write},
+    sync::{OnceLock, mpsc},
     thread,
 };
 
@@ -81,10 +82,7 @@ pub struct ProjectLoaded2dEvent {
 /// Escribe `project_loaded_2d` en stdout (claves camelCase = `ProjectLoaded2dPayload` en TS).
 pub fn send_project_loaded_2d_event(payload: &ProjectLoaded2dEvent) {
     if let Ok(json) = serde_json::to_string(payload) {
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-        let _ = writeln!(handle, "{json}");
-        let _ = handle.flush();
+        emit_json(&json);
     }
 }
 
@@ -870,10 +868,7 @@ pub fn send_project_load_2d_complete_event() {
     if let Ok(json) = serde_json::to_string(&serde_json::json!({
         "event": "project_load_2d_complete",
     })) {
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-        let _ = writeln!(handle, "{json}");
-        let _ = handle.flush();
+        emit_json(&json);
     }
 }
 
@@ -889,11 +884,34 @@ pub fn send_load_progress(message: &str, step_ms: Option<u64>, total_ms: Option<
 /// Escribe un evento JSON en stdout y lo flushea inmediatamente.
 pub fn send_event(event: &EngineEvent) {
     if let Ok(json) = serde_json::to_string(event) {
-        let stdout = io::stdout();
-        let mut handle = stdout.lock();
-        let _ = writeln!(handle, "{json}");
-        let _ = handle.flush();
+        emit_json(&json);
     }
+}
+
+static EVENT_SINK: OnceLock<mpsc::Sender<String>> = OnceLock::new();
+
+/// Instala el sink de eventos del editor. Solo tiene efecto la primera vez.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
+pub fn install_event_sink(tx: mpsc::Sender<String>) {
+    let _ = EVENT_SINK.set(tx);
+}
+
+/// Parsea un comando IPC desde el JSON que envía Electron.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
+pub fn parse_command(value: &serde_json::Value) -> Option<EngineCommand> {
+    serde_json::from_value(value.clone()).ok()
+}
+
+/// Entrega una línea JSON al editor si hay sink; si no, la escribe en stdout.
+fn emit_json(json: &str) {
+    if let Some(sink) = EVENT_SINK.get() {
+        let _ = sink.send(json.to_string());
+        return;
+    }
+    let stdout = io::stdout();
+    let mut handle = stdout.lock();
+    let _ = writeln!(handle, "{json}");
+    let _ = handle.flush();
 }
 
 /// Lanza un hilo dedicado que lee stdin línea a línea y envía

@@ -1134,6 +1134,33 @@ fn send_project_loaded_2d(state: &State, project: &ProjectSaveData, view: &Activ
 }
 
 impl State {
+    /// Proyecto del editor in-process: carga el `.save` extraído o la plantilla embebida.
+    ///
+    /// Reproduce la rama `set_scene("2D")` del host standalone, pero sin IPC.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub(crate) fn setup_editor_project(
+        &mut self,
+        save_path: Option<&str>,
+        extract_dir: Option<&str>,
+    ) {
+        self.setup_2d_platformer();
+        let has_manifest = |path: &str| std::path::Path::new(path).join("manifest.json").is_file();
+        let candidate = extract_dir
+            .filter(|path| has_manifest(path))
+            .or_else(|| save_path.filter(|path| has_manifest(path)));
+        if let Some(path) = candidate {
+            self.load_proyect_from_save_path(path);
+            return;
+        }
+        match crate::engine2d::bundled_demo::ensure_bundled_demo_2d_extract_dir() {
+            Ok(dir) => self.load_proyect_from_save_path(&dir.to_string_lossy()),
+            Err(err) => {
+                log::warn!("[demo_2d] plantilla no disponible ({err}); fallback vacío");
+                self.emit_default_2d_boot_loaded();
+            }
+        }
+    }
+
     /// Proyecto 2D nuevo (sin `.save`): emite progreso y `project_loaded_2d` con Scene-01.
     /// Equivalente funcional a la plantilla 3D (`setup_default_3d_scene` + `editor_scenes_init_from_boot`).
     pub(crate) fn emit_default_2d_boot_loaded(&mut self) {

@@ -67,7 +67,7 @@ engine3d = []
 # Su binario se compila con `--no-default-features --features engine2d`.
 engine2d = []
 # Editor egui. Reutiliza el mismo `SharedGpu` que los motores y hospeda el 3D en proceso.
-editor = ["engine3d"]
+editor = ["engine3d", "engine2d"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true

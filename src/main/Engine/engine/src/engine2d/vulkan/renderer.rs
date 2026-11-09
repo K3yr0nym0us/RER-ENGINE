@@ -671,6 +671,25 @@ impl Renderer {
         frame: &rer_engine_core::vulkan::FrameTarget,
         input: FrameInput<'_>,
     ) -> Result<(), VulkanError> {
+        self.render_impl(frame, input, false)
+    }
+
+    /// Variante para el editor: dibuja en el sub-rect de `frame` y deja la imagen en
+    /// `COLOR_ATTACHMENT_OPTIMAL` para que egui la componga encima.
+    pub(crate) fn render_into(
+        &mut self,
+        frame: &rer_engine_core::vulkan::FrameTarget,
+        input: FrameInput<'_>,
+    ) -> Result<(), VulkanError> {
+        self.render_impl(frame, input, true)
+    }
+
+    fn render_impl(
+        &mut self,
+        frame: &rer_engine_core::vulkan::FrameTarget,
+        input: FrameInput<'_>,
+        embedded: bool,
+    ) -> Result<(), VulkanError> {
         // El device se toma de una copia del `SharedGpu`: así el préstamo no ata `*self` y se
         // pueden recrear buffers/uniformes mientras el `&ash::Device` sigue vivo.
         let gpu = self.gpu.clone();
@@ -900,12 +919,24 @@ impl Renderer {
                     },
                 });
             let colors = [color_attachment];
+            let target = if embedded {
+                vk::Rect2D {
+                    offset: frame.offset,
+                    extent: frame.extent,
+                }
+            } else {
+                area(extent)
+            };
             let info = vk::RenderingInfo::default()
-                .render_area(area(extent))
+                .render_area(target)
                 .layer_count(1)
                 .color_attachments(&colors);
             device.cmd_begin_rendering(cmd, &info);
-            set_viewport(device, cmd, extent);
+            if embedded {
+                set_viewport_at(device, cmd, frame.offset, frame.extent);
+            } else {
+                set_viewport(device, cmd, extent);
+            }
 
             // Blit del scene target (cubre toda la pantalla).
             device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_blit);
@@ -1058,20 +1089,22 @@ impl Renderer {
             device.cmd_end_rendering(cmd);
         }
 
-        cmd_image_barrier(
-            device,
-            cmd,
-            frame.color_image,
-            vk::ImageAspectFlags::COLOR,
-            1,
-            1,
-            vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            vk::ImageLayout::PRESENT_SRC_KHR,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
-            vk::PipelineStageFlags::BOTTOM_OF_PIPE,
-            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
-            vk::AccessFlags::empty(),
-        );
+        if !embedded {
+            cmd_image_barrier(
+                device,
+                cmd,
+                frame.color_image,
+                vk::ImageAspectFlags::COLOR,
+                1,
+                1,
+                vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+                vk::ImageLayout::PRESENT_SRC_KHR,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+                vk::PipelineStageFlags::BOTTOM_OF_PIPE,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+                vk::AccessFlags::empty(),
+            );
+        }
         Ok(())
     }
 
@@ -1196,15 +1229,24 @@ fn area(extent: vk::Extent2D) -> vk::Rect2D {
 }
 
 fn set_viewport(device: &ash::Device, cmd: vk::CommandBuffer, extent: vk::Extent2D) {
+    set_viewport_at(device, cmd, vk::Offset2D::default(), extent);
+}
+
+fn set_viewport_at(
+    device: &ash::Device,
+    cmd: vk::CommandBuffer,
+    offset: vk::Offset2D,
+    extent: vk::Extent2D,
+) {
     let viewport = vk::Viewport {
-        x: 0.0,
-        y: extent.height as f32,
+        x: offset.x as f32,
+        y: (offset.y + extent.height as i32) as f32,
         width: extent.width as f32,
         height: -(extent.height as f32),
         min_depth: 0.0,
         max_depth: 1.0,
     };
-    let scissor = area(extent);
+    let scissor = vk::Rect2D { offset, extent };
     unsafe {
         device.cmd_set_viewport(cmd, 0, &[viewport]);
         device.cmd_set_scissor(cmd, 0, &[scissor]);

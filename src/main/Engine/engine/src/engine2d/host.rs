@@ -146,7 +146,7 @@ fn register_entity_pick_double_click(
 // ---------------------------------------------------------------------------
 // Estructura principal de la aplicación winit
 // ---------------------------------------------------------------------------
-struct App {
+pub(crate) struct App {
     state: Option<crate::engine2d::engine::State>,
     overlay: Option<OverlayConfig>,
     // ── Navegación del editor
@@ -323,6 +323,181 @@ impl ApplicationHandler<EngineCommand> for App {
         _window_id: WindowId,
         event: WindowEvent,
     ) {
+        self.handle_event(Some(event_loop), event);
+    }
+    /// Llamado cuando winit ha procesado todos los eventos pendientes del ciclo actual.
+    /// Es el único lugar correcto para pedir el siguiente frame en modo Poll.
+    /// Usando WaitUntil capamos al FPS objetivo y el CPU puede dormir entre frames.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // El cap real vive en `State::target_fps` (también lo actualiza `import_scene`).
+        let fps_limit = self
+            .state
+            .as_ref()
+            .map(|s| s.target_fps)
+            .unwrap_or(self.target_fps)
+            .max(1);
+        let frame_duration = std::time::Duration::from_nanos(1_000_000_000 / fps_limit);
+
+        let now = std::time::Instant::now();
+        if let Some(state) = self.state.as_mut() {
+            if state.is_preview_playing() {
+                if let Some(gilrs) = self.gilrs.as_mut() {
+                    while let Some(evt) = gilrs.next_event() {
+                        match evt.event {
+                            GamepadEventType::ButtonPressed(button, _) => {
+                                self.gamepad_pressed.insert(button);
+                                if let Some(control_key) = map_gamepad_control_key(button) {
+                                    state.dispatch_on_press("gamepad", control_key);
+                                    state.dispatch_on_keep_key_down(control_key);
+                                }
+                            }
+                            GamepadEventType::ButtonReleased(button, _) => {
+                                self.gamepad_pressed.remove(&button);
+                                if let Some(control_key) = map_gamepad_control_key(button) {
+                                    state.dispatch_on_keep_key_up("gamepad", control_key);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            } else {
+                self.keyboard_mouse_pressed.clear();
+                self.gamepad_pressed.clear();
+                state.clear_all_on_keep_horizontal_blocks();
+            }
+        }
+
+        if now >= self.next_frame_at {
+            if let Some(state) = &self.state {
+                state.window().request_redraw();
+            }
+            // Calcular el próximo tick desde el tiempo objetivo, no desde `now`,
+            // para evitar drift acumulado si un frame tardó más de lo esperado.
+            self.next_frame_at += frame_duration;
+            // Si nos retrasamos más de un frame, resincronizar para evitar
+            // ráfagas de frames de recuperación.
+            if self.next_frame_at < now {
+                self.next_frame_at = now + frame_duration;
+            }
+        }
+        // Dormir hasta el próximo frame en lugar de hacer busy-wait
+        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame_at));
+    }
+}
+
+impl App {
+    /// Host del editor: el `State` ya existe y comparte el `SharedGpu` de la ventana.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub(crate) fn new_in_editor(state: crate::engine2d::engine::State) -> Self {
+        Self {
+            state: Some(state),
+            overlay: None,
+            mouse_right: false,
+            mouse_middle: false,
+            last_cursor: None,
+            left_click_pos: None,
+            last_entity_pick_click: None,
+            gizmo_drag_axis: None,
+            gizmo_drag_start: None,
+            ctrl_held: false,
+            shift_held: false,
+            player_ui_left_press: None,
+            keyboard_mouse_pressed: HashSet::new(),
+            gilrs: Gilrs::new().ok(),
+            gamepad_pressed: HashSet::new(),
+            next_frame_at: std::time::Instant::now(),
+            target_fps: 60,
+            tracker_offset: std::sync::Arc::new((
+                std::sync::atomic::AtomicI32::new(0),
+                std::sync::atomic::AtomicI32::new(0),
+            )),
+            tracker_parent_id: 0,
+        }
+    }
+
+    /// Procesa un evento de input; el editor traduce el cursor al rect del viewport.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn handle_window_event(&mut self, event: WindowEvent) {
+        self.handle_event(None, event);
+    }
+
+    /// Avanza simulación e input de play sin renderizar (el render lo decide el editor).
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn frame_update(&mut self) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        if state.is_preview_playing() {
+            for control_key in &self.keyboard_mouse_pressed {
+                state.dispatch_on_keep_frame("keyboard_mouse", control_key);
+            }
+            for button in &self.gamepad_pressed {
+                if let Some(control_key) = map_gamepad_control_key(*button) {
+                    state.dispatch_on_keep_frame("gamepad", control_key);
+                }
+            }
+            if let Some(gilrs) = self.gilrs.as_mut() {
+                while let Some(evt) = gilrs.next_event() {
+                    match evt.event {
+                        GamepadEventType::ButtonPressed(button, _) => {
+                            self.gamepad_pressed.insert(button);
+                            if let Some(control_key) = map_gamepad_control_key(button) {
+                                state.dispatch_on_press("gamepad", control_key);
+                                state.dispatch_on_keep_key_down(control_key);
+                            }
+                        }
+                        GamepadEventType::ButtonReleased(button, _) => {
+                            self.gamepad_pressed.remove(&button);
+                            if let Some(control_key) = map_gamepad_control_key(button) {
+                                state.dispatch_on_keep_key_up("gamepad", control_key);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        } else {
+            self.keyboard_mouse_pressed.clear();
+            self.gamepad_pressed.clear();
+            state.clear_all_on_keep_horizontal_blocks();
+        }
+        state.update();
+    }
+
+    /// Graba la escena en el `FrameTarget` del editor (swapchain compartido).
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn render_scene(
+        &mut self,
+        frame: &rer_engine_core::vulkan::FrameTarget,
+    ) -> Result<(), SurfacePresentError> {
+        let Some(state) = self.state.as_mut() else {
+            return Ok(());
+        };
+        state.set_viewport_size(winit::dpi::PhysicalSize::new(
+            frame.extent.width,
+            frame.extent.height,
+        ));
+        state.render_into(frame)
+    }
+
+    /// Despacha un comando ya parseado (el editor lo usa in-process).
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn handle_command(&mut self, cmd: EngineCommand) {
+        if let Some(state) = self.state.as_mut() {
+            state.handle_command(cmd);
+        }
+    }
+
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn is_preview_playing(&self) -> bool {
+        self.state
+            .as_ref()
+            .is_some_and(|state| state.is_preview_playing())
+    }
+
+    /// Cuerpo común del event loop standalone y del host del editor.
+    fn handle_event(&mut self, event_loop: Option<&ActiveEventLoop>, event: WindowEvent) {
         let Some(state) = self.state.as_mut() else {
             return;
         };
@@ -330,7 +505,9 @@ impl ApplicationHandler<EngineCommand> for App {
         // ── Eventos de ventana ───────────────────────────────────────────────
         match event {
             WindowEvent::CloseRequested => {
-                event_loop.exit();
+                if let Some(event_loop) = event_loop {
+                    event_loop.exit();
+                }
             }
             WindowEvent::Resized(size) => {
                 state.resize(size);
@@ -697,6 +874,9 @@ impl ApplicationHandler<EngineCommand> for App {
                 }
             }
             WindowEvent::RedrawRequested => {
+                if event_loop.is_none() {
+                    return;
+                }
                 // on_keep: ejecutar cada frame mientras la tecla/botón esté sostenido.
                 // on_press ya se ejecutó en el evento KeyboardInput/MouseInput (una sola vez).
                 if state.is_preview_playing() {
@@ -726,65 +906,6 @@ impl ApplicationHandler<EngineCommand> for App {
             }
             _ => {}
         }
-    }
-    /// Llamado cuando winit ha procesado todos los eventos pendientes del ciclo actual.
-    /// Es el único lugar correcto para pedir el siguiente frame en modo Poll.
-    /// Usando WaitUntil capamos al FPS objetivo y el CPU puede dormir entre frames.
-    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        // El cap real vive en `State::target_fps` (también lo actualiza `import_scene`).
-        let fps_limit = self
-            .state
-            .as_ref()
-            .map(|s| s.target_fps)
-            .unwrap_or(self.target_fps)
-            .max(1);
-        let frame_duration = std::time::Duration::from_nanos(1_000_000_000 / fps_limit);
-
-        let now = std::time::Instant::now();
-        if let Some(state) = self.state.as_mut() {
-            if state.is_preview_playing() {
-                if let Some(gilrs) = self.gilrs.as_mut() {
-                    while let Some(evt) = gilrs.next_event() {
-                        match evt.event {
-                            GamepadEventType::ButtonPressed(button, _) => {
-                                self.gamepad_pressed.insert(button);
-                                if let Some(control_key) = map_gamepad_control_key(button) {
-                                    state.dispatch_on_press("gamepad", control_key);
-                                    state.dispatch_on_keep_key_down(control_key);
-                                }
-                            }
-                            GamepadEventType::ButtonReleased(button, _) => {
-                                self.gamepad_pressed.remove(&button);
-                                if let Some(control_key) = map_gamepad_control_key(button) {
-                                    state.dispatch_on_keep_key_up("gamepad", control_key);
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-            } else {
-                self.keyboard_mouse_pressed.clear();
-                self.gamepad_pressed.clear();
-                state.clear_all_on_keep_horizontal_blocks();
-            }
-        }
-
-        if now >= self.next_frame_at {
-            if let Some(state) = &self.state {
-                state.window().request_redraw();
-            }
-            // Calcular el próximo tick desde el tiempo objetivo, no desde `now`,
-            // para evitar drift acumulado si un frame tardó más de lo esperado.
-            self.next_frame_at += frame_duration;
-            // Si nos retrasamos más de un frame, resincronizar para evitar
-            // ráfagas de frames de recuperación.
-            if self.next_frame_at < now {
-                self.next_frame_at = now + frame_duration;
-            }
-        }
-        // Dormir hasta el próximo frame en lugar de hacer busy-wait
-        event_loop.set_control_flow(ControlFlow::WaitUntil(self.next_frame_at));
     }
 }
 pub fn run() {

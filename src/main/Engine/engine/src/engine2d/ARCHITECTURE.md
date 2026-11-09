@@ -20,6 +20,16 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 - **Una sola convención de Y** en todo el repo: viewport con altura negativa (y = `extent.height`, height = `-extent.height`); el blit del scene target muestrea `vec2(v_uv.x, 1.0 - v_uv.y)`.
 - Electron elimina `RER_GPU_BACKEND` del entorno al hacer `spawn` del motor.
 
+## Ventana única (editor)
+
+- En el editor, el 2D se hospeda in-process sobre el `SharedGpu` de la ventana
+  compartida: no crea instancia, device ni swapchain propios.
+- `State::with_vulkan` + `Vulkan2d::with_gpu` reutilizan el contexto del editor;
+  `render_into` graba en el sub-rect del viewport y deja la imagen para egui.
+- En modo embebido `resize`/`set_bounds`/`set_vsync` no tocan la ventana ni el swapchain
+  del editor; el tamaño del scene target lo fija `set_viewport_size`.
+- `RER_LEGACY_2D_WINDOW=1` recupera el modo proceso con ventana overlay.
+
 ## Ventana overlay (integracion con Electron)
 
 - Arranque: `--overlay <parent_id> <x> <y> <w> <h> [rel_x rel_y]` (alias legacy `--embed`). Ver `rer_engine_core::overlay`.

@@ -10,7 +10,9 @@ impl State {
                 self.clear_color = [r as f32, g as f32, b as f32, 1.0f32];
             }
             EngineCommand::Common(EngineCommandCommon::Resize { width, height }) => {
-                self.resize(PhysicalSize::new(width, height));
+                if !self.embedded {
+                    self.resize(PhysicalSize::new(width, height));
+                }
             }
             EngineCommand::Common(EngineCommandCommon::SetBounds {
                 x,
@@ -19,12 +21,15 @@ impl State {
                 height,
                 ..
             }) => {
-                self.window
-                    .set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
-                self.resize(PhysicalSize::new(width, height));
-                let _ = self
-                    .window
-                    .request_inner_size(winit::dpi::PhysicalSize::new(width, height));
+                // En el editor el motor comparte la ventana: el tamaño lo manda el viewport.
+                if !self.embedded {
+                    self.window
+                        .set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
+                    self.resize(PhysicalSize::new(width, height));
+                    let _ = self
+                        .window
+                        .request_inner_size(winit::dpi::PhysicalSize::new(width, height));
+                }
             }
             EngineCommand::Common(EngineCommandCommon::PlayAudio { path, loop_ }) => {
                 let decoded = std::fs::read(&path).ok().and_then(|b| {

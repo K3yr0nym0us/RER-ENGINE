@@ -11,7 +11,7 @@
 use std::sync::Mutex;
 
 use rer_engine_core::surface::SurfacePresentError;
-use rer_engine_core::vulkan::{FrameAcquire, SharedGpu, VulkanError, VulkanOptions};
+use rer_engine_core::vulkan::{FrameAcquire, FrameTarget, SharedGpu, VulkanError, VulkanOptions};
 use winit::window::Window;
 
 mod layout;
@@ -49,6 +49,17 @@ impl Vulkan2d {
         })
     }
 
+    /// Variante para el editor: reutiliza el `SharedGpu` de la ventana compartida y no
+    /// crea instancia, device ni swapchain propios.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub(crate) fn with_gpu(gpu: SharedGpu) -> Result<Self, VulkanError> {
+        let renderer = renderer::Renderer::new(&gpu)?;
+        Ok(Self {
+            gpu,
+            renderer: Mutex::new(renderer),
+        })
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, renderer::Renderer> {
         self.renderer
             .lock()
@@ -65,6 +76,12 @@ impl Vulkan2d {
             log::warn!("[2d-vulkan] no se pudo recrear el scene target: {error}");
         }
         Ok(())
+    }
+
+    /// Redimensiona solo el scene target offscreen (sin tocar el swapchain del editor).
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub(crate) fn resize_scene(&self, width: u32, height: u32) -> Result<(), VulkanError> {
+        self.lock().resize(width, height)
     }
 
     /// Cambia el present mode del swapchain (V-Sync on/off) recreándolo.
@@ -123,5 +140,21 @@ impl Vulkan2d {
                 FrameAcquire::Skip => SurfacePresentError::SkipFrame,
                 FrameAcquire::Fail(_) => SurfacePresentError::Validation,
             })
+    }
+
+    /// Graba el frame 2D en el `FrameTarget` abierto por el editor y no presenta.
+    ///
+    /// Deja la imagen del swapchain en `COLOR_ATTACHMENT_OPTIMAL` para que egui dibuje
+    /// encima en el mismo command buffer.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub(crate) fn render_into(
+        &self,
+        frame: &FrameTarget,
+        input: FrameInput<'_>,
+    ) -> Result<(), SurfacePresentError> {
+        let mut renderer = self.lock();
+        renderer
+            .render_into(frame, input)
+            .map_err(|_| SurfacePresentError::Validation)
     }
 }
