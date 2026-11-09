@@ -1,8 +1,8 @@
 # MSAA 3D (multisample anti-aliasing del pase forward)
 #
-# El MRT forward se dibuja a targets multisample; al final de cada pass
-# se resuelve a los G-buffers 1× que consumen TAA, SSR, lit-composite y blit.
-# Shadow maps, probes y post-FX permanecen en sample_count = 1.
+# Implementado sobre Ash/Vulkan en `engine_3d/src/vulkan/frame.rs`. El MRT forward se dibuja
+# contra copias multisampleadas de los 5 adjuntos y se resuelve contra los G-buffers 1× que
+# consumen TAA, SSR, denoise, composite y present. Shadow map, probes y post-FX siguen a 1 muestra.
 #
 # Relacionado con:
 #   - docs/TAA_3D.yaml
@@ -10,28 +10,40 @@
 #   - docs/Reflections_3D.yaml
 #   - docs/IPC_Protocol.yaml
 
-version: 1
-updated: 2026-08-27
+version: 2
+updated: 2026-11-08
 
 principle:
   owner: motor_3d
   pipeline: |
-    1. Forward MRT (ambient, shadow_mask, direct, depth_export, velocity) + depth:
-       sample_count = N del tier; resolve_target → texturas 1× de TaaPass.
-    2. Prepass transparente y export base_color/world_pos: mismo N + resolve.
-    3. TAA sombra/escena, lit-composite, SSR/RT y blit leen solo los 1× resueltos.
+    1. Forward MRT (scene, normal_rough, albedo, world, velocity) + depth D32:
+       sample_count = N del tier; cada adjunto declara `resolveImageView` con
+       `resolveMode = AVERAGE` hacia su imagen 1×.
+    2. El fondo trazado se dibuja dentro del mismo pase con un quad full-screen
+       (`shaders/raster/sky.frag`), sin prueba ni escritura de profundidad, y escribe
+       las 5 salidas (una salida no escrita deja el adjunto sin valor definido).
+    3. La profundidad multisampleada se descarta (`storeOp = DONT_CARE`); `targets.depth`
+       se rellena con un segundo pase a 1× usando `shaders/raster/depth_only.frag`
+       (sin salidas de color, solo el `discard` del alfa cortada).
+    4. TAA, SSR, denoise, composite y present leen solo los 1× resueltos.
   note: |
-    Low = Off (1 muestra, sin resolve; comportamiento histórico).
-    Ultra pide 8× y se clampa al máximo soportado por todos los formatos del MRT
-    (guaranteed_format_features + Features del dispositivo).
-    R32Float (depth-export) no admite MULTISAMPLE_RESOLVE: se escribe MS y se
-    resuelve a 1× con un pase manual (textureLoad sample 0) antes de TAA/SSR.
+    Low = Off (1 muestra, sin resolve; es el default y el camino de siempre).
+    El número efectivo sale del adaptador: `SharedGpu::max_gbuffer_samples` intersecta
+    `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`; si no llega a 2×
+    devuelve 1× y el renderer no crea G-buffer multisampleado.
+    Vulkan exige que `rasterizationSamples` del pipeline coincida con el `sampleCount` de
+    TODOS los adjuntos, por eso el sample count viaja en `VertexSpec` y los pipelines
+    forward/skinned existen en dos versiones (1× para la captura de sondas, N× para el frame).
+    `vkCmdCopyImage` no puede copiar entre distinto número de muestras
+    (VUID-vkCmdCopyImage-srcImage-00136): de ahí que el fondo sea un quad y no una copia.
+    Tras un resize, `Targets::recreate` destruye el G-buffer MSAA y hay que volver a
+    crearlo (`ensure_ms`), porque `ensure_msaa` sale por early-return si el nivel no cambia.
 
 graphics_tiers:
   - id: low
     aliases: [bajo, off, apagado]
     sample_count: 1
-    note: Sin MSAA
+    note: Sin MSAA (default)
   - id: medium
     aliases: [medio]
     sample_count: 2
@@ -41,15 +53,16 @@ graphics_tiers:
   - id: ultra
     aliases: [ultra]
     sample_count: 8
-    note: Clamp a 4× o 2× si el formato/GPU no soporta 8×
+    note: clamp al máximo que soporten color Y profundidad a la vez (2× / 4× en GPUs limitadas)
 
 commands:
   set_msaa_tier:
     params: { tier: low | medium | high | ultra }
     effect: |
-      Cambia sample_count del forward, recrea texturas MS + depth MS,
-      y recrea pipelines MRT (opaque, transparent prepass, sky, skinned,
-      base_color export).
+      Recorta el nivel al soporte del adaptador (`clamp_sample_count`), crea/suelta las
+      copias MS del G-buffer (`Targets::ensure_ms`) y recrea los 5 pipelines MSAA
+      (forward, forward blend, skinned, skinned blend, quad de cielo). Si el nivel efectivo
+      baja del pedido, se registra un `log::warn!` con el motivo.
 
 events:
   msaa_tier_changed:

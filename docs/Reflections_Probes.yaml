@@ -7,88 +7,94 @@
 #   - docs/Reflections_SSR.yaml (miss SSR → probe)
 #   - docs/Reflections_RT.yaml (sampleo probe en hits off-screen)
 
-version: 1
-updated: 2026-07-01
+version: 2
+updated: 2026-11-08
 status: implemented
 
 principle:
   owner: motor_3d
   role: |
-    Capa A (forward IBL) + fallback de entorno en miss SSR/RT.
-    Cada probe captura 6 caras alrededor de su centro en texture_cube_array.
-    No sustituye el detalle on-screen del SSR; lo complementa.
+    Capa A (forward IBL). Cada sonda captura 6 caras alrededor de su centro dentro de un
+    `texture_cube_array` con una ranura por sonda, y el forward muestrea la ranura que le toca a
+    cada instancia. No sustituye el detalle on-screen del SSR; lo complementa.
   toggle: |
     Editor: reflection_probes_enabled (persistido en .save como reflectionProbes).
-    Si OFF: no captura ni aplica probes (meta GPU en cero).
+    Si OFF: no captura y el termino IBL del forward queda en cero (`light_params.y = 0`).
+    Los probes solo existen con el tier de reflejos ≠ off (la lista de sondas se resuelve con
+    `reflections` activo).
   tier_philosophy: |
-    El tier no apaga probes; define resolución de cubemap por cara.
-    Probes OFF en preset from_tier por defecto; el editor puede activarlos en cualquier tier activo.
+    En Ash el tier NO cambia la resolución del cubemap: todas las ranuras usan
+    `PROBE_FACE_SIZE` fijo. El `cubemap_face_size` por tier de la era wgpu no se portó.
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine_3d/src/reflections/probe_env.rs
-    - src/main/Engine/engine_3d/src/reflections/probes_pipeline/
-    - src/main/Engine/engine_3d/src/reflections/forward_ibl.wgsl
-    - src/main/Engine/engine_3d/src/reflections/policy.rs
+    - src/main/Engine/engine_3d/src/probe_registry.rs       # detección, ranuras, selección por influencia
+    - src/main/Engine/engine_3d/src/vulkan/frame.rs         # capture_probe + cubemap array
+    - src/main/Engine/engine_3d/src/config_3d/reflection_settings.rs
   shaders:
-    - shader.wgsl / shader_skinned.wgsl (forward probe)
-    - forward_ibl.wgsl
+    - src/main/Engine/engine_3d/shaders/raster/forward.frag  # samplerCubeArray por instancia
 
 limits:
   max_probes: 8
   cube_array_layers: 48  # 6 caras × MAX_PROBES
-  mip_levels: 5
-  default_face_size_px: 128
+  mip_levels: 1          # sin cadena de mips todavia
+  face_size_px: 64       # PROBE_FACE_SIZE, fijo para todas las ranuras
+  required_feature: imageCubeArray  # vista CUBE_ARRAY + samplerCubeArray del forward
 
 face_size_by_tier:
-  description: ReflectionTier::cubemap_face_size — recrea cubemap si cambia el tamaño
-  table:
-    - tier: off
-      face_px: 128
-      note: textura existe; sin captura activa
-    - tier: low
-      face_px: 128
-    - tier: medium
-      face_px: 256
-    - tier: high
-      face_px: 512
-    - tier: ultra
-      face_px: 1024
+  status: |
+    Retirado en la migración a Ash. Había un `ReflectionTier::cubemap_face_size` (128 → 1024)
+    que recreaba el cubemap por tier; hoy el tamaño de cara es constante y la calidad por tier se
+    decide en la cadena SSR/RT, no en las sondas.
 
 entities:
-  component: ReflectionProbe
-  registry: probes_pipeline/registry.rs
-  spawn: IPC / editor — no altera el switch probes_enabled
-  influence: radio en Transform.scale (gizmo editor fijo, no volumen IBL)
+  component: sin componente dedicada
+  registry: probe_registry.rs — entidad sonda = marcador de plantilla `[ReflectionProbe]` en
+    `EntitySaveMeta.path` (o categoría `reflection_probe`). El spawn guarda categoría `object`
+    para que el editor la liste como objeto, así que detectar solo por categoría devolvía una
+    lista vacía y ninguna sonda se capturaba.
+  spawn: IPC `spawn_reflection_probe` — no altera el switch probes_enabled
+  influence: |
+    Radio de influencia en `Transform.scale.x * 0.5` (el spawn guarda `scale = radio × 2`),
+    leído por `reflection_probe_world_radius`.
   fallback_probe: |
-    Sin probes colocados: sonda virtual FALLBACK_SCENE_PROBE_ID
-    centrada en plano horizontal ~1.2 m sobre suelo (policy.rs / ARCHITECTURE.md)
+    Sin sonda que cubra el punto, `tex_layer_pad[2] = -1` y el forward cae al color de cielo
+    procedural (el mismo del viewport), no a negro. Ya no hay una sonda virtual con id propio.
 
 capture:
-  method: round-robin por frame (una cara o probe por tick según cursor)
-  burst: probe_capture_burst_all al cambiar tier/probes o spawn
-  pipelines:
-    static: vs_main + fs_overlay
-    skinned: vs_main_skinned + fs_overlay_skinned
-  mips: downsample pass anti-moiré; shader usa LOD + bias por rugosidad
-  includes: suelo, geometría estática, jugador skinned en captura
+  method: |
+    Burst completo cuando cambia el conjunto de sondas; después refresco de UNA sonda cada ~30
+    frames (`probe_capture_cursor` / `probe_capture_cooldown`), no las 6 caras de todas por frame.
+  writes: |
+    6 pases de `draw_forward` a 64² contra `probe_color/normal/albedo/world/velocity` +
+    `probe_depth`, y `copy_color` a la capa `slot * 6 + cara` del cubemap array. Antes todas las
+    sondas escribían las capas 0..5 y la última captura del frame tapaba a las demás.
+  during_capture: |
+    La IBL se fuerza a cero en el uniforme de ese pase (`light_params.y = 0`) para no muestrear el
+    cubemap que se está escribiendo.
+  includes: suelo, geometría estática y skinned visible.
 
 sampling:
   forward: |
-    forward_ibl.wgsl — cubemap en metales/dieléctricos reflectantes si SSR no traza el píxel
-    (forward_defer_probe_to_ssr cuando SSR activo en superficie elegible).
-  ssr_miss: ssr_reflected_radiance → cubemap probe o procedural
-  rt_off_screen: refl_sample_probe_for_material en reflection_math.wgsl
-  parallax: radio en probe_meta.entries.w (esférico)
-  layer_policy: OwnSlotForProbes para entidades [ReflectionProbe]; nearest para el resto
+    `forward.frag` muestrea `samplerCubeArray` con `v_tex.z` (ranura de la instancia) y una
+    dirección interpolada entre la normal y el vector especular según roughness (sin LOD: no hay
+    mips). Se aplica solo si `light_params.y > 0`, es decir con probes activas.
+  per_instance_slot: |
+    `engine/render.rs` resuelve la ranura en CPU con `probe_registry::select_probe_slot` (la sonda
+    cuyo volumen contiene el punto, más cercana en distancia relativa a su radio) y la escribe en
+    `InstanceData.tex_layer_pad[2]`; esa ranura también entra en la clave del batch de instancing.
+  ssr_miss: |
+    `composite.frag` usa SSR o el trazado según confianza; el cubemap de sondas NO se muestrea
+    dentro del pase SSR en Ash (esa rama `refl_sample_probe_for_material` era de wgpu).
+  parallax: |
+    Sin corrección esférica por parallax; `entries`/`probe_meta` GPU de la era wgpu no se portaron.
+  layer_policy: NearestByWorldPos (por volumen de influencia) para cualquier superficie.
 
 frame_order:
-  - prepare_probes (slots, meta GPU, probe_index_map)
-  - main pass (instancias con tex_layer_pad.z = ranura)
-  - export G-buffer
-  - encode_probe_captures (6 caras + mips)
-  - prepare_lit_scene
-  - SSR/RT pass
+  - reflection_probe_render_list + reflection_probe_fields (ranuras y radios)
+  - main pass (instancias con tex_layer_pad[2] = ranura)
+  - capture_probe por sonda refrescada (6 caras → capa slot*6+face)
+  - SSR / trazado / denoise / composite
 
 ipc:
   commands:

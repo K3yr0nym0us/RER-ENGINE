@@ -1,159 +1,126 @@
-# Ray tracing (reflexiones HW) — motor 3D
+# Ray tracing (reflejes) — motor 3D
 #
-# Fuente adicional de información cuando raytracing_enabled. Calidad por tier vía ReflectionQualityPreset.
+# Trazado por hardware (Ash/Vulkan RT) con fallback BVH por software en compute. Fuente adicional
+# de información cuando `raytracing_enabled`; el tier solo enciende la cadena de reflejos.
 #
 # Relacionado con:
 #   - docs/Reflections_3D.yaml
-#   - docs/Reflections_SSR.yaml (SSR primario + mezcla en pantalla)
-#   - docs/Shadows_3D.yaml (shadow rays RT High+)
+#   - docs/Reflections_SSR.yaml (SSR en pantalla y composite final)
+#   - docs/Shadows_3D.yaml (no hay shadow rays en RT)
 
-version: 2
-updated: 2026-06-29
+version: 3
+updated: 2026-11-08
 status: implemented
-validated: 2026-06-29  # MatComp 5 esferas + RT ON; espejos usan SSR passthrough
+validated: 2026-11-08  # RTX 3060, capa de validación sin errores de API en el camino RT
 
 principle:
   owner: motor_3d
   role: |
-    Trazado hardware (Vulkan ray query) o fallback BVH compute.
-    RT OFF → pipeline no dispatch; SSR inalterado.
-    RT ON → píxeles rugosos (roughness > 0.04) trazan RT; espejos delegan en SSR.
+    Dos raygen en el mismo pipeline: `primary.rgen` (fondo del viewport, con su `rchit`/`rmiss`)
+    y `reflect.rgen` (rayo de reflejo desde el G-buffer). Si el adaptador no expone RT, el mismo
+    trabajo lo hace `shaders/bvh/trace.comp` sobre el BVH binario de `src/bvh.rs`.
+    Con trazado apagado no hay dispatch y el pipeline queda en SSR + composite.
   toggle: |
-    reflection_raytracing_enabled (editor / .save reflectionRaytracing).
-    Independiente del tier: el tier escala calidad cuando RT está on.
-  hybrid: |
-    refl_compose_rt_ssr: RT en superficies microfacet (roughness > REFL_MIRROR_ROUGHNESS_MAX);
-    miss RT → conserva SSR; hit SSR on-screen → mezcla con mínimo 55% peso SSR.
-    Espejos perfectos (≤ 0.04): rt_ray_query / rt_bvh escriben buffer SSR sin sombrear RT
-    (RT off-screen resolvía probe/cielo en esferas curvas; alfombras planas no lo mostraban).
-    Log: [RT] TLAS HW: … (SSR+RT híbrido, res N%)
+    reflection_raytracing_enabled (editor / .save reflectionRaytracing), y solo tiene efecto con
+    tier ≠ off: `record()` ejecuta `reflection_pass` cuando `reflections && raytracing`.
+  extension_gate: |
+    `vulkan/select.rs` pide juntas `VK_KHR_acceleration_structure`, `VK_KHR_ray_tracing_pipeline`
+    y `VK_KHR_deferred_host_operations`; si falta alguna (o sus features al crear el device) se
+    registra en español la extensión ausente, `hw_rt = false` y se usa el BVH por software.
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine_3d/src/reflections/quality_preset.rs
-    - src/main/Engine/engine_3d/src/reflections/rt_pipeline/
-    - src/main/Engine/engine_3d/src/reflections/settings.rs
+    - src/main/Engine/engine_3d/src/vulkan/accel.rs     # BLAS/TLAS, scratch, device addresses
+    - src/main/Engine/engine_3d/src/vulkan/frame.rs     # dispatch, SBT, cache de BLAS, BVH por slot
+    - src/main/Engine/engine_3d/src/bvh.rs              # BVH binario y layouts GPU del fallback
+    - src/main/Engine/engine_3d/src/vulkan/select.rs    # gate de extensiones
+    - src/main/Engine/engine_3d/src/engine/render.rs    # instancias trazables, materiales, hash
   shaders:
-    - rt_pipeline/rt_ray_query.wgsl (HW)
-    - rt_pipeline/rt_bvh.wgsl (fallback)
-    - reflections/reflection_math.wgsl
+    - src/main/Engine/engine_3d/shaders/rt/primary.rgen
+    - src/main/Engine/engine_3d/shaders/rt/primary.rchit
+    - src/main/Engine/engine_3d/shaders/rt/primary.rmiss
+    - src/main/Engine/engine_3d/shaders/rt/reflect.rgen
+    - src/main/Engine/engine_3d/shaders/bvh/trace.comp
 
-quality_preset:
-  module: reflections/quality_preset.rs
-  fields:
-    - rt_resolution_scale  # hoy == ssr_resolution_scale; desacoplable
-    - max_trace_distance_m
-    - max_bounces
-    - shadow_rays
-    - denoise (Option)
-    - material_quality (Simplified | Hybrid | Full)
+not_ported_from_wgpu:
+  quality_preset: |
+    `reflections/quality_preset.rs` (rt_resolution_scale, max_bounces, shadow_rays,
+    material_quality, perfiles de denoise por tier) no tiene equivalente en Ash. El trazado actual
+    es 1 rayo/píxel, sin rebotes, sin shadow rays y a resolución de viewport completa.
+  rt_flags: |
+    Los bits x/y/z/w (refracción, segundo rebote, SSIL/GI, shadow rays) desaparecieron con el
+    módulo. El SSIL de la era wgpu ya era un placeholder nunca cableado (`ssil_strength = 0`).
+  events: |
+    `reflection_profiler` ya no existe y `reflection_tier_effective` quedó declarado en el IPC sin
+    emisor: hoy no hay degradado de tier comunicado al editor, solo el log del cambio.
+  shadows: |
+    No hay sombras por ray tracing: `primary.rchit` y `trace.comp` iluminan con N·L + ambiente,
+    sin disparar un rayo hacia la luz.
 
 tier_table:
-  columns: [ssr_rt_res, max_distance_m, rays_per_pixel, bounces, shadow_rays, denoise, material]
-  rows:
-    - tier: low
-      ssr_rt_res: 25%
-      max_distance_m: 25
-      rays_per_pixel: 1
-      bounces: 1
-      shadow_rays: false
-      denoise: off  # Opción A; ver low_denoise_benchmark
-      material: simplified
-    - tier: medium
-      ssr_rt_res: 50%
-      max_distance_m: 50
-      rays_per_pixel: 1
-      bounces: 1
-      shadow_rays: false
-      denoise: { radius: 2, depth_sigma: 5, normal_sigma: 10, luminance_sigma: 10 }
-      material: simplified
-    - tier: high
-      ssr_rt_res: 75%
-      max_distance_m: 100
-      rays_per_pixel: 1
-      bounces: 1
-      shadow_rays: true
-      denoise: { radius: 3, depth_sigma: 4, normal_sigma: 12, luminance_sigma: 8 }
-      material: hybrid
-    - tier: ultra
-      ssr_rt_res: 100%
-      max_distance_m: 100
-      rays_per_pixel: 1
-      bounces: 2
-      shadow_rays: true
-      denoise: { radius: 3, depth_sigma: 3, normal_sigma: 14, luminance_sigma: 6 }
-      material: full
-
-low_denoise_benchmark:
-  status: option_a_shipped
-  constant: LOW_RT_DENOISE = Off en quality_preset.rs
-  option_a: denoise None (default tras prueba manual)
-  option_b: radius 1, σ 4/6/8 — cambiar a UltraLight para medir rt_ms vs denoise_ms
-
-material_quality:
-  simplified:
-    includes: [albedo, metallic, roughness]
-    excludes: [normal_maps, detail_maps, clear_coat, subsurface]
-    shader: sin mezcla G-buffer lit_scene (allow_screen_blend = false)
-  hybrid:
-    includes: simplified + normales en hits on-screen
-  full:
-    includes: path completo (Ultra)
-
-rt_flags:
-  x: refracción dieléctrica secundaria (Ultra)
-  y: segundo rebote specular (max_bounces >= 2)
-  z: SSIL / GI difuso (Ultra)
-  w: shadow rays (High+)
+  description: |
+    El tier (`off | low | medium | high | ultra`) solo decide si la cadena de reflejos corre.
+    No cambia resolución, pasos, rebotes ni denoise en el renderizador Ash.
 
 pipeline:
-  primary: RtReflectionPassV2 — ray query contra TLAS
-  fallback: rt_bvh.wgsl si no hay TLAS
-  uniforms: material_quality en RtUniforms / RtHwUniforms
-  dispatch_resolution: rt_resolution_scale × viewport
-  output: scratch → copy a reflection_texture (misma resolución que SSR hoy)
+  order_in_frame: |
+    1. `rebuild_tlas` desde los `RtInstanceRecord` visibles (cache de BLAS por malla; `rebuild`
+       invalida la entrada).
+    2. `trace_background` → `primary.rgen` (o `trace.comp` en modo 0) escribe `targets.background`,
+       que el forward toma como cielo.
+    3. Tras el forward, `reflection_pass` → `reflect.rgen` (o `trace.comp` modo 1) escribe
+       `targets.reflection` con alpha = confianza.
+    4. `denoise.frag` y `composite.frag` (ver Reflections_SSR.yaml).
+  descriptors: |
+    Un descriptor set por uso y por slot en vuelo (`rt[slot][fondo|reflejos]`, igual en el BVH):
+    actualizar un set ya enlazado por un command buffer invalida el buffer completo y el driver
+    ignora TODO el frame (VUID "destroyed or updated without UPDATE_AFTER_BIND").
+  scratch: |
+    El scratch de `build_blas`/`build_tlas` y el buffer de índices de instancia se reutilizan entre
+    frames en un único `Vec<u8>` para no reservar memoria nueva por frame ni dejar un device
+    address de un buffer ya liberado.
 
 denoise:
-  gate: uses_denoise() = active && uses_rt() && denoise_profile.is_some()
-  shader: denoiser.wgsl — radius por uniform
-  note: Solo con RT ON; Low sin denoise (Opción A)
+  shader: src/main/Engine/engine_3d/shaders/raster/denoise.frag
+  profile: |
+    Kernel 3×3 con peso `exp(-|Δdepth| · 80) · pow(max(dot(n, n0), 0), 16) · alpha`. El radio
+    llega por push constant (`step_px`) y hoy vale 1 texel para todos los tiers.
+  gate: corre dentro de la cadena de reflejos, con o sin trazado.
 
 sampling:
-  primary_ray: GGX NDF + reflect; 1 rayo/píxel
+  primary_ray: un rayo por píxel desde `inv_view_proj` (cámara) o desde el G-buffer (reflejo)
+  roughness_gate: |
+    `reflect.rgen` y el modo 1 del BVH descartan roughness > 0.65 (alpha 0); `ssr.frag` descarta
+    > 0.45 y ≤ 0.04; `composite.frag` fuerza SSR puro en roughness ≤ 0.04. Son tres umbrales
+    distintos sin unificar: conocido post-migración.
   mirror_bypass: |
-    Si roughness ≤ REFL_MIRROR_ROUGHNESS_MAX (0.04): passthrough SSR en rt_ray_query.wgsl y rt_bvh.wgsl.
-    Motivo: rayos espejo en esferas suelen resolver off-screen (probe/cielo); SSR ya acierta en pantalla.
-    Materiales MatComp afectados: CHROME, GLASS, WATER (roughness_min 0). STEEL/PLASTIC siguen RT.
-  dielectric_ultra: refl_refract_dir en segundo evento si rt_flags.x (solo roughness > 0.04)
-  firefly_clamp: refl_firefly_clamp(color, 50.0)
+    El bypass de espejos de la era wgpu (`REFL_MIRROR_ROUGHNESS_MAX` dentro del shader RT) se
+    sustituyó por la regla de composite: los píxeles ≤ 0.04 se resuelven con SSR.
+  miss: |
+    `primary.rmiss` devuelve el color de cielo (0.72, 0.86, 0.98), el mismo del viewport y del
+    fallback procedural del IBL.
 
-compose_hybrid:
-  function: refl_compose_rt_ssr (reflection_math.wgsl)
-  rt_miss: devuelve textura SSR (cubemap/procedural)
-  rt_hit_ssr_screen_hit: mix(rt_rgb, ssr.rgb, w) con w mínimo 0.55
-  mirror_pixels: no llegan a compose (SSR passthrough previo)
-
-limits:
-  static_instances: 512
-  skinned_instances: 32  # Ultra TLAS
+geometry:
+  static: |
+    Lotes estáticos visibles con ≥ 3 índices: posiciones bind-pose en CPU + transform de entidad
+    (mismo blob alimenta BVH y TLAS; se reutiliza solo si el hash de la escena no cambió).
+  skinned: |
+    Las entidades animadas entran al BVH con triángulos deformados en CPU usando el mismo palette
+    que `skinned.vert`, cacheados y refrescados cada 4 frames (tope 24 000 triángulos). En el
+    camino de hardware el TLAS sigue armando BLAS solo con lotes estáticos: hace falta refit por
+    frame (o un scratch deformado en GPU) y el `RtBatch` indexa el BLAS por malla, no por instancia
+    poseída.
 
 ipc:
   commands:
     - set_reflection_raytracing: { enabled: bool }
   events:
     - reflection_raytracing_changed: { enabled: bool }
-    - reflection_tier_effective: { requested, effective, rt_available }
   save_fields:
     - reflectionRaytracing (world)
 
-profiler:
-  fields: [rt_ms, denoise_ms]
-  event: reflection_profiler
-
-degrade:
-  condition: tier High/Ultra sin EXPERIMENTAL_RAY_QUERY
-  behavior: preset efectivo Medium + log español + reflection_tier_effective
-
 debug:
-  tip_log: vista ssr_miss_green o reflejo detrás de cámara
-  views: hereda debug SSR (ssr_miss_green útil para validar híbrido)
+  tip_log: |
+    Para separar un problema del trazado/SSR de uno del IBL de sondas, usar
+    `set_reflection_debug_view` con la vista de debug: presenta `targets.ssr` en crudo, sin
+    composite ni TAA (ver Reflections_SSR.yaml).

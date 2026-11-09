@@ -8,145 +8,120 @@
 #   - docs/Reflections_Probes.yaml (fallback cubemap en miss SSR)
 #   - docs/TAA_3D.yaml (G-buffer, depth prepass)
 
-version: 2
-updated: 2026-06-29
+version: 3
+updated: 2026-11-08
 status: implemented
 
 principle:
   owner: motor_3d
   role: |
-    Capa B del pipeline de reflejos: traza rayos en pantalla usando depth prepass (GL NDC z)
-    y G-buffer (world_pos, normal, roughness, metallic). En miss SSR samplea cubemap probe.
+    Capa B del pipeline de reflejos en Ash: marcha en pantalla sobre el G-buffer del forward
+    (depth D32 en layout READ_ONLY, normal+roughness, world pos) + la escena ya iluminada como
+    color del hit. En miss, composite decide SSR o el trazado (RT/BVH) según confianza.
   tier_philosophy: |
-    Tier = calidad de reflejos (resolución, pasos, distancia, temporal).
-    RT OFF → SSR + temporal + composite funcionan según el tier.
-    RT ON → SSR sigue activo; RT aporta información adicional (ver Reflections_RT.yaml).
+    En el renderizador Ash el tier SOLO enciende/apaga la cadena: `reflections = tier != Off`.
+    Los pasos de la marcha, la resolución del buffer y el blend temporal por tier eran de la era
+    wgpu (`reflections/quality_preset.rs`) y no se portaron: hoy la marcha es fija
+    (pasos i = 2..16 a radio 1× viewport) y el denoise usa radio de 1 texel.
   opt_in: |
-    Solo superficies con SurfacePbr explícito y roughness ≤ max_roughness_to_trace (0.70 Low–High, 0.85 Ultra).
+    Superficies con roughness dentro de la banda del shader: `ssr.frag` descarta
+    roughness > 0.45 y roughness ≤ 0.04; `composite.frag` fuerza SSR puro en
+    roughness ≤ 0.04; el trazado (`reflect.rgen`, `trace.comp`) descarta roughness > 0.65.
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine_3d/src/reflections/ssr_pipeline/
-    - src/main/Engine/engine_3d/src/reflections/settings.rs
-    - src/main/Engine/engine_3d/src/reflections/quality_preset.rs
+    - src/main/Engine/engine_3d/src/vulkan/frame.rs   # ssr/denoise/composite passes y sus descriptors
+    - src/main/Engine/engine_3d/src/config_3d/reflection_settings.rs
+    - src/main/Engine/engine_3d/src/config_3d/reflection_graphics.rs
   shaders:
-    - src/main/Engine/engine_3d/src/reflections/ssr_pipeline/ssr.wgsl
-    - src/main/Engine/engine_3d/src/reflections/ssr_pipeline/ssr_raymarch.wgsl
-    - src/main/Engine/engine_3d/src/reflections/reflection_math.wgsl
+    - src/main/Engine/engine_3d/shaders/raster/ssr.frag
+    - src/main/Engine/engine_3d/shaders/raster/denoise.frag
+    - src/main/Engine/engine_3d/shaders/raster/composite.frag
 
 resolution_by_tier:
-  description: Fracción lineal del viewport (`screen_fraction` / `ssr_resolution_scale`)
+  description: |
+    Sin escala por tier en Ash: SSR, denoise y composite trabajan a resolución de viewport
+    (`targets.extent`). El `screen_fraction` por tier de la era wgpu no se portó.
   table:
     - tier: off
-      fraction: 1.0
       ssr_active: false
     - tier: low
-      fraction: 0.25
+      ssr_active: true
     - tier: medium
-      fraction: 0.50
+      ssr_active: true
     - tier: high
-      fraction: 0.75
+      ssr_active: true
     - tier: ultra
-      fraction: 1.00
+      ssr_active: true
 
-trace_parameters_by_tier:
-  description: Valores en ReflectionSettings::from_tier (no persistidos en .save)
-  table:
-    - tier: low
-      max_steps: 16
-      binary_steps: 3
-      max_distance_m: 25
-      temporal_blend: 0.18
-      thickness_m: 0.25
-    - tier: medium
-      max_steps: 32
-      binary_steps: 5
-      max_distance_m: 50
-      temporal_blend: 0.22
-      thickness_m: 0.25
-    - tier: high
-      max_steps: 64
-      binary_steps: 5
-      max_distance_m: 100
-      temporal_blend: 0.42
-      thickness_m: 0.30
-    - tier: ultra
-      max_steps: 128
-      binary_steps: 7
-      max_distance_m: 100
-      temporal_blend: 0.45
-      thickness_m: 0.30
-
-pipeline:
-  order_in_frame: |
-    1. Main pass + G-buffer export
-    2. (Opcional) probe capture
-    3. lit-composite
-    4. SsrPipeline::run → textura reflection + hit_uv
-    5. Temporal pass (acumulación entre frames)
-    6. (Opcional) RT pass si raytracing_enabled
-    7. (Opcional) Denoise si RT ON y perfil definido
-    8. composite_into lit-composite
-  buffers:
-  reflection_texture: Rgba8Unorm a screen_fraction × viewport
-  reflection_hit_uv: Rg16Float UV de muestreo en hits
+order_in_frame: |
+  1. Forward MRT (scene / normal_rough / albedo / world / velocity) + sombra.
+  2. Si `reflections && raytracing`: trazado de reflejos (RT por hardware o BVH) a
+     `targets.reflection`, con barreras normal/depth → trazado y trazado → denoise.
+  3. `ssr.frag` → `targets.ssr` (si no hay trazado, `reflection` se limpia a 0 para que
+     composite caiga en SSR).
+  4. `denoise.frag` → `targets.denoise` (kernel 3×3 ponderado por profundidad y normal).
+  5. `composite.frag` mezcla scene + reflejo (peso `(1 - roughness) × confianza`) → `history[slot]`.
+  6. TAA de escena (opcional) y present.
 
 g_buffer_inputs:
-  t_depth: depth_export (R32Float, GL NDC z) — marcha 1/z
-  t_normal_roughness: velocity_view (.zw normal octahedral)
-  t_surface: shadow_mask (.g roughness)
-  t_direct: direct (.a metallic)
-  t_base_color: albedo export
-  t_world_pos: world position por píxel
-  t_lit_scene: escena tras lit-composite (color en hit SSR)
+  depth_tex: depth D32_SFLOAT muestreada como adjunto de profundidad en READ_ONLY (Vulkan 0..1)
+  normal_tex: normal_rough RGBA8 (.xyz = normal * 0.5 + 0.5, .w = roughness)
+  color_tex: scene (la escena ya iluminada; es el color que devuelve el hit SSR)
+  world: R16G16B16A16_SFLOAT (world pos + .w = metallic), reservado para el trazado
 
-key_functions_wgsl:
-  ssr_evaluate_trace: marcha principal (ssr_raymarch.wgsl)
-  ssr_view_dir_world: dirección superficie→cámara
-  ssr_reflection_world: reflect(-V, N) en world
-  ssr_specular_amount: máscara Fresnel + rugosidad para miss/fallback
-  refl_compose_rt_ssr: mezcla SSR+RT en rugosos; miss RT → SSR (reflection_math.wgsl)
+orientation_note: |
+  El viewport del motor usa altura negativa, así que un triángulo full-screen que muestree
+  `v_uv` escribe espejado en Y. `ssr.frag`, `denoise.frag` y `composite.frag` muestrean en
+  `vec2(v_uv.x, 1.0 - v_uv.y)` para ser copias neutras; el paso de marcha invierte también la
+  componente Y de la dirección. `present.frag` aplica el mismo muestreo. Antes de esto, activar
+  un tier de reflejos cambiaba el número de pases y terminaba invirtiendo la pantalla.
 
 rt_hybrid_when_enabled:
   mirror_surfaces: |
-    roughness ≤ 0.04 → RT pass no sombrea; buffer SSR sin cambios (ver Reflections_RT.yaml).
-  rough_surfaces: RT + refl_compose_rt_ssr; si SSR hit on-screen, ≥55% peso SSR en la mezcla.
+    roughness ≤ 0.04 → composite usa solo SSR (`composite.frag`); el shader de reflejos
+    descarta roughness > 0.65, así que en el rango 0.45–0.65 no hay ni SSR ni trazado.
+    Umbral sin unificar entre pases: pendiente de alineación post-migración.
+  rough_surfaces: composite elige RT/BVH si su alpha (confianza) > 0.01, si no SSR.
 
 known_issues:
   sphere_center_reflection:
-    status: open
+    status: re-verify-after-migration
     symptom: centro de esferas convexas puede reflejar solo en corona (anillo), no en el disco central
-    debug: ssr_hit_class (verde=hit, azul=miss marcha, rojo=self-reject)
-    note: independiente del bypass RT espejo; investigación pendiente post MatComp RT fix
+    note: |
+      Observado en la era wgpu con los modos de debug `ssr_hit_class` / `ssr_exit_reason`,
+      que no existen en el port Ash. Volver a medir con la vista `ssr_debug` actual.
 
 temporal:
-  owner: reflections/mod.rs
-  note: Blend base por tier; rechazo por depth/disoclusión en temporal.wgsl
+  status: |
+    No hay pase temporal propio de reflejos en Ash. La única acumulación temporal del frame es
+    el TAA de escena (`shaders/raster/taa.frag`), y sobre reflejos solo afecta a lo que ya
+    compuso `composite.frag`. El `refl_temporal` con rechazo por disoclusión de wgpu no se portó.
   independent_of_rt: true
 
 composite:
-  shader: composite.wgsl
-  behavior: Suma SSR/RT sobre lit-composite; peso por alpha del pass de reflejos
+  shader: shaders/raster/composite.frag
+  behavior: |
+    mix(scene, reflection, clamp((1 - roughness) × confianza, 0, 1)); confianza = alpha del
+    trazado si hit, del SSR si no. Escribe `history[slot]`, que es la fuente del present.
 
 debug_views:
   wire_prefix: ssr_
   views:
+    - id: final
+      note: composición normal (scene + SSR/RT)
     - id: ssr_debug
       aliases: [ssr, debug, ssr_hits, hits]
-      stats_log: true
-    - id: ssr_miss_green
-    - id: ssr_exit_reason
-    - id: ssr_vector_rgb
-    - id: ssr_hit_class
-    - id: ssr_path_px
-    - id: ssr_march_refl_dir
-    - id: ssr_hit_uv
-    - id: ssr_hit_sample_color
-    - id: ssr_proj_depth_delta
+      behavior: |
+        Presenta `targets.ssr` en crudo (salta composite y TAA). Cableado en Ash por
+        `set_reflection_debug_view` → `FrameInput.debug_ssr_view` en `resolve_present`.
+        Sirve para separar un eco del marchado SSR de un error del IBL de sondas.
+  not_ported: [ssr_miss_green, ssr_exit_reason, ssr_vector_rgb, ssr_hit_class, ssr_path_px, ssr_march_refl_dir, ssr_hit_uv, ssr_hit_sample_color, ssr_proj_depth_delta]
 
 profiler:
-  field: ssr_ms
-  event: reflection_profiler (payload parcial)
+  status: |
+    El readback de estadísticas SSR (`ssr_trace_readback.rs`, `stats_readback.rs`) y el evento
+    `reflection_profiler` no se portaron a Ash; no hay `ssr_ms` en el motor actual.
 
 ipc:
   tier: set_reflection_tier

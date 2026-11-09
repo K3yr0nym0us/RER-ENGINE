@@ -1,47 +1,52 @@
 # Sombras 3D por nivel (resolución del shadow map)
 #
-# El motor usa un único shadow map 2D (depth compare, sin cascadas CSM).
-# El nivel de calidad controla la resolución del shadow map.
-# CSM (cascaded shadow maps) y distancia extendida de Ultra están en CHECKLIST-3D.md
-# como tarea pendiente.
+# El motor usa un único shadow map 2D ortográfico (depth compare, sin cascadas CSM), vive en
+# `engine_3d/src/vulkan/frame.rs` (Ash) y el nivel de calidad controla su resolución REAL.
+# CSM y la distancia extendida de Ultra quedan como tarea pendiente.
 #
 # Relacionado con:
 #   - docs/TAA_3D.yaml
 #   - docs/Reflections_3D.yaml
 #   - docs/IPC_Protocol.yaml
 
-version: 2
-updated: 2026-06-22
+version: 3
+updated: 2026-11-08
 
 principle:
   owner: motor_3d
   pipeline: |
-    1. Shadow map único 2D (depth compare, resolución variable por tier).
-    2. Sombreado en forward pass vía shadow sampler + scene uniforms.
-    3. TAA en máscara de sombra (shadow_history_blend = 30/32) → lit-composite.
-    4. Slider Shadow darkness se aplica solo en lit-composite (CPU),
-       no en light_params del forward pass.
+    1. Shadow pass único a `targets.shadow` (D32_SFLOAT) con el lado del tier; se reasigna
+       la imagen cuando cambia el tier (`Targets::recreate_shadow`).
+    2. Sombreado en el forward con sampler de comparación (`LESS_OR_EQUAL`) + PCF; el texel y
+       el radio salen del tamaño real del mapa (`State::active_shadow_map_size`).
+    3. El mapa pasa ATTACHMENT → READ_ONLY con registro explícito de layout
+       (`transition_depth`), igual que la profundidad del viewport.
   note: |
-    Sin CSM aún. Un solo shadow map ortográfico centrado en la escena.
-    El tier Ultra usa 8192 px, que da cobertura para escenas grandes pero
-    con menor densidad de píxeles de sombra lejos de la cámara.
+    Sin CSM: un solo mapa ortográfico centrado en los bounds del mundo, así Ultra gana densidad
+    pero no distancia.
+    El radio PCF escala con la raíz del tamaño del mapa (penumbra parecida en el mundo al subir
+    resolución) y, por encima de 2.5 texeles, el kernel pasa de 3×3 a 5×5 (Ultra).
+    `shadow_darkness` hoy llega como peso del IBL de sondas (`light_params.y`, 0 si no hay
+    probes activas); el PCF del forward no la usa como oscurecimiento.
   rt_shadows: |
-    RT shadows se activan automáticamente cuando ReflectionTier ≥ High,
-    independientemente del ShadowTier. Usan trace_rt_hw / bvh_trace desde
-    el hit point de la reflexión hacia la luz. Reemplazan PCF en reflejos.
-    No hay toggle manual; la activación va en rt_flags.w.
-    En ShadowTier::Off se deshabilita todo shadow sampling (light_color.w=0).
+    No hay sombras por ray tracing en el renderizador Ash: los shaders de trazado
+    (`shaders/rt/primary.rchit`, `shaders/bvh/trace.comp`) iluminan con N·L y un ambiente,
+    sin disparar un rayo a la luz. El mecanismo `rt_flags.w` de la era wgpu se retiró con
+    `src/reflections/`.
+    En ShadowTier::Off no se ejecuta el shadow pass y `light_color.w = 0` hace que el shader
+    salte el sampling.
 
 graphics_tiers:
   - id: off
     aliases: [desactivado, none]
     resolution: 1
-    note: 1×1 dummy shadow map. No se ejecuta shadow pass.
-      light_color.w=0 propaga a todos los shaders para saltar sampling.
+    note: |
+      No se ejecuta el shadow pass y el forward salta el sampling (light_color.w = 0).
+      El mapa se queda en el tamaño base para no dividir por 1 al construir la matriz de luz.
   - id: low
     aliases: [bajo]
     resolution: 1024
-    note: Resolución base del motor (SHADOW_MAP_SIZE = 1024)
+    note: Resolución base del motor (SHADOW_MAP_SIZE = 1024), coincide con el camino sin reasignar
   - id: medium
     aliases: [medio]
     resolution: 2048
@@ -51,15 +56,16 @@ graphics_tiers:
   - id: ultra
     aliases: [ultra]
     resolution: 8192
+    note: recortado a `max_image_dimension2_d`; si la asignación falla se prueba con la mitad
 
 commands:
   set_shadow_tier:
     params: { tier: off | low | medium | high | ultra }
     effect: |
-      Cambia la resolución del shadow map (o desactiva con Off).
-      Recrea la textura y todos los bind groups que la referencian
-      (scene + HUD + probe_env cubemap).
-      En Off se salta el shadow pass completo.
+      Cambia la resolución real del shadow map (o salta el pase con Off). `FrameRenderer`
+      detecta el cambio en `record()`, reasigna solo esa imagen y reescribe los descriptors
+      que la referencian en todos los slots en vuelo; el log muestra
+      "[sombras] shadow map reasignado a NxN px".
 
 events:
   shadow_tier_changed:

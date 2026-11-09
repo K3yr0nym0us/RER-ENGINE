@@ -1,10 +1,115 @@
-# Auditoría de diseño — reflejos 3D (post RTIOW v2)
+# Auditoría de diseño — reflejos 3D
 #
-# Resultado de aplicar el plan de diagnóstico estático + fixes mínimos en código.
-# Validación visual manual pendiente en editor (RefTest R0 centrado).
+# FASE wgpu (2026-06): entradas `post_*`, `audit_matrix`, `bugs_fixed` y `limitations_v1_accepted`
+# describen el motor anterior y sus shaders `.wgsl`/`src/reflections/`, que ya no existen
+# (retirados con la migración a Ash). Se conservan como historial; los paths citados no son válidos
+# para el código actual.
+#
+# FASE Ash (2026-11): ver `ash_validation_audit`. Validación visual manual sigue pendiente.
 
-version: 3
-updated: 2026-06-29
+version: 4
+updated: 2026-11-08
+
+ash_validation_audit:
+  method: |
+    Capa de validación de Vulkan activada por defecto en builds de debug
+    (`RER_VK_VALIDATION=0` la apaga) con messenger `VK_EXT_debug_utils` que reenvía cada error al
+    log del motor como `[vulkan-validación] ...`. Los fallos se confirmaron con el log del editor,
+    no por deducción.
+  fixed:
+    - id: black-squares-in-sky
+      symptom: |
+        Cuadros negros parpadeantes en la franja del cielo; independientes del tier de sombras y de
+        los reflejos, cambiaban al mover sliders de luz.
+      finding: |
+        El `FrameRenderer` guardaba el layout de la profundidad en un booleano ("ya fue
+        muestreada"). El trazado de fondo enlazaba la depth como READ_ONLY mientras la imagen estaba
+        en ATTACHMENT (primer frame y tras cada recreate). Un descriptor con un layout que la imagen
+        no tiene = contenido indefinido en GPU; como la depth decide qué píxel es cielo, los bloques
+        salían arriba.
+      fix: |
+        Registro explícito de layouts (`depth_layout` / `shadow_layout`) con
+        `transition_depth()` como único punto que los cambia, verificado contra el validador.
+      files: [src/vulkan/frame.rs]
+    - id: frames-discarded-on-reflections
+      symptom: |
+        Con reflejos/RT activos el viewport mostraba basura o el frame anterior congelado.
+      finding: |
+        `VkDescriptorSet ... was destroyed or updated without UPDATE_AFTER_BIND`: se reescribía un
+        descriptor set ya enlazado por el command buffer (dos veces por frame el de trazado: fondo
+        y reflejos), y Vulkan invalida TODO el command buffer; desde ahí se ignora cada comando.
+      fix: |
+        Un set por uso y por slot (`rt[slot][0|1]`, `bvh[slot][0|1]`) y sets por slot también para
+        albedo/probe/hud/ssr/denoise/composite/present.
+      files: [src/vulkan/frame.rs]
+    - id: illegal-commands-inside-render-pass
+      symptom: rectángulos basura en overlays del editor (cajas de gizmo/HUD)
+      finding: |
+        `vkCmdUpdateBuffer` y `vkCmdPipelineBarrier` dentro de una instancia de dynamic render pass
+        (el bucle de gizmos sobre el swapchain) son ilegales; el UBO no se actualizaba de forma
+        fiable.
+      fix: |
+        Una pasada por lote con `loadOp = LOAD`; las actualizaciones de buffer van fuera de la
+        instancia.
+      files: [src/vulkan/frame.rs]
+    - id: screen-flipped-by-reflection-tier
+      symptom: activar un tier de reflejos invertía la pantalla entera verticalmente
+      finding: |
+        El viewport usa altura negativa (para que valgan las matrices NDC estilo wgpu del HUD y la
+        proyección del port), así que CADA triángulo full-screen escribe espejado en Y: la
+        orientación final dependía de cuántos pases hubiera en la cadena (paridad).
+      fix: |
+        Todos los pases fullscreen son copias neutras: muestrean `vec2(v_uv.x, 1.0 - v_uv.y)` y en
+        TAA/SSR se invierte además la componente Y de la velocidad/dirección de marcha.
+      files:
+        - shaders/raster/present.frag
+        - shaders/raster/ssr.frag
+        - shaders/raster/denoise.frag
+        - shaders/raster/composite.frag
+        - shaders/raster/taa.frag
+    - id: copy-image-sample-count-mismatch
+      symptom: con MSAA, la mitad inferior del viewport se rompía y se veía ruido
+      finding: |
+        `vkCmdCopyImage` exige el mismo `sampleCount` en origen y destino
+        (VUID-vkCmdCopyImage-srcImage-00136); el fondo 1× no puede copiarse al adjunto 2×/4×.
+      fix: |
+        El fondo se dibuja con un quad full-screen dentro del pase MSAA (`shaders/raster/sky.frag`),
+        sin prueba ni escritura de profundidad, escribiendo las 5 salidas del G-buffer.
+      files: [shaders/raster/sky.frag, src/vulkan/frame.rs]
+    - id: duplicated-probe-reflections
+      symptom: reflejos "repetidos"/recursivos en superficies con sonda
+      finding: |
+        El `texture_cube_array` de sondas y su `samplerCubeArray` en el forward requieren la feature
+        `imageCubeArray`; sin ella la creación de la vista y el muestreo son indefinidos.
+      fix: [image_cube_array habilitada al crear el device]
+      files: [src/vulkan/gpu.rs, shaders/raster/forward.frag]
+    - id: depth-only-pass-writes-unused-outputs
+      symptom: advertencias del validador en cada draw del segundo pase de profundidad
+      finding: reutilizaba `forward.frag`, que escribe 5 salidas en un pase sin adjuntos de color
+      fix: |
+        `shaders/raster/depth_only.frag` sin salidas, conservando solo el `discard` del alfa
+        cortada (necesario para que la profundidad coincida con la imagen resuelta).
+      files: [shaders/raster/depth_only.frag]
+    - id: probes-never-detected
+      symptom: |
+        Ninguna sonda se capturaba ni iluminaba nada; el termino IBL del forward era código muerto
+        y los reflejos duplicados que se veían venían del muestreo indefinido anterior.
+      finding: |
+        `probe_registry` buscaba `entity_category == "reflection_probe"` pero el spawn guarda
+        `"object"` + el marcador `[ReflectionProbe]` en `path`.
+      fix: detección por marcador de plantilla (o categoría), y ranura por sonda en el cubemap array
+      files: [src/probe_registry.rs, src/vulkan/frame.rs]
+  still_warned_benign:
+    - |
+      "Vertex attribute at location 1/2/7/8 not consumed by vertex shader": los pipelines de HUD y
+      gizmo reutilizan `static_vertex()` (9 atributos). Inofensivo.
+  pending_repro:
+    - |
+      Eco/duplicado en reflejos SSR: separar con la vista de debug `ssr_debug` (presenta `targets.ssr`
+      en crudo). Si el eco aparece ahí, es del marchado en espacio de pantalla; si no, de la capa A.
+    - |
+      Umbrales de roughness sin unificar entre pases (ssr 0.45/0.04, reflect.rgen 0.65,
+      composite 0.04): deja bandas sin SSR ni trazado en 0.45–0.65.
 
 reference:
   rtiow: https://raytracing.github.io/books/RayTracingInOneWeekend.html
@@ -16,6 +121,7 @@ reference:
 
 post_quality_preset:
   status: pass_manual
+  era: wgpu
   date: 2026-06-29
   finding: |
     Ultra + RT ON: MatComp 5 esferas alineadas visualmente con RT ON.
@@ -24,6 +130,7 @@ post_quality_preset:
 
 post_mirror_rt_fix:
   status: pass_manual
+  era: wgpu
   date: 2026-06-29
   finding: |
     Esferas CHROME/GLASS/WATER con RT mostraban círculo cielo/probe; alfombra mismo material OK.
@@ -38,10 +145,11 @@ open_issues:
   sphere_center_reflection:
     status: open
     symptom: centro de esfera convexas a veces no refleja (corona sí) — SSR, no RT espejo
-    debug_view: ssr_hit_class
-    next: revisar marcha skip / self-reject / grazing en ssr.wgsl + ssr_raymarch.wgsl
+    debug_view: ssr_debug (los modos ssr_hit_class no se portaron a Ash)
+    next: revisar marcha skip / self-reject / grazing en shaders/raster/ssr.frag
 
 audit_matrix:
+  era: wgpu  # filas históricas: los paths `src/reflections/**` y `*.wgsl` ya no existen
   fase0_escena:
     status: pass_with_manual_step
     finding: |
@@ -106,6 +214,7 @@ audit_matrix:
     fix_applied:
       - log::info profiler en render.rs (ssr/temporal/rt/composite ms)
 
+# Histórico de la era wgpu: los ficheros citados se retiraron con la migración a Ash.
 bugs_fixed:
   - id: ssr-log-ambiguous
     summary: Log centro sin hit no distinguía cielo/mate/marcha
