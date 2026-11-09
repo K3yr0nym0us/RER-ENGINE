@@ -425,7 +425,10 @@ Mantener el binario standalone para debug, si se desea.
 
 ## Criterios de aceptación
 
-> Verificado: 1–6, 8 y 10. Pendiente: 7 (Fase 8) y 9 (modales con `yarn dev`).
+> Verificado: 1–6, 8 y 10. Criterio 9: `create_scene` probado end-to-end con `yarn dev`;
+> los 7 tipos usan el mismo `legacy_window_request` y el handler React los cubre.
+> DPI: mapeo cubierto por tests en `editor/render.rs` (100/125/150 %) y 125 % en runtime.
+> Pendiente: 7 (Fase 8) y el click-through del resto de modales.
 > El criterio 8 se implementa con `egui_is_using_pointer()` + `layer_id_at()`:
 > `response.consumed` a secas también es true sobre el viewport vacío.
 
