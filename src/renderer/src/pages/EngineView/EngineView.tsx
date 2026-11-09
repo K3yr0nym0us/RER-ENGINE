@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 import SidebarLeft from './components/SidebarLeft';
 import SidebarRight from './components/SidebarRight';
@@ -15,7 +15,7 @@ import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { PlaneToolProvider } from '../../context/PlaneToolContext';
 import { useAutoSave } from '@hooks';
 import { useEntityPropertiesModal } from './hooks/useEntityPropertiesModal';
-import { SceneManagerProvider } from './hooks/useSceneManager';
+import { SceneManagerProvider, useSceneManager } from './hooks/useSceneManager';
 import { SidebarAccordionProvider } from '../../context/SidebarAccordionContext';
 import { useAiAssistantOverlaySync } from '../../plugins/useAiAssistantOverlaySync';
 
@@ -62,6 +62,23 @@ export function EngineView({
   )
 }
 
+function LegacyWindowHost() {
+  const { openSceneScriptEditor, openVisualScriptingModal } = useSceneManager()
+
+  useEffect(() => {
+    return window.electronAPI.onLegacyWindowOpen(({ kind, payload }) => {
+      const sceneId = Number(payload?.scene_id ?? 0)
+      if (kind === 'scene_script') {
+        openSceneScriptEditor(sceneId || undefined)
+      } else if (kind === 'scene_visual_script') {
+        openVisualScriptingModal(sceneId || undefined)
+      }
+    })
+  }, [openSceneScriptEditor, openVisualScriptingModal])
+
+  return null
+}
+
 function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtractDir, onGameStyleChange, viewportRef }: {
   projectType: ProjectType
   gameStyle?: GameStyle
@@ -90,6 +107,7 @@ function EngineViewInner({ projectType, gameStyle, initialSavePath, initialExtra
       gameStyle={gameStyle}
       onSaveProject={handleSave}
     >
+      <LegacyWindowHost />
       <SidebarAccordionProvider>
         <div className="app-shell d-flex flex-column">
           <div className="d-flex flex-grow-1 overflow-hidden">

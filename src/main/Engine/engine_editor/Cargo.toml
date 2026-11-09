@@ -1,0 +1,36 @@
+[package]
+name = "rer-engine-editor"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rer_engine_editor"
+path = "src/main.rs"
+
+[dependencies]
+winit.workspace = true
+wgpu.workspace = true
+pollster.workspace = true
+log.workspace = true
+env_logger.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
+egui-winit.workspace = true
+egui-phosphor.workspace = true
+glam.workspace = true
+image.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+raw-window-handle.workspace = true
+rfd = "0.18"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows.workspace = true
+
+# En Linux winit necesita un backend de ventanas explícito.
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { workspace = true, features = ["x11", "wayland"] }

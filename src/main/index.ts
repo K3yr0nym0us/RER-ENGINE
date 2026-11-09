@@ -71,7 +71,6 @@ app.commandLine.appendSwitch('disable-software-rasterizer');
 // Variables de módulo
 // ---------------------------------------------------------------------------
 let mainWindow: BrowserWindow | null = null
-let engineProcess: ChildProcess | null = null
 let currentGameStyle: GameStyle | null = null
 /** Cuando `gameStyle` es null, decide 2D vs 3D hasta arrancar el motor. */
 let currentProjectType: ProjectType | null = null
@@ -103,13 +102,20 @@ let engineReceivedReady = false
 /** Evita reenviar `set_scene` 2D/3D si el motor emite más de un `ready`. */
 let engine2dStartupSceneSent = false
 let engine3dStartupSceneSent = false
-/** Tras un crash del motor en sesión, no relanzar en bucle con cada `viewport-bounds`. */
-let engineSessionCrashed = false
 
 /** Binario base del motor en la sesión actual (`rer_engine_2d` / `rer_engine_3d`). */
 let lastEngineBinary = 'rer_engine_2d'
 
-const ENGINE_GPU_LABEL = 'Vulkan'
+/** Proceso del editor Rust/egui (ventana independiente, convive con Electron). */
+let editorFrameProcess: ChildProcess | null = null
+/** Evita relanzar el editor si el usuario lo cerró durante la sesión. */
+let editorFrameLaunched = false
+/** Cierre controlado del editor: no notificar como crash. */
+let editorFrameStopping = false
+/** La ventana React está oculta y sigue viva como host de ventanas legacy. */
+let editorHostHidden = false
+/** Locale actual del renderer (se reenvía al editor si se lanza después). */
+let currentLocale: 'en' | 'es' = 'en'
 
 function gpuStartupErrorMessage(): string {
   return (
@@ -133,11 +139,6 @@ function isBenignEngineStderrLine(line: string): boolean {
 }
 
 /** Solo si el proceso murió sin haber enviado `ready` (no usar stderr: avisos del loader son ruido). */
-function notifyEngineGpuStartupError(): void {
-  if (engineReceivedReady) return
-  sendEventToRenderer({ event: 'error', message: gpuStartupErrorMessage() } as EngineEvent)
-}
-
 function sendEventToRenderer(event: EngineEvent): void {
   if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('engine:event', event)
@@ -173,6 +174,9 @@ function createMainWindow(): void {
       sandbox:          false,
       contextIsolation: true,
       nodeIntegration:  false,
+      // La ventana queda oculta tras arrancar el editor Rust; su renderer sigue
+      // vivo como host de las ventanas legacy (scripts/nodos).
+      backgroundThrottling: false,
     },
   })
 
@@ -234,6 +238,34 @@ function createMainWindow(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Ventana React oculta como host de ventanas legacy
+// ---------------------------------------------------------------------------
+/**
+ * Oculta la ventana React cuando el editor Rust ya está listo.
+ *
+ * No se destruye: su renderer sigue vivo para abrir el editor RHAI, el editor
+ * de nodos y las modales legacy que todavía no están migradas.
+ */
+function hideMainWindowForEditor(): void {
+  if (editorHostHidden) return
+  editorHostHidden = true
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.closeDevTools()
+  mainWindow.hide()
+  mainWindow.setSkipTaskbar(true)
+  console.log('[editor] ventana React oculta; Electron sigue como host de ventanas legacy')
+}
+
+/** Informa de un fallo del editor Rust y termina Electron (ya no hay UI editor). */
+function failEditorAndQuit(message: string): void {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.hide()
+  }
+  dialog.showErrorBox('RER-ENGINE', message)
+  app.quit()
+}
+
+// ---------------------------------------------------------------------------
 // Extraer HWND nativo de la ventana principal (Windows)
 // ---------------------------------------------------------------------------
 function getMainWindowHWND(): string {
@@ -262,188 +294,277 @@ interface ViewportBounds {
   rel_y?: number
 }
 
-function startEngine(embed?: ViewportBounds): void {
+function engineBinaryLabel(): string {
+  if (currentProjectType === '3D') return 'rer_engine_3d'
+  if (currentProjectType === '2D') return 'rer_engine_2d'
+  return 'rer_engine_shared'
+}
+
+/** Procesa un evento del motor (el editor Rust los reenvía desde su stdout). */
+function handleEngineEvent(event: EngineEvent): void {
+  if (event.event === 'ready') {
+    engineReceivedReady = true
+    sendEngineStartupScene({
+      getEngineBinary: () => lastEngineBinary,
+      getProjectType: () => currentProjectType,
+      getExtractDir: () => currentProjectExtractDir ?? '',
+      getGameStyle: () => currentGameStyle,
+      sendToEngine,
+      is2dStartupSceneSent: () => engine2dStartupSceneSent,
+      mark2dStartupSceneSent: () => { engine2dStartupSceneSent = true },
+      is3dStartupSceneSent: () => engine3dStartupSceneSent,
+      mark3dStartupSceneSent: () => { engine3dStartupSceneSent = true },
+    })
+  }
+  if (event.event === 'autosave_tick') {
+    if (currentProjectFilePath && mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('autosave:request', currentProjectFilePath)
+    }
+  }
+  // Tras ready: omitir errores GPU genéricos; dejar pasar errores de runtime (quick_build).
+  if (event.event === 'error' && engineReceivedReady) {
+    const msg = String((event as { message?: string }).message ?? '')
+    if (!msg.includes('[quick_build]')) {
+      return
+    }
+  }
+  if (
+    (event.event === 'collider_created' || event.event === 'execution_area_created')
+    && (event as { position?: unknown }).position != null
+  ) {
+    focusMainEditorWindow()
+  }
+  sendEventToRenderer(event)
+}
+
+/** Mensajes propios del editor Rust (no son eventos del motor). */
+function handleEditorMessage(message: Record<string, unknown>): boolean {
+  switch (message.type) {
+    case 'editor_ready': {
+      hideMainWindowForEditor();
+      return true
+    }
+    case 'legacy_window_request': {
+      const kind = typeof message.kind === 'string' ? message.kind : ''
+      if (!kind) return true
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('legacy-window:open', {
+          kind,
+          payload: message.payload ?? {},
+        })
+      } else {
+        console.warn('[legacy] no hay host React disponible para abrir', kind)
+      }
+      return true
+    }
+    case 'project_state_request': {
+      const id = Number(message.id ?? 0)
+      mainWindow?.webContents.send('project-state:request', id)
+      return true
+    }
+    case 'project_saved': {
+      const filePath = typeof message.path === 'string' ? message.path : ''
+      mainWindow?.webContents.send('project-state:saved', filePath)
+      return true
+    }
+    case 'project_save_failed': {
+      const text = typeof message.message === 'string' ? message.message : ''
+      mainWindow?.webContents.send('project-state:save-failed', text)
+      return true
+    }
+    default:
+      return false
+  }
+}
+
+function handleEngineLine(line: string): void {
+  const trimmed = line.trim()
+  if (!trimmed) return
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>
+    if (typeof parsed.type === 'string' && handleEditorMessage(parsed)) {
+      return
+    }
+    const event = parsed as unknown as EngineEvent
+    if (!('event' in event)) {
+      console.log('[editor stdout]', trimmed)
+      return
+    }
+    handleEngineEvent(event)
+  } catch {
+    console.log('[editor stdout]', trimmed)
+  }
+}
+
+/**
+ * Inicia una sesión de motor. El proceso del motor lo lanza y controla el
+ * editor Rust; Electron solo sigue recibiendo eventos para la UI React antigua.
+ */
+function startEngineSession(embed?: ViewportBounds): void {
   engineReceivedReady = false
   engine2dStartupSceneSent = false
   engine3dStartupSceneSent = false
+  lastEngineBinary = engineBinaryLabel()
+  startEditorFrame(embed)
+}
 
-  // Seleccionar binario según el tipo de proyecto (2D / 3D)
-  let baseBinaryName = 'rer_engine_shared'
-  if (currentProjectType === '3D') {
-    baseBinaryName = 'rer_engine_3d'
-  } else if (currentProjectType === '2D') {
-    baseBinaryName = 'rer_engine_2d'
-  }
+// ---------------------------------------------------------------------------
+// Ventana del editor Rust/egui (independiente de Electron)
+// ---------------------------------------------------------------------------
+function editorFrameBinaryName(): string {
+  return process.platform === 'win32' ? 'rer_engine_editor.exe' : 'rer_engine_editor'
+}
 
-  lastEngineBinary = baseBinaryName
+/**
+ * Lanza la ventana egui junto al editor actual.
+ *
+ * Es un proceso hijo de Electron para poder cerrarlo con la app, pero su
+ * ventana es totalmente independiente: no se acopla, no se reposiciona y no
+ * usa HWND padre.
+ */
+function startEditorFrame(embed?: ViewportBounds): void {
+  if (editorFrameLaunched) return
+  editorFrameLaunched = true
 
-  const binaryName = `${baseBinaryName}.exe`
-  const engineProfile = (process.env.RER_ENGINE_PROFILE || 'debug').trim()
-  const enginePath = app.isPackaged
+  const profile = (process.env.RER_ENGINE_PROFILE || 'debug').trim()
+  const binaryName = editorFrameBinaryName()
+  const editorPath = app.isPackaged
     ? path.join(process.resourcesPath, 'engine', binaryName)
-    : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', engineProfile, binaryName)
+    : path.join(app.getAppPath(), 'src', 'main', 'Engine', 'target', profile, binaryName)
 
-  // Modo overlay: ventana nativa separada alineada al hueco del editor.
-  let engineArgs: string[] = []
-  if (embed) {
-    const x      = Math.round(embed.x)
-    const y      = Math.round(embed.y)
-    const width  = Math.max(1, Math.round(embed.width))
+  const args = ['--project-type', currentProjectType === '2D' ? '2D' : '3D']
+  if (currentGameStyle) args.push('--game-style', currentGameStyle)
+  if (currentProjectFilePath) args.push('--save-path', currentProjectFilePath)
+  const extractDir = currentProjectExtractDir ?? currentProjectSessionDir
+  if (extractDir) args.push('--extract-dir', extractDir)
+  args.push('--locale', currentLocale)
+
+  // El editor lanza el motor. En Windows le pasamos el HWND y la geometría
+  // inicial para que el overlay se alinee al viewport de Electron.
+  if (embed && process.platform === 'win32') {
+    const x = Math.round(embed.x)
+    const y = Math.round(embed.y)
+    const width = Math.max(1, Math.round(embed.width))
     const height = Math.max(1, Math.round(embed.height))
-    const relX   = Math.max(0, Math.round(embed.rel_x ?? 0))
-    const relY   = Math.max(0, Math.round(embed.rel_y ?? 0))
-    const hwnd = getMainWindowHWND()
-    engineArgs = ['--overlay', hwnd, String(x), String(y), String(width), String(height), String(relX), String(relY)]
-    console.log(`[engine] modo overlay Windows — hwnd=${hwnd} pos=(${x},${y}) size=${width}x${height} offset=(${relX},${relY})`)
+    const relX = Math.max(0, Math.round(embed.rel_x ?? 0))
+    const relY = Math.max(0, Math.round(embed.rel_y ?? 0))
+    args.push(
+      '--parent-hwnd', getMainWindowHWND(),
+      '--engine-x', String(x),
+      '--engine-y', String(y),
+      '--engine-width', String(width),
+      '--engine-height', String(height),
+      '--engine-rel-x', String(relX),
+      '--engine-rel-y', String(relY),
+    )
   }
 
-  console.log(`[engine] binario=${baseBinaryName} perfil=${engineProfile} GPU esperada=${ENGINE_GPU_LABEL}`)
-
-  const engineEnv: NodeJS.ProcessEnv = { ...process.env }
-  delete engineEnv.RER_GPU_BACKEND
-
-  if (currentProjectFilePath) {
-    engineEnv.RER_PROJECT_SAVE_PATH = currentProjectFilePath
-  } else {
-    delete engineEnv.RER_PROJECT_SAVE_PATH
-  }
-
-  // 3D: escena vacía solo al abrir un `.save` existente (no confundir con sesión de proyecto nuevo).
-  if (baseBinaryName === 'rer_engine_3d') {
-    if (currentProjectFilePath) {
-      engineEnv.RER_3D_START_FROM_SAVE = '1'
-    } else {
-      delete engineEnv.RER_3D_START_FROM_SAVE
-    }
-  }
-
-  const engineExtractDir = currentProjectExtractDir ?? currentProjectSessionDir
-  if (engineExtractDir) {
-    engineEnv.RER_PROJECT_EXTRACT_DIR = engineExtractDir
-  } else {
-    delete engineEnv.RER_PROJECT_EXTRACT_DIR
-  }
-
-  engineProcess = spawn(enginePath, engineArgs, {
+  editorFrameProcess = spawn(editorPath, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: engineEnv,
+    env: { ...process.env },
   })
 
-  // stdout → eventos para el renderer
-  engineProcess.stdout?.on('data', (data: Buffer) => {
+  console.log(`[editor] ventana egui: ${editorPath}`)
+  console.log(`[editor] args: ${args.join(' ')}`)
+
+  // stdout: eventos del motor reenviados por el editor + mensajes del editor.
+  editorFrameProcess.stdout?.on('data', (data: Buffer) => {
     const lines = data.toString('utf8').split('\n').filter(Boolean)
     for (const line of lines) {
-      try {
-        const event = JSON.parse(line) as EngineEvent
-        if (event.event === 'ready') {
-          engineReceivedReady = true
-          sendEngineStartupScene({
-            getEngineBinary: () => lastEngineBinary,
-            getProjectType: () => currentProjectType,
-            getExtractDir: () => currentProjectExtractDir ?? '',
-            getGameStyle: () => currentGameStyle,
-            sendToEngine,
-            is2dStartupSceneSent: () => engine2dStartupSceneSent,
-            mark2dStartupSceneSent: () => { engine2dStartupSceneSent = true },
-            is3dStartupSceneSent: () => engine3dStartupSceneSent,
-            mark3dStartupSceneSent: () => { engine3dStartupSceneSent = true },
-          })
-        }
-        if (event.event === 'autosave_tick') {
-          if (currentProjectFilePath && mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('autosave:request', currentProjectFilePath)
-          }
-        }
-        // Tras ready: omitir errores GPU genéricos; dejar pasar errores de runtime (quick_build).
-        if (event.event === 'error' && engineReceivedReady) {
-          const msg = String((event as { message?: string }).message ?? '')
-          if (!msg.includes('[quick_build]')) {
-            continue
-          }
-        }
-        if (
-          (event.event === 'collider_created' || event.event === 'execution_area_created')
-          && (event as { position?: unknown }).position != null
-        ) {
-          focusMainEditorWindow()
-        }
-        sendEventToRenderer(event)
-      } catch {
-        console.log('[engine stdout]', line)
-      }
+      handleEngineLine(line)
     }
   })
 
-  // stderr: solo diagnóstico; no dispara error en UI. Omitir ruido benigno del loader Vulkan.
-  engineProcess.stderr?.on('data', (data: Buffer) => {
+  editorFrameProcess.stderr?.on('data', (data: Buffer) => {
     const lines = data.toString('utf8').split('\n').filter(Boolean)
     for (const line of lines) {
-      // Eventos silenciosos del motor (IPC que no debe mostrarse en terminal)
-      if (line.startsWith('[IPC_EVENT]')) {
-        try {
-          const event = JSON.parse(line.slice('[IPC_EVENT]'.length)) as EngineEvent
-          sendEventToRenderer(event)
-        } catch {
-          console.error('[engine stderr]', line)
-        }
-        continue
-      }
       if (isBenignEngineStderrLine(line)) continue
-      if (/\[rer_engine_(2d|3d)::/.test(line) || /\[SKIN_(XFORM|LOAD|MESH_AUDIT|DUAL|JOINT)\]|\[RIGID_(BIND|GRAPH|NEAREST|WORLD)/.test(line)) {
-        console.log(line.trim())
-      } else {
-        console.error('[engine stderr]', line)
-      }
+      console.log('[editor]', line)
     }
   })
 
-  engineProcess.on('close', (code) => {
-    console.log(`[engine] proceso terminado con código ${code}`)
-    if (code !== 0 && code !== null && !engineReceivedReady) {
-      notifyEngineGpuStartupError()
+  editorFrameProcess.on('close', (code) => {
+    console.log(`[editor] proceso terminado con código ${code}`)
+    editorFrameProcess = null
+
+    if (editorFrameStopping) {
+      editorFrameStopping = false
+      return
     }
-    if (code !== 0 && code !== null && engineReceivedReady) {
-      engineSessionCrashed = true
-      const motorLabel = lastEngineBinary === 'rer_engine_3d' ? '3D' : '2D'
-      sendEventToRenderer({
-        event: 'error',
-        message: `El motor ${motorLabel} se detuvo inesperadamente (código ${code}). Reinicia la aplicación.`,
-      } as EngineEvent)
+
+    if (code === 0) {
+      sendEventToRenderer({ event: 'stopped', code } as EngineEvent)
+      app.quit()
+      return
     }
-    sendEventToRenderer({ event: 'stopped', code } as EngineEvent)
-    engineProcess = null
+
+    // El editor Rust falló: no hay ventana de editor que devolver; informar y salir.
+    const motorLabel = lastEngineBinary === 'rer_engine_3d' ? '3D' : '2D'
+    const message = !engineReceivedReady
+      ? gpuStartupErrorMessage()
+      : `El motor ${motorLabel} se detuvo inesperadamente (código ${code}).`
+    failEditorAndQuit(message)
   })
 
-  engineProcess.on('error', (err) => {
-    console.error('[engine] no se pudo iniciar:', err.message)
-    sendEventToRenderer({
-      event: 'error',
-      message: `No se pudo iniciar el motor: ${err.message}`,
-    } as EngineEvent)
+  editorFrameProcess.on('error', (err) => {
+    console.error('[editor] no se pudo iniciar:', err.message)
+    editorFrameProcess = null
+    editorFrameLaunched = false
+    failEditorAndQuit(`No se pudo iniciar el editor/motor: ${err.message}`)
   })
 }
 
+function stopEditorFrame(): void {
+  editorFrameLaunched = false
+  if (!editorFrameProcess) return
+
+  editorFrameStopping = true
+  const processToStop = editorFrameProcess
+  editorFrameProcess = null
+
+  // Cierre ordenado: el editor termina el motor en su Drop.
+  if (!processToStop.killed && processToStop.stdin && !processToStop.stdin.destroyed) {
+    processToStop.stdin.write('{"type":"exit"}\n')
+  }
+  setTimeout(() => {
+    if (!processToStop.killed && processToStop.exitCode === null) {
+      processToStop.kill()
+    }
+  }, 800)
+}
+
+/** Escribe un mensaje JSON al stdin del editor Rust. */
+function sendToEditor(message: unknown): boolean {
+  if (!editorFrameProcess?.stdin || editorFrameProcess.stdin.destroyed) {
+    return false
+  }
+  const data = JSON.stringify(message) + '\n'
+  editorFrameProcess.stdin.write(data, () => {})
+  return true
+}
+
 function sendToEngine(cmd: EngineCommand): void {
-  if (engineProcess?.stdin && !engineProcess.stdin.destroyed) {
-    const data = JSON.stringify(cmd) + '\n'
-    engineProcess.stdin.write(data, () => {})
-  } else if (cmd.cmd === 'set_locale') {
-    const next = String((cmd as Record<string, unknown>)['locale'] ?? 'en').toLowerCase() === 'es' ? 'es' : 'en'
-    updateAiAssistantOverlayConfig({ locale: next })
-    console.log(`[i18n] set_locale con motor inactivo (overlay actualizado): ${next}`)
+  if (cmd.cmd === 'set_locale') {
+    currentLocale = String((cmd as Record<string, unknown>)['locale'] ?? 'en').toLowerCase() === 'es' ? 'es' : 'en'
+  }
+
+  if (sendToEditor({ type: 'engine_command', command: cmd })) {
+    return
+  }
+  if (cmd.cmd === 'set_locale') {
+    updateAiAssistantOverlayConfig({ locale: currentLocale })
+    console.log(`[i18n] set_locale con motor inactivo (overlay actualizado): ${currentLocale}`)
   }
 }
 
 function stopEngine(): void {
-  if (engineProcess) {
-    sendToEngine({ cmd: 'shutdown' })
-    // Forzar kill tras 2 s si no cerró limpiamente
-    setTimeout(() => {
-      if (engineProcess && !engineProcess.killed) {
-        engineProcess.kill()
-      }
-    }, 2000)
-  }
+  // El editor es dueño del motor: al cerrarlo, su Drop termina el proceso.
+  sendToEngine({ cmd: 'shutdown' })
+  stopEditorFrame()
+  engineReceivedReady = false
+  engineStarted = false
+  engineViewportHidden = true
 }
 
 // ---------------------------------------------------------------------------
@@ -2171,6 +2292,16 @@ ipcMain.handle('get-project-extract-dir', (): string | null => {
   return currentProjectExtractDir
 })
 
+// El renderer responde al editor con el estado de proyecto para guardar en Rust.
+ipcMain.on('project-state:response', (_event, id: number, state: unknown) => {
+  sendToEditor({ type: 'project_state', id, state })
+})
+
+// El botón Guardar del renderer delega el empaquetado en el editor Rust.
+ipcMain.on('project-state:save-request', () => {
+  sendToEditor({ type: 'save_request' })
+})
+
 ipcMain.handle('read-project-manifest', (): ProjectSaveData | null => {
   if (!currentProjectExtractDir) return null
   return loadProjectFromExtractDir(currentProjectExtractDir)
@@ -2213,6 +2344,14 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
     currentProjectExtractDir = null
     currentProjectSessionDir = null
   }
+  // El editor Rust abre directamente el motor; ya no se renderiza el editor
+  // React ni se espera a `viewport-bounds`.
+  //
+  // Ocultamos el selector AHORA y lanzamos el proceso en el siguiente tick del
+  // event loop: así el usuario ve la ventana desaparecer de inmediato y el
+  // coste de arrancar Rust/GPU no bloquea el ocultado.
+  hideMainWindowForEditor()
+  setImmediate(() => startEngineSession())
 })
 
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
@@ -2259,12 +2398,8 @@ function getEngineViewportScreenOrigin(): { x: number; y: number } | null {
 ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   lastRelativeBounds = bounds
 
-  if (engineSessionCrashed) {
-    return
-  }
-
   // Si el proceso murió limpiamente, permitir relanzar
-  if (engineStarted && !engineProcess) {
+  if (engineStarted && !editorFrameProcess) {
     engineStarted = false
     engineViewportHidden = true
   }
@@ -2283,7 +2418,7 @@ ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
   // Primera vez (o relanzar tras muerte): arrancar oculto (1×1) hasta `restore-engine-viewport`
   engineStarted = true
   engineViewportHidden = true
-  startEngine(collapsedViewportBounds(effectiveBounds))
+  startEngineSession(collapsedViewportBounds(effectiveBounds))
 })
 
 // ---------------------------------------------------------------------------
@@ -2361,6 +2496,7 @@ app.on('before-quit', (event) => {
   if (llamaShutdownInProgress) return
   event.preventDefault()
   llamaShutdownInProgress = true
+  stopEditorFrame()
   void stopLlamaServer().finally(() => {
     app.exit(0)
   })

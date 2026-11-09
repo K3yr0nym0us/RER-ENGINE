@@ -1116,6 +1116,12 @@ declare global {
       openFontDialog:          () => Promise<string | null>
       onRequestViewportBounds: (cb: () => void) => void
       onAutoSaveRequest:       (cb: (filePath: string) => void) => void
+      onProjectStateRequest:   (cb: (id: number) => void) => () => void
+      respondProjectState:     (id: number, state: unknown) => void
+      requestProjectSave:      () => void
+      onProjectSaved:          (cb: (filePath: string) => void) => () => void
+      onProjectSaveFailed:     (cb: (message: string) => void) => () => void
+      onLegacyWindowOpen:      (cb: (request: { kind: string; payload?: Record<string, unknown> }) => void) => () => void
       getAppResourceUsage:     () => Promise<AppResourceUsage>
       hideEngineViewport:      () => void
       restoreEngineViewport:   (bounds?: ViewportBounds) => void

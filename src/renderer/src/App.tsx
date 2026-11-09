@@ -1,42 +1,41 @@
 import { useState } from 'react';
 
 import { TypeProjectSelector } from './pages/TypeProjectSelector/TypeProjectSelector';
-import { EngineView } from './pages/EngineView/EngineView';
+import { HeadlessEditorHost } from './pages/EngineView/HeadlessEditorHost';
 
 import type { ProjectType, GameStyle, OpenProjectResult, EngineStartPayload } from '@shared-types';
 import { DEFAULT_3D_CAMERA_MODE } from '@shared-types';
 
+interface ActiveProject {
+  projectType: ProjectType
+  gameStyle?: GameStyle
+  initialSavePath?: string | null
+  initialExtractDir?: string | null
+}
+
 // ── Componente principal ─────────────────────────────────────────────────────
+//
+// La ventana inicial solo elige proyecto. Al elegir, se monta un host headless
+// que mantiene el estado React para las ventanas legacy y Electron lanza el
+// editor/motor Rust. No se renderiza el editor React.
 
 export default function App() {
-  const [projectType,   setProjectType]   = useState<ProjectType   | null>(null)
-  const [gameStyle,     setGameStyle]     = useState<GameStyle     | null>(null)
-  const [initialSavePath, setInitialSavePath] = useState<string | null>(null)
-  const [initialExtractDir, setInitialExtractDir] = useState<string | null>(null)
+  const [project, setProject] = useState<ActiveProject | null>(null)
 
   const handleSelectProjectType = (nextType: ProjectType) => {
-    setProjectType(nextType)
-    setInitialSavePath(null)
-    setInitialExtractDir(null)
-    if (nextType === '2D') {
-      const defaultGameStyle: GameStyle = 'top-down'
-      setGameStyle(defaultGameStyle)
-      const payload: EngineStartPayload = {
-        projectType: nextType,
-        mode: false,
-        save_path: false,
-      }
-      window.electronAPI.setGameStyle(payload)
-    } else {
-      const defaultCameraMode = DEFAULT_3D_CAMERA_MODE
-      setGameStyle(defaultCameraMode)
-      const payload: EngineStartPayload = {
-        projectType: nextType,
-        mode: defaultCameraMode,
-        save_path: false,
-      }
-      window.electronAPI.setGameStyle(payload)
+    const gameStyle: GameStyle = nextType === '2D' ? 'top-down' : DEFAULT_3D_CAMERA_MODE
+    setProject({
+      projectType: nextType,
+      gameStyle,
+      initialSavePath: null,
+      initialExtractDir: null,
+    })
+    const payload: EngineStartPayload = {
+      projectType: nextType,
+      mode: nextType === '2D' ? false : gameStyle,
+      save_path: false,
     }
+    window.electronAPI.setGameStyle(payload)
   }
 
   const handleLoadProject = (result: OpenProjectResult) => {
@@ -44,10 +43,12 @@ export default function App() {
       console.error('[App] Abrir proyecto requiere extractDir del .save')
       return
     }
-    setInitialSavePath(result.filePath)
-    setInitialExtractDir(result.extractDir)
-    setProjectType(result.project.type)
-    setGameStyle(result.project.gameStyle)
+    setProject({
+      projectType: result.project.type,
+      gameStyle: result.project.gameStyle,
+      initialSavePath: result.filePath,
+      initialExtractDir: result.extractDir,
+    })
     const payload: EngineStartPayload = {
       projectType: result.project.type,
       mode: result.project.type === '2D' ? false : result.project.gameStyle,
@@ -57,7 +58,7 @@ export default function App() {
     window.electronAPI.setGameStyle(payload)
   }
 
-  if (!projectType) {
+  if (!project) {
     return (
       <TypeProjectSelector
         onSelect={handleSelectProjectType}
@@ -66,13 +67,5 @@ export default function App() {
     )
   }
 
-  return (
-    <EngineView
-      projectType={projectType}
-      gameStyle={gameStyle ?? undefined}
-      initialSavePath={initialSavePath}
-      initialExtractDir={initialExtractDir}
-      onGameStyleChange={setGameStyle}
-    />
-  )
+  return <HeadlessEditorHost {...project} />
 }

@@ -265,7 +265,9 @@ impl ApplicationHandler<EngineCommand> for App {
         }
 
         // Atributos base
-        let mut attrs = Window::default_attributes().with_title("RER-ENGINE — Viewport");
+        let mut attrs = Window::default_attributes()
+            .with_title("RER-ENGINE - Viewport")
+            .with_window_icon(rer_engine_shared::platform::app_window_icon());
 
         if let Some(overlay) = &self.overlay {
             // ── Modo overlay: ventana separada alineada al hueco del editor ───

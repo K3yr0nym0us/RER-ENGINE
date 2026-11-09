@@ -2,6 +2,7 @@
 members = [
 	"engine_2d",
 	"engine_3d",
+	"engine_editor",
 	"engine_shared",
 	"engine_ipc_common",
 ]
@@ -38,6 +39,12 @@ ttf-parser = "0.25"
 ab_glyph = "0.2"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 sysinfo = "0.39"
+# UI del editor. egui 0.35 es la línea compatible con wgpu 29 / winit 0.30.
+# Sin `default-features` en egui-wgpu para no reactivar backends distintos de Vulkan.
+egui = "0.35"
+egui-wgpu = { version = "0.35", default-features = false }
+egui-winit = { version = "0.35", default-features = false }
+egui-phosphor = "0.13"
 
 # Workspace lints: quality scripts deny Clippy warnings with `-D warnings`.
 # `unsafe` is allowed only in justified platform/GPU FFI (see rust-quality.mdc); do not warn-deny it globally.

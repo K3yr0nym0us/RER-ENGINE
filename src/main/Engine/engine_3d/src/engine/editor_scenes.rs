@@ -240,12 +240,23 @@ impl State {
             return;
         }
 
-        let snapshot = self.build_save_scene_snapshot();
-        let current_name = self.editor_scenes.records[&current_id].name.clone();
-        let current_scene =
-            load_proyect::saved_scene_from_snapshot_payload(&snapshot, current_id, &current_name);
-        if let Some(r) = self.editor_scenes.records.get_mut(&current_id) {
-            r.committed = Some(current_scene);
+        // La escena actual puede haber sido eliminada (borrar la activa): en ese
+        // caso no hay snapshot que capturar, solo aplicamos la escena destino.
+        if let Some(current_name) = self
+            .editor_scenes
+            .records
+            .get(&current_id)
+            .map(|record| record.name.clone())
+        {
+            let snapshot = self.build_save_scene_snapshot();
+            let current_scene = load_proyect::saved_scene_from_snapshot_payload(
+                &snapshot,
+                current_id,
+                &current_name,
+            );
+            if let Some(record) = self.editor_scenes.records.get_mut(&current_id) {
+                record.committed = Some(current_scene);
+            }
         }
 
         let target_scene = {

@@ -79,6 +79,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('autosave:request')
     ipcRenderer.on('autosave:request', (_event, filePath: string) => cb(filePath))
   },
+  /** El editor Rust pide el estado del proyecto para guardar en Rust. */
+  onProjectStateRequest: (cb: (id: number) => void): (() => void) => {
+    ipcRenderer.removeAllListeners('project-state:request')
+    const listener = (_event: Electron.IpcRendererEvent, id: number) => cb(id)
+    ipcRenderer.on('project-state:request', listener)
+    return () => ipcRenderer.removeListener('project-state:request', listener)
+  },
+  respondProjectState: (id: number, state: unknown): void => {
+    ipcRenderer.send('project-state:response', id, state)
+  },
+  /** Pide al editor Rust que guarde el proyecto (diálogo + empaquetado en Rust). */
+  requestProjectSave: (): void => {
+    ipcRenderer.send('project-state:save-request')
+  },
+  onProjectSaved: (cb: (filePath: string) => void): (() => void) => {
+    ipcRenderer.removeAllListeners('project-state:saved')
+    const listener = (_event: Electron.IpcRendererEvent, filePath: string) => cb(filePath)
+    ipcRenderer.on('project-state:saved', listener)
+    return () => ipcRenderer.removeListener('project-state:saved', listener)
+  },
+  onProjectSaveFailed: (cb: (message: string) => void): (() => void) => {
+    ipcRenderer.removeAllListeners('project-state:save-failed')
+    const listener = (_event: Electron.IpcRendererEvent, message: string) => cb(message)
+    ipcRenderer.on('project-state:save-failed', listener)
+    return () => ipcRenderer.removeListener('project-state:save-failed', listener)
+  },
+  onLegacyWindowOpen: (
+    cb: (request: { kind: string; payload?: Record<string, unknown> }) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      request: { kind: string; payload?: Record<string, unknown> },
+    ) => cb(request)
+    ipcRenderer.on('legacy-window:open', listener)
+    return () => ipcRenderer.removeListener('legacy-window:open', listener)
+  },
   getAppResourceUsage: (): Promise<AppResourceUsage> => {
     return ipcRenderer.invoke('get-app-resource-usage')
   },

@@ -1,16 +1,11 @@
-import { createElement, useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 import { useContextEngine } from '@engine';
 import { useLanguage } from '@context';
-import { useModal } from '@modal';
-import { useTraslate } from '@hooks';
-import { ProjectSaveBlockingModalBody } from '../modal-electron/ProjectSaveBlockingModalBody';
-import type { GameStyle, ProjectType, ProjectSaveData } from '@shared-types';
+import type { GameStyle, ProjectType } from '@shared-types';
 import { DEFAULT_3D_CAMERA_MODE } from '@shared-types';
-import {
-	buildProjectSaveFromEngineSnapshot,
-	requestEngineSaveSnapshot,
-} from '../defaults/buildProjectSaveFromEngine';
+import { getSceneProjectState } from '../pages/EngineView/sceneStateStore';
+import { blueprintToSave } from '../utils/blueprintModelPath';
 
 interface UseAutoSaveOptions {
   projectType?: ProjectType
@@ -24,15 +19,18 @@ export interface UseAutoSaveReturn {
   toggleAutoSave: () => void
   hasSavedOnce: boolean
   setHasSavedOnce: (v: boolean) => void
-  handleSave: () => Promise<void>
+  handleSave: () => void
   savingProject: boolean
 }
 
+/**
+ * Guardar/Auto delegan en el editor Rust (dueño del motor y del empaquetado
+ * `.save`). React solo aporta el estado de editor que no vive en el motor.
+ */
 export function useAutoSave({
   projectType = '2D' as ProjectType,
   gameStyle,
   initialSavePath = null,
-  initialExtractDir = null,
 }: UseAutoSaveOptions = {}): UseAutoSaveReturn {
   const {
     entityMetaRef,
@@ -46,16 +44,8 @@ export function useAutoSave({
     menuUiScreens,
   } = useContextEngine();
   const { locale } = useLanguage();
-  const { openModal, closeModal } = useModal();
-  const { t } = useTraslate();
   const [hasSavedOnce, setHasSavedOnce] = useState(Boolean(initialSavePath));
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(false);
-  const [savingProject, setSavingProject] = useState(false);
-  const savingProjectRef = useRef(false);
-  const lastSavePath = useRef<string | null>(initialSavePath);
-  const autoSaveEnabledRef = useRef(false);
-  const buildSaveDataRef = useRef<(() => Promise<ProjectSaveData | null>) | null>(null);
-  const autoSaveListenerRegisteredRef = useRef(false);
 
   useEffect(() => {
     if (initialSavePath) {
@@ -63,35 +53,31 @@ export function useAutoSave({
     }
   }, [initialSavePath]);
 
-  useEffect(() => {
-    if (initialSavePath) {
-      lastSavePath.current = initialSavePath;
-    }
-  }, [initialSavePath]);
-
-  const buildSaveData = useCallback(async (): Promise<ProjectSaveData | null> => {
-    try {
-      const engineScene = await requestEngineSaveSnapshot();
-      const defaultGameStyle = projectType === '3D' ? DEFAULT_3D_CAMERA_MODE : 'top-down';
-      return await buildProjectSaveFromEngineSnapshot(engineScene, {
-        projectType,
-        gameStyle: gameStyle ?? defaultGameStyle,
-        locale,
-        blueprints,
-        sounds,
-        fonts,
-        hudImages,
-        models,
-        backgrounds,
-        entityMeta: entityMetaRef.current,
-        initialGameStyle: gameStyle,
-        playerUiScreens,
-        menuUiScreens,
-      });
-    } catch (err) {
-      console.error('[save] export_save_snapshot falló:', err);
-      return null;
-    }
+  /**
+   * Estado que el editor Rust necesita para guardar sin Electron: escenas
+   * inactivas, blueprints, `entityMeta`, pantallas UI e idioma.
+   */
+  const buildProjectState = useCallback(() => {
+    const sceneState = getSceneProjectState();
+    const defaultStyle = projectType === '3D' ? DEFAULT_3D_CAMERA_MODE : 'top-down';
+    return {
+      projectType,
+      gameStyle: gameStyle ?? defaultStyle,
+      locale,
+      scenes: sceneState?.scenes ?? [],
+      activeSceneId: sceneState?.activeSceneId ?? 1,
+      // 3D normaliza a `Blueprint3D`; 2D guarda el shape de editor tal cual
+      // (`kind`/`path`/`scale` son obligatorios en el loader 2D).
+      blueprints: projectType === '3D' ? blueprints.map(blueprintToSave) : blueprints,
+      entityMeta: entityMetaRef.current,
+      sounds,
+      fonts,
+      hudImages,
+      models,
+      backgrounds,
+      playerUiScreens,
+      menuUiScreens,
+    };
   }, [
     projectType,
     gameStyle,
@@ -107,13 +93,30 @@ export function useAutoSave({
     menuUiScreens,
   ]);
 
-  useEffect(() => {
-    autoSaveEnabledRef.current = autoSaveEnabled;
-  }, [autoSaveEnabled]);
+  const projectStateBuilderRef = useRef<() => unknown>(() => ({}));
 
   useEffect(() => {
-    buildSaveDataRef.current = buildSaveData;
-  }, [buildSaveData]);
+    projectStateBuilderRef.current = buildProjectState;
+  }, [buildProjectState]);
+
+  useEffect(() => {
+    return window.electronAPI.onProjectStateRequest((id) => {
+      window.electronAPI.respondProjectState(id, projectStateBuilderRef.current());
+    });
+  }, []);
+
+  useEffect(() => {
+    const offSaved = window.electronAPI.onProjectSaved(() => {
+      setHasSavedOnce(true);
+    });
+    const offFailed = window.electronAPI.onProjectSaveFailed((message) => {
+      console.error('[save] editor Rust:', message);
+    });
+    return () => {
+      offSaved();
+      offFailed();
+    };
+  }, []);
 
   useEffect(() => {
     if (!hasSavedOnce && autoSaveEnabled) {
@@ -123,90 +126,13 @@ export function useAutoSave({
   }, [hasSavedOnce, autoSaveEnabled]);
 
   useEffect(() => {
-    if (autoSaveListenerRegisteredRef.current) return;
-    autoSaveListenerRegisteredRef.current = true;
-
-    window.electronAPI.onAutoSaveRequest(async (filePath: string) => {
-      if (!autoSaveEnabledRef.current) return;
-      const snapshotBuilder = buildSaveDataRef.current;
-      if (!snapshotBuilder) return;
-      const data = await snapshotBuilder();
-      if (!data) return;
-      const ok = await window.electronAPI.saveProjectSilent(filePath, data);
-      if (ok && projectType === '3D') {
-        const dir = await window.electronAPI.getProjectExtractDir();
-        if (dir?.trim()) {
-          window.engine.send({
-            cmd: 'notify_project_saved',
-            extract_dir: dir.trim(),
-          } as never);
-        }
-      }
-    });
-  }, [projectType]);
-
-  useEffect(() => {
     return () => {
       window.engine.send({ cmd: 'set_autosave', enabled: false } as never);
     };
   }, []);
 
-  const notifyMotorProjectSaved = useCallback(async () => {
-    if (projectType !== '3D') return;
-    const dir =
-      (await window.electronAPI.getProjectExtractDir())
-      || initialExtractDir?.trim()
-      || null;
-    if (!dir) return;
-    window.engine.send({
-      cmd: 'notify_project_saved',
-      extract_dir: dir,
-    } as never);
-  }, [projectType, initialExtractDir]);
-
-  const handleSave = useCallback(async () => {
-    if (savingProjectRef.current) return;
-    savingProjectRef.current = true;
-    setSavingProject(true);
-    let saveModalOpen = false;
-    try {
-      const data = await buildSaveData();
-      if (!data) return;
-
-      const pickedPath = await window.electronAPI.pickProjectSavePath();
-      if (!pickedPath) return;
-
-      await openModal({
-        title: t('Saving project…'),
-        size: 'sm',
-        body: createElement(ProjectSaveBlockingModalBody),
-      });
-      saveModalOpen = true;
-
-      // Dejar que la ventana modal Electron pinte antes del empaquetado (bloquea main).
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => resolve());
-        });
-      });
-
-      const ok = await window.electronAPI.saveProjectSilent(pickedPath, data);
-      if (ok) {
-        lastSavePath.current = pickedPath;
-        setHasSavedOnce(true);
-        await notifyMotorProjectSaved();
-      }
-    } finally {
-      savingProjectRef.current = false;
-      setSavingProject(false);
-      if (saveModalOpen) {
-        await closeModal();
-      }
-    }
-  }, [buildSaveData, notifyMotorProjectSaved, openModal, closeModal, t]);
-
-  const setHasSavedOnceTrue = useCallback((v: boolean) => {
-    setHasSavedOnce(v);
+  const handleSave = useCallback(() => {
+    window.electronAPI.requestProjectSave();
   }, []);
 
   const toggleAutoSave = useCallback(() => {
@@ -222,8 +148,8 @@ export function useAutoSave({
     autoSaveEnabled,
     toggleAutoSave,
     hasSavedOnce,
-    setHasSavedOnce: setHasSavedOnceTrue,
+    setHasSavedOnce,
     handleSave,
-    savingProject,
+    savingProject: false,
   };
 }

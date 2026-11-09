@@ -162,9 +162,14 @@ function getOrCreateModalWindow(wantsNativeModal: boolean): BrowserWindow {
   const windowIcon = resolveAppWindowIcon()
   modalWindowUsesNativeModal = wantsNativeModal
 
+  // Con el editor Rust activo la ventana React está oculta; una modal hija de
+  // una ventana oculta puede no mostrarse, así que en ese caso va sin parent.
+  const usableParent =
+    parent && !parent.isDestroyed() && parent.isVisible() ? parent : undefined
+
   modalWindow = new BrowserWindow({
-    parent: parent ?? undefined,
-    modal: wantsNativeModal && parent != null,
+    parent: usableParent,
+    modal: wantsNativeModal && usableParent != null,
     show: false,
     autoHideMenuBar: true,
     resizable: false,
