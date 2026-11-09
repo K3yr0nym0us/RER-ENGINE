@@ -30,9 +30,7 @@ image.workspace = true
 ash = { workspace = true, optional = true }
 ash-window = { workspace = true, optional = true }
 raw-window-handle = { workspace = true, optional = true }
-gpu-allocator = { version = "0.27", default-features = false, features = [
-    "vulkan",
-], optional = true }
+gpu-allocator = { workspace = true, optional = true }
 
 [features]
 # `engine_shared::vulkan`: contexto Ash, swapchain, `GpuBuffer`/`GpuImage` y selección de

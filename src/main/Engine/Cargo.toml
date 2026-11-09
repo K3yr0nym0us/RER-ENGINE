@@ -14,9 +14,7 @@ edition = "2024"
 
 [workspace.dependencies]
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
-# Backends en runtime (`engine_shared::gpu`): solo Vulkan (2D y 3D).
-# wgpu 29: `default-features = false`; hay que activar `vulkan` explícitamente (no basta `wgsl`).
-wgpu = { version = "29", default-features = false, features = ["wgsl", "vulkan"] }
+# Backends en runtime (`engine_shared::gpu`): solo Vulkan (2D y 3D) sobre Ash.
 pollster = "0.4"
 glam = "0.33"
 bytemuck = { version = "1", features = ["derive"] }
@@ -42,6 +40,7 @@ sysinfo = "0.39"
 # UI del editor: egui 0.35 + backend Vulkan/ash.
 ash = "0.38"
 ash-window = "0.13"
+gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"] }
 egui = "0.35"
 egui-ash-renderer = "0.12"
 egui-winit = { version = "0.35", default-features = false }

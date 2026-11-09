@@ -12,11 +12,11 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 
 ## Politica GPU
 
-- Perfil **TwoD**: siempre **Vulkan** (`EngineGpuProfile::TwoD`, `Backends::VULKAN`).
-- Crate `wgpu`: `default-features = false`, `features = ["wgsl"]`; el 2D solicita Vulkan en runtime.
-- **No** se usa OpenGL, EGL ni `Backends::all()`. No hay ramas de render por backend GL en pipelines.
-- Inicializacion: `engine::State::new` → `init_gpu(_, TwoD)`; fallo → `EngineEvent::Error` (sin `panic`, sin `ready`).
-- No se leen variables de entorno para elegir backend (política fija por perfil `TwoD`).
+- Perfil **TwoD**: siempre **Vulkan** mediante Ash (`rer_engine_shared::vulkan::SharedGpu`). El crate no depende de wgpu.
+- Núcleo compartido: `engine_shared::vulkan` (instancia, device, swapchain, `FrameTarget`, barreras, `GpuBuffer`/`GpuImage`); el 2D añade su renderer en `src/vulkan/` (scene target + atlas + pipelines).
+- **No** se usa OpenGL, EGL ni selección de backend por entorno. El 2D pide `VulkanOptions::default()` (sin ray tracing).
+- Inicializacion: `engine::State::new` → `vulkan::Vulkan2d::new(window)`; fallo → `EngineEvent::Error` (sin `panic`, sin `ready`).
+- **Una sola convención de Y** en todo el repo: viewport con altura negativa (y = `extent.height`, height = `-extent.height`); el blit del scene target muestrea `vec2(v_uv.x, 1.0 - v_uv.y)`.
 - Electron elimina `RER_GPU_BACKEND` del entorno al hacer `spawn` del motor.
 
 ## Ventana overlay (integracion con Electron)
@@ -30,7 +30,9 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 
 El runtime real 2D vive principalmente en estos archivos:
 
-- `engine_shared/src/gpu.rs`: `resolve_backend(TwoD)` y `init_gpu(_, TwoD)`.
+- `engine_shared/src/vulkan/`: núcleo Ash compartido (contexto, swapchain, buffers/imágenes, barreras).
+- `src/vulkan/`: renderer Ash del 2D (escena offscreen, blit, atlas, rejilla, overlays y HUD).
+- `src/texture.rs`: shelf packing del atlas de sprites + subida a la imagen Vulkan.
 - `src/engine/mod.rs`: estado central del runtime, caches, undo/redo, scripting y flags del editor.
 - `src/engine/commands.rs`: frontera IPC y mutaciones principales del estado.
 - `src/physics_2d.rs`: backend fisico 2D sobre Rapier, restringido al plano `XY`.

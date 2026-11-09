@@ -2,7 +2,7 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** noviembre 2026 (motor 3D sobre Ash/Vulkan: reflejos, sondas, MSAA, sombras y TAA actualizados a la implementación real; lo de la era wgpu queda marcado como histórico en `Reflections_Diagnostics.yaml`). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
+**Última revisión:** noviembre 2026 (motores 2D y 3D sobre Ash/Vulkan; el 2D ya no depende de wgpu y comparte el núcleo Vulkan de `engine_shared`; reflejos, sondas, MSAA, sombras y TAA del 3D actualizados a la implementación real). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
 
 ---
 
