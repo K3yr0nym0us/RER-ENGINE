@@ -217,17 +217,6 @@ impl State {
         self.player_ui_font_cache = font_cache;
     }
 
-    /// El HUD se graba en `FrameRenderer`; el macro compartido de text input
-    /// todavía exige esta firma wgpu, así que se conserva como no-op.
-    #[allow(dead_code)]
-    pub(crate) fn draw_player_ui_hud(
-        &mut self,
-        _enc: &mut wgpu::CommandEncoder,
-        _view: &wgpu::TextureView,
-    ) -> u32 {
-        0
-    }
-
     /// Reconstruye el cursor de texto visible antes de grabar el frame.
     pub(crate) fn sync_player_ui_hud(&mut self) {
         if self.player_ui_caret_blink_visible()

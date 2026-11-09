@@ -12,7 +12,6 @@ path = "src/main.rs"
 
 [dependencies]
 winit.workspace = true
-wgpu.workspace = true
 pollster.workspace = true
 glam.workspace = true
 bytemuck.workspace = true
@@ -28,7 +27,9 @@ rodio.workspace = true
 getrandom.workspace = true
 raw-window-handle.workspace = true
 gilrs.workspace = true
-rer-engine-shared = { path = "../engine_shared" }
+# Sin la feature `gpu`: el 3D renderiza con Ash/Vulkan y no debe enlazar wgpu ni de rebote a
+# través de la fachada compartida (init GPU, superficie de presentación, atlas HUD de pantalla).
+rer-engine-shared = { path = "../engine_shared", default-features = false }
 rer-engine-ipc-common = { path = "../engine_ipc_common" }
 ttf-parser.workspace = true
 ab_glyph.workspace = true
