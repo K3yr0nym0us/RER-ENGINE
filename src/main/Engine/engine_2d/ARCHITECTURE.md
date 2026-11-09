@@ -1,6 +1,6 @@
 # Arquitectura actual de `engine_2d`
 
-Este documento fija el contrato tecnico actual del motor 2D para que el codigo no siga siendo la unica fuente de verdad implicita. Las tareas de producto pendientes están en [`CHECKLIST-2D.md`](../../../../CHECKLIST-2D.md).
+Este documento fija el contrato tecnico actual del motor 2D para que el codigo no siga siendo la unica fuente de verdad implicita. Las tareas de producto pendientes no viven en un checklist aparte: estan marcadas en el codigo (`pendiente`, `not ported`) y en las secciones `status: pendiente` de `docs/`.
 
 ## Relacion con `engine_3d`
 
