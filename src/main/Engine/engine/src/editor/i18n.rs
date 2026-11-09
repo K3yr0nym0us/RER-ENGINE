@@ -1,6 +1,6 @@
 //! Textos del editor egui (es/en).
 
-use crate::cli::Locale;
+use crate::editor::cli::Locale;
 
 pub struct Text {
     pub window_title: &'static str,

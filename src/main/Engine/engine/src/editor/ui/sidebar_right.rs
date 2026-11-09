@@ -8,12 +8,10 @@ use egui::{Align, Layout, RichText};
 use egui_phosphor::regular as icons;
 use serde_json::json;
 
-use crate::app::{EditorApp, EditorStatus};
-use crate::cli::Locale;
-use crate::context::ProjectContext;
-use crate::i18n;
-use crate::theme;
-use crate::world::{
+use crate::editor::app::{EditorApp, EditorStatus};
+use crate::editor::cli::Locale;
+use crate::editor::context::ProjectContext;
+use crate::editor::world::{
     MsaaTier, REFLECTION_DEBUG_VIEWS, ReflectionTier, ShadowTier, TextureTier, WorldSettings,
     normalize_debug_view,
 };
@@ -87,13 +85,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     egui::Panel::bottom("editor_right_metrics")
         .exact_size(120.0)
         .show_separator_line(false)
-        .frame(egui::Frame::new().fill(theme::METRICS_BG))
+        .frame(egui::Frame::new().fill(crate::editor::theme::METRICS_BG))
         .show(ui, |ui| {
             let rect = ui.max_rect();
             ui.painter().hline(
                 rect.x_range(),
                 rect.top(),
-                egui::Stroke::new(1.0, theme::METRICS_BORDER),
+                egui::Stroke::new(1.0, crate::editor::theme::METRICS_BORDER),
             );
             egui::Frame::new()
                 .inner_margin(egui::Margin::symmetric(7, 7))
@@ -114,14 +112,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                     ui.add_space(6.0);
                     ui.vertical_centered(|ui| {
                         ui.label(
-                            RichText::new(i18n::tr(
+                            RichText::new(crate::editor::i18n::tr(
                                 locale,
                                 "CONFIGURACIÓN DEL MUNDO",
                                 "WORLD SETTINGS",
                             ))
                             .size(14.0)
                             .strong()
-                            .color(theme::TEXT_MUTED),
+                            .color(crate::editor::theme::TEXT_MUTED),
                         );
                     });
                     ui.add_space(6.0);
@@ -151,7 +149,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         open,
                         "world_workspace",
                         icons::FRAME_CORNERS,
-                        i18n::tr(locale, "Espacio de trabajo", "Workspace"),
+                        crate::editor::i18n::tr(locale, "Espacio de trabajo", "Workspace"),
                         enabled,
                         |ui| {
                             if context.is_3d() {
@@ -168,13 +166,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             open,
                             "world_background",
                             icons::IMAGE,
-                            i18n::tr(locale, "Fondo del mundo", "World background"),
+                            crate::editor::i18n::tr(locale, "Fondo del mundo", "World background"),
                             enabled,
                             |ui| {
                                 background_body(
                                     ui,
                                     locale,
-                                    i18n::tr(
+                                    crate::editor::i18n::tr(
                                         locale,
                                         "Selector pendiente: llega con la gestión de recursos",
                                         "Picker pending: coming with asset management",
@@ -189,7 +187,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         open,
                         "world_grid",
                         icons::GRID_FOUR,
-                        i18n::tr(locale, "Rejilla", "Grid"),
+                        crate::editor::i18n::tr(locale, "Rejilla", "Grid"),
                         enabled,
                         |ui| {
                             grid_body(
@@ -210,7 +208,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             open,
                             "world_lighting",
                             icons::SUN,
-                            i18n::tr(locale, "Sol e iluminación", "Sun and lighting"),
+                            crate::editor::i18n::tr(
+                                locale,
+                                "Sol e iluminación",
+                                "Sun and lighting",
+                            ),
                             enabled,
                             |ui| lighting_body(ui, world, locale, &mut actions),
                         );
@@ -219,7 +221,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             open,
                             "world_textures",
                             icons::IMAGE,
-                            i18n::tr(locale, "Texturas GLB", "GLB textures"),
+                            crate::editor::i18n::tr(locale, "Texturas GLB", "GLB textures"),
                             enabled,
                             |ui| textures_body(ui, world, locale, &mut actions),
                         );
@@ -228,7 +230,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             open,
                             "world_reflections",
                             icons::SPARKLE,
-                            i18n::tr(locale, "Reflejos", "Reflections"),
+                            crate::editor::i18n::tr(locale, "Reflejos", "Reflections"),
                             enabled,
                             |ui| reflections_body(ui, world, locale, &mut actions),
                         );
@@ -237,7 +239,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             open,
                             "world_shadows",
                             icons::MOON,
-                            i18n::tr(locale, "Sombras", "Shadows"),
+                            crate::editor::i18n::tr(locale, "Sombras", "Shadows"),
                             enabled,
                             |ui| shadows_body(ui, world, locale, &mut actions),
                         );
@@ -266,7 +268,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         open,
                         "world_gravity",
                         icons::ARROW_CIRCLE_DOWN,
-                        i18n::tr(locale, "Gravedad", "Gravity"),
+                        crate::editor::i18n::tr(locale, "Gravedad", "Gravity"),
                         enabled,
                         |ui| gravity_body(ui, world, locale, &mut actions),
                     );
@@ -275,7 +277,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         open,
                         "world_fps",
                         icons::SPEEDOMETER,
-                        i18n::tr(locale, "Límite de FPS", "FPS limit"),
+                        crate::editor::i18n::tr(locale, "Límite de FPS", "FPS limit"),
                         enabled,
                         |ui| fps_body(ui, fps_selection, fps_dirty, world, locale, &mut actions),
                     );
@@ -324,20 +326,27 @@ fn workspace_3d(
 ) {
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Radio de esfera (u)", "Sphere radius (u)"),
+        crate::editor::i18n::tr(locale, "Radio de esfera (u)", "Sphere radius (u)"),
         &format!("{:.1} u", world.world_radius),
     );
 
     let mut value = world.world_radius;
-    if widgets::range_slider(ui, &mut value, 5.0, 500.0, 1.0, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut value,
+        5.0,
+        500.0,
+        1.0,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetRadius(value));
     }
     ui.add_space(2.0);
 
     ui.label(
-        RichText::new(i18n::tr(locale, "Radio (u)", "Radius (u)"))
+        RichText::new(crate::editor::i18n::tr(locale, "Radio (u)", "Radius (u)"))
             .size(11.5)
-            .color(theme::TEXT_MUTED),
+            .color(crate::editor::theme::TEXT_MUTED),
     );
     let width = ui.available_width();
     let committed = widgets::number_input(ui, width, &mut radius.text);
@@ -357,9 +366,9 @@ fn workspace_2d(
     ui.columns(2, |columns| {
         let label_width = columns[0].available_width();
         columns[0].label(
-            RichText::new(i18n::tr(locale, "Ancho (u)", "Width (u)"))
+            RichText::new(crate::editor::i18n::tr(locale, "Ancho (u)", "Width (u)"))
                 .size(11.5)
-                .color(theme::TEXT_MUTED),
+                .color(crate::editor::theme::TEXT_MUTED),
         );
         if widgets::number_input(&mut columns[0], label_width, &mut width_draft.text) {
             commit = true;
@@ -367,9 +376,9 @@ fn workspace_2d(
 
         let label_height = columns[1].available_width();
         columns[1].label(
-            RichText::new(i18n::tr(locale, "Alto (u)", "Height (u)"))
+            RichText::new(crate::editor::i18n::tr(locale, "Alto (u)", "Height (u)"))
                 .size(11.5)
-                .color(theme::TEXT_MUTED),
+                .color(crate::editor::theme::TEXT_MUTED),
         );
         if widgets::number_input(&mut columns[1], label_height, &mut height_draft.text) {
             commit = true;
@@ -387,7 +396,8 @@ fn workspace_2d(
 
 fn background_body(ui: &mut egui::Ui, locale: Locale, hint: &str) {
     let width = (ui.available_width() - 34.0).max(0.0);
-    let unavailable = i18n::tr(locale, "Sin fondos cargados", "No backgrounds loaded");
+    let unavailable =
+        crate::editor::i18n::tr(locale, "Sin fondos cargados", "No backgrounds loaded");
 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
@@ -408,7 +418,7 @@ fn grid_body(
     if context.is_3d() {
         widgets::hint(
             ui,
-            i18n::tr(
+            crate::editor::i18n::tr(
                 locale,
                 "El tamaño de celda alinea el checker del suelo y el snap (Ctrl).",
                 "Cell size aligns ground checker and object placement snap (Ctrl).",
@@ -426,7 +436,7 @@ fn grid_body(
                 ui,
                 icon,
                 &mut visible,
-                i18n::tr(locale, "Mostrar/ocultar rejilla", "Show/hide grid"),
+                crate::editor::i18n::tr(locale, "Mostrar/ocultar rejilla", "Show/hide grid"),
             ) {
                 actions.push(WorldAction::SetGridVisible(visible));
             }
@@ -436,9 +446,13 @@ fn grid_body(
     let mut commit_cell = false;
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(i18n::tr(locale, "Tamaño de celda", "Cell size"))
-                .size(12.0)
-                .color(theme::TEXT_MUTED),
+            RichText::new(crate::editor::i18n::tr(
+                locale,
+                "Tamaño de celda",
+                "Cell size",
+            ))
+            .size(12.0)
+            .color(crate::editor::theme::TEXT_MUTED),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
@@ -452,7 +466,7 @@ fn grid_body(
                 ui,
                 icon,
                 &mut lock_state,
-                i18n::tr(locale, "Bloquear tamaño de rejilla", "Lock grid size"),
+                crate::editor::i18n::tr(locale, "Bloquear tamaño de rejilla", "Lock grid size"),
             ) {
                 *locked = lock_state;
             }
@@ -465,7 +479,14 @@ fn grid_body(
 
     ui.add_enabled_ui(!*locked, |ui| {
         let mut value = world.grid_cell_size;
-        if widgets::range_slider(ui, &mut value, 0.25, 10.0, 0.25, theme::CONTROL_BLUE) {
+        if widgets::range_slider(
+            ui,
+            &mut value,
+            0.25,
+            10.0,
+            0.25,
+            crate::editor::theme::CONTROL_BLUE,
+        ) {
             actions.push(WorldAction::SetGridCellSize(value));
         }
     });
@@ -487,7 +508,7 @@ fn lighting_body(
 ) {
     widgets::hint(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "Mueve el gizmo del sol en el viewport. Estos valores ajustan el brillo.",
             "Move the sun gizmo in the viewport. These values tune brightness.",
@@ -496,11 +517,18 @@ fn lighting_body(
 
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Luz ambiental", "Ambient light"),
+        crate::editor::i18n::tr(locale, "Luz ambiental", "Ambient light"),
         &format!("{:.2}", world.light_ambient),
     );
     let mut ambient = world.light_ambient;
-    if widgets::range_slider(ui, &mut ambient, 0.0, 0.45, 0.01, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut ambient,
+        0.0,
+        0.45,
+        0.01,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetLight {
             ambient: Some(ambient),
             intensity: None,
@@ -511,11 +539,18 @@ fn lighting_body(
 
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Intensidad de luz", "Light intensity"),
+        crate::editor::i18n::tr(locale, "Intensidad de luz", "Light intensity"),
         &format!("{:.2}", world.light_intensity),
     );
     let mut intensity = world.light_intensity;
-    if widgets::range_slider(ui, &mut intensity, 0.2, 2.5, 0.05, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut intensity,
+        0.2,
+        2.5,
+        0.05,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetLight {
             ambient: None,
             intensity: Some(intensity),
@@ -532,7 +567,7 @@ fn textures_body(
 ) {
     widgets::hint(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "El nivel alto mejora la nitidez de las texturas GLB a costa de VRAM.",
             "Higher tiers improve GLB texture sharpness at the cost of VRAM.",
@@ -540,7 +575,7 @@ fn textures_body(
     );
     widgets::caption(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "Nivel de texturas gráficas",
             "Graphics texture tier",
@@ -553,7 +588,7 @@ fn textures_body(
         &TextureTier::ALL,
         world.graphics_texture_tier,
         TextureTier::as_str,
-        i18n::tr(locale, "Nivel de texturas GLB", "GLB texture tier"),
+        crate::editor::i18n::tr(locale, "Nivel de texturas GLB", "GLB texture tier"),
     ) {
         actions.push(WorldAction::SetTextureTier(TextureTier::ALL[index]));
     }
@@ -561,16 +596,23 @@ fn textures_body(
 
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Distancia de detalle", "Texture detail distance"),
+        crate::editor::i18n::tr(locale, "Distancia de detalle", "Texture detail distance"),
         &format!("{:.0} m", world.texture_detail_distance),
     );
     let mut distance = world.texture_detail_distance;
-    if widgets::range_slider(ui, &mut distance, 5.0, 80.0, 1.0, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut distance,
+        5.0,
+        80.0,
+        1.0,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetTextureDetailDistance(distance));
     }
     widgets::tiny(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "Más distancia = texturas nítidas más lejos.",
             "Longer distance = sharp textures further away.",
@@ -592,23 +634,27 @@ fn reflections_body(
         )
     {
         ui.label(
-            RichText::new(i18n::tr(
+            RichText::new(crate::editor::i18n::tr(
                 locale,
                 "La GPU no soporta el tier pedido; el motor usa un nivel menor.",
                 "The GPU does not support the requested tier; the engine uses a lower one.",
             ))
             .size(10.0)
-            .color(theme::WARNING_BADGE),
+            .color(crate::editor::theme::WARNING_BADGE),
         );
     }
 
     let reflections_active = !world.reflection_tier.is_off();
     ui.horizontal(|ui| {
         ui.label(
-            RichText::new(i18n::tr(locale, "Nivel de reflejos", "Reflection tier"))
-                .size(12.0)
-                .strong()
-                .color(theme::TEXT_MUTED),
+            RichText::new(crate::editor::i18n::tr(
+                locale,
+                "Nivel de reflejos",
+                "Reflection tier",
+            ))
+            .size(12.0)
+            .strong()
+            .color(crate::editor::theme::TEXT_MUTED),
         );
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
@@ -616,9 +662,9 @@ fn reflections_body(
                 RichText::new("RT ON")
                     .size(9.5)
                     .color(if world.reflection_raytracing {
-                        theme::INFO
+                        crate::editor::theme::INFO
                     } else {
-                        theme::TEXT_MUTED
+                        crate::editor::theme::TEXT_MUTED
                     }),
             );
             ui.add_enabled_ui(reflections_active, |ui| {
@@ -626,7 +672,11 @@ fn reflections_body(
                 if widgets::switch_value(
                     ui,
                     &mut enabled,
-                    i18n::tr(locale, "Ray tracing de reflejos", "Reflection ray tracing"),
+                    crate::editor::i18n::tr(
+                        locale,
+                        "Ray tracing de reflejos",
+                        "Reflection ray tracing",
+                    ),
                 ) {
                     actions.push(WorldAction::SetReflectionRaytracing(enabled));
                 }
@@ -635,9 +685,9 @@ fn reflections_body(
                 RichText::new("RT OFF")
                     .size(9.5)
                     .color(if world.reflection_raytracing {
-                        theme::TEXT_MUTED
+                        crate::editor::theme::TEXT_MUTED
                     } else {
-                        theme::INFO
+                        crate::editor::theme::INFO
                     }),
             );
         });
@@ -649,7 +699,7 @@ fn reflections_body(
         &ReflectionTier::ALL,
         world.reflection_tier,
         ReflectionTier::as_str,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "Nivel de reflejos (Off desactiva SSR y composición)",
             "Reflection tier (Off disables SSR and composite)",
@@ -665,7 +715,7 @@ fn reflections_body(
             if widgets::switch_value(
                 ui,
                 &mut probes,
-                i18n::tr(
+                crate::editor::i18n::tr(
                     locale,
                     "Reflection probes en el render",
                     "Reflection probes in the render",
@@ -679,17 +729,17 @@ fn reflections_body(
             ui,
             width,
             "",
-            i18n::tr(
+            crate::editor::i18n::tr(
                 locale,
                 "Insertar sonda de reflexión",
                 "Insert reflection probe",
             ),
-            i18n::tr(
+            crate::editor::i18n::tr(
                 locale,
                 "Coloca una sonda en el centro del viewport",
                 "Place a probe at the viewport center",
             ),
-            theme::INFO,
+            crate::editor::theme::INFO,
         ) {
             actions.push(WorldAction::SpawnReflectionProbe);
         }
@@ -698,7 +748,7 @@ fn reflections_body(
 
     widgets::caption(
         ui,
-        i18n::tr(locale, "Vista de depuración", "Reflection debug view"),
+        crate::editor::i18n::tr(locale, "Vista de depuración", "Reflection debug view"),
     );
     let mut view = world.reflection_debug_view;
     let width = ui.available_width();
@@ -723,13 +773,16 @@ fn shadows_body(
 ) {
     widgets::hint(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "El nivel de sombras define resolución y suavizado.",
             "Shadow tier sets resolution and softness.",
         ),
     );
-    widgets::caption(ui, i18n::tr(locale, "Nivel de sombras", "Shadow tier"));
+    widgets::caption(
+        ui,
+        crate::editor::i18n::tr(locale, "Nivel de sombras", "Shadow tier"),
+    );
 
     if let Some(index) = tier_choice(
         ui,
@@ -737,18 +790,25 @@ fn shadows_body(
         &ShadowTier::ALL,
         world.shadow_tier,
         ShadowTier::as_str,
-        i18n::tr(locale, "Nivel de sombras", "Shadow tier"),
+        crate::editor::i18n::tr(locale, "Nivel de sombras", "Shadow tier"),
     ) {
         actions.push(WorldAction::SetShadowTier(ShadowTier::ALL[index]));
     }
 
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Oscuridad de sombra", "Shadow darkness"),
+        crate::editor::i18n::tr(locale, "Oscuridad de sombra", "Shadow darkness"),
         &format!("{:.2}", world.shadow_darkness),
     );
     let mut darkness = world.shadow_darkness;
-    if widgets::range_slider(ui, &mut darkness, 0.02, 0.85, 0.01, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut darkness,
+        0.02,
+        0.85,
+        0.01,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetLight {
             ambient: None,
             intensity: None,
@@ -765,13 +825,16 @@ fn msaa_body(
 ) {
     widgets::hint(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "Más muestras suavizan bordes a costa de rendimiento.",
             "More samples smooth edges at the cost of performance.",
         ),
     );
-    widgets::caption(ui, i18n::tr(locale, "Nivel MSAA", "MSAA tier"));
+    widgets::caption(
+        ui,
+        crate::editor::i18n::tr(locale, "Nivel MSAA", "MSAA tier"),
+    );
 
     if let Some(index) = tier_choice(
         ui,
@@ -779,7 +842,7 @@ fn msaa_body(
         &MsaaTier::ALL,
         world.msaa_tier,
         MsaaTier::as_str,
-        i18n::tr(locale, "Nivel MSAA", "MSAA tier"),
+        crate::editor::i18n::tr(locale, "Nivel MSAA", "MSAA tier"),
     ) {
         actions.push(WorldAction::SetMsaaTier(MsaaTier::ALL[index]));
     }
@@ -793,7 +856,7 @@ fn taa_body(
 ) {
     widgets::hint(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "El antialiasing temporal suaviza bordes y estabiliza las sombras entre frames.",
             "Temporal antialiasing smooths edges and stabilizes shadows across frames.",
@@ -802,10 +865,18 @@ fn taa_body(
     widgets::caption(ui, "TAA");
 
     let options = [
-        (i18n::tr(locale, "On", "On"), world.taa_enabled),
-        (i18n::tr(locale, "Off", "Off"), !world.taa_enabled),
+        (
+            crate::editor::i18n::tr(locale, "On", "On"),
+            world.taa_enabled,
+        ),
+        (
+            crate::editor::i18n::tr(locale, "Off", "Off"),
+            !world.taa_enabled,
+        ),
     ];
-    if let Some(index) = widgets::tier_row_choice(ui, &options, i18n::tr(locale, "TAA", "TAA")) {
+    if let Some(index) =
+        widgets::tier_row_choice(ui, &options, crate::editor::i18n::tr(locale, "TAA", "TAA"))
+    {
         actions.push(WorldAction::SetTaa {
             enabled: index == 0,
             blend: world.taa_blend,
@@ -816,11 +887,18 @@ fn taa_body(
 
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Mezcla", "Blend"),
+        crate::editor::i18n::tr(locale, "Mezcla", "Blend"),
         &format!("{:.2}", world.taa_blend),
     );
     let mut blend = world.taa_blend;
-    if widgets::range_slider(ui, &mut blend, 0.0, 1.0, 0.01, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut blend,
+        0.0,
+        1.0,
+        0.01,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetTaa {
             enabled: world.taa_enabled,
             blend,
@@ -829,14 +907,21 @@ fn taa_body(
     }
     widgets::range_end_labels(
         ui,
-        i18n::tr(locale, "Nítido", "Sharp"),
-        i18n::tr(locale, "Suave", "Smooth"),
+        crate::editor::i18n::tr(locale, "Nítido", "Sharp"),
+        crate::editor::i18n::tr(locale, "Suave", "Smooth"),
     );
     ui.add_space(4.0);
 
     widgets::label_value(ui, "Jitter", &format!("{:.2}", world.taa_jitter_scale));
     let mut jitter = world.taa_jitter_scale;
-    if widgets::range_slider(ui, &mut jitter, 0.0, 2.0, 0.05, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut jitter,
+        0.0,
+        2.0,
+        0.05,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetTaa {
             enabled: world.taa_enabled,
             blend: world.taa_blend,
@@ -845,8 +930,8 @@ fn taa_body(
     }
     widgets::range_end_labels(
         ui,
-        i18n::tr(locale, "Menos", "Less"),
-        i18n::tr(locale, "Más", "More"),
+        crate::editor::i18n::tr(locale, "Menos", "Less"),
+        crate::editor::i18n::tr(locale, "Más", "More"),
     );
 }
 
@@ -858,11 +943,18 @@ fn gravity_body(
 ) {
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Gravedad", "Gravity"),
+        crate::editor::i18n::tr(locale, "Gravedad", "Gravity"),
         &format!("{:.2} u/s²", world.gravity),
     );
     let mut gravity = world.gravity;
-    if widgets::range_slider(ui, &mut gravity, 0.0, 50.0, 0.5, theme::CONTROL_BLUE) {
+    if widgets::range_slider(
+        ui,
+        &mut gravity,
+        0.0,
+        50.0,
+        0.5,
+        crate::editor::theme::CONTROL_BLUE,
+    ) {
         actions.push(WorldAction::SetGravity(gravity));
     }
 }
@@ -889,7 +981,7 @@ fn fps_body(
         if widgets::small_icon_button_click(
             ui,
             icons::CHECK,
-            i18n::tr(locale, "Aplicar límite de FPS", "Apply FPS limit"),
+            crate::editor::i18n::tr(locale, "Aplicar límite de FPS", "Apply FPS limit"),
         ) {
             actions.push(WorldAction::SetTargetFps(*selection));
             *dirty = false;
@@ -900,7 +992,7 @@ fn fps_body(
         ui,
         &format!(
             "{} {}",
-            i18n::tr(locale, "Actual:", "Current:"),
+            crate::editor::i18n::tr(locale, "Actual:", "Current:"),
             world.target_fps
         ),
     );
@@ -923,10 +1015,10 @@ fn tier_choice<T: Copy + PartialEq, F: Fn(T) -> &'static str>(
 
 fn tier_label(locale: Locale, key: &'static str) -> &'static str {
     match key {
-        "off" => i18n::tr(locale, "Off", "Off"),
-        "low" => i18n::tr(locale, "Bajo", "Low"),
-        "medium" => i18n::tr(locale, "Medio", "Medium"),
-        "high" => i18n::tr(locale, "Alto", "High"),
+        "off" => crate::editor::i18n::tr(locale, "Off", "Off"),
+        "low" => crate::editor::i18n::tr(locale, "Bajo", "Low"),
+        "medium" => crate::editor::i18n::tr(locale, "Medio", "Medium"),
+        "high" => crate::editor::i18n::tr(locale, "Alto", "High"),
         "ultra" => "Ultra",
         _ => key,
     }
@@ -1071,10 +1163,14 @@ fn metrics(ui: &mut egui::Ui, app: &EditorApp) {
 
     ui.vertical_centered(|ui| {
         ui.label(
-            RichText::new(i18n::tr(locale, "Métricas de uso", "Usage metrics"))
-                .size(13.0)
-                .strong()
-                .color(theme::TEXT_MUTED),
+            RichText::new(crate::editor::i18n::tr(
+                locale,
+                "Métricas de uso",
+                "Usage metrics",
+            ))
+            .size(13.0)
+            .strong()
+            .color(crate::editor::theme::TEXT_MUTED),
         );
     });
     ui.add_space(7.0);
@@ -1083,20 +1179,20 @@ fn metrics(ui: &mut egui::Ui, app: &EditorApp) {
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(1.0, theme::METRICS_BORDER),
+        egui::Stroke::new(1.0, crate::editor::theme::METRICS_BORDER),
     );
     ui.add_space(7.0);
 
     let Some(metrics) = app.metrics else {
         ui.vertical_centered(|ui| {
             ui.label(
-                RichText::new(i18n::tr(
+                RichText::new(crate::editor::i18n::tr(
                     locale,
                     "Esperando métricas…",
                     "Waiting for metrics...",
                 ))
                 .size(12.0)
-                .color(theme::TEXT_MUTED),
+                .color(crate::editor::theme::TEXT_MUTED),
             );
         });
         return;
@@ -1177,13 +1273,13 @@ fn metric_cell(
                 RichText::new(label)
                     .monospace()
                     .size(METRIC_FONT_SIZE)
-                    .color(theme::TEXT_MUTED),
+                    .color(crate::editor::theme::TEXT_MUTED),
             );
             ui.label(
                 RichText::new(value)
                     .monospace()
                     .size(METRIC_FONT_SIZE)
-                    .color(value_color.unwrap_or(theme::TEXT)),
+                    .color(value_color.unwrap_or(crate::editor::theme::TEXT)),
             );
         },
     );
@@ -1198,11 +1294,11 @@ fn format_percent(value: Option<f32>) -> String {
 
 fn fps_color(fps: f32) -> egui::Color32 {
     if fps >= 55.0 {
-        theme::METRIC_FPS_GOOD
+        crate::editor::theme::METRIC_FPS_GOOD
     } else if fps >= 30.0 {
-        theme::METRIC_FPS_WARN
+        crate::editor::theme::METRIC_FPS_WARN
     } else {
-        theme::METRIC_FPS_BAD
+        crate::editor::theme::METRIC_FPS_BAD
     }
 }
 
@@ -1226,11 +1322,11 @@ mod tests {
 
     #[test]
     fn fps_colors_follow_react_thresholds() {
-        assert_eq!(fps_color(60.0), theme::METRIC_FPS_GOOD);
-        assert_eq!(fps_color(55.0), theme::METRIC_FPS_GOOD);
-        assert_eq!(fps_color(45.0), theme::METRIC_FPS_WARN);
-        assert_eq!(fps_color(30.0), theme::METRIC_FPS_WARN);
-        assert_eq!(fps_color(20.0), theme::METRIC_FPS_BAD);
+        assert_eq!(fps_color(60.0), crate::editor::theme::METRIC_FPS_GOOD);
+        assert_eq!(fps_color(55.0), crate::editor::theme::METRIC_FPS_GOOD);
+        assert_eq!(fps_color(45.0), crate::editor::theme::METRIC_FPS_WARN);
+        assert_eq!(fps_color(30.0), crate::editor::theme::METRIC_FPS_WARN);
+        assert_eq!(fps_color(20.0), crate::editor::theme::METRIC_FPS_BAD);
     }
 
     #[test]

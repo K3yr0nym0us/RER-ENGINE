@@ -14,6 +14,11 @@ name = "rer_engine_3d"
 path = "src/bin/rer_engine_3d.rs"
 required-features = ["engine3d"]
 
+[[bin]]
+name = "rer_engine_editor"
+path = "src/bin/rer_engine_editor.rs"
+required-features = ["editor"]
+
 [dependencies]
 winit.workspace = true
 pollster.workspace = true
@@ -31,6 +36,12 @@ rodio.workspace = true
 getrandom.workspace = true
 raw-window-handle.workspace = true
 gilrs.workspace = true
+egui.workspace = true
+egui-ash-renderer.workspace = true
+egui-winit.workspace = true
+egui-phosphor.workspace = true
+zip.workspace = true
+rfd = "0.18"
 # `rer-engine-core` aporta el núcleo Ash (contexto, swapchain, buffers, imágenes) y los
 # tipos IPC comunes que comparten los dos motores, sin duplicar FFI de Vulkan.
 rer-engine-core = { path = "../core", features = ["vulkan"] }
@@ -43,8 +54,12 @@ gpu-allocator = { version = "0.27", default-features = false, features = ["vulka
 [features]
 # Motor 3D aislado: el binario `rer_engine_3d` solo existe si esta feature está activa.
 # `default` la mantiene durante la migración; el editor pedirá las features que necesite.
-default = ["engine3d"]
+# `default` mantiene el build local completo; los binarios se compilan con
+# `--no-default-features --features <motor>` para no enlazar el motor ajeno.
+default = ["engine3d", "editor"]
 engine3d = []
+# Editor egui. Reutiliza el mismo `SharedGpu` que los motores.
+editor = []
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true

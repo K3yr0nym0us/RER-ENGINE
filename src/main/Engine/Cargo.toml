@@ -3,7 +3,6 @@ members = [
 	"core",
 	"engine",
 	"engine_2d",
-	"engine_editor",
 ]
 resolver = "2"
 

@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use serde_json::{Map, Value, json};
 
-use crate::project_state::{ProjectState, now_iso8601};
+use crate::editor::project_state::{ProjectState, now_iso8601};
 
 const ENTITY_MARKERS: [&str; 8] = [
     "[EditorBox]",

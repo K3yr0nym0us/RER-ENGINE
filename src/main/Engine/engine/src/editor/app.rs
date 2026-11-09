@@ -7,17 +7,15 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use winit::event_loop::EventLoopProxy;
 
-use crate::assets::AssetLists;
-use crate::cli::Cli;
-use crate::engine_host::UserEvent;
-use crate::i18n;
-use crate::project_state::ProjectState;
-use crate::save::SaveSuccess;
-use crate::scenes::SceneList;
-use crate::ui;
-use crate::ui::sidebar_left::SidebarLeftState;
-use crate::ui::sidebar_right::SidebarRightState;
-use crate::world::WorldSettings;
+use crate::editor::assets::AssetLists;
+use crate::editor::cli::Cli;
+use crate::editor::engine_host::UserEvent;
+use crate::editor::project_state::ProjectState;
+use crate::editor::save::SaveSuccess;
+use crate::editor::scenes::SceneList;
+use crate::editor::ui::sidebar_left::SidebarLeftState;
+use crate::editor::ui::sidebar_right::SidebarRightState;
+use crate::editor::world::WorldSettings;
 
 /// Entidad seleccionada en el viewport 3D (la mantiene el motor).
 #[derive(Debug, Clone, PartialEq)]
@@ -266,11 +264,11 @@ impl EditorApp {
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        ui::show(ui, self);
+        crate::editor::ui::show(ui, self);
     }
 
-    pub fn text(&self) -> i18n::Text {
-        i18n::text(self.cli.locale)
+    pub fn text(&self) -> crate::editor::i18n::Text {
+        crate::editor::i18n::text(self.cli.locale)
     }
 
     pub fn send_engine(&self, command: Value) {
@@ -498,7 +496,7 @@ impl EditorApp {
                     && self.pending_properties == Some(entity.id)
                 {
                     self.pending_properties = None;
-                    crate::bridge::request_legacy_window("entity_properties", json!({}));
+                    crate::editor::bridge::request_legacy_window("entity_properties", json!({}));
                 }
             }
             "entity_properties_open" => {
@@ -506,7 +504,10 @@ impl EditorApp {
                 match (id, self.selected_entity.as_ref()) {
                     (Some(id), Some(entity)) if entity.id == id => {
                         self.pending_properties = None;
-                        crate::bridge::request_legacy_window("entity_properties", json!({}));
+                        crate::editor::bridge::request_legacy_window(
+                            "entity_properties",
+                            json!({}),
+                        );
                     }
                     (Some(id), _) => self.pending_properties = Some(id),
                     _ => {}
@@ -626,7 +627,7 @@ impl EditorApp {
             silent,
             writing: false,
         });
-        crate::bridge::request_project_state(id);
+        crate::editor::bridge::request_project_state(id);
         self.spawn_save_timeout(id);
         Some(id)
     }
@@ -682,12 +683,12 @@ impl EditorApp {
                     false,
                 );
                 self.notify_engine_project_saved();
-                crate::bridge::notify_project_saved(&success.save_path);
+                crate::editor::bridge::notify_project_saved(&success.save_path);
             }
             Err(message) => {
                 self.save_error = Some(message.clone());
                 self.push_log(format!("[Guardar] error: {message}"), true);
-                crate::bridge::notify_save_failed(&message);
+                crate::editor::bridge::notify_save_failed(&message);
             }
         }
     }
@@ -708,7 +709,7 @@ impl EditorApp {
         let message = self.text().save_timeout.to_string();
         self.save_error = Some(message.clone());
         self.push_log(message.clone(), true);
-        crate::bridge::notify_save_failed(&message);
+        crate::editor::bridge::notify_save_failed(&message);
     }
 
     /// Lanza un hilo que dispara el timeout si el guardado no arranca.

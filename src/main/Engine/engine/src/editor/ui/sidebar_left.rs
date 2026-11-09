@@ -4,14 +4,12 @@ use egui::{Color32, RichText};
 use egui_phosphor::regular as icons;
 use serde_json::json;
 
-use crate::app::{ControlSummary, EditorApp, EditorStatus, PlayView};
-use crate::assets::{AssetKind, AssetLists};
-use crate::cli::Locale;
-use crate::context::{GameStyle, ProjectContext};
-use crate::i18n;
-use crate::scenes::SceneList;
-use crate::theme;
-use crate::world::Camera2d;
+use crate::editor::app::{ControlSummary, EditorApp, EditorStatus, PlayView};
+use crate::editor::assets::{AssetKind, AssetLists};
+use crate::editor::cli::Locale;
+use crate::editor::context::{GameStyle, ProjectContext};
+use crate::editor::scenes::SceneList;
+use crate::editor::world::Camera2d;
 
 use super::number_draft::NumberDraft;
 use super::{accordion, widgets};
@@ -153,7 +151,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         .show_separator_line(true)
         .frame(
             egui::Frame::new()
-                .fill(theme::SIDEBAR_BG)
+                .fill(crate::editor::theme::SIDEBAR_BG)
                 .inner_margin(egui::Margin::symmetric(4, 8)),
         )
         .show(ui, |ui| {
@@ -176,7 +174,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         state,
                         Section::Scenes,
                         icons::STACK,
-                        i18n::tr(locale, "Escenas", "Scenes"),
+                        crate::editor::i18n::tr(locale, "Escenas", "Scenes"),
                         |ui, state| {
                             scenes_body(
                                 ui,
@@ -194,7 +192,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         state,
                         Section::Camera,
                         icons::VIDEO_CAMERA,
-                        i18n::tr(locale, "Cámara", "Camera"),
+                        crate::editor::i18n::tr(locale, "Cámara", "Camera"),
                         |ui, state| {
                             camera_body(
                                 ui,
@@ -214,7 +212,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         state,
                         Section::Resources,
                         icons::PACKAGE,
-                        i18n::tr(locale, "Recursos", "Resources"),
+                        crate::editor::i18n::tr(locale, "Recursos", "Resources"),
                         |ui, state| {
                             resources_body(
                                 ui,
@@ -232,7 +230,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         state,
                         Section::Entities,
                         icons::USERS,
-                        i18n::tr(locale, "Crear entidad", "Create entity"),
+                        crate::editor::i18n::tr(locale, "Crear entidad", "Create entity"),
                         |ui, state| {
                             entities_body(
                                 ui,
@@ -250,7 +248,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         state,
                         Section::UserInterface,
                         icons::BROWSER,
-                        i18n::tr(locale, "Interfaz de usuario", "User interface"),
+                        crate::editor::i18n::tr(locale, "Interfaz de usuario", "User interface"),
                         |ui, state| ui_body(ui, state, &assets, locale, phase_note, &mut actions),
                     );
                     section(
@@ -258,7 +256,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         state,
                         Section::Tools,
                         icons::WRENCH,
-                        i18n::tr(locale, "Herramientas", "Tools"),
+                        crate::editor::i18n::tr(locale, "Herramientas", "Tools"),
                         |ui, state| {
                             tools_body(ui, state, context.is_3d(), locale, phase_note, &mut actions)
                         },
@@ -268,7 +266,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         state,
                         Section::Controls,
                         icons::GAME_CONTROLLER,
-                        i18n::tr(locale, "Controles", "Controls"),
+                        crate::editor::i18n::tr(locale, "Controles", "Controls"),
                         |ui, _state| controls_body(ui, locale, phase_note, controls.as_ref()),
                     );
                 });
@@ -343,10 +341,10 @@ fn sub_at(
 fn apply_action(app: &mut EditorApp, action: LeftAction) {
     match action {
         LeftAction::OpenCreateScene => {
-            crate::bridge::request_legacy_window("create_scene", json!({}));
+            crate::editor::bridge::request_legacy_window("create_scene", json!({}));
         }
         LeftAction::OpenDeleteScene(id) => {
-            crate::bridge::request_legacy_window("delete_scene", json!({ "scene_id": id }));
+            crate::editor::bridge::request_legacy_window("delete_scene", json!({ "scene_id": id }));
         }
         LeftAction::SwitchScene(id) => {
             let name = app.scenes.name_for(id);
@@ -387,11 +385,11 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             }));
         }
         LeftAction::OpenSockets => {
-            crate::bridge::request_legacy_window("socket_config", json!({}));
+            crate::editor::bridge::request_legacy_window("socket_config", json!({}));
         }
         LeftAction::OpenLegacyWindow(kind) => {
             let scene_id = app.scenes.active_scene_id;
-            crate::bridge::request_legacy_window(kind, json!({ "scene_id": scene_id }));
+            crate::editor::bridge::request_legacy_window(kind, json!({ "scene_id": scene_id }));
             app.push_log(
                 format!("[Editor] Abriendo ventana legacy «{kind}» (escena {scene_id})…"),
                 false,
@@ -399,7 +397,7 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
         }
         LeftAction::ImportAsset(kind) => import_asset(app, kind),
         LeftAction::OpenRemoveAsset { kind, path, name } => {
-            crate::bridge::request_legacy_window(
+            crate::editor::bridge::request_legacy_window(
                 "remove_asset",
                 json!({
                     "asset_kind": kind.legacy_id(),
@@ -526,16 +524,16 @@ fn scenes_body(
         state,
         "scenes_programming",
         icons::CODE,
-        i18n::tr(locale, "Programación", "Programming"),
+        crate::editor::i18n::tr(locale, "Programación", "Programming"),
         |ui| {
             let width = ui.available_width();
             if widgets::wide_button_click_sized(
                 ui,
                 width,
                 icons::FILE_CODE,
-                i18n::tr(locale, "Script de escena", "Scene script"),
+                crate::editor::i18n::tr(locale, "Script de escena", "Scene script"),
                 hint,
-                theme::WARNING,
+                crate::editor::theme::WARNING,
             ) {
                 actions.push(LeftAction::OpenLegacyWindow("scene_script"));
             }
@@ -543,9 +541,9 @@ fn scenes_body(
                 ui,
                 width,
                 icons::GRAPH,
-                i18n::tr(locale, "Lógica de escena (nodos)", "Scene logic (nodes)"),
+                crate::editor::i18n::tr(locale, "Lógica de escena (nodos)", "Scene logic (nodes)"),
                 hint,
-                theme::INFO,
+                crate::editor::theme::INFO,
             ) {
                 actions.push(LeftAction::OpenLegacyWindow("scene_visual_script"));
             }
@@ -555,7 +553,7 @@ fn scenes_body(
     if !context.is_3d() {
         widgets::note(
             ui,
-            i18n::tr(
+            crate::editor::i18n::tr(
                 locale,
                 "La gestión de escenas 2D sigue en la UI React.",
                 "2D scene management still lives in the React UI.",
@@ -570,13 +568,13 @@ fn scenes_body(
             ui,
             create_width,
             icons::PLUS,
-            i18n::tr(locale, "Crear nueva escena", "Create new scene"),
-            i18n::tr(
+            crate::editor::i18n::tr(locale, "Crear nueva escena", "Create new scene"),
+            crate::editor::i18n::tr(
                 locale,
                 "Crea una escena 3D vacía",
                 "Create an empty 3D scene",
             ),
-            theme::OUTLINE_SECONDARY,
+            crate::editor::theme::OUTLINE_SECONDARY,
         )
     {
         actions.push(LeftAction::OpenCreateScene);
@@ -587,9 +585,13 @@ fn scenes_body(
         ui.vertical_centered(|ui| {
             ui.add(egui::Spinner::new().size(16.0));
             ui.label(
-                RichText::new(i18n::tr(locale, "Cargando escenas…", "Loading scenes..."))
-                    .size(12.0)
-                    .color(theme::TEXT_MUTED),
+                RichText::new(crate::editor::i18n::tr(
+                    locale,
+                    "Cargando escenas…",
+                    "Loading scenes...",
+                ))
+                .size(12.0)
+                .color(crate::editor::theme::TEXT_MUTED),
             );
         });
         return;
@@ -598,7 +600,7 @@ fn scenes_body(
     if scenes.scenes.is_empty() {
         widgets::note(
             ui,
-            i18n::tr(
+            crate::editor::i18n::tr(
                 locale,
                 "Sin escenas del motor todavía.",
                 "No engine scenes yet.",
@@ -611,12 +613,12 @@ fn scenes_body(
         let is_active = scene.id == scenes.active_scene_id;
         let switching = scenes.switching_to == Some(scene.id);
         let fill = if is_active {
-            theme::SCENE_ACTIVE_BG
+            crate::editor::theme::SCENE_ACTIVE_BG
         } else {
             Color32::TRANSPARENT
         };
         let stroke = if is_active {
-            egui::Stroke::new(1.0, theme::SCENE_ACTIVE_TEXT)
+            egui::Stroke::new(1.0, crate::editor::theme::SCENE_ACTIVE_TEXT)
         } else {
             egui::Stroke::NONE
         };
@@ -630,9 +632,9 @@ fn scenes_body(
                 ui.horizontal(|ui| {
                     let name_width = (ui.available_width() - 46.0).max(0.0);
                     let name_color = if is_active {
-                        theme::SCENE_ACTIVE_TEXT
+                        crate::editor::theme::SCENE_ACTIVE_TEXT
                     } else {
-                        theme::TEXT
+                        crate::editor::theme::TEXT
                     };
                     ui.add_sized(
                         [name_width, 18.0],
@@ -648,8 +650,8 @@ fn scenes_body(
                                 ui,
                                 icons::TRASH,
                                 20.0,
-                                theme::DANGER,
-                                i18n::tr(locale, "Eliminar escena", "Delete scene"),
+                                crate::editor::theme::DANGER,
+                                crate::editor::i18n::tr(locale, "Eliminar escena", "Delete scene"),
                             )
                         {
                             actions.push(LeftAction::OpenDeleteScene(scene.id));
@@ -662,8 +664,8 @@ fn scenes_body(
                                     ui,
                                     icons::SIGN_IN,
                                     20.0,
-                                    theme::INFO,
-                                    i18n::tr(locale, "Cargar escena", "Load scene"),
+                                    crate::editor::theme::INFO,
+                                    crate::editor::i18n::tr(locale, "Cargar escena", "Load scene"),
                                 )
                             {
                                 actions.push(LeftAction::SwitchScene(scene.id));
@@ -687,14 +689,17 @@ fn camera_body(
     actions: &mut Vec<LeftAction>,
 ) {
     if context.is_3d() {
-        widgets::caption(ui, i18n::tr(locale, "Tipo de cámara", "Camera type"));
+        widgets::caption(
+            ui,
+            crate::editor::i18n::tr(locale, "Tipo de cámara", "Camera type"),
+        );
         widgets::select_placeholder(ui, context.game_style.as_str(), hint);
         ui.add_space(4.0);
 
         if context.game_style != GameStyle::FirstPerson {
             widgets::note(
                 ui,
-                i18n::tr(
+                crate::editor::i18n::tr(
                     locale,
                     "Los controles detallados para este modo aún no están disponibles.",
                     "Detailed camera controls for this mode are not available yet.",
@@ -706,7 +711,7 @@ fn camera_body(
         let Some(view) = play_view else {
             widgets::note(
                 ui,
-                i18n::tr(
+                crate::editor::i18n::tr(
                     locale,
                     "Aún no hay jugador en la escena.",
                     "No player in the scene yet.",
@@ -717,7 +722,7 @@ fn camera_body(
         if view.player_id.is_none() {
             widgets::note(
                 ui,
-                i18n::tr(
+                crate::editor::i18n::tr(
                     locale,
                     "Aún no hay jugador en la escena.",
                     "No player in the scene yet.",
@@ -733,7 +738,7 @@ fn camera_body(
         state.cam3_fov.sync(view.fov_y.to_degrees());
         state.cam3_frustum.sync(view.frustum_distance);
 
-        widgets::caption(ui, i18n::tr(locale, "Cámara", "Camera"));
+        widgets::caption(ui, crate::editor::i18n::tr(locale, "Cámara", "Camera"));
         let mut axis = None;
         ui.add_enabled_ui(ready, |ui| {
             ui.columns(3, |columns| {
@@ -746,7 +751,7 @@ fn camera_body(
                     columns[index].label(
                         RichText::new(["X", "Y", "Z"][index])
                             .size(11.5)
-                            .color(theme::TEXT_MUTED),
+                            .color(crate::editor::theme::TEXT_MUTED),
                     );
                     if widgets::number_input(&mut columns[index], width, &mut draft.text)
                         && let Some(value) = draft.parsed()
@@ -766,9 +771,9 @@ fn camera_body(
         ui.add_enabled_ui(ready, |ui| {
             ui.columns(3, |columns| {
                 let labels = [
-                    i18n::tr(locale, "Yaw (°)", "Yaw (°)"),
-                    i18n::tr(locale, "FOV (°)", "FOV (°)"),
-                    i18n::tr(locale, "Rango F. (m)", "F. Range (m)"),
+                    crate::editor::i18n::tr(locale, "Yaw (°)", "Yaw (°)"),
+                    crate::editor::i18n::tr(locale, "FOV (°)", "FOV (°)"),
+                    crate::editor::i18n::tr(locale, "Rango F. (m)", "F. Range (m)"),
                 ];
                 let drafts = [
                     &mut state.cam3_yaw,
@@ -777,7 +782,11 @@ fn camera_body(
                 ];
                 for (index, (label, draft)) in labels.into_iter().zip(drafts).enumerate() {
                     let width = columns[index].available_width();
-                    columns[index].label(RichText::new(label).size(11.5).color(theme::TEXT_MUTED));
+                    columns[index].label(
+                        RichText::new(label)
+                            .size(11.5)
+                            .color(crate::editor::theme::TEXT_MUTED),
+                    );
                     if widgets::number_input(&mut columns[index], width, &mut draft.text)
                         && let Some(value) = draft.parsed()
                     {
@@ -811,26 +820,37 @@ fn camera_body(
     state.cam_y.sync(camera.y);
     state.cam_zoom.sync(camera.half_h);
 
-    widgets::caption(ui, i18n::tr(locale, "Cámara del editor", "Editor camera"));
+    widgets::caption(
+        ui,
+        crate::editor::i18n::tr(locale, "Cámara del editor", "Editor camera"),
+    );
     let mut commit = false;
     ui.columns(3, |columns| {
         let width = columns[0].available_width();
-        columns[0].label(RichText::new("X").size(11.5).color(theme::TEXT_MUTED));
+        columns[0].label(
+            RichText::new("X")
+                .size(11.5)
+                .color(crate::editor::theme::TEXT_MUTED),
+        );
         if widgets::number_input(&mut columns[0], width, &mut state.cam_x.text) {
             commit = true;
         }
 
         let width = columns[1].available_width();
-        columns[1].label(RichText::new("Y").size(11.5).color(theme::TEXT_MUTED));
+        columns[1].label(
+            RichText::new("Y")
+                .size(11.5)
+                .color(crate::editor::theme::TEXT_MUTED),
+        );
         if widgets::number_input(&mut columns[1], width, &mut state.cam_y.text) {
             commit = true;
         }
 
         let width = columns[2].available_width();
         columns[2].label(
-            RichText::new(i18n::tr(locale, "Zoom", "Zoom"))
+            RichText::new(crate::editor::i18n::tr(locale, "Zoom", "Zoom"))
                 .size(11.5)
-                .color(theme::TEXT_MUTED),
+                .color(crate::editor::theme::TEXT_MUTED),
         );
         if widgets::number_input(&mut columns[2], width, &mut state.cam_zoom.text) {
             commit = true;
@@ -867,7 +887,7 @@ fn resources_body(
             state,
             AssetKind::Model,
             icons::CUBE,
-            i18n::tr(locale, "Modelos", "Models"),
+            crate::editor::i18n::tr(locale, "Modelos", "Models"),
             assets,
             locale,
             hint,
@@ -879,7 +899,7 @@ fn resources_body(
             state,
             AssetKind::Sprite,
             icons::SPARKLE,
-            i18n::tr(locale, "Sprites", "Sprites"),
+            crate::editor::i18n::tr(locale, "Sprites", "Sprites"),
             assets,
             locale,
             hint,
@@ -892,7 +912,7 @@ fn resources_body(
         state,
         AssetKind::Sound,
         icons::SPEAKER_HIGH,
-        i18n::tr(locale, "Sonidos", "Sounds"),
+        crate::editor::i18n::tr(locale, "Sonidos", "Sounds"),
         assets,
         locale,
         hint,
@@ -903,7 +923,7 @@ fn resources_body(
         state,
         AssetKind::Font,
         icons::TEXT_AA,
-        i18n::tr(locale, "Fuentes", "Fonts"),
+        crate::editor::i18n::tr(locale, "Fuentes", "Fonts"),
         assets,
         locale,
         hint,
@@ -914,7 +934,7 @@ fn resources_body(
         state,
         AssetKind::HudImage,
         icons::IMAGE,
-        i18n::tr(locale, "Imágenes", "Images"),
+        crate::editor::i18n::tr(locale, "Imágenes", "Images"),
         assets,
         locale,
         hint,
@@ -927,7 +947,7 @@ fn resources_body(
             state,
             AssetKind::Background,
             icons::IMAGE_SQUARE,
-            i18n::tr(locale, "Fondos", "Backgrounds"),
+            crate::editor::i18n::tr(locale, "Fondos", "Backgrounds"),
             assets,
             locale,
             hint,
@@ -955,7 +975,7 @@ fn asset_section(
             icons::PLUS,
             import_label(kind, locale),
             hint,
-            theme::ACCENT,
+            crate::editor::theme::ACCENT,
         ) {
             actions.push(LeftAction::ImportAsset(kind));
         }
@@ -964,7 +984,7 @@ fn asset_section(
         if list.is_empty() {
             widgets::tiny(
                 ui,
-                i18n::tr(locale, "Sin recursos cargados", "No assets loaded"),
+                crate::editor::i18n::tr(locale, "Sin recursos cargados", "No assets loaded"),
             );
             return;
         }
@@ -974,15 +994,19 @@ fn asset_section(
                 let name_width = (ui.available_width() - 24.0).max(0.0);
                 ui.add_sized(
                     [name_width, 16.0],
-                    egui::Label::new(RichText::new(&asset.name).size(12.0).color(theme::TEXT))
-                        .truncate(),
+                    egui::Label::new(
+                        RichText::new(&asset.name)
+                            .size(12.0)
+                            .color(crate::editor::theme::TEXT),
+                    )
+                    .truncate(),
                 );
                 if widgets::icon_action(
                     ui,
                     icons::TRASH,
                     18.0,
-                    theme::DANGER,
-                    i18n::tr(locale, "Quitar recurso", "Remove asset"),
+                    crate::editor::theme::DANGER,
+                    crate::editor::i18n::tr(locale, "Quitar recurso", "Remove asset"),
                 ) {
                     actions.push(LeftAction::OpenRemoveAsset {
                         kind,
@@ -997,12 +1021,14 @@ fn asset_section(
 
 fn import_label(kind: AssetKind, locale: Locale) -> &'static str {
     match kind {
-        AssetKind::Model => i18n::tr(locale, "+ Cargar modelo", "+ Load model"),
-        AssetKind::Sprite => i18n::tr(locale, "+ Cargar sprite", "+ Load sprite"),
-        AssetKind::Sound => i18n::tr(locale, "+ Cargar sonido", "+ Load sound"),
-        AssetKind::Font => i18n::tr(locale, "+ Cargar fuente", "+ Load font"),
-        AssetKind::HudImage => i18n::tr(locale, "+ Cargar imagen", "+ Load image"),
-        AssetKind::Background => i18n::tr(locale, "+ Cargar fondo", "+ Load background"),
+        AssetKind::Model => crate::editor::i18n::tr(locale, "+ Cargar modelo", "+ Load model"),
+        AssetKind::Sprite => crate::editor::i18n::tr(locale, "+ Cargar sprite", "+ Load sprite"),
+        AssetKind::Sound => crate::editor::i18n::tr(locale, "+ Cargar sonido", "+ Load sound"),
+        AssetKind::Font => crate::editor::i18n::tr(locale, "+ Cargar fuente", "+ Load font"),
+        AssetKind::HudImage => crate::editor::i18n::tr(locale, "+ Cargar imagen", "+ Load image"),
+        AssetKind::Background => {
+            crate::editor::i18n::tr(locale, "+ Cargar fondo", "+ Load background")
+        }
     }
 }
 
@@ -1019,35 +1045,35 @@ fn entities_body(
         (
             EntityKind::Character,
             icons::USER,
-            i18n::tr(locale, "Personajes", "Characters"),
-            theme::SUCCESS,
+            crate::editor::i18n::tr(locale, "Personajes", "Characters"),
+            crate::editor::theme::SUCCESS,
         ),
         (
             EntityKind::Environment,
             icons::TREE,
-            i18n::tr(locale, "Escenario", "Environment"),
-            theme::INFO,
+            crate::editor::i18n::tr(locale, "Escenario", "Environment"),
+            crate::editor::theme::INFO,
         ),
         (
             EntityKind::Object,
             icons::CUBE,
-            i18n::tr(locale, "Objetos", "Objects"),
-            theme::WARNING,
+            crate::editor::i18n::tr(locale, "Objetos", "Objects"),
+            crate::editor::theme::WARNING,
         ),
     ];
     if context.is_3d() {
         kinds.push((
             EntityKind::Weapon,
             icons::SHIELD,
-            i18n::tr(locale, "Armas", "Weapons"),
-            theme::DANGER,
+            crate::editor::i18n::tr(locale, "Armas", "Weapons"),
+            crate::editor::theme::DANGER,
         ));
     }
     kinds.push((
         EntityKind::Projectile,
         icons::CIRCLE,
-        i18n::tr(locale, "Proyectiles", "Projectiles"),
-        theme::INFO,
+        crate::editor::i18n::tr(locale, "Proyectiles", "Projectiles"),
+        crate::editor::theme::INFO,
     ));
 
     for (kind, icon, title, color) in kinds {
@@ -1086,7 +1112,7 @@ fn entity_section(
         if list.is_empty() {
             widgets::note(
                 ui,
-                i18n::tr(
+                crate::editor::i18n::tr(
                     locale,
                     "Carga recursos primero en «Recursos».",
                     "Load assets first in “Resources”.",
@@ -1127,27 +1153,27 @@ fn entity_section(
 fn create_label(kind: EntityKind, context: ProjectContext, locale: Locale) -> &'static str {
     if context.is_3d() {
         match kind {
-            EntityKind::Character => i18n::tr(
+            EntityKind::Character => crate::editor::i18n::tr(
                 locale,
                 "Crear personaje desde modelo",
                 "Create character from model",
             ),
-            EntityKind::Environment => i18n::tr(
+            EntityKind::Environment => crate::editor::i18n::tr(
                 locale,
                 "Crear escenario desde modelo",
                 "Create environment from model",
             ),
-            EntityKind::Object => i18n::tr(
+            EntityKind::Object => crate::editor::i18n::tr(
                 locale,
                 "Crear objeto desde modelo",
                 "Create object from model",
             ),
-            EntityKind::Weapon => i18n::tr(
+            EntityKind::Weapon => crate::editor::i18n::tr(
                 locale,
                 "Crear arma desde modelo",
                 "Create weapon from model",
             ),
-            EntityKind::Projectile => i18n::tr(
+            EntityKind::Projectile => crate::editor::i18n::tr(
                 locale,
                 "Crear proyectil desde modelo",
                 "Create projectile from model",
@@ -1155,11 +1181,17 @@ fn create_label(kind: EntityKind, context: ProjectContext, locale: Locale) -> &'
         }
     } else {
         match kind {
-            EntityKind::Character => i18n::tr(locale, "Crear personaje", "Create character"),
-            EntityKind::Environment => i18n::tr(locale, "Añadir escenario", "Add environment"),
-            EntityKind::Object => i18n::tr(locale, "Añadir objeto", "Add object"),
-            EntityKind::Weapon => i18n::tr(locale, "Crear arma", "Create weapon"),
-            EntityKind::Projectile => i18n::tr(locale, "Añadir proyectil", "Add projectile"),
+            EntityKind::Character => {
+                crate::editor::i18n::tr(locale, "Crear personaje", "Create character")
+            }
+            EntityKind::Environment => {
+                crate::editor::i18n::tr(locale, "Añadir escenario", "Add environment")
+            }
+            EntityKind::Object => crate::editor::i18n::tr(locale, "Añadir objeto", "Add object"),
+            EntityKind::Weapon => crate::editor::i18n::tr(locale, "Crear arma", "Create weapon"),
+            EntityKind::Projectile => {
+                crate::editor::i18n::tr(locale, "Añadir proyectil", "Add projectile")
+            }
         }
     }
 }
@@ -1178,7 +1210,7 @@ fn ui_body(
         .unwrap_or_else(|| "player-hud-01".to_string());
     let screen_text = format!(
         "{}: {active_screen}",
-        i18n::tr(locale, "Pantalla activa", "Active screen")
+        crate::editor::i18n::tr(locale, "Pantalla activa", "Active screen")
     );
     let font = assets.fonts.first().map(|asset| asset.path.clone());
     let image = assets.hud_images.first().map(|asset| asset.path.clone());
@@ -1188,7 +1220,7 @@ fn ui_body(
         state,
         "ui_player",
         icons::CURSOR_CLICK,
-        i18n::tr(locale, "Interfaz del jugador", "Player UI"),
+        crate::editor::i18n::tr(locale, "Interfaz del jugador", "Player UI"),
         |ui| {
             widgets::tiny(ui, &screen_text);
             let width = ui.available_width();
@@ -1198,16 +1230,16 @@ fn ui_body(
                     ui,
                     width,
                     icons::PLUS,
-                    i18n::tr(locale, "+ Añadir texto", "+ Add text"),
+                    crate::editor::i18n::tr(locale, "+ Añadir texto", "+ Add text"),
                     hint,
-                    theme::INFO,
+                    crate::editor::theme::INFO,
                 ) {
                     actions.push(LeftAction::AddUiText(font.clone()));
                 }
             } else {
                 widgets::note(
                     ui,
-                    i18n::tr(
+                    crate::editor::i18n::tr(
                         locale,
                         "Carga una fuente en Recursos para añadir texto.",
                         "Load a font in Resources to add text.",
@@ -1220,16 +1252,16 @@ fn ui_body(
                     ui,
                     width,
                     icons::IMAGE,
-                    i18n::tr(locale, "+ Añadir imagen", "+ Add image"),
+                    crate::editor::i18n::tr(locale, "+ Añadir imagen", "+ Add image"),
                     hint,
-                    theme::INFO,
+                    crate::editor::theme::INFO,
                 ) {
                     actions.push(LeftAction::AddUiImage(image.clone()));
                 }
             } else {
                 widgets::note(
                     ui,
-                    i18n::tr(
+                    crate::editor::i18n::tr(
                         locale,
                         "Carga una imagen HUD en Recursos para añadir imágenes.",
                         "Load a HUD image in Resources to add images.",
@@ -1239,7 +1271,7 @@ fn ui_body(
 
             widgets::note(
                 ui,
-                i18n::tr(
+                crate::editor::i18n::tr(
                     locale,
                     "Añadir botones y el editor visual de HUD siguen en la UI React.",
                     "Adding buttons and the visual HUD editor still live in the React UI.",
@@ -1253,11 +1285,11 @@ fn ui_body(
         state,
         "ui_menu",
         icons::LIST,
-        i18n::tr(locale, "Menú de UI", "UI Menu"),
+        crate::editor::i18n::tr(locale, "Menú de UI", "UI Menu"),
         |ui| {
             widgets::note(
                 ui,
-                i18n::tr(
+                crate::editor::i18n::tr(
                     locale,
                     "La lista de pantallas y menús se gestiona en la UI React por ahora.",
                     "The screen and menu list is managed in the React UI for now.",
@@ -1288,26 +1320,26 @@ fn tools_body(
         (
             Some("draw_collider"),
             icons::WALL,
-            i18n::tr(locale, "Crear", "Create"),
-            i18n::tr(locale, "Muro", "Wall"),
-            i18n::tr(locale, "Colisionador", "Collider"),
-            theme::INFO,
+            crate::editor::i18n::tr(locale, "Crear", "Create"),
+            crate::editor::i18n::tr(locale, "Muro", "Wall"),
+            crate::editor::i18n::tr(locale, "Colisionador", "Collider"),
+            crate::editor::theme::INFO,
         ),
         (
             Some("draw_execution_area"),
             icons::CODE_BLOCK,
-            i18n::tr(locale, "Crear", "Create"),
+            crate::editor::i18n::tr(locale, "Crear", "Create"),
             "Trigger",
-            i18n::tr(locale, "Área de ejecución", "Execution area"),
-            theme::DANGER,
+            crate::editor::i18n::tr(locale, "Área de ejecución", "Execution area"),
+            crate::editor::theme::DANGER,
         ),
         (
             None,
             icons::WRENCH,
-            i18n::tr(locale, "Construcción", "Construction"),
-            i18n::tr(locale, "Rápida", "Quick"),
-            i18n::tr(locale, "Quick build", "Quick build"),
-            theme::WARNING,
+            crate::editor::i18n::tr(locale, "Construcción", "Construction"),
+            crate::editor::i18n::tr(locale, "Rápida", "Quick"),
+            crate::editor::i18n::tr(locale, "Quick build", "Quick build"),
+            crate::editor::theme::WARNING,
         ),
     ];
 
@@ -1317,8 +1349,8 @@ fn tools_body(
             icons::TREE_STRUCTURE,
             "Socket",
             "Config",
-            i18n::tr(locale, "Sockets", "Sockets"),
-            theme::ACCENT,
+            crate::editor::i18n::tr(locale, "Sockets", "Sockets"),
+            crate::editor::theme::ACCENT,
         ));
     }
 
@@ -1361,7 +1393,7 @@ fn tools_body(
                         bottom,
                         label,
                         *color,
-                        i18n::tr(
+                        crate::editor::i18n::tr(
                             locale,
                             "Se configura desde la UI React por ahora",
                             "Configured from the React UI for now",
@@ -1374,7 +1406,7 @@ fn tools_body(
 
     widgets::tiny(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "Colisionador y trigger: activa y haz clic en el viewport. Quick build sigue en React; los sockets se configuran en esta ventana.",
             "Collider and trigger: activate and click in the viewport. Quick build still lives in React; sockets are configured in this window.",
@@ -1391,7 +1423,7 @@ fn controls_body(
     let Some(controls) = controls else {
         widgets::note(
             ui,
-            i18n::tr(
+            crate::editor::i18n::tr(
                 locale,
                 "Aún no hay jugador en la escena.",
                 "No player in the scene yet.",
@@ -1402,7 +1434,7 @@ fn controls_body(
 
     widgets::caption(
         ui,
-        i18n::tr(locale, "Controles del jugador", "Player controls"),
+        crate::editor::i18n::tr(locale, "Controles del jugador", "Player controls"),
     );
     if let Some(name) = &controls.player_name {
         widgets::tiny(ui, name);
@@ -1410,17 +1442,17 @@ fn controls_body(
 
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Teclado + ratón", "Keyboard + mouse"),
+        crate::editor::i18n::tr(locale, "Teclado + ratón", "Keyboard + mouse"),
         &format_controls(&controls.keyboard, locale),
     );
     widgets::label_value(
         ui,
-        i18n::tr(locale, "Mandos", "Gamepads"),
+        crate::editor::i18n::tr(locale, "Mandos", "Gamepads"),
         &format_controls(&controls.gamepad, locale),
     );
     widgets::note(
         ui,
-        i18n::tr(
+        crate::editor::i18n::tr(
             locale,
             "Editar los bindings requiere el editor de scripts; de momento se hace desde la UI React.",
             "Editing bindings requires the script editor; for now it is done from the React UI.",
@@ -1430,7 +1462,7 @@ fn controls_body(
 
 fn format_controls(keys: &[String], locale: Locale) -> String {
     if keys.is_empty() {
-        i18n::tr(locale, "Sin bindings", "No bindings").to_string()
+        crate::editor::i18n::tr(locale, "Sin bindings", "No bindings").to_string()
     } else {
         keys.join(", ")
     }
@@ -1440,9 +1472,9 @@ fn footer(ui: &mut egui::Ui, locale: Locale, hint: &str) -> Option<Locale> {
     widgets::wide_button(
         ui,
         icons::PUZZLE_PIECE,
-        i18n::tr(locale, "Plugins", "Plugins"),
+        crate::editor::i18n::tr(locale, "Plugins", "Plugins"),
         hint,
-        theme::OUTLINE_SECONDARY,
+        crate::editor::theme::OUTLINE_SECONDARY,
     );
     ui.add_space(2.0);
 
@@ -1458,9 +1490,9 @@ fn footer(ui: &mut egui::Ui, locale: Locale, hint: &str) -> Option<Locale> {
             ui,
             guide_width,
             icons::INFO,
-            i18n::tr(locale, "Guia de usuario", "User guide"),
+            crate::editor::i18n::tr(locale, "Guia de usuario", "User guide"),
             hint,
-            theme::INFO,
+            crate::editor::theme::INFO,
         );
         ui.add_space(gap);
 

@@ -154,9 +154,14 @@ Gate: standalone 3D idéntico (escena, FPS, modales, overlay). Commit.
 
 ### Fase 3 — Editor dentro del mismo crate
 
+> Estado: completada. El editor usa `SharedGpu` y la feature `editor`; su `gpu.rs`
+> de 679 líneas se sustituyó por `editor/render.rs` (~250) sobre el núcleo compartido.
+
 - Mover `engine_editor/src` a `engine/src/editor/`; `crate::` → `crate::editor::` (65 usos).
 - Borrar `editor/gpu.rs` (679 líneas de Ash duplicado): usa
   `rer_engine_core::vulkan::SharedGpu`.
+- El renderer de egui pasa a `RenderMode::DynamicRendering` y graba el pase de UI
+  en el command buffer de `SharedGpu`; un solo submit por frame.
 - `engine_host.rs` sigue lanzando el `.exe` en esta fase (no se mezcla con ventana única).
 
 Gate: editor ash + modales Electron idénticos. Commit.

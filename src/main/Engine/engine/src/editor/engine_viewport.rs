@@ -2,11 +2,9 @@
 //!
 //! El motor se lanza en modo overlay con el HWND de esta ventana como padre.
 //! El rectángulo central (entre sidebars, bajo la barra superior y sobre la
-//! consola) se calcula con las mismas constantes que `ui::frame`.
+//! consola) se calcula con las mismas constantes que `crate::editor::ui::frame`.
 
 use winit::window::Window;
-
-use crate::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EngineViewport {
@@ -41,8 +39,8 @@ pub fn central_viewport(window: &Window) -> Option<EngineViewport> {
             point
         };
 
-        let sidebar = theme::SIDEBAR_WIDTH as f64 * scale;
-        let top = theme::TOP_BAR_HEIGHT as f64 * scale;
+        let sidebar = crate::editor::theme::SIDEBAR_WIDTH as f64 * scale;
+        let top = crate::editor::theme::TOP_BAR_HEIGHT as f64 * scale;
         let console = (inner.height as f64 * 0.25).max(120.0 * scale);
         let width = (inner.width as f64 - sidebar * 2.0).round().max(1.0) as u32;
         let height = (inner.height as f64 - top - console).round().max(1.0) as u32;
@@ -67,8 +65,8 @@ pub fn central_viewport(window: &Window) -> Option<EngineViewport> {
 }
 
 impl EngineViewport {
-    pub fn engine_bounds(self) -> crate::cli::EngineBounds {
-        crate::cli::EngineBounds {
+    pub fn engine_bounds(self) -> crate::editor::cli::EngineBounds {
+        crate::editor::cli::EngineBounds {
             x: self.x,
             y: self.y,
             width: self.width,

@@ -107,6 +107,7 @@ struct GpuInner {
     physical: vk::PhysicalDevice,
     device: ash::Device,
     queue: Mutex<vk::Queue>,
+    queue_family: u32,
     hw_rt: bool,
     swapchain_loader: ash::khr::swapchain::Device,
     swapchain: Mutex<SwapchainState>,
@@ -604,6 +605,7 @@ impl SharedGpu {
                 physical,
                 device,
                 queue: Mutex::new(queue),
+                queue_family,
                 hw_rt,
                 swapchain_loader,
                 swapchain: Mutex::new(swapchain),
@@ -663,6 +665,28 @@ impl SharedGpu {
 
     pub fn device(&self) -> &ash::Device {
         &self.inner.device
+    }
+
+    /// Instancia Vulkan, necesaria para crear el renderer de egui sobre este mismo device.
+    pub fn instance(&self) -> &ash::Instance {
+        &self.inner.instance
+    }
+
+    pub fn physical_device(&self) -> vk::PhysicalDevice {
+        self.inner.physical
+    }
+
+    /// Cola gráfica/de presentación que usan los motores y el editor.
+    pub fn queue(&self) -> vk::Queue {
+        *self
+            .inner
+            .queue
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    pub fn queue_family_index(&self) -> u32 {
+        self.inner.queue_family
     }
 
     pub fn accel(&self) -> Option<&ash::khr::acceleration_structure::Device> {

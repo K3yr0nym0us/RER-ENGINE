@@ -1,6 +1,6 @@
 //! Parseo de los argumentos con los que Electron lanza el editor.
 
-use crate::context::{ProjectContext, ProjectType};
+use crate::editor::context::{ProjectContext, ProjectType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Locale {
@@ -211,7 +211,7 @@ impl Cli {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::GameStyle;
+    use crate::editor::context::GameStyle;
 
     #[test]
     fn parses_full_command_line() {

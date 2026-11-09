@@ -7,8 +7,7 @@
 //! En esta fase solo se dibujan las cajas y sus etiquetas: los componentes
 //! reales llegan en las fases 2–4.
 
-use crate::app::EditorApp;
-use crate::theme;
+use crate::editor::app::EditorApp;
 
 use super::{bottom_bar, sidebar_left, sidebar_right, top_bar};
 
@@ -19,28 +18,28 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
 
     // Las sidebars ocupan toda la altura, como en React.
     egui::Panel::left("editor_sidebar_left")
-        .exact_size(theme::SIDEBAR_WIDTH)
+        .exact_size(crate::editor::theme::SIDEBAR_WIDTH)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::SIDEBAR_BG))
+        .frame(panel_frame(crate::editor::theme::SIDEBAR_BG))
         .show(ui, |ui| {
             sidebar_left::show(ui, app);
         });
 
     egui::Panel::right("editor_sidebar_right")
-        .exact_size(theme::SIDEBAR_WIDTH)
+        .exact_size(crate::editor::theme::SIDEBAR_WIDTH)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(theme::SIDEBAR_BG))
+        .frame(panel_frame(crate::editor::theme::SIDEBAR_BG))
         .show(ui, |ui| {
             sidebar_right::show(ui, app);
         });
 
     // Barra superior y consola solo en la columna central.
     egui::Panel::top("editor_top_bar")
-        .exact_size(theme::TOP_BAR_HEIGHT)
+        .exact_size(crate::editor::theme::TOP_BAR_HEIGHT)
         .show_separator_line(false)
-        .frame(panel_frame(theme::SIDEBAR_BG))
+        .frame(panel_frame(crate::editor::theme::SIDEBAR_BG))
         .show(ui, |ui| {
             top_bar::show(ui, app);
         });
@@ -48,20 +47,20 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     egui::Panel::bottom("editor_log_console")
         .exact_size(console_height)
         .show_separator_line(false)
-        .frame(panel_frame(theme::LOG_BG))
+        .frame(panel_frame(crate::editor::theme::LOG_BG))
         .show(ui, |ui| {
             bottom_bar::show(ui, app);
         });
 
     egui::CentralPanel::default()
-        .frame(panel_frame(theme::PANEL_BG))
+        .frame(panel_frame(crate::editor::theme::PANEL_BG))
         .show(ui, |ui| {
             let title = format!(
                 "{} — {}",
                 text.engine_viewport,
                 app.cli.context.project_type.as_str()
             );
-            section_box(ui, &title, theme::PANEL_BG);
+            section_box(ui, &title, crate::editor::theme::PANEL_BG);
         });
 }
 
@@ -82,7 +81,7 @@ fn section_box(ui: &mut egui::Ui, title: &str, fill: egui::Color32) {
         rect,
         egui::CornerRadius::ZERO,
         fill,
-        egui::Stroke::new(1.0, theme::BORDER),
+        egui::Stroke::new(1.0, crate::editor::theme::BORDER),
         egui::StrokeKind::Inside,
     );
 
@@ -91,7 +90,7 @@ fn section_box(ui: &mut egui::Ui, title: &str, fill: egui::Color32) {
         egui::Align2::CENTER_CENTER,
         title,
         egui::FontId::proportional(13.0),
-        theme::TEXT_MUTED,
+        crate::editor::theme::TEXT_MUTED,
     );
 }
 

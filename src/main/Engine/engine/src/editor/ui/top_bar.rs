@@ -8,9 +8,8 @@ use egui::{Align, Color32, Layout, RichText};
 use egui_phosphor::regular as icons;
 use serde_json::json;
 
-use crate::app::{EditorApp, EditorStatus};
-use crate::i18n::Text;
-use crate::theme;
+use crate::editor::app::{EditorApp, EditorStatus};
+use crate::editor::i18n::Text;
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let text = app.text();
@@ -46,16 +45,20 @@ fn left_group(ui: &mut egui::Ui, app: &mut EditorApp, text: &Text) {
         can_use && !playing,
         playing,
         if playing {
-            theme::SUCCESS
+            crate::editor::theme::SUCCESS
         } else {
             Color32::TRANSPARENT
         },
         if playing {
-            theme::SUCCESS
+            crate::editor::theme::SUCCESS
         } else {
-            theme::PRIMARY_OUTLINE
+            crate::editor::theme::PRIMARY_OUTLINE
         },
-        if playing { Color32::WHITE } else { theme::TEXT },
+        if playing {
+            Color32::WHITE
+        } else {
+            crate::editor::theme::TEXT
+        },
     ) {
         app.send_engine(json!({ "cmd": "set_preview_playing", "playing": true }));
         app.preview_playing = true;
@@ -69,16 +72,20 @@ fn left_group(ui: &mut egui::Ui, app: &mut EditorApp, text: &Text) {
         can_use && playing,
         stopped,
         if stopped {
-            theme::DANGER
+            crate::editor::theme::DANGER
         } else {
             Color32::TRANSPARENT
         },
         if stopped {
-            theme::DANGER
+            crate::editor::theme::DANGER
         } else {
-            theme::PRIMARY_OUTLINE
+            crate::editor::theme::PRIMARY_OUTLINE
         },
-        if stopped { Color32::WHITE } else { theme::TEXT },
+        if stopped {
+            Color32::WHITE
+        } else {
+            crate::editor::theme::TEXT
+        },
     ) {
         app.send_engine(json!({ "cmd": "set_preview_playing", "playing": false }));
         app.preview_playing = false;
@@ -92,15 +99,15 @@ fn left_group(ui: &mut egui::Ui, app: &mut EditorApp, text: &Text) {
         can_use,
         debug,
         if debug {
-            theme::SUCCESS
+            crate::editor::theme::SUCCESS
         } else {
             Color32::TRANSPARENT
         },
-        theme::SUCCESS,
+        crate::editor::theme::SUCCESS,
         if debug {
             Color32::WHITE
         } else {
-            theme::SUCCESS
+            crate::editor::theme::SUCCESS
         },
     ) {
         app.debug_mode = !app.debug_mode;
@@ -114,28 +121,34 @@ fn center_group(ui: &mut egui::Ui, app: &EditorApp, compact: bool, text: &Text) 
             RichText::new("RER-ENGINE")
                 .strong()
                 .size(16.0)
-                .color(theme::ACCENT),
+                .color(crate::editor::theme::ACCENT),
         );
     }
 
     badge(
         ui,
         app.cli.context.project_type.as_str(),
-        theme::BADGE_GREEN_BG,
-        theme::BADGE_GREEN_TEXT,
-        Some(theme::BADGE_GREEN_BORDER),
+        crate::editor::theme::BADGE_GREEN_BG,
+        crate::editor::theme::BADGE_GREEN_TEXT,
+        Some(crate::editor::theme::BADGE_GREEN_BORDER),
     );
 
     match app.status {
         EditorStatus::Starting => badge(
             ui,
             text.starting,
-            theme::WARNING_BADGE,
-            theme::WARNING_TEXT,
+            crate::editor::theme::WARNING_BADGE,
+            crate::editor::theme::WARNING_TEXT,
             None,
         ),
-        EditorStatus::Ready => badge(ui, "◉", theme::SUCCESS, Color32::WHITE, None),
-        EditorStatus::Error => badge(ui, text.error, theme::DANGER, Color32::WHITE, None),
+        EditorStatus::Ready => badge(ui, "◉", crate::editor::theme::SUCCESS, Color32::WHITE, None),
+        EditorStatus::Error => badge(
+            ui,
+            text.error,
+            crate::editor::theme::DANGER,
+            Color32::WHITE,
+            None,
+        ),
     }
 }
 
@@ -214,11 +227,15 @@ fn save_button(ui: &mut egui::Ui, app: &mut EditorApp, compact: bool, text: &Tex
 
     // Si el último guardado falló, el botón queda marcado en rojo.
     let failed = app.save_error.is_some();
-    let color = if failed { theme::DANGER } else { theme::TEXT };
-    let stroke = if failed {
-        theme::DANGER
+    let color = if failed {
+        crate::editor::theme::DANGER
     } else {
-        theme::PRIMARY_OUTLINE
+        crate::editor::theme::TEXT
+    };
+    let stroke = if failed {
+        crate::editor::theme::DANGER
+    } else {
+        crate::editor::theme::PRIMARY_OUTLINE
     };
 
     let button = egui::Button::new(RichText::new(label).size(14.0).color(color))
@@ -260,12 +277,12 @@ fn auto_button(ui: &mut egui::Ui, app: &mut EditorApp, compact: bool, text: &Tex
     };
 
     let color = if app.auto_save_enabled {
-        theme::WARNING_TEXT
+        crate::editor::theme::WARNING_TEXT
     } else {
-        theme::OUTLINE_SECONDARY
+        crate::editor::theme::OUTLINE_SECONDARY
     };
     let fill = if app.auto_save_enabled {
-        theme::WARNING
+        crate::editor::theme::WARNING
     } else {
         Color32::TRANSPARENT
     };
@@ -273,7 +290,10 @@ fn auto_button(ui: &mut egui::Ui, app: &mut EditorApp, compact: bool, text: &Tex
     let button = egui::Button::new(RichText::new(label).size(14.0).color(color))
         .min_size(egui::vec2(0.0, 28.0))
         .fill(fill)
-        .stroke(egui::Stroke::new(1.0, theme::OUTLINE_SECONDARY));
+        .stroke(egui::Stroke::new(
+            1.0,
+            crate::editor::theme::OUTLINE_SECONDARY,
+        ));
 
     let enabled = app.has_saved_once && !app.saving;
     let response = ui.add_enabled(enabled, button);

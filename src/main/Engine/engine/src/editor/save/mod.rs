@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::project_state::{ProjectState, is_saveable};
+use crate::editor::project_state::{ProjectState, is_saveable};
 
 /// Resultado de un guardado correcto.
 #[derive(Debug, Clone, PartialEq, Eq)]

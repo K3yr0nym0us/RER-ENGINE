@@ -1,6 +1,6 @@
 //! Compila los shaders GLSL del motor 2D a SPIR-V con `glslc`.
 //!
-//! Es el mismo esquema que `engine_3d/build.rs`: busca `glslc` en `PATH`, luego en `VULKAN_SDK` y
+//! Es el mismo esquema que `engine/build.rs`: busca `glslc` en `PATH`, luego en `VULKAN_SDK` y
 //! por último en `C:\VulkanSDK\*`. Los `.spv` quedan en `OUT_DIR` y la ruta Vulkan los carga con
 //! `include_bytes!(concat!(env!("OUT_DIR"), "/<nombre>.spv"))`.
 

@@ -8,3 +8,6 @@
 
 #[cfg(feature = "engine3d")]
 pub mod engine3d;
+
+#[cfg(feature = "editor")]
+pub mod editor;

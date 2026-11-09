@@ -8,14 +8,12 @@
 use egui::{Align2, Color32, FontId, RichText, Sense, Stroke, StrokeKind};
 use egui_phosphor::regular as icons;
 
-use crate::theme;
-
 pub fn caption(ui: &mut egui::Ui, label: &str) {
     ui.label(
         RichText::new(label)
             .size(12.0)
             .strong()
-            .color(theme::TEXT_MUTED),
+            .color(crate::editor::theme::TEXT_MUTED),
     );
 }
 
@@ -24,26 +22,42 @@ pub fn note(ui: &mut egui::Ui, text: &str) {
         RichText::new(text)
             .size(12.0)
             .italics()
-            .color(theme::TEXT_MUTED),
+            .color(crate::editor::theme::TEXT_MUTED),
     );
 }
 
 /// Nota pequeña del sidebar derecho (React: 0.72rem).
 pub fn hint(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).size(10.0).color(theme::TEXT_MUTED));
+    ui.label(
+        RichText::new(text)
+            .size(10.0)
+            .color(crate::editor::theme::TEXT_MUTED),
+    );
 }
 
 /// Nota aún más pequeña (React: 0.68rem).
 pub fn tiny(ui: &mut egui::Ui, text: &str) {
-    ui.label(RichText::new(text).size(9.5).color(theme::TEXT_MUTED));
+    ui.label(
+        RichText::new(text)
+            .size(9.5)
+            .color(crate::editor::theme::TEXT_MUTED),
+    );
 }
 
 /// Fila `label ... valor` con el valor a la derecha en color info.
 pub fn label_value(ui: &mut egui::Ui, label: &str, value: &str) {
     ui.horizontal(|ui| {
-        ui.label(RichText::new(label).size(12.0).color(theme::TEXT_MUTED));
+        ui.label(
+            RichText::new(label)
+                .size(12.0)
+                .color(crate::editor::theme::TEXT_MUTED),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(RichText::new(value).size(12.0).color(theme::INFO));
+            ui.label(
+                RichText::new(value)
+                    .size(12.0)
+                    .color(crate::editor::theme::INFO),
+            );
         });
     });
 }
@@ -51,9 +65,17 @@ pub fn label_value(ui: &mut egui::Ui, label: &str, value: &str) {
 /// Etiquetas extremas de un range (p. ej. Nítido / Suave).
 pub fn range_end_labels(ui: &mut egui::Ui, left: &str, right: &str) {
     ui.horizontal(|ui| {
-        ui.label(RichText::new(left).size(9.5).color(theme::TEXT_MUTED));
+        ui.label(
+            RichText::new(left)
+                .size(9.5)
+                .color(crate::editor::theme::TEXT_MUTED),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.label(RichText::new(right).size(9.5).color(theme::TEXT_MUTED));
+            ui.label(
+                RichText::new(right)
+                    .size(9.5)
+                    .color(crate::editor::theme::TEXT_MUTED),
+            );
         });
     });
 }
@@ -109,7 +131,7 @@ pub fn range_slider(
     painter.rect_filled(
         track,
         egui::CornerRadius::same(2),
-        theme::RANGE_TRACK.linear_multiply(alpha),
+        crate::editor::theme::RANGE_TRACK.linear_multiply(alpha),
     );
 
     let t = if (max - min).abs() > f32::EPSILON {
@@ -135,8 +157,8 @@ pub fn select_placeholder_sized(ui: &mut egui::Ui, width: f32, value: &str, hint
     painter.rect(
         rect,
         egui::CornerRadius::same(5),
-        theme::PANEL_BG,
-        Stroke::new(1.0, theme::BORDER),
+        crate::editor::theme::PANEL_BG,
+        Stroke::new(1.0, crate::editor::theme::BORDER),
         StrokeKind::Inside,
     );
     painter.text(
@@ -144,14 +166,14 @@ pub fn select_placeholder_sized(ui: &mut egui::Ui, width: f32, value: &str, hint
         Align2::LEFT_CENTER,
         value,
         FontId::proportional(13.0),
-        theme::TEXT,
+        crate::editor::theme::TEXT,
     );
     painter.text(
         rect.right_center() - egui::vec2(8.0, 0.0),
         Align2::RIGHT_CENTER,
         icons::CARET_DOWN,
         FontId::proportional(13.0),
-        theme::TEXT_MUTED,
+        crate::editor::theme::TEXT_MUTED,
     );
 
     response.on_hover_text(hint);
@@ -166,7 +188,7 @@ pub fn small_icon_button(ui: &mut egui::Ui, icon: &str, hint: &str) {
         rect,
         egui::CornerRadius::same(5),
         Color32::TRANSPARENT,
-        Stroke::new(1.0, theme::INFO),
+        Stroke::new(1.0, crate::editor::theme::INFO),
         StrokeKind::Inside,
     );
     painter.text(
@@ -174,7 +196,7 @@ pub fn small_icon_button(ui: &mut egui::Ui, icon: &str, hint: &str) {
         Align2::CENTER_CENTER,
         icon,
         FontId::proportional(15.0),
-        theme::INFO,
+        crate::editor::theme::INFO,
     );
 
     response.on_hover_text(hint);
@@ -276,7 +298,7 @@ pub fn language_button(ui: &mut egui::Ui, width: f32, label: &str, tooltip: &str
     let border = if hovered {
         Color32::from_rgb(0x47, 0x55, 0x69)
     } else {
-        theme::BORDER
+        crate::editor::theme::BORDER
     };
     let text_color = if hovered {
         Color32::from_rgb(0xcb, 0xd5, 0xe1)
@@ -332,9 +354,9 @@ pub fn switch_value(ui: &mut egui::Ui, value: &mut bool, hint: &str) -> bool {
     let alpha = if enabled { 1.0 } else { 0.55 };
     let painter = ui.painter();
     let fill = if *value {
-        theme::CONTROL_BLUE
+        crate::editor::theme::CONTROL_BLUE
     } else {
-        theme::SWITCH_OFF
+        crate::editor::theme::SWITCH_OFF
     };
     painter.rect_filled(
         rect,
@@ -379,12 +401,16 @@ pub fn icon_toggle_value(ui: &mut egui::Ui, icon: &str, value: &mut bool, hint: 
     }
 
     let (fill, stroke, color) = if *value {
-        (theme::INFO, theme::INFO, theme::WARNING_TEXT)
+        (
+            crate::editor::theme::INFO,
+            crate::editor::theme::INFO,
+            crate::editor::theme::WARNING_TEXT,
+        )
     } else {
         (
             Color32::TRANSPARENT,
-            theme::OUTLINE_SECONDARY,
-            theme::OUTLINE_SECONDARY,
+            crate::editor::theme::OUTLINE_SECONDARY,
+            crate::editor::theme::OUTLINE_SECONDARY,
         )
     };
     let alpha = if enabled { 1.0 } else { 0.55 };
@@ -414,9 +440,9 @@ pub fn pill_button_click(ui: &mut egui::Ui, label: &str, active: bool, hint: &st
     let enabled = ui.is_enabled();
     let font = FontId::proportional(12.0);
     let text_color = if active {
-        theme::WARNING_TEXT
+        crate::editor::theme::WARNING_TEXT
     } else {
-        theme::OUTLINE_SECONDARY
+        crate::editor::theme::OUTLINE_SECONDARY
     };
     let galley = ui
         .painter()
@@ -436,9 +462,12 @@ pub fn pill_button_click(ui: &mut egui::Ui, label: &str, active: bool, hint: &st
     };
 
     let (fill, stroke) = if active {
-        (theme::INFO, theme::INFO)
+        (crate::editor::theme::INFO, crate::editor::theme::INFO)
     } else {
-        (Color32::TRANSPARENT, theme::OUTLINE_SECONDARY)
+        (
+            Color32::TRANSPARENT,
+            crate::editor::theme::OUTLINE_SECONDARY,
+        )
     };
     let alpha = if enabled { 1.0 } else { 0.55 };
 
@@ -498,7 +527,7 @@ pub fn small_icon_button_click(ui: &mut egui::Ui, icon: &str, hint: &str) -> boo
         rect,
         egui::CornerRadius::same(5),
         Color32::TRANSPARENT,
-        Stroke::new(1.0, theme::INFO.linear_multiply(alpha)),
+        Stroke::new(1.0, crate::editor::theme::INFO.linear_multiply(alpha)),
         StrokeKind::Inside,
     );
     painter.text(
@@ -506,7 +535,7 @@ pub fn small_icon_button_click(ui: &mut egui::Ui, icon: &str, hint: &str) -> boo
         Align2::CENTER_CENTER,
         icon,
         FontId::proportional(15.0),
-        theme::INFO.linear_multiply(alpha),
+        crate::editor::theme::INFO.linear_multiply(alpha),
     );
 
     let clicked = enabled && response.clicked();

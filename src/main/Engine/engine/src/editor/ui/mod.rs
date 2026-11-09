@@ -9,7 +9,7 @@ pub(crate) mod sidebar_right;
 mod top_bar;
 mod widgets;
 
-use crate::app::EditorApp;
+use crate::editor::app::EditorApp;
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     frame::show(ui, app);

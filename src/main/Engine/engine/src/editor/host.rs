@@ -1,24 +1,4 @@
-//! Editor egui autónomo de RER-ENGINE.
-//!
-//! El editor lanza y controla el proceso del motor directamente en Rust.
-//! Electron solo recibe eventos reenviados para la UI React antigua durante la
-//! migración.
-
-mod app;
-mod assets;
-mod bridge;
-mod cli;
-mod context;
-mod engine_host;
-mod engine_viewport;
-mod gpu;
-mod i18n;
-mod project_state;
-mod save;
-mod scenes;
-mod theme;
-mod ui;
-mod world;
+//! Host winit del editor egui de RER-ENGINE.
 
 use std::io::BufRead;
 use std::sync::Arc;
@@ -33,14 +13,16 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::app::{EditorApp, EditorStatus};
-use crate::cli::Cli;
-use crate::engine_host::{EngineHost, UserEvent};
+use crate::editor::app::{EditorApp, EditorStatus};
+use crate::editor::cli::Cli;
+use crate::editor::engine_host::{EngineHost, UserEvent};
+use rer_engine_core::vulkan::VulkanOptions;
 
-const DEFAULT_LOG_FILTER: &str = "rer_engine_editor=info,ash=warn,egui_ash_renderer=warn";
+const DEFAULT_LOG_FILTER: &str =
+    "rer_engine::editor=info,rer_engine_core::vulkan=info,ash=warn,egui_ash_renderer=warn";
 
 /// Icono de ventana, el mismo PNG que usa Electron (`src/resources/RER-ENGINE-LOGO.png`).
-const APP_ICON_PNG: &[u8] = include_bytes!("../../../../../src/resources/RER-ENGINE-LOGO.png");
+const APP_ICON_PNG: &[u8] = include_bytes!("../../../../../../src/resources/RER-ENGINE-LOGO.png");
 
 fn app_window_icon() -> Option<winit::window::Icon> {
     let image = image::load_from_memory(APP_ICON_PNG).ok()?;
@@ -52,7 +34,7 @@ fn app_window_icon() -> Option<winit::window::Icon> {
 
 struct EditorWindow {
     window: Arc<Window>,
-    gpu: gpu::Gpu,
+    gpu: crate::editor::render::EditorGpu,
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
     app: EditorApp,
@@ -60,10 +42,15 @@ struct EditorWindow {
 
 impl EditorWindow {
     fn new(window: Arc<Window>, cli: Cli) -> Result<Self, String> {
-        let gpu = gpu::Gpu::new(window.as_ref())?;
+        let options = if cli.context.is_3d() {
+            VulkanOptions::three_d()
+        } else {
+            VulkanOptions::default()
+        };
+        let gpu = crate::editor::render::EditorGpu::new(window.as_ref(), options)?;
 
         let egui_ctx = egui::Context::default();
-        theme::apply(&egui_ctx);
+        crate::editor::theme::apply(&egui_ctx);
 
         let egui_state = egui_winit::State::new(
             egui_ctx.clone(),
@@ -89,7 +76,9 @@ impl EditorWindow {
 
     /// Recoloca el overlay del motor tras un resize/cambio de escala.
     fn update_engine_viewport(&mut self) {
-        if let Some(viewport) = engine_viewport::central_viewport(self.window.as_ref()) {
+        if let Some(viewport) =
+            crate::editor::engine_viewport::central_viewport(self.window.as_ref())
+        {
             self.app.send_engine(viewport.set_bounds_command());
         }
     }
@@ -254,7 +243,7 @@ impl EditorApplication {
         let spawned = std::thread::Builder::new()
             .name("save-writer".into())
             .spawn(move || {
-                let result = crate::save::write_save(
+                let result = crate::editor::save::write_save(
                     &engine_scene,
                     &state,
                     &project_type,
@@ -280,12 +269,12 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         }
 
         let attributes = Window::default_attributes()
-            .with_title(i18n::text(self.cli.locale).window_title)
+            .with_title(crate::editor::i18n::text(self.cli.locale).window_title)
             .with_window_icon(app_window_icon())
             .with_inner_size(LogicalSize::new(1280.0, 800.0))
             .with_min_inner_size(LogicalSize::new(
-                theme::MIN_WINDOW_WIDTH,
-                theme::MIN_WINDOW_HEIGHT,
+                crate::editor::theme::MIN_WINDOW_WIDTH,
+                crate::editor::theme::MIN_WINDOW_HEIGHT,
             ));
 
         let window = Arc::new(
@@ -296,7 +285,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
 
         // El motor se cuelga de la ventana egui, no de Electron: usamos el HWND
         // del editor y el rectángulo central del marco.
-        if let Some(viewport) = engine_viewport::central_viewport(window.as_ref()) {
+        if let Some(viewport) = crate::editor::engine_viewport::central_viewport(window.as_ref()) {
             self.cli.engine_parent_hwnd = viewport.parent_hwnd;
             self.cli.engine_bounds = Some(viewport.engine_bounds());
             log::info!(
@@ -341,7 +330,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                     }
                 }
 
-                crate::bridge::notify_editor_ready();
+                crate::editor::bridge::notify_editor_ready();
                 window.request_redraw();
             }
             Err(message) => {
@@ -477,9 +466,8 @@ fn spawn_electron_reader(proxy: EventLoopProxy<UserEvent>) {
         .expect("No se pudo crear el hilo de lectura de Electron");
 }
 
-fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_LOG_FILTER))
-        .init();
+pub fn run() {
+    rer_engine_core::logging::init(DEFAULT_LOG_FILTER);
 
     let cli = Cli::parse_from(std::env::args());
     log::info!("[editor] {}", Cli::usage());

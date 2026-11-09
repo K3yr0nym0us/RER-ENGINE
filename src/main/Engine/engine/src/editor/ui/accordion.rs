@@ -7,8 +7,6 @@
 use egui::{Align2, FontId, Sense, Stroke, StrokeKind};
 use egui_phosphor::regular as icons;
 
-use crate::theme;
-
 /// Ítem completo: marco exterior + header + cuerpo animado.
 ///
 /// Devuelve la respuesta del header para que el sidebar actualice su estado
@@ -31,8 +29,8 @@ pub fn item(
 
     let radius = if depth == 0 { 6 } else { 4 };
     let frame = egui::Frame::new()
-        .fill(theme::ACCORDION_BG)
-        .stroke(Stroke::new(1.0, theme::BORDER))
+        .fill(crate::editor::theme::ACCORDION_BG)
+        .stroke(Stroke::new(1.0, crate::editor::theme::BORDER))
         .corner_radius(egui::CornerRadius::same(radius))
         .inner_margin(egui::Margin::ZERO);
 
@@ -45,8 +43,11 @@ pub fn item(
 
             state.show_body_unindented(ui, |ui| {
                 let rect = ui.max_rect();
-                ui.painter()
-                    .hline(rect.x_range(), rect.top(), Stroke::new(1.0, theme::BORDER));
+                ui.painter().hline(
+                    rect.x_range(),
+                    rect.top(),
+                    Stroke::new(1.0, crate::editor::theme::BORDER),
+                );
 
                 egui::Frame::new()
                     .inner_margin(egui::Margin::symmetric(6, 8))
@@ -77,11 +78,11 @@ pub fn header(
 
     let visual_open = openness > 0.0;
     let fill = if visual_open {
-        theme::ACCORDION_OPEN_BG
+        crate::editor::theme::ACCORDION_OPEN_BG
     } else if response.hovered() {
-        theme::ACCORDION_HEADER_HOVER
+        crate::editor::theme::ACCORDION_HEADER_HOVER
     } else {
-        theme::ACCORDION_HEADER_BG
+        crate::editor::theme::ACCORDION_HEADER_BG
     };
 
     let radius = if depth == 0 { 6 } else { 4 };
@@ -100,9 +101,9 @@ pub fn header(
     painter.rect(rect, corners, fill, Stroke::NONE, StrokeKind::Inside);
 
     let text_color = if visual_open {
-        theme::ACCENT
+        crate::editor::theme::ACCENT
     } else {
-        theme::TEXT
+        crate::editor::theme::TEXT
     };
     painter.text(
         rect.left_center() + egui::vec2(10.0, 0.0),
@@ -120,7 +121,7 @@ pub fn header(
             icons::CARET_RIGHT
         },
         FontId::proportional(14.0),
-        theme::TEXT_MUTED,
+        crate::editor::theme::TEXT_MUTED,
     );
 
     response

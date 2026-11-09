@@ -12,8 +12,8 @@ use std::thread::{self, JoinHandle};
 use serde_json::Value;
 use winit::event_loop::EventLoopProxy;
 
-use crate::cli::Cli;
-use crate::context::ProjectType;
+use crate::editor::cli::Cli;
+use crate::editor::context::ProjectType;
 
 /// Eventos que llegan al event loop del editor desde otros hilos.
 #[derive(Debug, Clone)]
@@ -23,7 +23,7 @@ pub enum UserEvent {
     /// Mensaje JSON enviado por Electron (solo puente de la UI antigua).
     FromElectron(Value),
     /// El hilo de escritura del `.save` terminó.
-    SaveFinished(Result<crate::save::SaveSuccess, String>),
+    SaveFinished(Result<crate::editor::save::SaveSuccess, String>),
     /// Un guardado excedió el tiempo máximo esperando el estado/snapshot.
     SaveTimeout(u64),
     /// Pide sincronizar los ajustes de mundo desde el motor.
@@ -135,7 +135,7 @@ impl EngineHost {
                         continue;
                     }
                     // La UI React antigua sigue recibiendo los eventos del motor.
-                    crate::bridge::forward_line(&line);
+                    crate::editor::bridge::forward_line(&line);
                     if let Ok(value) = serde_json::from_str::<Value>(&line)
                         && proxy.send_event(UserEvent::EngineEvent(value)).is_err()
                     {
@@ -153,7 +153,7 @@ impl EngineHost {
                     // Eventos silenciosos del motor: se reenvían igual que stdout.
                     if let Some(json) = line.strip_prefix("[IPC_EVENT]") {
                         let json = json.trim();
-                        crate::bridge::forward_line(json);
+                        crate::editor::bridge::forward_line(json);
                         if let Ok(value) = serde_json::from_str::<Value>(json) {
                             let _ = stderr_proxy.send_event(UserEvent::EngineEvent(value));
                         }

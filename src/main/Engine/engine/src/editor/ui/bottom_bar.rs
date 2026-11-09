@@ -5,8 +5,7 @@
 
 use egui::RichText;
 
-use crate::app::EditorApp;
-use crate::theme;
+use crate::editor::app::EditorApp;
 
 /// Bootstrap `small` sobre base 14 px (0.875em).
 const LOG_FONT_SIZE: f32 = 12.5;
@@ -19,7 +18,7 @@ pub fn show(ui: &mut egui::Ui, app: &EditorApp) {
     ui.painter().hline(
         rect.x_range(),
         rect.top(),
-        egui::Stroke::new(1.0, theme::METRICS_BORDER),
+        egui::Stroke::new(1.0, crate::editor::theme::METRICS_BORDER),
     );
 
     egui::Frame::new()
@@ -37,16 +36,16 @@ pub fn show(ui: &mut egui::Ui, app: &EditorApp) {
                             RichText::new(text.empty_log)
                                 .monospace()
                                 .size(LOG_FONT_SIZE)
-                                .color(theme::TEXT_MUTED),
+                                .color(crate::editor::theme::TEXT_MUTED),
                         );
                         return;
                     }
 
                     for entry in &app.log {
                         let color = if entry.is_error {
-                            theme::DANGER
+                            crate::editor::theme::DANGER
                         } else {
-                            theme::SUCCESS
+                            crate::editor::theme::SUCCESS
                         };
                         ui.label(
                             RichText::new(&entry.text)
