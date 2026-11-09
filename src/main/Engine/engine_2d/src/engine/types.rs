@@ -99,7 +99,7 @@ pub(crate) struct SceneUniforms {
     pub(crate) cam_pos: [f32; 4], // xyz = posición cámara, w = sin uso
 }
 
-/// Uniformes del pass `screen_hud_pipeline` (layout completo de `shader_screen_hud.wgsl`).
+/// Uniformes del pass `screen_hud_pipeline` (bloque `Scene` completo, 11 miembros).
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub(crate) struct ScreenHudSceneUniforms {

@@ -539,10 +539,12 @@ impl State {
         }
     }
 
-    /// Activa o desactiva V-Sync. El present mode se fija al crear el swapchain Vulkan; aquí solo
-    /// se conserva la preferencia para la próxima recreación.
+    /// Activa o desactiva V-Sync recreando el swapchain con el present mode adecuado.
     pub fn set_vsync(&mut self, enabled: bool) {
         self.vsync_enabled = enabled;
+        if let Err(error) = self.vulkan2d.set_vsync(enabled) {
+            log::warn!("[vsync] no se pudo recrear el swapchain: {error}");
+        }
         log::info!(
             "[vsync] V-Sync {}",
             if enabled { "activado" } else { "desactivado" }

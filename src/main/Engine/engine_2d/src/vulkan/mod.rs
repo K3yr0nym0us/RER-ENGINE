@@ -67,6 +67,11 @@ impl Vulkan2d {
         Ok(())
     }
 
+    /// Cambia el present mode del swapchain (V-Sync on/off) recreándolo.
+    pub(crate) fn set_vsync(&self, enabled: bool) -> Result<(), VulkanError> {
+        self.gpu.set_vsync(enabled)
+    }
+
     /// Copia una región RGBA al atlas Vulkan. La llama `TextureAtlas` en cada `pack`/`update`,
     /// así que las dos rutas de render ven exactamente los mismos píxeles.
     pub(crate) fn upload_atlas_region(
