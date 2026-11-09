@@ -12,6 +12,7 @@ use crate::editor::app::EditorApp;
 use super::{bottom_bar, sidebar_left, sidebar_right, top_bar};
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
+    let text = app.text();
     let full_height = ui.max_rect().height();
     let console_height = console_height(full_height);
 
@@ -52,10 +53,34 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         });
 
     // El centro queda limpio: aquí se dibuja la escena del motor en el mismo swapchain.
+    // Mientras arranca, solo se muestra un texto en esta área; el resto de la UI ya está vivo.
     egui::CentralPanel::default()
         .frame(egui::Frame::NONE)
         .show(ui, |ui| {
-            app.viewport_rect = Some(ui.max_rect());
+            let rect = ui.max_rect();
+            app.viewport_rect = Some(rect);
+            let (message, color) = if app.engine_loading {
+                (
+                    Some(text.loading_engine.to_string()),
+                    crate::editor::theme::TEXT_MUTED,
+                )
+            } else if let Some(error) = app.engine_error.as_deref() {
+                (
+                    Some(format!("{}: {error}", text.engine_error)),
+                    crate::editor::theme::DANGER,
+                )
+            } else {
+                (None, crate::editor::theme::TEXT_MUTED)
+            };
+            if let Some(message) = message {
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    message,
+                    egui::FontId::proportional(16.0),
+                    color,
+                );
+            }
         });
 }
 

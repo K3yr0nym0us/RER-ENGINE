@@ -231,6 +231,10 @@ pub struct EditorApp {
     pub engine_tx: Option<Sender<Value>>,
     /// Rectángulo central (en puntos) donde el motor dibuja la escena.
     pub viewport_rect: Option<egui::Rect>,
+    /// El motor 3D se está construyendo; el viewport muestra un placeholder.
+    pub engine_loading: bool,
+    /// Error de arranque del motor, mostrado en el viewport.
+    pub engine_error: Option<String>,
 }
 
 impl EditorApp {
@@ -263,6 +267,8 @@ impl EditorApp {
             right_sidebar: SidebarRightState::default(),
             engine_tx: None,
             viewport_rect: None,
+            engine_loading: false,
+            engine_error: None,
         }
     }
 

@@ -218,30 +218,6 @@ impl EditorWindow {
         }
     }
 
-    /// Primer frame antes de construir el motor, para no dejar la ventana en blanco.
-    fn render_loading(&mut self) -> Result<(), String> {
-        let EditorWindow {
-            window,
-            gpu,
-            egui_ctx,
-            egui_state,
-            ..
-        } = self;
-        let _ = gpu.render(
-            window.as_ref(),
-            egui_ctx,
-            egui_state,
-            |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.label("Cargando motor 3D…");
-                });
-            },
-            None,
-            None,
-        )?;
-        Ok(())
-    }
-
     fn resize(&mut self, size: PhysicalSize<u32>) -> Result<(), String> {
         self.gpu.resize(size)
     }
@@ -295,6 +271,9 @@ struct EditorApplication {
     engine_tx: Option<Sender<Value>>,
     next_frame_at: Instant,
     target_fps: u64,
+    /// El motor 3D se construye tras el primer frame (la UI ya está visible).
+    engine_pending: bool,
+    first_frame_rendered: bool,
 }
 
 impl EditorApplication {
@@ -506,24 +485,13 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 self.editor = Some(editor);
 
                 if self.cli.context.is_3d() {
-                    // Ventana única: el motor 3D vive en este proceso y usa nuestro `SharedGpu`.
+                    // La UI se pinta primero; el motor se construye justo después del primer frame.
                     if let Some(editor) = self.editor.as_mut() {
                         editor.app.proxy = Some(self.proxy.clone());
-                        editor.app.push_log("[Editor] ventana lista", false);
-                        if let Err(error) = editor.render_loading() {
-                            log::warn!("[editor] no se pudo pintar el frame de carga: {error}");
-                        }
-                        match editor.start_in_process_engine(self.proxy.clone()) {
-                            Ok(()) => {
-                                editor.app.push_log("[Editor] motor 3D en proceso", false);
-                            }
-                            Err(message) => {
-                                log::error!("[editor] {message}");
-                                editor.app.status = EditorStatus::Error;
-                                editor.app.push_log(format!("[Editor] {message}"), true);
-                            }
-                        }
+                        editor.app.engine_loading = true;
+                        editor.app.push_log("[Editor] cargando motor 3D…", false);
                     }
+                    self.engine_pending = true;
                 } else {
                     match EngineHost::spawn(&self.cli, self.proxy.clone()) {
                         Ok(host) => {
@@ -671,6 +639,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 if let Err(error) = editor.render() {
                     log::error!("[editor] {error}");
                 }
+                self.first_frame_rendered = true;
             }
             _ => {}
         }
@@ -679,6 +648,24 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
     /// Mantiene el editor a ~60 fps: el motor en proceso necesita frames continuos y
     /// egui solo pide repintar cuando hay animaciones o cambios.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // La UI ya se dibujó al menos una vez: ahora se construye el motor (bloquea unos segundos).
+        if self.engine_pending && self.first_frame_rendered {
+            self.engine_pending = false;
+            if let Some(editor) = self.editor.as_mut() {
+                match editor.start_in_process_engine(self.proxy.clone()) {
+                    Ok(()) => editor.app.push_log("[Editor] motor 3D en proceso", false),
+                    Err(message) => {
+                        log::error!("[editor] {message}");
+                        editor.app.status = EditorStatus::Error;
+                        editor.app.push_log(format!("[Editor] {message}"), true);
+                        editor.app.engine_error = Some(message);
+                    }
+                }
+                editor.app.engine_loading = false;
+                editor.window.request_redraw();
+            }
+        }
+
         let frame_duration = Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
         let now = Instant::now();
         if now >= self.next_frame_at {
@@ -736,6 +723,8 @@ pub fn run() {
         engine_tx: None,
         next_frame_at: Instant::now(),
         target_fps: 60,
+        engine_pending: false,
+        first_frame_rendered: false,
     };
     event_loop
         .run_app(&mut application)
