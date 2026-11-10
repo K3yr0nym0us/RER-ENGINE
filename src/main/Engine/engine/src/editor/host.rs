@@ -1,6 +1,7 @@
 //! Host winit del editor egui de RER-ENGINE.
 
 use std::io::BufRead;
+use std::io::Write;
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -78,6 +79,12 @@ impl InProcessEngine {
             Self::Two(app) => app.is_preview_playing(),
         }
     }
+
+    pub(crate) fn release_cursor(&mut self) {
+        if let Self::Three(app) = self {
+            app.release_cursor_for_dialog();
+        }
+    }
 }
 
 /// Icono de ventana, el mismo PNG que usa Electron (`src/resources/RER-ENGINE-LOGO.png`).
@@ -94,6 +101,17 @@ fn initial_viewport_size(window: &Window) -> PhysicalSize<u32> {
         inner.width.saturating_sub(sidebar * 2).max(1),
         inner.height.saturating_sub(top + console).max(1),
     )
+}
+
+/// Cierra el proceso de inmediato tras liberar el cursor y vaciar stdout.
+///
+/// El `Drop` del `State`/Vulkan tarda ~3 s (debug) en destruir cientos de recursos;
+/// tras confirmar la salida o escribir el `.save` no hay nada pendiente que perder.
+fn exit_editor_now() -> ! {
+    rer_engine_core::platform::release_cursor_clip();
+    let _ = std::io::stdout().flush();
+    let _ = std::io::stderr().flush();
+    std::process::exit(0);
 }
 
 fn app_window_icon() -> Option<winit::window::Icon> {
@@ -113,6 +131,8 @@ struct EditorWindow {
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
     app: EditorApp,
+    /// Congelado mientras Electron muestra la confirmación de salida.
+    paused: bool,
 }
 
 impl EditorWindow {
@@ -143,6 +163,7 @@ impl EditorWindow {
             egui_ctx,
             egui_state,
             app: EditorApp::new(cli),
+            paused: false,
         })
     }
 
@@ -438,6 +459,9 @@ impl EditorWindow {
     }
 
     fn render(&mut self) -> Result<(), String> {
+        if self.paused {
+            return Ok(());
+        }
         let EditorWindow {
             window,
             engine,
@@ -445,6 +469,7 @@ impl EditorWindow {
             egui_ctx,
             egui_state,
             app,
+            paused: _,
         } = self;
 
         if let Some(engine) = engine.as_mut() {
@@ -478,6 +503,10 @@ struct EditorApplication {
     editor: Option<EditorWindow>,
     next_frame_at: Instant,
     target_fps: u64,
+    /// Tras guardar desde la modal de salida, cerrar el editor.
+    exit_after_save: bool,
+    /// Hay una confirmación de salida abierta en Electron.
+    exit_request_pending: bool,
 }
 
 impl EditorApplication {
@@ -544,6 +573,27 @@ impl EditorApplication {
             "save_request" => {
                 if let Some(editor) = self.editor.as_mut() {
                     editor.app.begin_save(false);
+                }
+            }
+            "exit_cancelled" => {
+                self.exit_request_pending = false;
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.paused = false;
+                    editor.window.request_redraw();
+                }
+            }
+            "exit_after_save" => {
+                self.exit_request_pending = false;
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.paused = false;
+                    if editor.app.can_save() {
+                        if editor.app.begin_save(false).is_some() {
+                            self.exit_after_save = true;
+                        }
+                    } else {
+                        return true;
+                    }
+                    editor.window.request_redraw();
                 }
             }
             "exit" => return true,
@@ -694,7 +744,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         }
     }
 
-    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
             UserEvent::EngineEvent(value) => {
                 self.handle_engine_save_event(&value);
@@ -707,20 +757,28 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             UserEvent::FromElectron(value) => {
                 let should_exit = self.handle_electron_message(value);
                 if should_exit {
-                    event_loop.exit();
-                    return;
+                    exit_editor_now();
                 }
                 if let Some(editor) = self.editor.as_mut() {
                     editor.window.request_redraw();
                 }
             }
             UserEvent::SaveFinished(result) => {
+                let success = result.is_ok();
                 if let Some(editor) = self.editor.as_mut() {
                     editor.app.complete_save(result);
                     editor.window.request_redraw();
                 }
+                if self.exit_after_save {
+                    if success {
+                        exit_editor_now();
+                    } else {
+                        self.exit_after_save = false;
+                    }
+                }
             }
             UserEvent::SaveTimeout(id) => {
+                self.exit_after_save = false;
                 if let Some(editor) = self.editor.as_mut() {
                     editor.app.timeout_save(id);
                     editor.window.request_redraw();
@@ -768,7 +826,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
 
     fn window_event(
         &mut self,
-        event_loop: &ActiveEventLoop,
+        _event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
@@ -781,8 +839,20 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         }
 
         if matches!(event, WindowEvent::CloseRequested) {
-            self.send_engine(serde_json::json!({ "cmd": "shutdown" }));
-            event_loop.exit();
+            if !self.cli.electron_host {
+                exit_editor_now();
+            }
+            if self.exit_request_pending {
+                return;
+            }
+            self.exit_request_pending = true;
+            if let Some(editor) = self.editor.as_mut() {
+                editor.paused = true;
+                if let Some(engine) = editor.engine.as_mut() {
+                    engine.release_cursor();
+                }
+            }
+            crate::editor::bridge::request_exit_confirmation();
             return;
         }
 
@@ -831,6 +901,10 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
     /// Mantiene el editor al FPS configurado por el proyecto: el motor en proceso
     /// necesita frames continuos y egui solo pide repintar cuando hay animaciones/cambios.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.editor.as_ref().is_some_and(|editor| editor.paused) {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
         let now = Instant::now();
         // El limitador de la UI (`set_target_fps`) se aplica aquí: antes el editor
         // seguía siempre a 60 y el motor recibía `update()` a la frecuencia del monitor.
@@ -900,6 +974,8 @@ pub fn run() {
         editor: None,
         next_frame_at: Instant::now(),
         target_fps: 60,
+        exit_after_save: false,
+        exit_request_pending: false,
     };
     event_loop
         .run_app(&mut application)

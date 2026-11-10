@@ -26,48 +26,56 @@ required-features = ["editor"]
 
 [dependencies]
 winit.workspace = true
-pollster.workspace = true
+pollster = { workspace = true, optional = true }
 glam.workspace = true
 bytemuck.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true
-gltf.workspace = true
-ufbx.workspace = true
+gltf = { workspace = true, optional = true }
+ufbx = { workspace = true, optional = true }
 image.workspace = true
-rayon.workspace = true
+rayon = { workspace = true, optional = true }
 rapier3d.workspace = true
 rodio.workspace = true
 getrandom.workspace = true
-raw-window-handle.workspace = true
 gilrs.workspace = true
-egui.workspace = true
-egui-ash-renderer.workspace = true
-egui-winit.workspace = true
-egui-phosphor.workspace = true
+egui = { workspace = true, optional = true }
+egui-ash-renderer = { workspace = true, optional = true }
+egui-winit = { workspace = true, optional = true }
+egui-phosphor = { workspace = true, optional = true }
 zip.workspace = true
-rfd = "0.18"
-# `rer-engine-core` aporta el núcleo Ash (contexto, swapchain, buffers, imágenes) y los
-# tipos IPC comunes que comparten los dos motores, sin duplicar FFI de Vulkan.
+rfd = { version = "0.18", optional = true }
+# Núcleo Ash compartido (contexto, swapchain, buffers, imágenes) y tipos IPC.
 rer-engine-core = { path = "../core", features = ["vulkan"] }
 ttf-parser.workspace = true
 ab_glyph.workspace = true
 ash = "0.38"
-ash-window = "0.13"
-gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"] }
+gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"], optional = true }
 
 [features]
-# Motor 3D aislado: el binario `rer_engine_3d` solo existe si esta feature está activa.
-# `default` la mantiene durante la migración; el editor pedirá las features que necesite.
 # `default` mantiene el build local completo; los binarios se compilan con
-# `--no-default-features --features <motor>` para no enlazar el motor ajeno.
+# `--no-default-features --features <motor>` para no compilar ni enlazar el motor ajeno.
 default = ["engine2d", "engine3d", "editor"]
-engine3d = []
-# Motor 2D aislado: mismo nucleo Ash (`SharedGpu`) que el 3D, renderer propio.
-# Su binario se compila con `--no-default-features --features engine2d`.
+engine3d = [
+	"dep:gltf",
+	"dep:pollster",
+	"dep:ufbx",
+	"dep:rayon",
+	"dep:gpu-allocator",
+]
+# Motor 2D aislado: mismo núcleo Ash (`SharedGpu`) que el 3D, renderer propio.
 engine2d = []
-# Editor egui. Reutiliza el mismo `SharedGpu` que los motores y hospeda el 3D en proceso.
-editor = ["engine3d", "engine2d"]
+# Editor egui. Reutiliza el mismo `SharedGpu` que los motores y hospeda ambos in-process.
+editor = [
+	"engine3d",
+	"engine2d",
+	"dep:egui",
+	"dep:egui-ash-renderer",
+	"dep:egui-winit",
+	"dep:egui-phosphor",
+	"dep:rfd",
+]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows.workspace = true

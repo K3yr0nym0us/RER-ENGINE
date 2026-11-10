@@ -34,3 +34,31 @@ pub fn query_shift_held_os() -> bool {
         left || right
     }
 }
+
+/// Restringe el cursor al rectángulo físico indicado (coordenadas de pantalla).
+#[cfg(target_os = "windows")]
+pub fn clip_cursor_to_rect(x: i32, y: i32, width: u32, height: u32) {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::ClipCursor;
+    let rect = RECT {
+        left: x,
+        top: y,
+        right: x.saturating_add(width as i32),
+        bottom: y.saturating_add(height as i32),
+    };
+    unsafe {
+        let _ = ClipCursor(Some(&rect as *const _));
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn clip_cursor_to_rect(_x: i32, _y: i32, _width: u32, _height: u32) {}
+
+/// Libera la restricción de cursor impuesta con [`clip_cursor_to_rect`].
+pub fn release_cursor_clip() {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows::Win32::UI::WindowsAndMessaging::ClipCursor;
+        let _ = ClipCursor(None);
+    }
+}

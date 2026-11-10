@@ -2446,7 +2446,6 @@ version = "0.1.0"
 dependencies = [
  "ab_glyph",
  "ash",
- "ash-window",
  "bytemuck",
  "egui",
  "egui-ash-renderer",
@@ -2461,7 +2460,6 @@ dependencies = [
  "log",
  "pollster 0.4.0",
  "rapier3d",
- "raw-window-handle",
  "rayon",
  "rer-engine-core",
  "rfd",

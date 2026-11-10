@@ -49,6 +49,11 @@ pub fn request_project_state(id: u64) {
     write_line(&json!({ "type": "project_state_request", "id": id }).to_string());
 }
 
+/// Pide a Electron la modal de confirmación de salida (guardar antes de cerrar).
+pub fn request_exit_confirmation() {
+    write_line(&json!({ "type": "exit_request" }).to_string());
+}
+
 /// Notifica que el `.save` se escribió correctamente.
 pub fn notify_project_saved(path: &std::path::Path) {
     write_line(

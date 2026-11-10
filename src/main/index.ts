@@ -340,6 +340,10 @@ function handleEditorMessage(message: Record<string, unknown>): boolean {
       }
       return true
     }
+    case 'exit_request': {
+      void showExitDialog()
+      return true
+    }
     case 'project_state_request': {
       const id = Number(message.id ?? 0)
       mainWindow?.webContents.send('project-state:request', id)
@@ -422,6 +426,7 @@ function startEditorFrame(): void {
   const extractDir = currentProjectExtractDir ?? currentProjectSessionDir
   if (extractDir) args.push('--extract-dir', extractDir)
   args.push('--locale', currentLocale)
+  args.push('--electron-host')
 
   editorFrameProcess = spawn(editorPath, args, {
     stdio: ['pipe', 'pipe', 'pipe'],
@@ -2279,6 +2284,41 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
 // El renderer envía los bounds del viewport una vez montado (y en cada resize).
 // Se usan para posicionar el overlay del asistente IA y para arrancar el editor.
 let engineStarted = false
+let exitDialogOpen = false
+
+/** Confirmación nativa de Electron antes de cerrar el editor. */
+async function showExitDialog(): Promise<void> {
+  if (exitDialogOpen) return
+  exitDialogOpen = true
+  const isEs = currentLocale === 'es'
+  try {
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      title: isEs ? 'Salir de RER-ENGINE' : 'Exit RER-ENGINE',
+      message: isEs
+        ? '¿Quieres guardar tu progreso antes de salir?'
+        : 'Do you want to save your progress before exiting?',
+      detail: isEs
+        ? 'Los cambios sin guardar se perderán.'
+        : 'Unsaved changes will be lost.',
+      buttons: isEs
+        ? ['Guardar y salir', 'Salir sin guardar', 'Cancelar']
+        : ['Save and exit', 'Exit without saving', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    })
+    if (response === 0) {
+      sendToEditor({ type: 'exit_after_save' })
+    } else if (response === 1) {
+      sendToEditor({ type: 'exit' })
+    } else {
+      sendToEditor({ type: 'exit_cancelled' })
+    }
+  } finally {
+    exitDialogOpen = false
+  }
+}
 
 // Caché de los bounds relativos del viewport (posición dentro del contenido de Electron,
 // pre-DPR). Se actualiza en cada 'viewport-bounds'.

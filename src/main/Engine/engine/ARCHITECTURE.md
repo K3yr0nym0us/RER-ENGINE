@@ -34,6 +34,12 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
   frecuencia del monitor (picos de 200 FPS).
 - `forward_input` combina `egui_is_using_pointer()` y `layer_id_at()`: el `consumed`
   global de egui también es true sobre el viewport vacío, así que no se usa solo.
+- Cierre: Electron lanza el editor con `--electron-host`; al cerrar, el editor pausa el
+  motor, libera el cursor y emite `exit_request`. Electron muestra la modal
+  Guardar/Salir/Cancelar. Tras guardar o descartar, `exit_editor_now` sale sin esperar
+  el `Drop` de Vulkan (~3 s en debug).
+- En play 3D el cursor se restringe al sub-rect del viewport con `ClipCursor`
+  (`engine3d/host.rs`); no se usa `CursorGrabMode` sobre toda la ventana compartida.
 - En modo embebido los motores ignoran `resize`/`set_vsync` sobre la ventana
   compartida: el tamaño lo fija el editor.
 - No hay fallback por proceso ni overlay: el motor siempre vive en el editor.

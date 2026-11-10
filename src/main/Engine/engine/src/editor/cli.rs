@@ -32,6 +32,8 @@ pub struct Cli {
     pub save_path: Option<String>,
     pub extract_dir: Option<String>,
     pub locale: Locale,
+    /// Lanzado por Electron: el cierre pide confirmación antes de salir.
+    pub electron_host: bool,
 }
 
 impl Default for Cli {
@@ -41,6 +43,7 @@ impl Default for Cli {
             save_path: None,
             extract_dir: None,
             locale: Locale::En,
+            electron_host: false,
         }
     }
 }
@@ -65,6 +68,7 @@ impl Cli {
         let mut save_path: Option<String> = None;
         let mut extract_dir: Option<String> = None;
         let mut locale = Locale::En;
+        let mut electron_host = false;
 
         let mut index = 1;
         while index < args.len() {
@@ -108,6 +112,7 @@ impl Cli {
                         index += 1;
                     }
                 }
+                "--electron-host" => electron_host = true,
                 _ => {}
             }
 
@@ -119,12 +124,13 @@ impl Cli {
             save_path,
             extract_dir,
             locale,
+            electron_host,
         }
     }
 
     pub fn usage() -> &'static str {
         "rer_engine_editor --project-type <2D|3D> [--game-style <estilo>] \
-[--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>]"
+[--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] [--electron-host]"
     }
 }
 

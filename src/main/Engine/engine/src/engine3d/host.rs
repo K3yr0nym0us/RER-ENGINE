@@ -470,6 +470,8 @@ pub struct App {
     next_frame_at: std::time::Instant,
     target_fps: u64,
     cursor_captured: bool,
+    /// Rect físico del viewport con `ClipCursor` aplicado (editor).
+    clip_rect: Option<(i32, i32, u32, u32)>,
 }
 
 impl App {
@@ -496,6 +498,7 @@ impl App {
             next_frame_at: std::time::Instant::now(),
             target_fps: 60,
             cursor_captured: false,
+            clip_rect: None,
         }
     }
 
@@ -504,6 +507,7 @@ impl App {
         &mut self,
         frame: &crate::engine3d::vulkan::FrameTarget,
     ) -> Result<(), rer_engine_core::surface::SurfacePresentError> {
+        self.apply_viewport_cursor_clip(frame);
         let Some(state) = self.state.as_mut() else {
             return Ok(());
         };
@@ -599,6 +603,16 @@ impl App {
             return;
         }
 
+        // En el editor la ventana es compartida: el clip se aplica al sub-rect del
+        // viewport en `apply_viewport_cursor_clip`, no con CursorGrabMode de toda la ventana.
+        if state.embedded {
+            let window = state.window();
+            window.set_cursor_visible(false);
+            self.cursor_captured = true;
+            log::info!("[preview] cursor capturado (editor; ClipCursor al viewport)");
+            return;
+        }
+
         let window = state.window();
         let size = state.size();
         let center = PhysicalPosition::new(size.width as f64 * 0.5, size.height as f64 * 0.5);
@@ -633,7 +647,43 @@ impl App {
             log::warn!("[preview] no se pudo liberar el cursor: {err}");
         }
         window.set_cursor_visible(true);
+        rer_engine_core::platform::release_cursor_clip();
+        self.clip_rect = None;
         self.cursor_captured = false;
+    }
+
+    /// Libera el cursor al abrir una modal/confirmación de salida.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub(crate) fn release_cursor_for_dialog(&mut self) {
+        if let Some(state) = self.state.as_ref() {
+            state.window().set_cursor_visible(true);
+        }
+        rer_engine_core::platform::release_cursor_clip();
+        self.clip_rect = None;
+        self.cursor_captured = false;
+    }
+
+    /// Aplica `ClipCursor` al rect físico del viewport del editor.
+    fn apply_viewport_cursor_clip(&mut self, frame: &crate::engine3d::vulkan::FrameTarget) {
+        if !self.cursor_captured {
+            return;
+        }
+        let Some(state) = self.state.as_ref() else {
+            return;
+        };
+        let Ok(window_pos) = state.window().inner_position() else {
+            return;
+        };
+        let rect = (
+            window_pos.x + frame.offset.x,
+            window_pos.y + frame.offset.y,
+            frame.extent.width,
+            frame.extent.height,
+        );
+        if self.clip_rect != Some(rect) {
+            rer_engine_core::platform::clip_cursor_to_rect(rect.0, rect.1, rect.2, rect.3);
+            self.clip_rect = Some(rect);
+        }
     }
 
     fn sync_preview_playback_side_effects(
@@ -1515,6 +1565,7 @@ rer_engine_core::vulkan=info";
         next_frame_at: std::time::Instant::now(),
         target_fps: 60,
         cursor_captured: false,
+        clip_rect: None,
     };
     event_loop
         .run_app(&mut app)
