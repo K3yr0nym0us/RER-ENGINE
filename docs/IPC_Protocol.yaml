@@ -90,8 +90,13 @@ flow: |
 lifecycle:
   spawn:
     binary: rer_engine_editor
-    args: --project-type <2D|3D> [--game-style <estilo>] [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>]
+    args: --project-type <2D|3D> [--game-style <estilo>] [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] [--electron-host]
     note: El editor construye el motor in-process; no hay overlay ni proceso de motor separado.
+  editor_control:
+    exit_request: editor → Electron (modal Guardar/Salir/Cancelar)
+    exit_after_save: Electron → editor (guardar y salir)
+    exit_cancelled: Electron → editor (reanudar)
+    exit: Electron → editor (salir sin guardar)
   startup_2d:
     trigger: editor listo (motor 2D in-process)
     cmd: 'set_scene { scene: "2D", save_path: extract_dir }'

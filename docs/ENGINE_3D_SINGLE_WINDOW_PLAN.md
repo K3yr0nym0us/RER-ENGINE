@@ -433,6 +433,8 @@ Los binarios standalone se mantienen para debug.
 > Verificado: 1–8 y 10. Criterio 9 parcial: `create_scene` probado end-to-end con
 > `yarn dev`; los 7 tipos usan el mismo `legacy_window_request` y el handler React los cubre.
 > Fase 8 completada: sin overlay, tracker, `set_bounds` ni proceso 2D legacy.
+> Cierre seguro verificado: modal Guardar/Salir/Cancelar, salida instantánea tras confirmar.
+> ClipCursor en play 3D al sub-rect del viewport.
 > DPI: mapeo cubierto por tests en `editor/render.rs` (100/125/150 %) y 125 % en runtime.
 > El criterio 8 se implementa con `egui_is_using_pointer()` + `layer_id_at()`:
 > `response.consumed` a secas también es true sobre el viewport vacío.

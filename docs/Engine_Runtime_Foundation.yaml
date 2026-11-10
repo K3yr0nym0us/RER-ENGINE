@@ -18,7 +18,12 @@ editor_window:
     como selector de proyecto y host de modales; no hay ventana overlay.
   spawn_args: |
     rer_engine_editor --project-type <2D|3D> [--game-style <estilo>]
-      [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>]
+      [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] [--electron-host]
+  editor_control:
+    exit_request: "editor → Electron: abre la confirmación Guardar/Salir/Cancelar"
+    exit_after_save: "Electron → editor: guarda y cierra"
+    exit_cancelled: "Electron → editor: reanuda tras Cancelar"
+    exit: "Electron → editor: cierra sin guardar"
   files:
     - src/main/Engine/engine/src/editor/host.rs
     - src/main/Engine/engine/src/editor/render.rs

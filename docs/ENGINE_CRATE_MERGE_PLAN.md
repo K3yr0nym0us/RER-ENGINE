@@ -242,6 +242,10 @@ macro principal mantiene su firma y expande sub-macros `__rer_player_ui_text_*!`
   los comandos de la UI se drenan antes de actualizar el motor.
 - Fallback 2D por proceso eliminado en la Fase 8; el motor siempre va in-process.
 
+> Aislamiento de compilación: `engine2d` no compila `ufbx`, `rayon`, `pollster`, `gltf` ni
+> `egui*`/`rfd`; `engine3d` no compila `egui*`/`rfd`. `gpu-allocator` queda compartido vía
+> `rer-engine-core` (memoria Vulkan).
+
 ## Riesgos
 
 | Riesgo | Mitigación |
