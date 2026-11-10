@@ -1,0 +1,134 @@
+# Reflejos 3D — índice general (SSR / probes / RT)
+#
+# Solo proyectos 3D. Nivel global en World → Reflejos.
+#
+# Documentación por subsistema:
+#   - docs/yaml/rendering/Reflections_SSR.yaml
+#   - docs/yaml/rendering/Reflections_Probes.yaml
+#   - docs/yaml/rendering/Reflections_RT.yaml
+#
+# Relacionado con:
+#   - docs/yaml/engine/IPC_Protocol.yaml
+#   - docs/yaml/rendering/TAA_3D.yaml
+#   - docs/yaml/rendering/Shadows_3D.yaml
+#   - docs/yaml/rendering/Reflections_Diagnostics.yaml
+
+version: 8
+updated: 2026-11-09
+
+principle:
+  owner: motor_3d
+  philosophy: |
+    Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame.rs`. El tier SOLO enciende o
+    apaga la cadena de reflejos (`reflections = tier != off`); la calidad por tier
+    (resolución, pasos, rebotes, denoise, material RT) era de la era wgpu y no se portó.
+    RT = fuente adicional de información (toggle editor reflectionRaytracing), con fallback BVH
+    por software cuando el adaptador no expone las extensiones de trazado.
+    RT OFF → SSR + composite. RT ON → SSR + trazado; los espejos (roughness ≤ 0.04) los resuelve
+    composite con SSR.
+  pipeline_layers:
+    A_forward_ibl: shaders/raster/forward.frag — samplerCubeArray por instancia (ver docs/yaml/rendering/Reflections_Probes.yaml)
+    B_ssr_rt: shaders/raster/ssr.frag + shaders/rt/* + shaders/bvh/trace.comp — detalle on-screen
+    C_composite: shaders/raster/composite.frag — mezcla scene + reflejo con peso (1 - roughness) × confianza
+    capture: capture_probe en vulkan/frame.rs — alimenta A; no es recepción en pantalla
+
+subsystems:
+  ssr: docs/yaml/rendering/Reflections_SSR.yaml
+  probes: docs/yaml/rendering/Reflections_Probes.yaml
+  rt: docs/yaml/rendering/Reflections_RT.yaml
+
+graphics_tiers:
+  - id: off
+    aliases: [disabled, desactivado, none]
+    note: default del motor; sin cadena de reflejos
+  - id: low
+    aliases: [bajo]
+  - id: medium
+    aliases: [medio]
+  - id: high
+    aliases: [alto]
+  - id: ultra
+    aliases: [ultra]
+
+quality_preset:
+  status: |
+    No portado a Ash. El modulo `reflections/quality_preset.rs` de la era wgpu (ya no esta en el
+    repo) centraliza distancia RT, rebotes, shadow rays, denoise y material_quality por tier; hoy
+    no existe un preset que derive esos valores del tier. Lo unico que el tier produce es el
+    booleano `reflections` en `FrameInput`.
+
+editor_toggles:
+  reflectionTier: enciende/apaga la cadena (persistido .save, default off)
+  reflectionRaytracing: RT ON/OFF (persistido .save); requiere tier ≠ off
+  reflectionProbes: probes ON/OFF (persistido .save)
+  reflectionDebugView: final | ssr_debug (ver docs/yaml/rendering/Reflections_SSR.yaml)
+
+internal_settings:
+  description: |
+    El `ReflectionSettings` derivado del tier ya no existe; los parámetros están fijos en los
+    shaders GLSL y en `vulkan/frame.rs`.
+  live_inputs:
+    - reflections (tier != off)
+    - raytracing (reflectionRaytracing && hw_rt)
+    - probe_captures (origen + ranura por sonda)
+    - debug_ssr_view (vista de debug)
+
+g_buffer:
+  scene_mrt: |
+    location 0  out_color        R8G8B8A8_UNORM   (escena iluminada)
+    location 1  out_normal_rough R8G8B8A8_UNORM   (.xyz = normal * 0.5 + 0.5, .w = roughness)
+    location 2  out_albedo       R8G8B8A8_UNORM
+    location 3  out_world        R16G16B16A16_SFLOAT (.xyz = posición mundo, .w = metallic)
+    location 4  out_velocity     R16G16_SFLOAT
+  depth: D32_SFLOAT (adjunto; se muestrea en DEPTH_STENCIL_READ_ONLY_OPTIMAL)
+  shadow_map: D32_SFLOAT, resolución por tier de sombras (ver docs/yaml/rendering/Shadows_3D.yaml)
+  exports: nada aparte del MRT; el "depth_export R32Float" de wgpu se sustituye por la depth real
+
+frame_order:
+  source: engine/src/engine3d/vulkan/frame.rs::FrameRenderer::record
+  steps:
+    - ensure_msaa (G-buffer multisampleado y pipelines del tier de MSAA)
+    - trace_background (fondo por RT o BVH) + sky copy/quad
+    - shadow_pass (si el tier de sombras lo pide)
+    - capture_probe por sonda refrescada
+    - forward_pass (MRT + resolución MSAA + segundo pase de profundidad)
+    - reflection_pass (RT o BVH) si reflections && raytracing
+    - resolve_present (ssr → denoise → composite → TAA → present; gizmos y HUD después)
+
+commands:
+  set_reflection_tier:
+    params: { tier: off | low | medium | high | ultra }
+  set_reflection_raytracing:
+    params: { enabled: bool }
+  set_reflection_probes:
+    params: { enabled: bool }
+  spawn_reflection_probe:
+    params: { position?: [f32; 3] }
+  set_reflection_debug_view:
+    params: { view: final | ssr_debug }
+    note: el catálogo real y lo que no se portó está en docs/yaml/rendering/Reflections_SSR.yaml
+
+events:
+  - reflection_tier_changed
+  - reflection_raytracing_changed
+  - reflection_probes_changed
+  - reflection_debug_view_changed
+  - model_loaded  # lo emite el spawn de una sonda
+
+removed_events:
+  - reflection_tier_effective  # sigue declarado en IPC, pero el motor Ash no lo envía
+  - reflection_profiler        # el readback de estadísticas SSR/RT no se portó
+
+persistence:
+  save_fields:
+    - reflectionTier
+    - reflectionRaytracing
+    - reflectionProbes
+  default_tier: off
+
+ui:
+  accordion: World → Reflejos (tier, RT, probes, debug view)
+
+diagnostics:
+  audit_report: docs/yaml/rendering/Reflections_Diagnostics.yaml
+  architecture: src/main/Engine/engine/ARCHITECTURE.md

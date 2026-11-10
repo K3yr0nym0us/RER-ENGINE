@@ -1,0 +1,137 @@
+# Sombras 3D por nivel (resolución del shadow map)
+#
+# El motor usa un único shadow map 2D ortográfico (depth compare, sin cascadas CSM), vive en
+# `engine/src/engine3d/vulkan/frame.rs` (Ash) y el nivel de calidad controla su resolución REAL.
+# CSM y la distancia extendida de Ultra quedan como tarea pendiente: se implementó y se retiró
+# (ver `csm_attempt` más abajo), así que el estado real es "no hecho, con evidencias apuntadas".
+#
+# Relacionado con:
+#   - docs/yaml/rendering/TAA_3D.yaml
+#   - docs/yaml/rendering/Reflections_3D.yaml
+#   - docs/yaml/engine/IPC_Protocol.yaml
+
+version: 4
+updated: 2026-11-09
+
+principle:
+  owner: motor_3d
+  pipeline: |
+    1. Shadow pass único a `targets.shadow` (D32_SFLOAT) con el lado del tier; se reasigna
+       la imagen cuando cambia el tier (`Targets::recreate_shadow`).
+    2. Sombreado en el forward con sampler de comparación (`LESS_OR_EQUAL`) + PCF; el texel y
+       el radio salen del tamaño real del mapa (`State::active_shadow_map_size`).
+    3. El mapa pasa ATTACHMENT → READ_ONLY con registro explícito de layout
+       (`transition_depth`), igual que la profundidad del viewport.
+  note: |
+    Sin CSM: un solo mapa ortográfico centrado en los bounds del mundo, así Ultra gana densidad
+    pero no distancia.
+    El radio PCF escala con la raíz del tamaño del mapa (penumbra parecida en el mundo al subir
+    resolución) y, por encima de 2.5 texeles, el kernel pasa de 3×3 a 5×5 (Ultra).
+    `shadow_darkness` hoy llega como peso del IBL de sondas (`light_params.y`, 0 si no hay
+    probes activas); el PCF del forward no la usa como oscurecimiento.
+  rt_shadows: |
+    No hay sombras por ray tracing en el renderizador Ash: los shaders de trazado
+    (`shaders/rt/primary.rchit`, `shaders/bvh/trace.comp`) iluminan con N·L y un ambiente,
+    sin disparar un rayo a la luz. El mecanismo `rt_flags.w` de la era wgpu se retiró con
+    `src/reflections/`.
+    En ShadowTier::Off no se ejecuta el shadow pass y `light_color.w = 0` hace que el shader
+    salte el sampling.
+
+graphics_tiers:
+  - id: off
+    aliases: [desactivado, none]
+    resolution: 1
+    note: |
+      No se ejecuta el shadow pass y el forward salta el sampling (light_color.w = 0).
+      El mapa se queda en el tamaño base para no dividir por 1 al construir la matriz de luz.
+  - id: low
+    aliases: [bajo]
+    resolution: 1024
+    note: Resolución base del motor (SHADOW_MAP_SIZE = 1024), coincide con el camino sin reasignar
+  - id: medium
+    aliases: [medio]
+    resolution: 2048
+  - id: high
+    aliases: [alto]
+    resolution: 4096
+  - id: ultra
+    aliases: [ultra]
+    resolution: 8192
+    note: recortado a `max_image_dimension2_d`; si la asignación falla se prueba con la mitad
+
+commands:
+  set_shadow_tier:
+    params: { tier: off | low | medium | high | ultra }
+    effect: |
+      Cambia la resolución real del shadow map (o salta el pase con Off). `FrameRenderer`
+      detecta el cambio en `record()`, reasigna solo esa imagen y reescribe los descriptors
+      que la referencian en todos los slots en vuelo; el log muestra
+      "[sombras] shadow map reasignado a NxN px".
+
+events:
+  shadow_tier_changed:
+    payload: { tier: string }
+
+persistence:
+  save_field: shadowTier en world del .save
+  default: low
+
+scripting:
+  rhai:
+    - engine.set_shadow_tier(tier)
+
+ui:
+  accordion: World → Shadows
+  controls:
+    - tier selector: off | low | medium | high | ultra
+
+# Intento de CSM (2026-11-09): implementado, roto en pantalla y retirado. Se deja aquí porque
+# cuesta mucho reconstruir qué se descartó y qué no. Card Trello: `CASCADES / CSM (3D)`.
+csm_attempt:
+  status: retirado-y-aplazado
+  commits_con_el_codigo: [8d3182f, 91b83ee, 2f71909, 8221417, 04711ee]
+  commit_del_rollback: 5efc8c0
+  what_was_built: |
+    Array D32_SFLOAT de 4 capas (una por cascada) con vista `TYPE_2D` por capa para poder dirigir
+    cada pase a su capa; `shadow_pass` recorría las cascadas del tier y parcheaba la ranura 0 del
+    array `light_view_proj` del UBO con `cmd_update_buffer` (el mecanismo que ya usa la captura de
+    sondas) porque `shadow.vert` proyecta contra `light_view_proj[0]`; `forward.frag` elegía cascada
+    por distancia al ojo, muestreaba `sampler2DArrayShadow` y traducía el radio PCF de unidades de
+    mundo a texeles de la cascada; la matemática de cortes y cajas (mezcla log/uniforme, centro
+    alineado al texel, extent cuantizado) quedó aislada y testeada en `config_3d/shadow_cascades.rs`.
+  symptom: >
+    Las sombras por entidad desaparecieron: un círculo de luz alrededor de la cámara cuyo radio
+    coincidía con el corte de la cascada 0 (3,6 m con tier Low) y todo lo demás en sombra.
+  ruled_out_with_evidence:
+    - >
+      Matemática CPU y layout del UBO: tests en host cubren cortes crecientes, caja que contiene las
+      8 esquinas, extent cuantizado y el ida-y-vuelta de bytes "la matriz con la que se escribe la
+      capa N == la que el forward lee en la capa N".
+    - >
+      Espejo Rust↔GLSL del bloque `Scene`: los 4 shaders lo declaran campo a campo igual; los offsets
+      están fijados con `assert!` de compilación (`offset_of!`).
+    - >
+      Convención de profundidad: `orthographic_rh` de glam mapea a [0,1] (Vulkan), medido, no asumido.
+    - >
+      Vistas por capa inexistentes: el `log::error!` que se añadió para ese caso nunca saltó, así que
+      las 4 vistas sí existían.
+    - >
+      Capas sin pintar por falta de limpieza: se pre-limpiaba el array entero y el síntoma no cambió.
+    - >
+      Faltan dependencias entre instancias de render: se añadieron las barreras ATTACHMENT↔READ_ONLY
+      entre instancias (obligatorias en dynamic rendering, y legítimas) y el síntoma no cambió.
+    - >
+      Que el arreglo se hubiera descartado por error: MSAA y la documentación de reflejos no tocan el
+      sombraje, y el exe probado se verificó por mtime contra la hora del arranque.
+  not_tested_before_rollback:
+    - >
+      Llevar la matriz de cada cascada a `shadow.vert` por PUSH CONSTANTS en lugar de parchear el UBO
+      (elimina de golpe toda la clase de fallos "la escritura no llega al draw").
+    - >
+      La sonda `RER_SHADOW_DEBUG` del commit 04711ee, que copia el bloque central de cada capa y
+      registra cuántos texelos tienen geometría: habría dicho si las capas 1+ se pintaban o no.
+      Sigue siendo el primer paso si se reabre el CSM.
+  caveat: |
+    Con una sola cascada el motor funcionaba; con dos, la primera era correcta y las siguientes
+    fallaban sistemáticamente. Eso deja acotado el problema al reparto matriz↔capa (cómo llega la
+    matriz a cada pase y qué capa se lee), no a la matemática de cascadas.

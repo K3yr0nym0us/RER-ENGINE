@@ -4,92 +4,118 @@
 
 **Última revisión:** noviembre 2026 (motores 2D y 3D sobre Ash/Vulkan; el 2D ya no depende de wgpu y comparte el núcleo Vulkan de `core`; reflejos, sondas, MSAA, sombras y TAA del 3D actualizados a la implementación real). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
 
----
+## Estructura
 
-## Fundamentos
-
-| Documento | Contenido |
-|-----------|-----------|
-| [Engine_Runtime_Foundation.yaml](./Engine_Runtime_Foundation.yaml) | Viewport overlay winit, GPU Vulkan, métricas (Windows) |
-| [Engine_Context.yaml](./Engine_Context.yaml) | `EngineProvider`, refs, `createEngineActions` / `createEngineEventHandler` |
-| [IPC_Protocol.yaml](./IPC_Protocol.yaml) | `engine:cmd` / `engine:event`, catálogo por motor, `core/src/ipc` |
-| [MODAL_ELECTRON.yaml](./MODAL_ELECTRON.yaml) | Ventanas hijas (propiedades, blueprint, player UI, scripting) |
-
----
-
-## Proyecto y persistencia
-
-| Documento | Contenido |
-|-----------|-----------|
-| [Save_Proyect_Model.yaml](./Save_Proyect_Model.yaml) | `.save` ZIP, Resources, manifest, guardar/cargar, bibliotecas globales |
-| [Rerasset_Format.yaml](./Rerasset_Format.yaml) | `.rerasset` / RTEX v1 (editor RGBA8), códigos reservados para export |
-| [Project_Load_3D.yaml](./Project_Load_3D.yaml) | Carga `.save` 3D: burst, precarga, GLB, eventos `project_loaded_3d` |
-| [Escenes_Model_3D.yaml](./Escenes_Model_3D.yaml) | Multi-escena editor 3D, dirty, `switch_editor_scene` |
+- `yaml/engine/`: runtime, contexto del editor, IPC y política de plataforma.
+- `yaml/persistence/`: `.save`, carga de proyecto y multi-escena.
+- `yaml/assets/`: formato `.rerasset`.
+- `yaml/rendering/`: reflejos, RT, sondas, TAA, MSAA y sombras.
+- `yaml/gameplay/`: entidades, blueprints, física, animación, controles y proyectiles.
+- `yaml/scripting/`: API Rhai y programación visual.
+- `yaml/editor/`: modales, propiedades, UI del jugador, sockets y física de huesos.
+- `yaml/plugins/`: sistema de plugins.
+- `ai/`: asistente IA local y prompts de contexto.
+- Los planes y documentos de calidad (`.md`) quedan en la raíz de `docs/`.
 
 ---
 
-## Renderización 3D
+## yaml/engine/ — Fundamentos
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Reflections_3D.yaml](./Reflections_3D.yaml) | Índice reflejos: tiers, toggles, frame, IPC |
-| [Reflections_SSR.yaml](./Reflections_SSR.yaml) | Screen-space reflections por tier |
-| [Reflections_Probes.yaml](./Reflections_Probes.yaml) | Cubemap probes, captura, forward IBL |
-| [Reflections_RT.yaml](./Reflections_RT.yaml) | Ray tracing HW (Ash), fallback BVH, denoise; lo no portado de wgpu |
-| [Reflections_Diagnostics.yaml](./Reflections_Diagnostics.yaml) | Auditoría Ash con capa de validación + historial wgpu |
-| [TAA_3D.yaml](./TAA_3D.yaml) | Anti-aliasing temporal: blend, historial ping-pong, formatos G-buffer, IPC |
-| [MSAA_3D.yaml](./MSAA_3D.yaml) | MSAA forward 3D por tier, resolve a G-buffers 1×, IPC |
-| [Shadows_3D.yaml](./Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
+| [Engine_Runtime_Foundation.yaml](./yaml/engine/Engine_Runtime_Foundation.yaml) | Ventana única del editor, GPU Vulkan, métricas (Windows) |
+| [Engine_Context.yaml](./yaml/engine/Engine_Context.yaml) | `EngineProvider`, refs, `createEngineActions` / `createEngineEventHandler` |
+| [IPC_Protocol.yaml](./yaml/engine/IPC_Protocol.yaml) | `engine:cmd` / `engine:event`, catálogo por motor, `core/src/ipc` |
 
 ---
 
-## Entidades y gameplay
+## yaml/persistence/ — Proyecto y persistencia
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Entities_Model_2D.yaml](./Entities_Model_2D.yaml) | Tipos 2D, entidades, sprites |
-| [Blueprints_Model_2D.yaml](./Blueprints_Model_2D.yaml) | Blueprints 2D, quick build, snap, propagación, `.save` |
-| [Entities_Model_3D.yaml](./Entities_Model_3D.yaml) | Tipos 3D, entidades, modelos GLB/GLTF |
-| [Blueprints_Model_3D.yaml](./Blueprints_Model_3D.yaml) | Blueprints 3D, model_id, quick build, propagación, `.save` |
-| [Entities_Model_3D_extras.yaml](./Entities_Model_3D_extras.yaml) | Cámara play character, colisión por tipo, orientación GLB jugador |
-| [Projectiles_3D.yaml](./Projectiles_3D.yaml) | Proyectiles 3D: config, gravedad opcional, muzzle, hits/rebote, IPC/Rhai |
-| [Projectiles_2D.yaml](./Projectiles_2D.yaml) | Proyectiles 2D: config, gravedad, rebote por capa Z, IPC/Rhai |
-| [Physics_Model.yaml](./Physics_Model.yaml) | Rapier 2D/3D, herramientas plano 3D, jugador shape cast |
-| [Animation_Model.yaml](./Animation_Model.yaml) | Sprite 2D, clips GLTF skinned, `play_animation`, blueprints |
-| [Controls_Model.yaml](./Controls_Model.yaml) | Bindings, control scripts Rhai |
-| [RHAI_API.yaml](./RHAI_API.yaml) | API scripting 2D y play character 3D |
+| [Save_Proyect_Model.yaml](./yaml/persistence/Save_Proyect_Model.yaml) | `.save` ZIP, Resources, manifest, guardar/cargar, bibliotecas globales |
+| [Project_Load_3D.yaml](./yaml/persistence/Project_Load_3D.yaml) | Carga `.save` 3D: burst, precarga, GLB, eventos `project_loaded_3d` |
+| [Escenes_Model_3D.yaml](./yaml/persistence/Escenes_Model_3D.yaml) | Multi-escena editor 3D, dirty, `switch_editor_scene` |
 
 ---
 
-## Editor UI
+## yaml/assets/ — Assets y formato
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Entity_Properties_Modal.yaml](./Entity_Properties_Modal.yaml) | Modal propiedades entidad (transform, animaciones, texturas, blueprint) |
-| [Sockets_3D.yaml](./Sockets_3D.yaml) | Sockets en huesos skinned, vínculos objeto↔socket, modal Configuración de sockets |
-| [Bone_Physics_3D.yaml](./Bone_Physics_3D.yaml) | Física secundaria por hueso (jiggle), modal Editar física de huesos |
-| [Entity_Textures.yaml](./Entity_Textures.yaml) | LOD texturas embebidas GLB (pestaña Texturas 3D) |
-| [Player_UI_Model.yaml](./Player_UI_Model.yaml) | HUD jugador, pantallas, undo/redo, NDC |
-| [Programing_Model.yaml](./Programing_Model.yaml) | Programación visual (escena + entidad), nodos → Rhai |
+| [Rerasset_Format.yaml](./yaml/assets/Rerasset_Format.yaml) | `.rerasset` / RTEX v1 (editor RGBA8); `export_profiles` reserva BC7/ASTC para el build final |
 
 ---
 
-## Plugins e IA
+## yaml/rendering/ — Renderización 3D
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Plugins_Model.yaml](./Plugins_Model.yaml) | Sistema de plugins descargables |
-| [AI_Assistant_Plugin.yaml](./AI_Assistant_Plugin.yaml) | Asistente IA local (Qwen GGUF, overlay, herramientas v1) |
-| [AI_Assistant_Editor_Guide.es.prompt.txt](./AI_Assistant_Editor_Guide.es.prompt.txt) | Contexto FAQ español para el modelo |
-| [AI_Assistant_Editor_Guide.en.prompt.txt](./AI_Assistant_Editor_Guide.en.prompt.txt) | Contexto FAQ inglés para el modelo |
+| [Reflections_3D.yaml](./yaml/rendering/Reflections_3D.yaml) | Índice reflejos: tiers, toggles, frame, IPC |
+| [Reflections_SSR.yaml](./yaml/rendering/Reflections_SSR.yaml) | Screen-space reflections por tier |
+| [Reflections_Probes.yaml](./yaml/rendering/Reflections_Probes.yaml) | Cubemap probes, captura, forward IBL |
+| [Reflections_RT.yaml](./yaml/rendering/Reflections_RT.yaml) | Ray tracing HW (Ash), fallback BVH, denoise; historial wgpu |
+| [Reflections_Diagnostics.yaml](./yaml/rendering/Reflections_Diagnostics.yaml) | Auditoría Ash con capa de validación + historial wgpu |
+| [TAA_3D.yaml](./yaml/rendering/TAA_3D.yaml) | Anti-aliasing temporal: blend, historial ping-pong, formatos G-buffer, IPC |
+| [MSAA_3D.yaml](./yaml/rendering/MSAA_3D.yaml) | MSAA forward 3D por tier, resolve a G-buffers 1×, IPC |
+| [Shadows_3D.yaml](./yaml/rendering/Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
 
 ---
 
-## Exportación futura (referencia)
+## yaml/gameplay/ — Entidades y gameplay
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Rerasset_Format.yaml](./Rerasset_Format.yaml) | Sección `export_profiles`: perfiles BC7/ASTC reservados para el build final (no editor) |
+| [Entities_Model_2D.yaml](./yaml/gameplay/Entities_Model_2D.yaml) | Tipos 2D, entidades, sprites |
+| [Blueprints_Model_2D.yaml](./yaml/gameplay/Blueprints_Model_2D.yaml) | Blueprints 2D, quick build, snap, propagación, `.save` |
+| [Entities_Model_3D.yaml](./yaml/gameplay/Entities_Model_3D.yaml) | Tipos 3D, entidades, modelos GLB/GLTF |
+| [Blueprints_Model_3D.yaml](./yaml/gameplay/Blueprints_Model_3D.yaml) | Blueprints 3D, model_id, quick build, propagación, `.save` |
+| [Entities_Model_3D_extras.yaml](./yaml/gameplay/Entities_Model_3D_extras.yaml) | Cámara play character, colisión por tipo, orientación GLB jugador |
+| [Projectiles_3D.yaml](./yaml/gameplay/Projectiles_3D.yaml) | Proyectiles 3D: config, gravedad opcional, muzzle, hits/rebote, IPC/Rhai |
+| [Projectiles_2D.yaml](./yaml/gameplay/Projectiles_2D.yaml) | Proyectiles 2D: config, gravedad, rebote por capa Z, IPC/Rhai |
+| [Physics_Model.yaml](./yaml/gameplay/Physics_Model.yaml) | Rapier 2D/3D, herramientas plano 3D, jugador shape cast |
+| [Animation_Model.yaml](./yaml/gameplay/Animation_Model.yaml) | Sprite 2D, clips GLTF skinned, `play_animation`, blueprints |
+| [Controls_Model.yaml](./yaml/gameplay/Controls_Model.yaml) | Bindings, control scripts Rhai |
+
+---
+
+## yaml/scripting/ — Scripting
+
+| Documento | Contenido |
+|-----------|-----------|
+| [RHAI_API.yaml](./yaml/scripting/RHAI_API.yaml) | API scripting 2D y play character 3D |
+| [Programing_Model.yaml](./yaml/scripting/Programing_Model.yaml) | Programación visual (escena + entidad), nodos → Rhai |
+
+---
+
+## yaml/editor/ — Editor UI
+
+| Documento | Contenido |
+|-----------|-----------|
+| [MODAL_ELECTRON.yaml](./yaml/editor/MODAL_ELECTRON.yaml) | Ventanas hijas (propiedades, blueprint, player UI, scripting) |
+| [Entity_Properties_Modal.yaml](./yaml/editor/Entity_Properties_Modal.yaml) | Modal propiedades entidad (transform, animaciones, texturas, blueprint) |
+| [Sockets_3D.yaml](./yaml/editor/Sockets_3D.yaml) | Sockets en huesos skinned, vínculos objeto↔socket, modal Configuración de sockets |
+| [Bone_Physics_3D.yaml](./yaml/editor/Bone_Physics_3D.yaml) | Física secundaria por hueso (jiggle), modal Editar física de huesos |
+| [Entity_Textures.yaml](./yaml/editor/Entity_Textures.yaml) | LOD texturas embebidas GLB (pestaña Texturas 3D) |
+| [Player_UI_Model.yaml](./yaml/editor/Player_UI_Model.yaml) | HUD jugador, pantallas, undo/redo, NDC |
+
+---
+
+## yaml/plugins/ — Plugins
+
+| Documento | Contenido |
+|-----------|-----------|
+| [Plugins_Model.yaml](./yaml/plugins/Plugins_Model.yaml) | Sistema de plugins descargables |
+
+---
+
+## ai/ — Asistente IA
+
+| Documento | Contenido |
+|-----------|-----------|
+| [AI_Assistant_Plugin.yaml](./ai/AI_Assistant_Plugin.yaml) | Asistente IA local (Qwen GGUF, overlay, herramientas v1) |
+| [AI_Assistant_Editor_Guide.es.prompt.txt](./ai/AI_Assistant_Editor_Guide.es.prompt.txt) | Contexto FAQ español para el modelo |
+| [AI_Assistant_Editor_Guide.en.prompt.txt](./ai/AI_Assistant_Editor_Guide.en.prompt.txt) | Contexto FAQ inglés para el modelo |
 
 ---
 

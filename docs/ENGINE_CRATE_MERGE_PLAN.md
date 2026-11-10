@@ -81,7 +81,7 @@ src/main/Engine/
 │       ├── lib.rs
 │       ├── vulkan/             # contexto, swapchain, memoria, buffers, imágenes, sync
 │       ├── assets/  scripting/  player_ui/
-│       ├── platform.rs  overlay.rs  editor_defaults.rs  backend_policy.rs
+│       ├── platform.rs  editor_defaults.rs  backend_policy.rs
 │       └── ipc/                # antes engine_ipc_common
 └── engine/                     # rer-engine
     ├── Cargo.toml

@@ -7,7 +7,7 @@ Este documento fija el contrato tecnico actual del motor 2D para que el codigo n
 - `rer_engine_2d` y `rer_engine_3d` son **binarios distintos** con runtimes distintos
   (features `engine2d` / `engine3d` del paquete `rer-engine`).
 - Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y `rer-engine-core`, no un enum de comandos unico ni la logica de juego.
-- Contrato por motor: `src/engine2d/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
+- Contrato por motor: `src/engine2d/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/yaml/engine/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: lo que el producto 3D necesitaba del stack 2D ya se extrajo; nuevas funciones 2D se implementan solo aqui (`config_2d/`, `physics_2d.rs`, `engine/`).
 - Este documento no describe ni prescribe comportamiento del motor 3D.
 
@@ -78,7 +78,7 @@ Registro: `entity_save_meta` + inferencia desde `ScenarioMarker` / `CharacterMar
 - Callbacks Rhai usan **invoke pattern** (`run_ast_with_scope` + `update!(entity, dt);`, etc.) para que `engine` del preámbulo sea visible dentro de `fn update` / `on_trigger_enter` / controles.
 - **2D controles:** `engine.move_control(id, speed)` — el motor guarda la tecla del binding en `ScriptApiContext.control_binding_key`; no comparar `control_key` en el script.
 - **Triggers:** `on_trigger_enter(trigger, actor)` en execution areas.
-- Referencia API: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml). Implementación: `core/src/scripting/`.
+- Referencia API: [`docs/yaml/scripting/RHAI_API.yaml`](../../../../docs/yaml/scripting/RHAI_API.yaml). Implementación: `core/src/scripting/`.
 
 ## Atlas de texturas
 

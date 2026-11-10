@@ -1,0 +1,68 @@
+# Proyectiles 2D
+
+# Referencias:
+#   - docs/yaml/gameplay/Entities_Model_2D.yaml
+#   - docs/yaml/scripting/RHAI_API.yaml
+#   - src/main/Engine/engine/src/engine2d/config_2d/projectiles.rs
+#   - src/main/Engine/engine/src/engine2d/physics_2d.rs (raycast_projectile_hit_xy)
+#   - src/main/Engine/core/src/projectile_hardness.rs
+
+summary: |
+  Sistema de proyectiles 2D (`kind: projectile`): plantilla sprite en escena +
+  disparo cinemático (clon runtime) en editor y play.
+  Paridad con docs/yaml/gameplay/Projectiles_3D.yaml salvo: plano XY, sin muzzle socket.
+  Resolución de impacto por **tiers de dureza** (misma tabla que 3D).
+  Daño/HP: no implementado (solo evento `projectile_hit`).
+
+overview: |
+  1. Crear plantilla PNG (sidebar → Projectiles → Create projectile).
+  2. Configurar speed, lifetime, gravedad, hardness en Propiedades → Projectile.
+  3. Disparar con IPC/Rhai/UI Test fire → clon del sprite.
+  4. El clon se mueve cinemáticamente; al impactar o expirar se despawnea.
+  5. Los clones NO se guardan en el `.save`.
+
+hardness_rules: |
+  Igual que docs/yaml/gameplay/Projectiles_3D.yaml (resolve_hardness_hit en core).
+
+projectile_config:
+  speed: number # m/s, default 20
+  lifetime_s: number # default 3, mín 0.05
+  affected_by_gravity: boolean # default false
+  gravity_scale: number # default 1
+  align_to_velocity: boolean # default true
+  bounceable: boolean # legacy; no decide superficie
+  max_bounces: number # default 3, máx 64
+  bounce_speed_loss: number # default 0.2 (0..1)
+  hardness: number # default 0
+  persist: |
+    Campo opcional `projectile` en entidad 2D del `.save` cuando kind == projectile.
+  entity_hardness: |
+    Campo `hardness` en entidad del `.save` (default 0). IPC `set_entity_hardness`.
+
+runtime:
+  templates: "entidades `kind: projectile` con ProjectileMarker"
+  active_instances: |
+    ActiveProjectile: entity_id, velocity (Vec2), age, lifetime_s,
+    gravity, align, visual_angle_offset, bounces_left, bounce_speed_loss,
+    hardness, exclude_entities.
+  hits: |
+    Multi-hit por frame vía raycast_projectile_hit_xy + resolve_hardness_hit.
+    Ignora execution_area_entities y exclude_entities.
+  movement_tick: tick_projectiles cada frame (editor y play).
+
+ipc:
+  set_projectile_config: |
+    { id, speed, lifetime_s, affected_by_gravity?, gravity_scale?,
+      align_to_velocity?, bounceable?, max_bounces?, bounce_speed_loss?, hardness? }
+  set_entity_hardness: { id, hardness }
+  fire_projectile: { template_id, from_id?, dir_x, dir_y }
+  event projectile_config_changed: incluye hardness
+  event projectile_hit: { projectile_id, hit_entity_id?, position, bounced }
+
+ui:
+  Propiedades → Projectile: Hardness, Max bounces, Hit speed loss.
+  Propiedades → física: Hardness de entidad.
+
+out_of_scope:
+  - daño / HP
+  - filtro por capa Z

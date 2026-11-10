@@ -1,4 +1,4 @@
-//! Export/import helpers — docs/Entities_Model_3D.yaml
+//! Export/import helpers — docs/yaml/gameplay/Entities_Model_3D.yaml
 
 use crate::engine3d::ecs::Transform;
 use crate::engine3d::engine::State;

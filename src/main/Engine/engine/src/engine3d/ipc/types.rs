@@ -122,7 +122,7 @@ fn default_texture_lod_preview_tier() -> String {
     "low".to_string()
 }
 
-/// Entidad 3D — docs/Entities_Model_3D.yaml (`common`).
+/// Entidad 3D — docs/yaml/gameplay/Entities_Model_3D.yaml (`common`).
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SaveEntity3DSnapshot {
     pub id: u32,
@@ -500,7 +500,7 @@ pub fn normalize_model_library_category(raw: Option<&str>) -> Option<String> {
     }
 }
 
-/// Manifest de blueprint activa en construcción rápida (`docs/Blueprints_Model_3D.yaml`).
+/// Manifest de blueprint activa en construcción rápida (`docs/yaml/gameplay/Blueprints_Model_3D.yaml`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct BlueprintPlacementMeta {
     #[serde(default)]

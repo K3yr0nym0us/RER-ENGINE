@@ -1,0 +1,132 @@
+# Ray tracing (reflejes) — motor 3D
+#
+# Trazado por hardware (Ash/Vulkan RT) con fallback BVH por software en compute. Fuente adicional
+# de información cuando `raytracing_enabled`; el tier solo enciende la cadena de reflejos.
+#
+# Relacionado con:
+#   - docs/yaml/rendering/Reflections_3D.yaml
+#   - docs/yaml/rendering/Reflections_SSR.yaml (SSR en pantalla y composite final)
+#   - docs/yaml/rendering/Shadows_3D.yaml (no hay shadow rays en RT)
+
+version: 4
+updated: 2026-11-09
+status: implemented
+validated: 2026-11-08  # RTX 3060, capa de validación sin errores de API en el camino RT
+
+principle:
+  owner: motor_3d
+  role: |
+    Dos raygen en el mismo pipeline: `primary.rgen` (fondo del viewport, con su `rchit`/`rmiss`)
+    y `reflect.rgen` (rayo de reflejo desde el G-buffer). Si el adaptador no expone RT, el mismo
+    trabajo lo hace `shaders/bvh/trace.comp` sobre el BVH binario de `src/bvh.rs`.
+    Con trazado apagado no hay dispatch y el pipeline queda en SSR + composite.
+  toggle: |
+    reflection_raytracing_enabled (editor / .save reflectionRaytracing), y solo tiene efecto con
+    tier ≠ off: `record()` ejecuta `reflection_pass` cuando `reflections && raytracing`.
+  extension_gate: |
+    `vulkan/select.rs` pide juntas `VK_KHR_acceleration_structure`, `VK_KHR_ray_tracing_pipeline`
+    y `VK_KHR_deferred_host_operations`; si falta alguna (o sus features al crear el device) se
+    registra en español la extensión ausente, `hw_rt = false` y se usa el BVH por software.
+
+source_of_truth:
+  rust:
+    - src/main/Engine/engine/src/engine3d/vulkan/accel.rs     # BLAS/TLAS, scratch, device addresses
+    - src/main/Engine/engine/src/engine3d/vulkan/frame.rs     # dispatch, SBT, cache de BLAS, BVH por slot
+    - src/main/Engine/engine/src/engine3d/bvh.rs              # BVH binario y layouts GPU del fallback
+    - src/main/Engine/engine/src/engine3d/vulkan/select.rs    # gate de extensiones
+    - src/main/Engine/engine/src/engine3d/engine/render.rs    # instancias trazables, materiales, hash
+  shaders:
+    - src/main/Engine/engine/shaders/rt/primary.rgen
+    - src/main/Engine/engine/shaders/rt/primary.rchit
+    - src/main/Engine/engine/shaders/rt/primary.rmiss
+    - src/main/Engine/engine/shaders/rt/reflect.rgen
+    - src/main/Engine/engine/shaders/bvh/trace.comp
+
+not_ported_from_wgpu:
+  quality_preset: |
+    `reflections/quality_preset.rs` (rt_resolution_scale, max_bounces, shadow_rays,
+    material_quality, perfiles de denoise por tier) no tiene equivalente en Ash. El trazado actual
+    es 1 rayo/píxel, sin rebotes, sin shadow rays y a resolución de viewport completa.
+  rt_flags: |
+    Los bits x/y/z/w (refracción, segundo rebote, SSIL/GI, shadow rays) desaparecieron con el
+    módulo. El SSIL de la era wgpu ya era un placeholder nunca cableado (`ssil_strength = 0`).
+  events: |
+    `reflection_profiler` ya no existe y `reflection_tier_effective` quedó declarado en el IPC sin
+    emisor: hoy no hay degradado de tier comunicado al editor, solo el log del cambio.
+  shadows: |
+    No hay sombras por ray tracing: `primary.rchit` y `trace.comp` iluminan con N·L + ambiente,
+    sin disparar un rayo hacia la luz.
+
+tier_table:
+  description: |
+    El tier (`off | low | medium | high | ultra`) solo decide si la cadena de reflejos corre.
+    No cambia resolución, pasos, rebotes ni denoise en el renderizador Ash.
+
+pipeline:
+  order_in_frame: |
+    1. `rebuild_tlas` desde los `RtInstanceRecord` visibles (cache de BLAS por malla; `rebuild`
+       invalida la entrada).
+    2. `trace_background` → `primary.rgen` (o `trace.comp` en modo 0) escribe `targets.background`,
+       que el forward toma como cielo.
+    3. Tras el forward, `reflection_pass` → `reflect.rgen` (o `trace.comp` modo 1) escribe
+       `targets.reflection` con alpha = confianza.
+    4. `denoise.frag` y `composite.frag` (ver docs/yaml/rendering/Reflections_SSR.yaml).
+  descriptors: |
+    Un descriptor set por uso y por slot en vuelo (`rt[slot][fondo|reflejos]`, igual en el BVH):
+    actualizar un set ya enlazado por un command buffer invalida el buffer completo y el driver
+    ignora TODO el frame (VUID "destroyed or updated without UPDATE_AFTER_BIND").
+  scratch: |
+    El scratch de `build_blas`/`build_tlas` y el buffer de índices de instancia se reutilizan entre
+    frames en un único `Vec<u8>` para no reservar memoria nueva por frame ni dejar un device
+    address de un buffer ya liberado.
+
+denoise:
+  shader: src/main/Engine/engine/shaders/raster/denoise.frag
+  profile: |
+    Kernel 3×3 con peso `exp(-|Δdepth| · 80) · pow(max(dot(n, n0), 0), 16) · alpha`. El radio
+    llega por push constant (`step_px`) y hoy vale 1 texel para todos los tiers.
+  gate: corre dentro de la cadena de reflejos, con o sin trazado.
+
+sampling:
+  primary_ray: un rayo por píxel desde `inv_view_proj` (cámara) o desde el G-buffer (reflejo)
+  roughness_gate: |
+    Cuatro shaders comparten dos constantes GLSL: `REFL_MIRROR_ROUGHNESS_MAX = 0.04` y
+    `REFL_MAX_ROUGHNESS = 0.70`. `reflect.rgen` y el modo 1 del BVH escriben alpha 0 fuera de
+    (0.04, 0.70]; `ssr.frag` descarta roughness > 0.70 (los espejos sí se marchan);
+    `composite.frag` fuerza SSR puro en roughness ≤ 0.04. Antes cada paso tenía su umbral (0.45 /
+    0.65) y dejaba bandas sin ningún reflejo; se unificó tras la migración.
+  mirror_bypass: |
+    Los espejos (roughness ≤ 0.04) los resuelve SSR: `composite.frag` ignora el rayo ahí y
+    `reflect.rgen`/`trace.comp` salen con alpha 0, así no se paga un trazado que aportaría menos
+    que el marchado de pantalla. Es el mismo ruleteo que la era wgpu, ahora con las constantes
+    compartidas en lugar de duplicadas por shader.
+  miss: |
+    `primary.rmiss` devuelve el color de cielo (0.72, 0.86, 0.98), el mismo del viewport y del
+    fallback procedural del IBL.
+
+geometry:
+  static: |
+    Lotes estáticos visibles con ≥ 3 índices: posiciones bind-pose en CPU + transform de entidad
+    (mismo blob alimenta BVH y TLAS; se reutiliza solo si el hash de la escena no cambió).
+  skinned: |
+    Las entidades animadas entran a ambos caminos con triángulos deformados en CPU usando el mismo
+    palette que `skinned.vert`, cacheados y refrescados cada 4 frames (tope 24 000 triángulos).
+    Para el TLAS, `refresh_skinned_rt_geometry` sube un buffer de sólo posiciones poseadas (stride
+    12 bytes, mismo orden de vértices que el VBO skinned, así se reutiliza su índice) y arma una
+    `RtBatch` por entidad y pieza con clave `(gpu_mesh_idx) | (1 << 63)`; el BLAS se reconstruye
+    solo en el frame en que cambió la pose (`State::rt_skinned_rebuild`). Las poses son las
+    mismas que alimentan el BVH, así HW y SW ven la misma silueta.
+
+ipc:
+  commands:
+    - set_reflection_raytracing: { enabled: bool }
+  events:
+    - reflection_raytracing_changed: { enabled: bool }
+  save_fields:
+    - reflectionRaytracing (world)
+
+debug:
+  tip_log: |
+    Para separar un problema del trazado/SSR de uno del IBL de sondas, usar
+    `set_reflection_debug_view` con la vista de debug: presenta `targets.ssr` en crudo, sin
+    composite ni TAA (ver docs/yaml/rendering/Reflections_SSR.yaml).

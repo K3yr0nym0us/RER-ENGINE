@@ -118,10 +118,10 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine::engine2d=debu
 
 | Archivo | Contenido |
 |---------|-----------|
-| [docs/RHAI_API.yaml](./docs/RHAI_API.yaml) | API de scripting Rhai (2D y 3D), resumida |
-| [docs/Programing_Model.yaml](./docs/Programing_Model.yaml) | Modelo de programación visual (nodos → Rhai, UI, persistencia, IPC modal) |
-| [docs/Plugins_Model.yaml](./docs/Plugins_Model.yaml) | Plugins opcionales (catálogo, IPC, persistencia) |
-| [docs/AI_Assistant_Plugin.yaml](./docs/AI_Assistant_Plugin.yaml) | Plugin asistente IA local (Qwen3, llama.cpp, chat) |
+| [docs/yaml/scripting/RHAI_API.yaml](./docs/yaml/scripting/RHAI_API.yaml) | API de scripting Rhai (2D y 3D), resumida |
+| [docs/yaml/scripting/Programing_Model.yaml](./docs/yaml/scripting/Programing_Model.yaml) | Modelo de programación visual (nodos → Rhai, UI, persistencia, IPC modal) |
+| [docs/yaml/plugins/Plugins_Model.yaml](./docs/yaml/plugins/Plugins_Model.yaml) | Plugins opcionales (catálogo, IPC, persistencia) |
+| [docs/ai/AI_Assistant_Plugin.yaml](./docs/ai/AI_Assistant_Plugin.yaml) | Plugin asistente IA local (Qwen3, llama.cpp, chat) |
 | [docs/README.md](./docs/README.md) | Índice de documentación (funcionalidad implementada) |
 | [`src/main/Engine/engine/src/engine2d/ARCHITECTURE.md`](src/main/Engine/engine/src/engine2d/ARCHITECTURE.md) | Contrato del motor 2D |
 | [`src/main/Engine/engine/ARCHITECTURE.md`](src/main/Engine/engine/ARCHITECTURE.md) | Contrato del motor 3D |

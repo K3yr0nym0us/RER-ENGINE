@@ -128,7 +128,7 @@ pub struct State {
         std::collections::HashMap<String, crate::engine3d::ipc::BlueprintPlacementMeta>,
     /// Blueprint de origen por entidad (construcción rápida u otras vías del motor).
     pub(crate) entity_blueprint_ids: std::collections::HashMap<EntityId, String>,
-    /// Colisión de malla Rapier on/off por entidad (`docs/Entities_Model_3D.yaml`).
+    /// Colisión de malla Rapier on/off por entidad (`docs/yaml/gameplay/Entities_Model_3D.yaml`).
     pub(crate) entity_colision: std::collections::HashMap<EntityId, bool>,
     /// Dureza de gameplay por entidad (0 = no afecta proyectiles).
     pub(crate) entity_hardness: std::collections::HashMap<EntityId, u32>,

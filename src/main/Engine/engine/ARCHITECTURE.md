@@ -15,7 +15,7 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
   (features `engine3d` / `engine2d` del mismo paquete `rer-engine`).
 - Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y el crate de
   utilidades (`rer-engine-core`), no un enum de comandos unico ni la logica de juego.
-- Contrato por motor: `engine/src/engine3d/ipc/` y `engine/src/engine2d/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/IPC_Protocol.yaml`.
+- Contrato por motor: `engine/src/engine3d/ipc/` y `engine/src/engine2d/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/yaml/engine/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: cada motor conserva su pila (`config_3d/` vs
   `config_2d/`). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
@@ -74,7 +74,7 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   raíz del tamaño para que la penumbra no se afinde al subir resolución; por encima de 2.5
   texeles el kernel pasa de 3×3 a 5×5. Sigue siendo un único mapa sobre los bounds del mundo:
   no hay cascadas (CSM). Se intentó y se retiró: la evidencia de qué quedó descartado está en
-  `docs/Shadows_3D.yaml` (`csm_attempt`) para no volver a empezar de cero.
+  `docs/yaml/rendering/Shadows_3D.yaml` (`csm_attempt`) para no volver a empezar de cero.
 - **MSAA** (`set_msaa_tier`): Low 1× (por defecto, sin multisampling), Medium 2×, High 4×,
   Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
   `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). Con >1× se crean copias
@@ -250,7 +250,7 @@ Registro de rutas/tipos: `entity_save_meta` + actualizacion en spawn/load/replac
 - Callbacks Rhai usan **invoke pattern** en `core/src/scripting/script_engine.rs` (mismo contrato que 2D).
 - **Triggers 3D:** `on_trigger_enter(trigger, actor)` en execution areas planas; detección en `execution_areas_3d.rs`.
 - **Control scripts play character:** tras ejecutar el script del binding, `engine/scripts.rs` auto-inyecta `fp_press_key` con la tecla del binding cuando el script no lo hace. Scripts típicos: solo `fp_set_walk_speed`, `fp_set_sprint_multiplier`, `fp_jump`.
-- Referencia: [`docs/RHAI_API.yaml`](../../../../docs/RHAI_API.yaml).
+- Referencia: [`docs/yaml/scripting/RHAI_API.yaml`](../../../../docs/yaml/scripting/RHAI_API.yaml).
 
 ### Fisica
 

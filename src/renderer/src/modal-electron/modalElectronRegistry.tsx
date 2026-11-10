@@ -9,7 +9,7 @@ import type { ComponentType } from 'react'
  * Si olvidas registrar un modal aquí verás:
  *   "Componente modal no soportado: NombreDelComponente"
  *
- * Checklist al añadir un modal nuevo → docs/MODAL_ELECTRON.yaml
+ * Checklist al añadir un modal nuevo → docs/yaml/editor/MODAL_ELECTRON.yaml
  *
  * Excepciones con host dedicado (no van en este mapa):
  *   - BluePrintModalBody      → BluePrintModalElectronHost

@@ -91,11 +91,11 @@ Al salir de edición (`endUiScreenEdit`), cancelar dibujo de objeto en el hook p
 
 Todos los diálogos del editor usan **ventana Electron hija**, no `<Modal>` in-process. Cada cuerpo modal debe registrarse en `modal-electron/modalElectronRegistry.tsx`; si no, el usuario ve *Componente modal no soportado*.
 
-Guía completa y checklist: [`docs/MODAL_ELECTRON.yaml`](../../docs/MODAL_ELECTRON.yaml).
+Guía completa y checklist: [`docs/yaml/editor/MODAL_ELECTRON.yaml`](../../docs/yaml/editor/MODAL_ELECTRON.yaml).
 
 ## Programación visual (nodos → Rhai)
 
-Editor de grafos que compila a scripts Rhai para **escena** (`on_scene_start`, `on_scene_tick`) o **entidad** (`on_start`, `update`). Modelo completo: [`docs/Programing_Model.yaml`](../../docs/Programing_Model.yaml).
+Editor de grafos que compila a scripts Rhai para **escena** (`on_scene_start`, `on_scene_tick`) o **entidad** (`on_start`, `update`). Modelo completo: [`docs/yaml/scripting/Programing_Model.yaml`](../../docs/yaml/scripting/Programing_Model.yaml).
 
 | Pieza | Archivo |
 |-------|---------|
@@ -176,7 +176,7 @@ Documentacion de motores:
 - `src/hooks/usePlayerUiObjectDrawing.ts` — modo dibujo de objetos HUD (progreso `toolProgress`).
 - `src/defaults/buildProjectSaveFromEngine.ts` — IPC `export_save_snapshot` y merge a `ProjectSaveData`.
 - `src/defaults/defaultSceneName.ts` — nombres `Scene-NN` locales (misma regla que `editor_defaults` en Rust).
-- `src/shared-types/types.ts` — contrato IPC; ampliar aqui al anadir comandos/eventos nuevos. Validacion por motor en main (`engineCommandCatalog.ts`); ver `docs/IPC_Protocol.yaml`.
+- `src/shared-types/types.ts` — contrato IPC; ampliar aqui al anadir comandos/eventos nuevos. Validacion por motor en main (`engineCommandCatalog.ts`); ver `docs/yaml/engine/IPC_Protocol.yaml`.
 
 ## Checklist para cambios nuevos
 

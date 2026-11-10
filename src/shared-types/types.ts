@@ -120,7 +120,7 @@ export function isEnvironmentEntity(
   return isScenario || isEditorBoxPath(meta?.path) || meta?.entityCategory === 'environment'
 }
 
-// ── Modelo 3D (docs/Entities_Model_3D.yaml) ─────────────────────────────────
+// ── Modelo 3D (docs/yaml/gameplay/Entities_Model_3D.yaml) ─────────────────────────────────
 
 export type Entity3DCategory =
   | 'environment'

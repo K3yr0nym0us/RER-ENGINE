@@ -3,8 +3,8 @@ import path from 'path'
 import { app } from 'electron'
 
 const GUIDE_FILES: Record<'es' | 'en', string> = {
-  es: 'AI_Assistant_Editor_Guide.es.prompt.txt',
-  en: 'AI_Assistant_Editor_Guide.en.prompt.txt',
+  es: 'ai/AI_Assistant_Editor_Guide.es.prompt.txt',
+  en: 'ai/AI_Assistant_Editor_Guide.en.prompt.txt',
 }
 
 const FALLBACK_CONTEXT: Record<'es' | 'en', string> = {

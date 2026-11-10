@@ -4,7 +4,7 @@
 //! `vulkan::FrameRenderer` reasigna la imagen cuando cambia y `scene_light_params` ajusta el
 //! texel/radio del PCF, así que low/medium/high/ultra se ven distinto (no solo cuestan distinto).
 //! Las cascadas (CSM) y la distancia de sombra extendida de Ultra siguen pendientes
-//! (`docs/Shadows_3D.yaml` → Sombras / Preset de calidad).
+//! (`docs/yaml/rendering/Shadows_3D.yaml` → Sombras / Preset de calidad).
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ShadowTier {

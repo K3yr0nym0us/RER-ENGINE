@@ -51,7 +51,7 @@ import { useTraslate } from './useTraslate'
  *
  * IMPORTANTE — al añadir un modal nuevo:
  *   1. Registrar el componente en modal-electron/modalElectronRegistry.tsx
- *   2. Seguir docs/MODAL_ELECTRON.yaml
+ *   2. Seguir docs/yaml/editor/MODAL_ELECTRON.yaml
  *
  * Si falta el registro aparece: "Componente modal no soportado: NombreComponente"
  */

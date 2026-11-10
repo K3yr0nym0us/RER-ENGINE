@@ -4,7 +4,7 @@
 //! SSR/denoise/composite y el trazado RT, y `reflection_debug_view` está cableado (presenta el
 //! SSR/trazado en crudo). Lo que NO existe en Ash: presets de calidad por tier (pasos, distancia,
 //! radio de denoise) y variación del tamaño de cubemap por tier; todo eso era de la era wgpu y
-//! está listado como no portado en docs/Reflections_*.yaml.
+//! está listado como no portado en docs/yaml/rendering/Reflections_*.yaml.
 
 use crate::engine3d::config_3d::reflection_graphics::{
     DEFAULT_REFLECTION_TIER, ReflectionDebugView, ReflectionTier,
