@@ -19,7 +19,7 @@ updated: 2026-11-09
 principle:
   owner: motor_3d
   philosophy: |
-    Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame.rs`. El tier SOLO enciende o
+    Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame/mod.rs`. El tier SOLO enciende o
     apaga la cadena de reflejos (`reflections = tier != off`); la calidad por tier
     (resolución, pasos, rebotes, denoise, material RT) era de la era wgpu y no se portó.
     RT = fuente adicional de información (toggle editor reflectionRaytracing), con fallback BVH
@@ -30,7 +30,7 @@ principle:
     A_forward_ibl: shaders/raster/forward.frag — samplerCubeArray por instancia (ver docs/yaml/rendering/Reflections_Probes.yaml)
     B_ssr_rt: shaders/raster/ssr.frag + shaders/rt/* + shaders/bvh/trace.comp — detalle on-screen
     C_composite: shaders/raster/composite.frag — mezcla scene + reflejo con peso (1 - roughness) × confianza
-    capture: capture_probe en vulkan/frame.rs — alimenta A; no es recepción en pantalla
+    capture: capture_probe en vulkan/frame/mod.rs — alimenta A; no es recepción en pantalla
 
 subsystems:
   ssr: docs/yaml/rendering/Reflections_SSR.yaml
@@ -66,7 +66,7 @@ editor_toggles:
 internal_settings:
   description: |
     El `ReflectionSettings` derivado del tier ya no existe; los parámetros están fijos en los
-    shaders GLSL y en `vulkan/frame.rs`.
+    shaders GLSL y en `vulkan/frame/mod.rs`.
   live_inputs:
     - reflections (tier != off)
     - raytracing (reflectionRaytracing && hw_rt)
@@ -85,7 +85,7 @@ g_buffer:
   exports: nada aparte del MRT; el "depth_export R32Float" de wgpu se sustituye por la depth real
 
 frame_order:
-  source: engine/src/engine3d/vulkan/frame.rs::FrameRenderer::record
+  source: engine/src/engine3d/vulkan/frame/mod.rs::FrameRenderer::record
   steps:
     - ensure_msaa (G-buffer multisampleado y pipelines del tier de MSAA)
     - trace_background (fondo por RT o BVH) + sky copy/quad

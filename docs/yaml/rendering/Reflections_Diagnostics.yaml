@@ -30,7 +30,7 @@ ash_validation_audit:
       fix: |
         Registro explícito de layouts (`depth_layout` / `shadow_layout`) con
         `transition_depth()` como único punto que los cambia, verificado contra el validador.
-      files: [src/vulkan/frame.rs]
+      files: [src/vulkan/frame/mod.rs]
     - id: frames-discarded-on-reflections
       symptom: |
         Con reflejos/RT activos el viewport mostraba basura o el frame anterior congelado.
@@ -41,7 +41,7 @@ ash_validation_audit:
       fix: |
         Un set por uso y por slot (`rt[slot][0|1]`, `bvh[slot][0|1]`) y sets por slot también para
         albedo/probe/hud/ssr/denoise/composite/present.
-      files: [src/vulkan/frame.rs]
+      files: [src/vulkan/frame/mod.rs]
     - id: illegal-commands-inside-render-pass
       symptom: rectángulos basura en overlays del editor (cajas de gizmo/HUD)
       finding: |
@@ -51,7 +51,7 @@ ash_validation_audit:
       fix: |
         Una pasada por lote con `loadOp = LOAD`; las actualizaciones de buffer van fuera de la
         instancia.
-      files: [src/vulkan/frame.rs]
+      files: [src/vulkan/frame/mod.rs]
     - id: screen-flipped-by-reflection-tier
       symptom: activar un tier de reflejos invertía la pantalla entera verticalmente
       finding: |
@@ -75,7 +75,7 @@ ash_validation_audit:
       fix: |
         El fondo se dibuja con un quad full-screen dentro del pase MSAA (`shaders/raster/sky.frag`),
         sin prueba ni escritura de profundidad, escribiendo las 5 salidas del G-buffer.
-      files: [shaders/raster/sky.frag, src/vulkan/frame.rs]
+      files: [shaders/raster/sky.frag, src/vulkan/frame/mod.rs]
     - id: duplicated-probe-reflections
       symptom: reflejos "repetidos"/recursivos en superficies con sonda
       finding: |
@@ -98,7 +98,7 @@ ash_validation_audit:
         `probe_registry` buscaba `entity_category == "reflection_probe"` pero el spawn guarda
         `"object"` + el marcador `[ReflectionProbe]` en `path`.
       fix: detección por marcador de plantilla (o categoría), y ranura por sonda en el cubemap array
-      files: [src/probe_registry.rs, src/vulkan/frame.rs]
+      files: [src/probe_registry.rs, src/vulkan/frame/mod.rs]
   still_warned_benign:
     - |
       "Vertex attribute at location 1/2/7/8 not consumed by vertex shader": los pipelines de HUD y

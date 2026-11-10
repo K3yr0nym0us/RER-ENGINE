@@ -1,7 +1,7 @@
 # Sombras 3D por nivel (resolución del shadow map)
 #
 # El motor usa un único shadow map 2D ortográfico (depth compare, sin cascadas CSM), vive en
-# `engine/src/engine3d/vulkan/frame.rs` (Ash) y el nivel de calidad controla su resolución REAL.
+# `engine/src/engine3d/vulkan/frame/mod.rs` (Ash) y el nivel de calidad controla su resolución REAL.
 # CSM y la distancia extendida de Ultra quedan como tarea pendiente: se implementó y se retiró
 # (ver `csm_attempt` más abajo), así que el estado real es "no hecho, con evidencias apuntadas".
 #

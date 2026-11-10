@@ -31,7 +31,7 @@ principle:
 source_of_truth:
   rust:
     - src/main/Engine/engine/src/engine3d/vulkan/accel.rs     # BLAS/TLAS, scratch, device addresses
-    - src/main/Engine/engine/src/engine3d/vulkan/frame.rs     # dispatch, SBT, cache de BLAS, BVH por slot
+    - src/main/Engine/engine/src/engine3d/vulkan/frame/mod.rs     # dispatch, SBT, cache de BLAS, BVH por slot
     - src/main/Engine/engine/src/engine3d/bvh.rs              # BVH binario y layouts GPU del fallback
     - src/main/Engine/engine/src/engine3d/vulkan/select.rs    # gate de extensiones
     - src/main/Engine/engine/src/engine3d/engine/render.rs    # instancias trazables, materiales, hash

@@ -1,6 +1,6 @@
 # MSAA 3D (multisample anti-aliasing del pase forward)
 #
-# Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame.rs`. El MRT forward se dibuja
+# Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame/mod.rs`. El MRT forward se dibuja
 # contra copias multisampleadas de los 5 adjuntos y se resuelve contra los G-buffers 1× que
 # consumen TAA, SSR, denoise, composite y present. Shadow map, probes y post-FX siguen a 1 muestra.
 #
@@ -116,10 +116,9 @@ extended_scope:
   msaa_in_2d_engine:
     status: no_aplica
     reason: |
-      El motor 2D sigue en wgpu y su frame es un passthrough de sprites/quad con blend alfa; además la
-      fachada `core/src/gpu.rs` está fuera de límites para este trabajo (regla de la
-      migración Ash: el 2D no se toca). Si algún día se quisiera, sería cambio de la capa compartida,
-      no del crate 3D.
+      El motor 2D ya comparte el núcleo Ash/Vulkan, pero su frame es un passthrough de sprites/quad
+      con blend alfa: MSAA resuelve coberturas de geometría opaca, no bordes de sprite ni el canal
+      alfa. Si algún día se quisiera, sería un cambio del renderer 2D, no de este pase 3D.
   sampling_multisample_textures_in_taa_ssr:
     status: pendiente-de-decidir
     reason: |

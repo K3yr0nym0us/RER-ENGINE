@@ -9,7 +9,7 @@
 #   - docs/yaml/engine/Engine_Context.yaml
 
 version: 1
-updated: 2026-06-10
+updated: 2026-11-09
 
 principle: |
   Igual que Blueprint y Player UI: ventana hija sin EngineProvider.
@@ -44,8 +44,10 @@ state_EntityPropertiesState:
   multiSelectedIds: number[]
   flags:
     - isScenario / isCharacter / isEnvironment / isPlayer
-    - isEditorCamera / isCollider / isExecutionArea
+    - isEditorCamera / isCollider / isExecutionArea / isProjectile
     - isFromBlueprint / linkedBlueprintName
+  projectileConfig: ProjectileConfig | null
+  entityHardness: number
   scripts: ScriptEntry[]
   animationPlayingIds: number[]
   entityTextures: EntityMaterialTextures[] | null
@@ -58,6 +60,9 @@ actions_EntityPropertiesAction:
     - setEntityName
     - setTransform
     - setPhysics
+    - setProjectileConfig   # docs/yaml/gameplay/Projectiles_2D.yaml | Projectiles_3D.yaml
+    - setEntityHardness
+    - fireProjectile        # Test fire del tab Projectile
     - removeEntity / removeMultiple
     - replaceModel
     - send / sendAsync (cmd arbitrario)
@@ -93,6 +98,19 @@ animations_tab:
     Stop envía stop_animation + setAnimationPlaying(false).
   non_loop: sendAsync espera animation_finished; onAction devuelve promesa IPC
   ref: docs/yaml/gameplay/Animation_Model.yaml
+
+projectile_tab:
+  visible_when: selectedEntity es kind/category projectile
+  controls:
+    - speed / lifetime_s / affected_by_gravity / gravity_scale
+    - align_to_velocity
+    - muzzle_socket (3D)
+    - max_bounces / bounce_speed_loss / hardness
+    - Test fire (fire_projectile)
+  entity_hardness: |
+    El campo Hardness de la entidad vive en el bloque de física y aplica a
+    cualquier entidad (0 = los proyectiles la ignoran).
+  ref: docs/yaml/gameplay/Projectiles_2D.yaml | docs/yaml/gameplay/Projectiles_3D.yaml
 
 key_files:
   host: src/renderer/src/modal-electron/EntityPropertiesElectronHost.tsx

@@ -32,7 +32,7 @@ principle:
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine/src/engine3d/vulkan/frame.rs   # ssr/denoise/composite passes y sus descriptors
+    - src/main/Engine/engine/src/engine3d/vulkan/frame/mod.rs   # ssr/denoise/composite passes y sus descriptors
     - src/main/Engine/engine/src/engine3d/config_3d/reflection_settings.rs
     - src/main/Engine/engine/src/engine3d/config_3d/reflection_graphics.rs
   shaders:
