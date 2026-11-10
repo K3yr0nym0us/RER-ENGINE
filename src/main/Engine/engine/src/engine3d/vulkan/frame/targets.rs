@@ -24,6 +24,8 @@ pub(super) struct Targets {
     pub(super) probe_depth: GpuImage,
     /// G-buffer multisampleado del pase forward (solo existe si el tier de MSAA pide > 1).
     pub(super) ms: Option<MultisampleTargets>,
+    /// Cara de sonda multisampleada (solo existe si el tier de MSAA pide > 1).
+    pub(super) probe_ms: Option<ProbeMultisampleTargets>,
 }
 
 /// Copias multisampleadas de los 5 adjuntos del G-buffer + su profundidad.
@@ -40,6 +42,33 @@ pub(super) struct MultisampleTargets {
     pub(super) world: GpuImage,
     pub(super) velocity: GpuImage,
     pub(super) depth: GpuImage,
+}
+
+/// Copias multisampleadas de una cara de sonda.
+///
+/// Se resuelven contra `probe_color`, `probe_normal`, etc. 1×, y el color resuelto es el que
+/// `capture_probe` copia a la capa del cubemap. La profundidad MS no se resuelve: solo se usa
+/// como adjunto del pase de captura y se descarta con `DONT_CARE`.
+pub(super) struct ProbeMultisampleTargets {
+    pub(super) samples: u32,
+    pub(super) scene: GpuImage,
+    pub(super) normal: GpuImage,
+    pub(super) albedo: GpuImage,
+    pub(super) world: GpuImage,
+    pub(super) velocity: GpuImage,
+    pub(super) depth: GpuImage,
+}
+
+impl ProbeMultisampleTargets {
+    pub(super) fn views(&self) -> [vk::ImageView; 5] {
+        [
+            self.scene.view,
+            self.normal.view,
+            self.albedo.view,
+            self.world.view,
+            self.velocity.view,
+        ]
+    }
 }
 
 impl Targets {
@@ -185,6 +214,7 @@ impl Targets {
             probe_velocity,
             probe_depth,
             ms: None,
+            probe_ms: None,
         })
     }
 
@@ -193,6 +223,7 @@ impl Targets {
         if samples <= 1 {
             // Soltar las imágenes liberadas por `Drop` de `GpuImage`.
             self.ms = None;
+            self.probe_ms = None;
             return Ok(());
         }
         let ms_samples = sample_flags(samples);
@@ -209,7 +240,7 @@ impl Targets {
                 name,
             )
         };
-        self.ms = Some(MultisampleTargets {
+        let ms = MultisampleTargets {
             samples,
             scene: ms_color("scene-ms")?,
             normal: ms_color("normal-ms")?,
@@ -238,7 +269,58 @@ impl Targets {
                 vk::ImageAspectFlags::DEPTH,
                 "depth-ms",
             )?,
-        });
+        };
+
+        // La captura de sondas usa su propio tamaño (64×64). Se multisamplea aparte para no
+        // reutilizar el G-buffer de pantalla, que es mucho mayor.
+        let probe_extent = vk::Extent2D {
+            width: crate::engine3d::probe_registry::PROBE_FACE_SIZE,
+            height: crate::engine3d::probe_registry::PROBE_FACE_SIZE,
+        };
+        let ms_probe_color = |name| {
+            gpu.create_image_with_samples(
+                probe_extent,
+                COLOR,
+                ms_samples,
+                usage,
+                vk::ImageAspectFlags::COLOR,
+                name,
+            )
+        };
+        let probe_ms = ProbeMultisampleTargets {
+            samples,
+            scene: ms_probe_color("probe-scene-ms")?,
+            normal: ms_probe_color("probe-normal-ms")?,
+            albedo: ms_probe_color("probe-albedo-ms")?,
+            world: gpu.create_image_with_samples(
+                probe_extent,
+                WORLD,
+                ms_samples,
+                usage,
+                vk::ImageAspectFlags::COLOR,
+                "probe-world-ms",
+            )?,
+            velocity: gpu.create_image_with_samples(
+                probe_extent,
+                VELOCITY,
+                ms_samples,
+                usage,
+                vk::ImageAspectFlags::COLOR,
+                "probe-velocity-ms",
+            )?,
+            depth: gpu.create_image_with_samples(
+                probe_extent,
+                DEPTH,
+                ms_samples,
+                vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                vk::ImageAspectFlags::DEPTH,
+                "probe-depth-ms",
+            )?,
+        };
+
+        self.ms = Some(ms);
+        self.probe_ms = Some(probe_ms);
+        log::info!("[msaa] cara de sonda multisampleada a {samples}x");
         Ok(())
     }
 

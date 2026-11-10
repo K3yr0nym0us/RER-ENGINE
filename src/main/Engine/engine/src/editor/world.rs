@@ -134,6 +134,16 @@ impl MsaaTier {
             _ => Self::Low,
         }
     }
+
+    /// Muestras que pide el tier antes del clamp del adaptador.
+    pub fn desired_sample_count(self) -> u32 {
+        match self {
+            Self::Low => 1,
+            Self::Medium => 2,
+            Self::High => 4,
+            Self::Ultra => 8,
+        }
+    }
 }
 
 /// Vistas de depuración de reflejos (mismas claves que el motor).
@@ -192,6 +202,9 @@ pub struct WorldSettings {
     pub reflection_debug_view: &'static str,
     pub shadow_tier: ShadowTier,
     pub msaa_tier: MsaaTier,
+    /// Muestras efectivas que confirmó el motor para `msaa_tier` (puede ser menor que el tier
+    /// si el adaptador recorta, p. ej. Ultra 8× → 4×).
+    pub msaa_sample_count: u32,
     pub taa_enabled: bool,
     pub taa_blend: f32,
     pub taa_jitter_scale: f32,
@@ -222,6 +235,7 @@ impl Default for WorldSettings {
             reflection_debug_view: "final",
             shadow_tier: ShadowTier::Low,
             msaa_tier: MsaaTier::Low,
+            msaa_sample_count: 1,
             taa_enabled: true,
             taa_blend: 0.62,
             taa_jitter_scale: 1.0,
@@ -394,7 +408,10 @@ impl WorldSettings {
             }
             "set_msaa_tier" => {
                 if let Some(value) = command.get("tier").and_then(Value::as_str) {
-                    self.msaa_tier = MsaaTier::parse(value);
+                    let tier = MsaaTier::parse(value);
+                    self.msaa_tier = tier;
+                    // Provisional: el evento `msaa_tier_changed` trae el recorte real del adaptador.
+                    self.msaa_sample_count = tier.desired_sample_count();
                 }
             }
             "set_taa" => {
@@ -472,6 +489,9 @@ impl WorldSettings {
             "msaa_tier_changed" => {
                 if let Some(value) = event.get("tier").and_then(Value::as_str) {
                     self.msaa_tier = MsaaTier::parse(value);
+                }
+                if let Some(value) = number(event, "sample_count") {
+                    self.msaa_sample_count = value.max(1.0) as u32;
                 }
             }
             "taa_changed" => {
@@ -578,6 +598,14 @@ mod tests {
     }
 
     #[test]
+    fn msaa_tiers_request_expected_sample_counts() {
+        assert_eq!(MsaaTier::Low.desired_sample_count(), 1);
+        assert_eq!(MsaaTier::Medium.desired_sample_count(), 2);
+        assert_eq!(MsaaTier::High.desired_sample_count(), 4);
+        assert_eq!(MsaaTier::Ultra.desired_sample_count(), 8);
+    }
+
+    #[test]
     fn applies_engine_confirmations() {
         let mut world = WorldSettings::default();
         world.apply_event(&json!({ "event": "reflection_tier_effective", "effective": "medium" }));
@@ -585,8 +613,11 @@ mod tests {
             world.reflection_tier_effective,
             Some(ReflectionTier::Medium)
         );
-        world.apply_event(&json!({ "event": "msaa_tier_changed", "tier": "ultra" }));
+        world.apply_event(
+            &json!({ "event": "msaa_tier_changed", "tier": "ultra", "sample_count": 8 }),
+        );
         assert_eq!(world.msaa_tier, MsaaTier::Ultra);
+        assert_eq!(world.msaa_sample_count, 8);
         world
             .apply_event(&json!({ "event": "taa_changed", "enabled": false, "jitter_scale": 0.5 }));
         assert!(!world.taa_enabled);

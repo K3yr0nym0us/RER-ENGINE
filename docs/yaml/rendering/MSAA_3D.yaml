@@ -2,7 +2,8 @@
 #
 # Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame/mod.rs`. El MRT forward se dibuja
 # contra copias multisampleadas de los 5 adjuntos y se resuelve contra los G-buffers 1× que
-# consumen TAA, SSR, denoise, composite y present. Shadow map, probes y post-FX siguen a 1 muestra.
+# consumen TAA, SSR, denoise, composite y present. La captura de sondas tiene su propio par MS 1×.
+# Shadow map y post-FX siguen a 1 muestra.
 #
 # Relacionado con:
 #   - docs/yaml/rendering/TAA_3D.yaml
@@ -10,7 +11,7 @@
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 4
+version: 5
 updated: 2026-11-09
 
 principle:
@@ -28,6 +29,9 @@ principle:
     4. TAA, SSR, denoise, composite y present leen solo los 1× resueltos.
   note: |
     Low = Off (1 muestra, sin resolve; es el default y el camino de siempre).
+    La captura de sondas usa `ProbeMultisampleTargets` a PROBE_FACE_SIZE (64×64) con el mismo
+    sample count del tier: dibuja cada cara con los pipelines MS y resuelve el color a los
+    `probe_*` 1× antes de copiarla al cubemap; la profundidad MS se descarta con DONT_CARE.
     El número efectivo sale del adaptador: `SharedGpu::max_gbuffer_samples` intersecta
     `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`; si no llega a 2×
     devuelve 1× y el renderer no crea G-buffer multisampleado.
@@ -76,19 +80,19 @@ ui:
   accordion: World → MSAA
   controls:
     - tier selector: low | medium | high | ultra
+    - muestras efectivas confirmadas por el motor (avisa si el adaptador recorta)
 
-# Seguimiento de la card `MSAA EXTENDIDO (3D)`: qué queda, qué se descartó y por qué.
+# Seguimiento de la card `MSAA EXTENDIDO (3D)`: estado final de cada punto.
 extended_scope:
   ultra_8x_verification:
-    status: implemented-needs-hardware-check
+    status: verified
     detail: |
-      Ultra ya PIDE 8× (`MsaaTier::Ultra::desired_sample_count`) y `clamp_sample_count` lo recorta a
-      la intersección `framebufferColorSampleCounts ∩ framebufferDepthSampleCounts`. La tabla de
-      petición por tier está testeada (`msaa_graphics::tests`). Falta la comprobación en la máquina
-      del usuario: el log dice `[msaa] G-buffer multisampleado a 8x`, y si el adaptador no llega a 8×
-      ahora se registra `[msaa] el tier pidió 8x y el adaptador llega a Nx como G-buffer` gracias a
-      `SharedGpu::gbuffer_sample_ceiling`. Antes el recorte era silencioso y no se podía distinguir
-      "Ultra roto" de "Ultra recortado por hardware".
+      Verificado en NVIDIA RTX 3060 (driver 32.0.16.1692): `vulkaninfo` reporta 8× en
+      `framebufferColorSampleCounts`, `framebufferDepthSampleCounts` y
+      `sampledImageColorSampleCounts`/`sampledImageDepthSampleCounts`. El editor 3D cargado con
+      `msaaTier: ultra` emitió `msaa_tier_changed` con `sample_count: 8`.
+      World → MSAA muestra las muestras efectivas y avisa si el adaptador recorta
+      (p. ej. "4× efectivo (pedido 8)").
   msaa_in_shadow_maps:
     status: descartado
     reason: |
@@ -98,15 +102,13 @@ extended_scope:
       portability subset y no está garantizado) y pasar el mapa a 1× igualmente. Coste y riesgo sin
       ganancia visible.
   msaa_in_probes:
-    status: pendiente-de-decidir
-    reason: |
-      Sería el único con ganancia real: las caras del cubemap se capturan a 1× y en espejos con
-      roughness baja se leen los bordes dentados de la geometría. El coste es bajo (5 adjuntos de
-      PROBE_FACE_SIZE con N muestras + resolve), pero toca el pase de captura, que es donde más
-      validación se rompió históricamente (layout de depth, `imageCubeArray`, capas `slot*6+face`).
-      Decide el usuario por su cuenta: si los bordes dentados en las reflexiones de sonda molestan al
-       mirar, se hace. Ya no depende del CSM: el intento de cascadas se retiró en `5efc8c0` y quedó
-       aplazado, así que no hay nada que esperar antes de decidir esto.
+    status: implemented
+    detail: |
+      `Targets::ensure_ms` crea `ProbeMultisampleTargets` a `PROBE_FACE_SIZE` (64×64) con el mismo
+      sample count del tier. `capture_probe` usa `begin_color_ms` con los 5 adjuntos MS y resuelve
+      contra los `probe_*` 1×; el color resuelto se copia a la capa `slot*6+face` del cubemap.
+      La profundidad MS se descarta con `DONT_CARE`; no se resuelve.
+      Coste: 5 texturas de 64×64 + depth por sonda; a 8× es menos de 1 MB.
   msaa_in_overlay_ui:
     status: descartado
     reason: |
@@ -120,10 +122,11 @@ extended_scope:
       con blend alfa: MSAA resuelve coberturas de geometría opaca, no bordes de sprite ni el canal
       alfa. Si algún día se quisiera, sería un cambio del renderer 2D, no de este pase 3D.
   sampling_multisample_textures_in_taa_ssr:
-    status: pendiente-de-decidir
+    status: descartado
     reason: |
-      Hoy TAA/SSR leen los 1× ya resueltos. Muestrear las muestras explícitas
-      (`sampler2DMS` + `texelFetch` por muestra) permitiría un resolve con pesos por profundidad,
-      que es lo que hace bien bordes delgados en movimiento. Es el trabajo grande de la card:
-      necesita imágenes MS con `SAMPLED`, `sampledImageSampleCounts` del adaptador, y reescribir el
-      resolve del G-buffer. Se justifica solo si el TAA actual pierde geometría fina.
+      TAA y SSR están diseñados para leer el G-buffer 1× ya resuelto. Para aprovechar MS en TAA
+      habría que conservar la profundidad MS y hacer un resolve con pesos por muestra y
+      reproyección temporal; en SSR habría que hacer `texelFetch` por muestra en cada paso del ray
+      marching, multiplicando el coste por N. La ganancia esperada no justifica el riesgo ni el
+      coste; si algún día se retoma, va como card aparte de "TAA resolve con pesos de
+      profundidad", no dentro de MSAA.

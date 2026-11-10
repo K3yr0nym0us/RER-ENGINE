@@ -86,6 +86,16 @@ impl FrameRenderer {
             .slot
             .min(crate::engine3d::probe_registry::MAX_PROBES - 1) as u32)
             * 6;
+        // La captura puede usar el G-buffer MS de sonda o el camino 1× según el tier actual.
+        // Se decide una vez por sonda, no por cara.
+        let probe_ms = self
+            .targets
+            .probe_ms
+            .as_ref()
+            .filter(|ms| ms.samples > 1 && ms.samples == self.msaa_samples);
+        if let Some(ms) = probe_ms {
+            log::debug!("[msaa] captura de sonda a {}x", ms.samples);
+        }
         for face in 0..6 {
             let mut scene = input.scene.to_vec();
             let vp = cube_face_view_proj(capture.origin, face);
@@ -100,17 +110,26 @@ impl FrameRenderer {
                 unsafe { device.cmd_update_buffer(cmd, self.scene_ubo[slot].buffer, 0, &scene) };
                 buffer_barrier(device, cmd, self.scene_ubo[slot].buffer);
             }
-            begin_color(
-                device,
-                cmd,
-                &views,
-                Some(self.targets.probe_depth.view),
-                extent,
-                true,
-            );
-            set_viewport(device, cmd, extent);
-            self.draw_forward(slot, input, pipes, device, cmd, 0.0);
-            unsafe { device.cmd_end_rendering(cmd) };
+            if let Some(ms) = probe_ms {
+                let ms_views = ms.views();
+                begin_color_ms(device, cmd, &ms_views, ms.depth.view, &views, extent, true);
+                set_viewport(device, cmd, extent);
+                let ms_pipes = self.forward_pipes(*pipes);
+                self.draw_forward(slot, input, &ms_pipes, device, cmd, 0.0);
+                unsafe { device.cmd_end_rendering(cmd) };
+            } else {
+                begin_color(
+                    device,
+                    cmd,
+                    &views,
+                    Some(self.targets.probe_depth.view),
+                    extent,
+                    true,
+                );
+                set_viewport(device, cmd, extent);
+                self.draw_forward(slot, input, pipes, device, cmd, 0.0);
+                unsafe { device.cmd_end_rendering(cmd) };
+            }
             // `copy_color` escribe en `base_array_layer`, así que cada cara de cada sonda ocupa su
             // propia capa (slot * 6 + cara) en vez de pisar la ranura 0.
             copy_color(

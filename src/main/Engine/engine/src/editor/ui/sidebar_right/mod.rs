@@ -447,6 +447,7 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
         }
         WorldAction::SetMsaaTier(tier) => {
             app.world.msaa_tier = tier;
+            app.world.msaa_sample_count = tier.desired_sample_count();
             app.send_engine(json!({ "cmd": "set_msaa_tier", "tier": tier.as_str() }));
             app.push_log(format!("[MSAA] Nivel: {}", tier.as_str()), false);
         }

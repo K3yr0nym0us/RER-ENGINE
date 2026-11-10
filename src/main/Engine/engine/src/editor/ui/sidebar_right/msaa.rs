@@ -29,4 +29,23 @@ pub(super) fn msaa_body(
     ) {
         actions.push(WorldAction::SetMsaaTier(MsaaTier::ALL[index]));
     }
+
+    let effective = if world.msaa_tier == MsaaTier::Low {
+        crate::editor::i18n::tr(locale, "Sin MSAA (1×)", "No MSAA (1×)").to_string()
+    } else if world.msaa_sample_count < world.msaa_tier.desired_sample_count() {
+        format!(
+            "{}× {} ({} {})",
+            world.msaa_sample_count,
+            crate::editor::i18n::tr(locale, "efectivo", "effective"),
+            crate::editor::i18n::tr(locale, "pedido", "requested"),
+            world.msaa_tier.desired_sample_count()
+        )
+    } else {
+        format!(
+            "{}× {}",
+            world.msaa_sample_count,
+            crate::editor::i18n::tr(locale, "efectivo", "effective")
+        )
+    };
+    widgets::hint(ui, &effective);
 }
