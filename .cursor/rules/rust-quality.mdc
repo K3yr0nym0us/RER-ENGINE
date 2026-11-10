@@ -14,7 +14,7 @@ globs:
 # RER-ENGINE — Rust Quality Gate
 
 Applies to the Cargo workspace under `src/main/Engine/`
-(`rer-engine-2d`, `rer-engine-3d`, `rer-engine-shared`, `rer-engine-ipc-common`).
+(`rer-engine-core`, `rer-engine` with features `engine2d` / `engine3d` / `editor`).
 
 Does **not** replace frontend ESLint/TypeScript rules.
 

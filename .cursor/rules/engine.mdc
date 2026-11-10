@@ -15,11 +15,12 @@ If React needs engine data, obtain it from the Rust engine through the existing 
 
 ## 2D / 3D
 
-Keep 2D and 3D logic separated:
+Keep 2D and 3D logic separated inside `rer-engine`:
 
-- `rer_engine_2d`
-- `rer_engine_3d`
-- `rer-engine-core` (código compartido)
+- `rer_engine_2d` (feature `engine2d`)
+- `rer_engine_3d` (feature `engine3d`)
+- `rer-engine-core` (shared code)
+- `rer_engine_editor` (feature `editor`; hosts 2D/3D in-process)
 
 Only place code in `rer-engine-core` when it is genuinely shared.
 
@@ -27,21 +28,17 @@ Only place code in `rer-engine-core` when it is genuinely shared.
 
 GPU policy is defined in:
 
-- `engine_shared/src/gpu.rs`
-- `EngineGpuProfile`
+- `core/src/vulkan/gpu/`
+- `SharedGpu` / `VulkanOptions`
+- `EngineGpuProfile` (standalone profiles)
 
 Mandatory backend:
 
-- Vulkan
+- Vulkan (Ash) for the editor and both engines.
 
-2D: wgpu (engine_shared/src/gpu.rs). 3D: Ash/Vulkan (engine_3d/src/vulkan/).
+Do not use:
 
-Targets:
-
-- Windows
-
-Never use:
-
+- wgpu
 - OpenGL
 - DX12
 - WebGL
@@ -50,16 +47,13 @@ Never use:
 - GPU backend fallback logic
 - `RER_GPU_BACKEND`
 
-Do not reintroduce OpenGL compatibility branches.
-
 ## Viewport
 
-The game viewport uses a separate **winit overlay window** aligned with the editor viewport.
-
-The game world is NOT rendered by React/Chromium.
+The editor egui window (`rer_engine_editor`) hosts the 2D/3D engine in-process on the same `SharedGpu`, swapchain and command buffer. The game world is NOT rendered by React/Chromium.
 
 Never introduce:
 
+- A separate overlay window or Win32 position tracker
 - WebGL
 - Three.js
 - Babylon.js
@@ -67,14 +61,10 @@ Never introduce:
 
 for the game renderer.
 
-Overlay policy:
-
-- `engine_shared/src/overlay.rs`
-
 Do not reintroduce:
 
-- `Backends::GL`
 - `with_embed_parent_window`
+- `set_bounds` / overlay geometry
 - X11 / Wayland / Linux overlay paths
 
 ## Platform

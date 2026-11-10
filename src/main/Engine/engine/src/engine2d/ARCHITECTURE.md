@@ -2,7 +2,7 @@
 
 Este documento fija el contrato tecnico actual del motor 2D para que el codigo no siga siendo la unica fuente de verdad implicita. Las tareas de producto pendientes no viven en un checklist aparte: estan marcadas en el codigo (`pendiente`, `not ported`) y en las secciones `status: pendiente` de `docs/`.
 
-## Relacion con `engine_3d`
+## Relacion con el motor 3D
 
 - `rer_engine_2d` y `rer_engine_3d` son **binarios distintos** con runtimes distintos
   (features `engine2d` / `engine3d` del paquete `rer-engine`).

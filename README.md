@@ -8,12 +8,12 @@ Motor de videojuegos 2D/3D con editor integrado. La idea central: **crear compor
 
 ## Idea del motor
 
-RER-ENGINE separa el producto en dos capas que hablan por JSON (stdin/stdout):
+RER-ENGINE separa el producto en Electron (UI, persistencia y modales) y un **editor nativo Rust** que abre la ventana winit y hospeda el motor 2D/3D in-process. Electron y el editor hablan por JSON (stdin/stdout).
 
 | Capa | Rol |
 |------|-----|
 | **Editor** (Electron + React + TypeScript) | Interfaz, escenas, guardado `.save`, herramientas de autoría. |
-| **Motor** (Rust + wgpu) | Render, física, scripting, play mode. **wgpu** con backend según binario (ver [Política gráfica](#política-gráfica-gpu)). |
+| **Editor nativo** (Rust + egui) | Ventana winit que hospeda el motor 2D/3D in-process sobre Ash/Vulkan. Electron solo lanza el editor y abre las modales. |
 
 Hay **dos motores independientes**, no uno híbrido:
 
@@ -36,10 +36,10 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 
 | Regla | Detalle |
 |-------|---------|
-| **Motor 2D y 3D** | Siempre **Vulkan** (Windows). |
-| **Prohibido** | OpenGL, EGL, `Backends::all()`, otros backends wgpu (p. ej. DX12). |
-| **Shaders** | 2D: WGSL vía wgpu (naga). 3D: GLSL en `engine_3d/shaders/` compilado a SPIR-V con `glslc` (Ash/Vulkan). |
-| **Si la GPU falla** | El editor Electron **sí** abre; el viewport muestra ayuda. El motor emite `{"event":"error"}` y no envía `ready`. |
+| **Motor 2D y 3D** | Siempre **Vulkan** (Windows) con **Ash**. |
+| **Prohibido** | OpenGL, EGL, DX12, `wgpu`/`Backends::all()` y cualquier selección de backend por entorno. |
+| **Shaders** | GLSL en `engine/shaders/` (`2d/`, `raster/`, `rt/`, `bvh/`), compilado a SPIR-V con `glslc`. |
+| **Si la GPU falla** | El editor abre y muestra el error; el motor emite `{"event":"error"}` y no envía `ready`. |
 
 Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 
@@ -47,10 +47,11 @@ Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 
 | Pieza | Rol |
 |-------|-----|
-| `EngineGpuProfile::TwoD` / `ThreeD` | Lo fija cada binario al llamar `init_gpu(window, profile)`. |
-| `resolve_backend(profile)` | Siempre Vulkan; **no** lee variables de entorno. |
-| `init_gpu` | Una API wgpu por proceso; fallo → `GpuInitError` → IPC `{"event":"error"}`. |
-| Electron `startEngine` | Elimina `RER_GPU_BACKEND` del entorno del hijo para que no pueda anular la política. |
+| `EngineGpuProfile::TwoD` / `ThreeD` | Perfil del motor standalone (2D sin RT; 3D con opciones RT). |
+| `SharedGpu::new(window, options)` | Un `VkInstance`/`VkDevice`/swapchain por ventana; 2D y 3D comparten el núcleo. |
+| `VulkanOptions` | `default()` para 2D; `three_d()` para el 3D. |
+| `GpuInitError` | Fallo de arranque → IPC `{"event":"error"}`. |
+| Editor `EditorGpu` | Crea el `SharedGpu` de la ventana y lo comparte con el motor in-process. |
 | `EngineGpuErrorOverlay` | Ayuda en el viewport si el motor no envía `ready`. |
 
 `yarn dev` / `yarn start` **no** definen backend GPU; solo compilan motores y arrancan electron-vite (`RER_ENGINE_PROFILE` opcional para release).
@@ -61,7 +62,7 @@ Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 
 | Área | Tecnologías |
 |------|-------------|
-| Motor | Rust, **wgpu** (Vulkan), winit, glam, Rapier, **rhai**, gltf/image |
+| Motor | Rust, **Ash/Vulkan**, winit, glam, Rapier, **rhai**, gltf/image |
 | Editor | Electron, React, TypeScript, Vite (electron-vite) |
 | Scripts de juego | Rhai (sandbox: API `engine.*` registrada por el motor) |
 | Contrato IPC | JSON — tipos en `src/shared-types/types.ts` |
@@ -73,7 +74,7 @@ Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 - **Node.js** 20+ y **Yarn**
 - **Rust** (toolchain estable) y **Cargo**
 - **Windows 10/11**
-- **GPU**: **Vulkan** para `rer_engine_2d` y `rer_engine_3d` (drivers actualizados).
+- **GPU**: **Vulkan** para el editor y los binarios standalone `rer_engine_2d` / `rer_engine_3d` (drivers actualizados).
 
 ---
 

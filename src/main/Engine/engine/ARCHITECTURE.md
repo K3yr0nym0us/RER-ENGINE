@@ -73,7 +73,7 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
   `VK_KHR_acceleration_structure` y `VK_KHR_deferred_host_operations`. Si falta alguna
   extensión o sus features, `hw_rt = false` y los reflejos usan el BVH por software
   (`src/engine3d/bvh.rs` + `shaders/bvh/trace.comp`).
-- Fallo de inicializacion Vulkan → `EngineEvent::Error`; Electron muestra overlay de ayuda.
+- Fallo de inicializacion Vulkan → `EngineEvent::Error`; el renderer muestra `EngineGpuErrorOverlay`.
 
 ## Tiers de calidad gráfica (qué hace cada uno de verdad)
 
@@ -139,7 +139,7 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
 ## Archivos fuente de verdad
 
 - `core/src/backend_policy.rs`: política de backend del motor (siempre Vulkan).
-- `src/engine3d/host.rs`: bucle winit, input, gizmo, play (cámara play character), setup overlay.
+- `src/engine3d/host.rs`: bucle winit, input, gizmo y play (cámara play character); también el host standalone de debug.
 - `src/engine3d/engine.rs` + `src/engine3d/engine/mod.rs`: `State` (GPU Ash, ECS, caches, undo/redo, scripting).
 - `src/engine3d/engine/init.rs`: `SharedGpu::new` (Ash), texture array y `FrameRenderer::new`.
 - `src/engine3d/vulkan/`: `FrameRenderer` (sombras, forward, TAA, SSR, denoise, reflejos RT/BVH,
@@ -147,7 +147,7 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   `rer-engine-core::vulkan`.
 - `src/engine3d/bvh.rs`: BVH binario en CPU y layouts GPU del fallback por software.
 - `src/engine3d/engine/commands/`: IPC y mutaciones de estado, por dominio.
-- `src/engine3d/engine/render.rs`: mundo 3D, batches estáticos y skinned, escena RT cacheada
+- `src/engine3d/engine/render/`: mundo 3D, batches estáticos y skinned, escena RT cacheada
   (instancias/materiales/BVH), overlays gizmo, HUD y `FrameInput`.
 - `src/engine3d/engine/tick.rs`: delta time, metricas, fade del hint Esc.
 - `src/engine3d/config_3d/mod.rs`: picking, raycast, gizmo, modelos, pantalla.
@@ -212,7 +212,7 @@ codigo no cambia. Las reglas de cada split:
 - **Editor 3D**: solo `Camera` orbital + viewport desacoplado del jugador; gizmo y frustum de cámara play character con `preview_playing == false`. No hay modo cámara 2D en este binario.
   - Navegación (toda en `!preview_playing` y fuera del editor de HUD): **RMB + arrastre** mira alrededor del ojo (estilo Minecraft, `editor_fly_look`), **W/A/S/D** vuela, **Space/C** suben y bajan, **Shift** acelera (×3), y se conserva el esquema Blender: **MMB** órbita, **Shift+MMB** paneo, **Ctrl+MMB** dolly, **rueda** zoom, **Numpad.** encuadra la selección.
   - La cámara del editor es orbital, así que "mirar" no es solo cambiar yaw/pitch: hay que girar manteniendo el ojo fijo y recolocar el pivote (`pivote = ojo − back·distancia`). Ver `config_3d/editor_fly.rs`.
-  - La ventana del motor es `WS_EX_NOACTIVATE` en modo overlay: `main.rs` llama `focus_window()` al presionar cualquier botón en edición, si no el teclado (WASD y los atajos G/R/.) nunca llega al motor.
+  - El editor es dueño del foco de la ventana winit; no hay ventana overlay ni `WS_EX_NOACTIVATE`. El modo standalone usa su propia ventana y conserva el foco normal.
 - **Play 3D**: `preview_playing`, vista desde acordeón Camera; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
 - **HUD play** (crosshair, Esc): NDC + `hud_scene_bind_group` (identidad). PNG de pantalla **solo** vía `screen_hud_image` + `screen_hud_pipeline` (no `TextureArray`).
 - **HUD Player UI** (autoría + play): pantallas con elementos en NDC (`config_3d/player_ui/`); en play se muestra la pantalla activa; en edición UI la cámara del jugador sin `preview_playing`.

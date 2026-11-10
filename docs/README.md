@@ -113,7 +113,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [AI_Assistant_Plugin.yaml](./ai/AI_Assistant_Plugin.yaml) | Asistente IA local (Qwen GGUF, overlay, herramientas v1) |
+| [AI_Assistant_Plugin.yaml](./ai/AI_Assistant_Plugin.yaml) | Asistente IA local (Qwen GGUF, ventana del asistente, herramientas v1) |
 | [AI_Assistant_Editor_Guide.es.prompt.txt](./ai/AI_Assistant_Editor_Guide.es.prompt.txt) | Contexto FAQ español para el modelo |
 | [AI_Assistant_Editor_Guide.en.prompt.txt](./ai/AI_Assistant_Editor_Guide.en.prompt.txt) | Contexto FAQ inglés para el modelo |
 

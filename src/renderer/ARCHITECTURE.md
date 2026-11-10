@@ -4,16 +4,16 @@ Este documento fija el rol del **frontend** en RER-ENGINE para que futuras IAs y
 
 ## Integracion con el viewport del motor
 
-El renderer **no renderiza** el mundo de juego. Solo reserva un hueco visual y reporta su geometria:
+El renderer **no renderiza** el mundo de juego. El editor Rust (`rer_engine_editor`) abre su propia ventana winit y hospeda el motor 2D/3D; el renderer solo reporta la geometría del área para posicionar el overlay del asistente IA:
 
 | Pieza | Archivo / canal |
 |-------|-----------------|
-| Hueco en UI | `EngineView.tsx` → `<main class="engine-viewport-area">` (transparente) |
-| Bounds | `useContextEngine` → `reportBounds()` → `electronAPI.sendViewportBounds` (solo posiciona el overlay IA) |
+| Área reservada | `EngineView.tsx` → `<main class="engine-viewport-area">` |
+| Bounds | `useContextEngine` → `reportBounds()` → `electronAPI.sendViewportBounds` (solo overlay IA) |
 | Main | `src/main/index.ts` → `viewport-bounds`; lanza `rer_engine_editor` |
 | Motor | Ventana winit del editor; motor 2D/3D in-process sobre el mismo `SharedGpu` |
 
-**GPU:** wgpu con **Vulkan** en ambos binarios (`EngineGpuProfile` 2D/3D). El front no elige backend ni usa WebGL para el viewport. Al hacer `spawn`, el main **elimina** `RER_GPU_BACKEND` del entorno del proceso motor.
+**GPU:** **Ash/Vulkan** en el editor y en los binarios standalone. El front no elige backend ni usa WebGL; el editor crea un único `SharedGpu`/swapchain y comparte el device con el motor.
 
 Si la GPU no arranca: evento `error` del motor → `engineError` → `EngineGpuErrorOverlay` (drivers / Vulkan). El resto del editor sigue usable.
 
@@ -23,7 +23,7 @@ El renderer es **cascarón de editor**: UI, persistencia (`.save`), enrutado IPC
 
 | Capa | Responsabilidad |
 |------|-----------------|
-| **Motor** (`engine_2d` / `engine_3d`) | Fisica, camaras, transforms reales, picking, play mode, convenciones de mallas y quaterniones. |
+| **Motor** (`engine2d` / `engine3d`) | Fisica, camaras, transforms reales, picking, play mode, convenciones de mallas y quaterniones. |
 | **`shared-types`** | Contrato JSON tipado (comandos/eventos) compartido con preload y main. |
 | **Renderer** | Enviar **intencion** (`window.engine.send`), reflejar **eventos** del motor, serializar escenas, formularios. |
 
@@ -156,9 +156,9 @@ El front **no** decide qué entidades ni qué modelos precargados van al save ni
 
 ## Relacion con los dos motores
 
-- Proyecto **2D** → proceso `rer_engine_2d`; UI usa herramientas 2D (colliders, areas de ejecucion, `camera_2d_updated`).
-- Proyecto **3D** → proceso `rer_engine_3d`; UI de cámara/jugador y acordeón Camera; herramientas plano (colisionador/trigger) vía `usePlaneToolPlacement` + `set_active_tool` / `place_quick_build_at_cursor`.
-- `set_scene` / `projectType` eligen binario en main; el renderer no mezcla semantica de ambos en un mismo modulo de runtime.
+- Proyecto **2D** → el editor construye `engine2d` in-process; UI usa herramientas 2D (colliders, areas de ejecucion, `camera_2d_updated`).
+- Proyecto **3D** → el editor construye `engine3d` in-process; UI de cámara/jugador y acordeón Camera; herramientas plano (colisionador/trigger) vía `usePlaneToolPlacement` + `set_active_tool` / `place_quick_build_at_cursor`.
+- `projectType` elige el módulo del motor dentro del editor; los binarios `rer_engine_2d`/`rer_engine_3d` quedan como standalone de debug. El renderer no mezcla semantica de ambos en un mismo modulo de runtime.
 
 Documentacion de motores:
 
