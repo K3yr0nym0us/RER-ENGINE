@@ -21,6 +21,20 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.
 - Contrato del 2D: `src/engine2d/ARCHITECTURE.md`.
 
+## Decisiones de arquitectura
+
+- `rer-engine-core` no se fusiona con `rer-engine`: es la base compartida por motores y
+  editor. Fusionarlo crearía un ciclo (`editor -> engine3d -> core(=editor)`).
+- Un solo paquete `rer-engine` con features `engine2d`, `engine3d` y `editor`. Cada
+  binario se compila con `--no-default-features --features <motor>`; las dependencias
+  exclusivas son opcionales (`ufbx`, `rayon`, `pollster`, `gltf`, `gpu-allocator` para 3D;
+  `egui*`/`rfd` para el editor), así el 2D no compila ni enlaza el 3D.
+- Una sola ventana y un solo proceso: editor egui y motor in-process comparten
+  `SharedGpu`, swapchain y command buffer; el viewport sale del `CentralPanel` y se
+  eliminaron overlay, tracker Win32, `set_bounds` y el proceso 2D legacy. Las modales
+  siguen siendo ventanas Electron independientes.
+- `core` conserva el IPC y las utilidades compartidas; no conoce al editor.
+
 ## Ventana única (editor)
 
 - El editor activa `engine3d` + `engine2d`; `InProcessEngine` construye el motor del

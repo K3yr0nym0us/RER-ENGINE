@@ -15,7 +15,7 @@
 - `yaml/editor/`: modales, propiedades, UI del jugador, sockets y física de huesos.
 - `yaml/plugins/`: sistema de plugins.
 - `ai/`: asistente IA local y prompts de contexto.
-- Los planes y documentos de calidad (`.md`) quedan en la raíz de `docs/`.
+- Los documentos de calidad (`.md`) quedan en la raíz de `docs/`.
 
 ---
 
