@@ -53,6 +53,8 @@ enum WorldAction {
     SetGridCellSize(f32),
     SetGravity(f32),
     SetTargetFps(u32),
+    /// Fondo 2D activo: `Some(path)` carga la imagen, `None` lo quita.
+    SetBackground(Option<String>),
     SetLight {
         ambient: Option<f32>,
         intensity: Option<f32>,
@@ -104,6 +106,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let context = app.cli.context;
     let enabled = app.status == EditorStatus::Ready;
     let world = app.world;
+    let backgrounds = app.assets.backgrounds.clone();
+    let background_path = app.background_path.clone();
     let mut actions = Vec::new();
 
     // Métricas fijas al fondo (React: .metrics-panel, 120 px).
@@ -199,9 +203,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                                     locale,
                                     crate::editor::i18n::tr(
                                         locale,
-                                        "Selector pendiente: llega con la gestión de recursos",
-                                        "Picker pending: coming with asset management",
+                                        "Selecciona la imagen de fondo del mundo",
+                                        "Select the world background image",
                                     ),
+                                    &backgrounds,
+                                    background_path.as_deref(),
+                                    &mut actions,
                                 )
                             },
                         );
@@ -377,6 +384,19 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
             app.world.target_fps = fps;
             app.send_engine(json!({ "cmd": "set_target_fps", "fps": fps }));
             app.push_log(format!("[Rendimiento] Límite de FPS: {fps}"), false);
+        }
+        WorldAction::SetBackground(path) => {
+            match path.as_deref() {
+                Some(path) => {
+                    app.send_engine(json!({ "cmd": "load_background", "path": path }));
+                    app.push_log(format!("[Fondo] Aplicando {path}…"), false);
+                }
+                None => {
+                    app.send_engine(json!({ "cmd": "clear_background" }));
+                    app.push_log("[Fondo] Fondo eliminado".to_string(), false);
+                }
+            }
+            app.background_path = path;
         }
         WorldAction::SetLight {
             ambient,

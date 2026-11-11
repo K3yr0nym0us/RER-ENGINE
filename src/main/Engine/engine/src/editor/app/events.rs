@@ -212,6 +212,12 @@ impl EditorApp {
             "play_character_view_changed" => {
                 self.play_view = PlayView::from_event(event);
             }
+            "background_loaded" => {
+                self.background_path = event
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+            }
             "editor_scene_switched"
             | "project_loaded_3d"
             | "project_loaded_2d"
@@ -264,6 +270,10 @@ impl EditorApp {
     /// Aplica `scene.world` de un `save_snapshot_ready`.
     pub fn apply_world_snapshot(&mut self, scene: &Value) {
         self.world.apply_snapshot(scene);
+        self.background_path = scene
+            .get("background_path")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         self.player_controls = scene
             .get("player")
             .filter(|player| player.is_object())

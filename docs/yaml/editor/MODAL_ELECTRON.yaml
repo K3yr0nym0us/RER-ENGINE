@@ -30,6 +30,23 @@ exit_confirm:
     para quedar por encima del editor nativo. Sus acciones envían
     `editor:exit-action` a main; cerrar con X equivale a Cancelar.
 
+legacy_window_kinds:
+  note: |
+    La UI nativa egui pide ventanas React con `request_legacy_window(kind, payload)`.
+    `HeadlessEditorHost` escucha `legacy-window:open` y llama a `openModal`.
+    Al añadir un botón nativo que abra React, hay que registrar el `kind` aquí y en
+    `HeadlessEditorHost.tsx`.
+  kinds:
+    plugins: Footer izquierdo → `PluginsModalBody`
+    user_guide: Footer izquierdo → `UserGuide`
+    create_scene: Escenas → crear escena
+    delete_scene: Escenas → eliminar escena
+    scene_script: Escenas → script de escena
+    scene_visual_script: Escenas → lógica de nodos
+    remove_asset: Recursos → confirmar borrado de asset
+    socket_config: Herramientas → configuración de sockets
+    entity_properties: Selección en viewport → propiedades de entidad
+
 key_files:
   - path: src/renderer/src/context/ModalContext.tsx
     role: useModal() delega en Electron

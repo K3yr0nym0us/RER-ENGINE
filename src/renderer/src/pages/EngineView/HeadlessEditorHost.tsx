@@ -7,6 +7,8 @@ import { ModalConfirmBody } from '../../modal-electron/ModalConfirmBody';
 import { ExitConfirmBody } from '../../modal-electron/ExitConfirmBody';
 import { SocketConfigModalBody } from '../../modal-electron/SocketConfigModalElectronHost';
 import { EntityPropertiesModalBody } from '../../modal-electron/EntityPropertiesElectronHost';
+import { PluginsModalBody } from '../../plugins/PluginsModalBody';
+import { UserGuide } from './components/sidebar/UserGuide';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { PlaneToolProvider } from '../../context/PlaneToolContext';
 import { SceneManagerProvider, useSceneManager } from './hooks/useSceneManager';
@@ -167,6 +169,20 @@ function LegacyWindowListener() {
             title: t('Entity properties'),
             size: 'sm',
             body: createElement(EntityPropertiesModalBody),
+          })
+          break
+        case 'plugins':
+          openModal({
+            title: t('Plugins'),
+            size: 'lg',
+            body: createElement(PluginsModalBody),
+          })
+          break
+        case 'user_guide':
+          openModal({
+            title: t('User guide'),
+            size: 'lg',
+            body: createElement(UserGuide),
           })
           break
         default:

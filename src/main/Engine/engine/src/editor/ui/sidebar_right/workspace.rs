@@ -77,14 +77,49 @@ pub(super) fn workspace_2d(
     }
 }
 
-pub(super) fn background_body(ui: &mut egui::Ui, locale: Locale, hint: &str) {
-    let width = (ui.available_width() - 34.0).max(0.0);
-    let unavailable =
-        crate::editor::i18n::tr(locale, "Sin fondos cargados", "No backgrounds loaded");
+pub(super) fn background_body(
+    ui: &mut egui::Ui,
+    locale: Locale,
+    hint: &str,
+    backgrounds: &[crate::editor::assets::AssetEntry],
+    active: Option<&str>,
+    actions: &mut Vec<WorldAction>,
+) {
+    if backgrounds.is_empty() {
+        widgets::note(
+            ui,
+            crate::editor::i18n::tr(
+                locale,
+                "Carga un fondo en Recursos para poder aplicarlo.",
+                "Load a background in Resources to apply it.",
+            ),
+        );
+        return;
+    }
 
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        widgets::select_placeholder_sized(ui, width, unavailable, hint);
-        widgets::small_icon_button(ui, icons::CHECK, hint);
-    });
+    let width = ui.available_width();
+    let options: Vec<(String, String)> = backgrounds
+        .iter()
+        .map(|asset| (asset.path.clone(), asset.name.clone()))
+        .collect();
+    let mut selected = active.map(str::to_string);
+
+    if widgets::combo_string(ui, "world_background_pick", width, &options, &mut selected)
+        && let Some(path) = selected
+    {
+        actions.push(WorldAction::SetBackground(Some(path)));
+    }
+
+    if active.is_some()
+        && widgets::wide_button_click_sized(
+            ui,
+            width,
+            icons::TRASH,
+            crate::editor::i18n::tr(locale, "Quitar fondo", "Clear background"),
+            hint,
+            crate::editor::theme::DANGER,
+        )
+    {
+        actions.push(WorldAction::SetBackground(None));
+    }
 }

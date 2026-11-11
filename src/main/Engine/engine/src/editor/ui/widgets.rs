@@ -179,68 +179,6 @@ pub fn select_placeholder_sized(ui: &mut egui::Ui, width: f32, value: &str, hint
     response.on_hover_text(hint);
 }
 
-/// Botón pequeño de acción (check) con borde info.
-pub fn small_icon_button(ui: &mut egui::Ui, icon: &str, hint: &str) {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), Sense::hover());
-
-    let painter = ui.painter();
-    painter.rect(
-        rect,
-        egui::CornerRadius::same(5),
-        Color32::TRANSPARENT,
-        Stroke::new(1.0, crate::editor::theme::INFO),
-        StrokeKind::Inside,
-    );
-    painter.text(
-        rect.center(),
-        Align2::CENTER_CENTER,
-        icon,
-        FontId::proportional(15.0),
-        crate::editor::theme::INFO,
-    );
-
-    response.on_hover_text(hint);
-}
-
-pub fn wide_button(ui: &mut egui::Ui, icon: &str, label: &str, hint: &str, color: Color32) {
-    wide_button_sized(ui, ui.available_width(), icon, label, hint, color);
-}
-
-pub fn wide_button_sized(
-    ui: &mut egui::Ui,
-    width: f32,
-    icon: &str,
-    label: &str,
-    hint: &str,
-    color: Color32,
-) {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), Sense::hover());
-
-    let painter = ui.painter().with_clip_rect(rect);
-    painter.rect(
-        rect,
-        egui::CornerRadius::same(5),
-        Color32::TRANSPARENT,
-        Stroke::new(1.0, color),
-        StrokeKind::Inside,
-    );
-
-    let text = if icon.is_empty() {
-        label.to_owned()
-    } else {
-        format!("{icon}  {label}")
-    };
-    painter.text(
-        rect.center(),
-        Align2::CENTER_CENTER,
-        text,
-        FontId::proportional(13.0),
-        color,
-    );
-
-    response.on_hover_text(format!("{label} — {hint}"));
-}
-
 /// Tarjeta 64×64 de la caja de herramientas (3 líneas: texto, icono, texto).
 pub fn tool_card(
     ui: &mut egui::Ui,

@@ -47,6 +47,8 @@ pub struct EditorApp {
     pub scenes: SceneList,
     pub assets: AssetLists,
     pub player_controls: Option<ControlSummary>,
+    /// Fondo 2D activo (ruta del asset), sincronizado con el motor.
+    pub background_path: Option<String>,
     pub selected_entity: Option<SelectedEntity>,
     pub play_view: Option<PlayView>,
     /// Id de una entidad cuyo modal de propiedades se abrirá al seleccionarse.
@@ -91,6 +93,7 @@ impl EditorApp {
             scenes: SceneList::default(),
             assets: AssetLists::default(),
             player_controls: None,
+            background_path: None,
             selected_entity: None,
             play_view: None,
             pending_properties: None,

@@ -170,7 +170,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                 .inner_margin(egui::Margin::symmetric(4, 8)),
         )
         .show(ui, |ui| {
-            next_locale = footer(ui, locale, phase_note);
+            next_locale = footer(ui, locale, phase_note, &mut actions);
         });
     if let Some(next) = next_locale {
         app.cli.locale = next;
@@ -526,14 +526,23 @@ fn create_entity(app: &mut EditorApp, kind: EntityKind, asset: String) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn footer(ui: &mut egui::Ui, locale: Locale, hint: &str) -> Option<Locale> {
-    widgets::wide_button(
+fn footer(
+    ui: &mut egui::Ui,
+    locale: Locale,
+    hint: &str,
+    actions: &mut Vec<LeftAction>,
+) -> Option<Locale> {
+    let width = ui.available_width();
+    if widgets::wide_button_click_sized(
         ui,
+        width,
         icons::PUZZLE_PIECE,
         crate::editor::i18n::tr(locale, "Plugins", "Plugins"),
         hint,
         crate::editor::theme::OUTLINE_SECONDARY,
-    );
+    ) {
+        actions.push(LeftAction::OpenLegacyWindow("plugins"));
+    }
     ui.add_space(2.0);
 
     let mut next = None;
@@ -544,14 +553,16 @@ fn footer(ui: &mut egui::Ui, locale: Locale, hint: &str) -> Option<Locale> {
         let gap = 8.0;
         let guide_width = (ui.available_width() - language_width - gap).max(0.0);
 
-        widgets::wide_button_sized(
+        if widgets::wide_button_click_sized(
             ui,
             guide_width,
             icons::INFO,
             crate::editor::i18n::tr(locale, "Guia de usuario", "User guide"),
             hint,
             crate::editor::theme::INFO,
-        );
+        ) {
+            actions.push(LeftAction::OpenLegacyWindow("user_guide"));
+        }
         ui.add_space(gap);
 
         let label = if locale == Locale::En { "ES" } else { "EN" };
