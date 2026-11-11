@@ -56,6 +56,7 @@ impl State {
                     scope.map(str::to_string),
                     screen_id.map(str::to_string),
                 );
+                self.rebuild_player_ui_overlay();
                 self.emit_player_ui_text_boxes_list();
                 return;
             }
@@ -83,6 +84,7 @@ impl State {
                 scope.map(str::to_string),
                 screen_id.map(str::to_string),
             );
+            self.rebuild_player_ui_overlay();
             self.rebuild_player_ui_screen_grid();
             self.emit_player_ui_text_boxes_list();
             log::info!("[player-ui] vista de edición activada (cámara jugador, sin play)");
@@ -91,6 +93,7 @@ impl State {
             self.cancel_player_ui_object_draw();
             self.clear_player_ui_text_interaction();
             self.set_player_ui_edit_context(None, None);
+            self.rebuild_player_ui_overlay();
             if let Some(restore) = self.player_ui_edit_restore.take() {
                 self.editor_viewport_yaw = restore.editor_viewport_yaw;
                 self.editor_viewport_pitch = restore.editor_viewport_pitch;
