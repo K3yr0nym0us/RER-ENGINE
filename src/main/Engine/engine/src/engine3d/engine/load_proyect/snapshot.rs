@@ -119,6 +119,9 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             reflectionProbes: p.world.reflection_probes,
             shadowTier: p.world.shadow_tier.clone(),
             msaaTier: p.world.msaa_tier.clone(),
+            taaEnabled: p.world.taa_enabled,
+            taaBlend: p.world.taa_blend,
+            taaJitterScale: p.world.taa_jitter_scale,
         },
         backgroundPath: p.background_path.clone(),
         entities: p.entities.iter().map(map_entity).collect(),
@@ -200,6 +203,9 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
                 .wire()
                 .to_string(),
         ),
+        taaEnabled: None,
+        taaBlend: None,
+        taaJitterScale: None,
     };
 
     let ground_scale = [28.0 / 40.0, 0.02, 56.0 / 40.0];

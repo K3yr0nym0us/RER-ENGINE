@@ -341,7 +341,7 @@ function handleEditorMessage(message: Record<string, unknown>): boolean {
       return true
     }
     case 'exit_request': {
-      void showExitDialog()
+      requestExitModal()
       return true
     }
     case 'project_state_request': {
@@ -2285,40 +2285,40 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
 // Se usan para posicionar el overlay del asistente IA y para arrancar el editor.
 let engineStarted = false
 let exitDialogOpen = false
+let exitModalActionHandled = false
 
-/** Confirmación nativa de Electron antes de cerrar el editor. */
-async function showExitDialog(): Promise<void> {
+/** Abre la modal React de salida en Electron (por encima del editor nativo). */
+function requestExitModal(): void {
   if (exitDialogOpen) return
   exitDialogOpen = true
-  const isEs = currentLocale === 'es'
-  try {
-    const { response } = await dialog.showMessageBox({
-      type: 'question',
-      title: isEs ? 'Salir de RER-ENGINE' : 'Exit RER-ENGINE',
-      message: isEs
-        ? '¿Quieres guardar tu progreso antes de salir?'
-        : 'Do you want to save your progress before exiting?',
-      detail: isEs
-        ? 'Los cambios sin guardar se perderán.'
-        : 'Unsaved changes will be lost.',
-      buttons: isEs
-        ? ['Guardar y salir', 'Salir sin guardar', 'Cancelar']
-        : ['Save and exit', 'Exit without saving', 'Cancel'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
+  exitModalActionHandled = false
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('legacy-window:open', {
+      kind: 'exit_confirm',
+      payload: {},
     })
-    if (response === 0) {
-      sendToEditor({ type: 'exit_after_save' })
-    } else if (response === 1) {
-      sendToEditor({ type: 'exit' })
-    } else {
-      sendToEditor({ type: 'exit_cancelled' })
-    }
-  } finally {
-    exitDialogOpen = false
+    return
   }
+  exitDialogOpen = false
+  sendToEditor({ type: 'exit_cancelled' })
 }
+
+ipcMain.on('editor:exit-action', (_event, action: unknown) => {
+  if (!exitDialogOpen || exitModalActionHandled) return
+  const value: 'save' | 'discard' | 'cancel' =
+    action === 'save' || action === 'discard' || action === 'cancel' ? action : 'cancel'
+  exitModalActionHandled = true
+  exitDialogOpen = false
+  sendToEditor({
+    type:
+      value === 'save'
+        ? 'exit_after_save'
+        : value === 'discard'
+          ? 'exit'
+          : 'exit_cancelled',
+  })
+  closeModalElectronWindow()
+})
 
 // Caché de los bounds relativos del viewport (posición dentro del contenido de Electron,
 // pre-DPR). Se actualiza en cada 'viewport-bounds'.

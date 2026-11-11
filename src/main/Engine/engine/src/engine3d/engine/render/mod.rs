@@ -20,6 +20,23 @@ use crate::engine3d::vulkan::{FrameAcquire, FrameTarget, MeshBatch, RtBatch, Ski
 
 use super::{SceneUniforms, State};
 
+/// Peso del IBL de sondas. Antes se reutilizaba `shadow_darkness` para esto; ahora
+/// `light_params.y` queda exclusivamente para la oscuridad de sombra.
+const PROBE_IBL_WEIGHT: f32 = 0.22;
+
+/// Secuencia de Halton para el jitter subpíxel de TAA.
+fn halton(index: u32, base: u32) -> f32 {
+    let mut index = index;
+    let mut f = 1.0;
+    let mut result = 0.0;
+    while index > 0 {
+        f /= base as f32;
+        result += f * (index % base) as f32;
+        index /= base;
+    }
+    result
+}
+
 mod batches;
 mod frustum;
 mod rt;
@@ -118,17 +135,30 @@ impl State {
         // Uniformes de escena completos (cámara + luz + bias), como en el render wgpu.
         let view = self.camera_view_matrix();
         let eye = self.camera_world_position();
-        let proj = self.camera.proj_matrix(aspect);
-        let vp_stable = (proj * view).to_cols_array_2d();
+        let proj_stable = self.camera.proj_matrix(aspect);
+
+        // Jitter Halton de TAA en NDC. La matriz estable se usa para velocity y para el
+        // historial; solo `view_proj` (la que rasteriza) lleva el offset de subpíxel.
+        let jitter_index = self.taa_frame;
+        self.taa_frame = self.taa_frame.wrapping_add(1);
+        let (jitter_x, jitter_y) = if self.taa_enabled && self.taa_jitter_scale > 0.0 {
+            let scale = self.taa_jitter_scale.clamp(0.0, 2.0);
+            let inv_w = 2.0 / size.width.max(1) as f32;
+            let inv_h = 2.0 / size.height.max(1) as f32;
+            (
+                (halton(jitter_index + 1, 2) - 0.5) * inv_w * scale,
+                (halton(jitter_index + 1, 3) - 0.5) * inv_h * scale,
+            )
+        } else {
+            (0.0, 0.0)
+        };
+        let proj = Mat4::from_translation(GlamVec3::new(jitter_x, jitter_y, 0.0)) * proj_stable;
+        let vp_stable = (proj_stable * view).to_cols_array_2d();
         let vp = proj * view;
         let view_proj = vp.to_cols_array_2d();
         let inv_view_proj = vp.inverse().to_cols_array_2d();
-        let mut light_params = self.scene_light_params();
-        light_params[1] = if probes_active {
-            self.shadow_darkness.clamp(0.0, 1.0)
-        } else {
-            0.0
-        };
+        let light_params = self.scene_light_params();
+        let probe_weight = if probes_active { PROBE_IBL_WEIGHT } else { 0.0 };
         let scene_uni = SceneUniforms {
             view_proj,
             view_proj_stable: vp_stable,
@@ -139,7 +169,7 @@ impl State {
             light_color: self.scene_light_color(),
             light_view_proj: self.build_light_view_proj(),
             light_params,
-            jitter: [0.0, 0.0, 0.0, 0.0],
+            jitter: [jitter_x, jitter_y, probe_weight, 0.0],
             depth_plane: [
                 self.camera.near,
                 self.camera.far,

@@ -82,23 +82,28 @@ void main() {
     float ndotl = max(dot(n, l), 0.0);
     float shadow = shadow_pcf(v_world, n);
     float ambient = clamp(u.light_dir.w, 0.0, 1.0);
-    vec3 lit = albedo * u.light_color.rgb * (ambient + (1.0 - ambient) * ndotl * shadow) * u.light_params.x;
+    // `light_params.y` es la oscuridad de sombra (0 = sin oscurecer, 1 = negro).
+    // En zona iluminada shadow=1 -> factor 1; en zona oculta shadow=0 -> 1 - darkness.
+    float shadow_darkness = clamp(u.light_params.y, 0.0, 1.0);
+    float shadow_factor = 1.0 - shadow_darkness * (1.0 - shadow);
+    vec3 lit = albedo * u.light_color.rgb
+        * (ambient + (1.0 - ambient) * ndotl * shadow_factor)
+        * u.light_params.x;
     vec3 v = normalize(u.cam_pos.xyz - v_world);
     float spec = pow(max(dot(n, normalize(l + v)), 0.0), mix(8.0, 64.0, 1.0 - roughness));
     if (u.depth_plane.z < 0.5) {
-        lit += u.light_color.rgb * spec * (1.0 - roughness) * shadow * 0.35;
+        lit += u.light_color.rgb * spec * (1.0 - roughness) * shadow_factor * 0.35;
     }
     // IBL de sondas. `v_tex.z` es la ranura del cubemap array asignada a esta instancia
-    // (-1 = fuera de todo volumen de influencia). El peso viene en `light_params.y` y solo es > 0
-    // si hay sondas activas; sin sonda cercana se cae al color de cielo procedural, que es el que
-    // ya mostraba el viewport, así el cambio de una sonda no deja la zona negra.
-    if (u.light_params.y > 0.0) {
+    // (-1 = fuera de todo volumen de influencia). El peso viaja en `jitter.z` y solo es > 0
+    // si hay sondas activas; sin sonda cercana se cae al color de cielo procedural.
+    if (u.jitter.z > 0.0) {
         float probe_index = v_tex.z;
         vec3 probe_dir = normalize(mix(n, reflect(-v, n), clamp(1.0 - roughness, 0.0, 1.0)));
         vec3 probe = probe_index >= 0.0
             ? texture(probe_cube, vec4(probe_dir, probe_index)).rgb
             : vec3(0.72, 0.86, 0.98);
-        lit += albedo * probe * u.light_params.y;
+        lit += albedo * probe * u.jitter.z;
     }
     float flag = v_flag.x;
     float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);

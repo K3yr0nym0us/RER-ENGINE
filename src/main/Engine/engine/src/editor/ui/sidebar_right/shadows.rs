@@ -33,15 +33,15 @@ pub(super) fn shadows_body(
     widgets::label_value(
         ui,
         crate::editor::i18n::tr(locale, "Oscuridad de sombra", "Shadow darkness"),
-        &format!("{:.2}", world.shadow_darkness),
+        &format!("{:.3}", world.shadow_darkness),
     );
     let mut darkness = world.shadow_darkness;
     if widgets::range_slider(
         ui,
         &mut darkness,
-        0.02,
-        0.85,
-        0.01,
+        crate::engine3d::SHADOW_DARKNESS_MIN,
+        crate::engine3d::SHADOW_DARKNESS_MAX,
+        0.001,
         crate::editor::theme::CONTROL_BLUE,
     ) {
         actions.push(WorldAction::SetLight {

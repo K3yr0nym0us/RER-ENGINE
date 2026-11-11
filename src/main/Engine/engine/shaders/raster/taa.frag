@@ -32,6 +32,6 @@ void main() {
     }
     history = clamp(history, near_min, near_max);
     bool inside = history_uv.x >= 0.0 && history_uv.x <= 1.0 && history_uv.y >= 0.0 && history_uv.y <= 1.0;
-    float blend = inside ? pc.blend : 1.0;
-    out_color = vec4(mix(history, current, blend), 1.0);
+    float blend = inside ? pc.blend : 0.0;
+    out_color = vec4(mix(current, history, blend), 1.0);
 }

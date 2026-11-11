@@ -12,7 +12,8 @@ pub(super) struct Targets {
     pub(super) reflection: GpuImage,
     pub(super) ssr: GpuImage,
     pub(super) denoise: GpuImage,
-    pub(super) refl_history: GpuImage,
+    /// Historial TAA propio cuando los reflejos están activos (ping-pong).
+    pub(super) refl_history: [GpuImage; 2],
     pub(super) history: [GpuImage; 2],
     pub(super) shadow: GpuImage,
     pub(super) probe: GpuImage,
@@ -119,7 +120,7 @@ impl Targets {
         let reflection = color("reflection")?;
         let ssr = color("ssr")?;
         let denoise = color("denoise")?;
-        let refl_history = color("refl-history")?;
+        let refl_history = [color("refl-history-0")?, color("refl-history-1")?];
         let history = [color("history-0")?, color("history-1")?];
         let shadow = gpu.create_image(
             vk::Extent2D {

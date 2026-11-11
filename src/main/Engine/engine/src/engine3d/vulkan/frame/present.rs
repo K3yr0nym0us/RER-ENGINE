@@ -12,6 +12,12 @@ impl FrameRenderer {
     ) -> Result<(), VulkanError> {
         let extent = self.targets.extent;
         let clamp = self.samplers[2];
+        if self.last_reflections != input.reflections {
+            // Al activar/desactivar reflejos cambia el historial de destino; no se puede
+            // mezclar con el de la modalidad anterior.
+            self.taa_history_valid = false;
+            self.last_reflections = input.reflections;
+        }
         if input.reflections && !input.raytracing {
             // Sin trazado, el composite debe caer en SSR: limpia el reflejo RT anterior.
             clear_image_color(
@@ -140,6 +146,17 @@ impl FrameRenderer {
         };
         let present_source = if input.taa_enabled {
             let history = self.history_slot ^ 1;
+            let (history_view, target) = if input.reflections {
+                (
+                    self.targets.refl_history[history].view,
+                    self.targets.refl_history[slot].view,
+                )
+            } else {
+                (
+                    self.targets.history[history].view,
+                    self.targets.history[slot].view,
+                )
+            };
             write_combined(
                 device,
                 self.sets.taa[slot],
@@ -152,7 +169,7 @@ impl FrameRenderer {
                 device,
                 self.sets.taa[slot],
                 1,
-                self.targets.history[history].view,
+                history_view,
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -168,15 +185,10 @@ impl FrameRenderer {
             let blend = if self.taa_history_valid {
                 input.taa_blend
             } else {
-                1.0
+                0.0
             };
             push[..4].copy_from_slice(&blend.to_le_bytes());
             push[4..8].copy_from_slice(&1.0f32.to_le_bytes());
-            let target = if input.reflections {
-                self.targets.refl_history.view
-            } else {
-                self.targets.history[slot].view
-            };
             draw_fullscreen(
                 device,
                 cmd,

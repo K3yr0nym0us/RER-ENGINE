@@ -10,8 +10,8 @@
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 4
-updated: 2026-11-09
+version: 5
+updated: 2026-11-10
 
 principle:
   owner: motor_3d
@@ -27,8 +27,10 @@ principle:
     pero no distancia.
     El radio PCF escala con la raíz del tamaño del mapa (penumbra parecida en el mundo al subir
     resolución) y, por encima de 2.5 texeles, el kernel pasa de 3×3 a 5×5 (Ultra).
-    `shadow_darkness` hoy llega como peso del IBL de sondas (`light_params.y`, 0 si no hay
-    probes activas); el PCF del forward no la usa como oscurecimiento.
+    `shadow_darkness` se aplica en el forward como factor de la luz directa en sombra
+    (`shadow_factor = 1 - darkness * (1 - shadow)`). Default 0.9; rango de UI 0.9–1.0
+    (mayor = sombras más oscuras), con paso 0.001 y display de 3 decimales (0.900 → 1.000).
+    El peso del IBL de sondas ya no comparte ese campo: viaja en `jitter.z`.
   rt_shadows: |
     No hay sombras por ray tracing en el renderizador Ash: los shaders de trazado
     (`shaders/rt/primary.rchit`, `shaders/bvh/trace.comp`) iluminan con N·L y un ambiente,

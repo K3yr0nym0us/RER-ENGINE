@@ -185,6 +185,8 @@ pub struct FrameRenderer {
     history_slot: usize,
     taa_frame: u32,
     taa_history_valid: bool,
+    /// Último estado de `reflections`; al cambiar se invalida el historial TAA.
+    last_reflections: bool,
     static_offsets: Vec<u64>,
     static_transparent_offsets: Vec<u64>,
     skinned_offsets: Vec<u64>,
@@ -745,6 +747,7 @@ impl FrameRenderer {
             history_slot: 0,
             taa_frame: 0,
             taa_history_valid: false,
+            last_reflections: false,
             static_offsets: Vec::new(),
             static_transparent_offsets: Vec::new(),
             skinned_offsets: Vec::new(),
@@ -865,6 +868,11 @@ impl FrameRenderer {
 }
 
 impl FrameRenderer {
+    /// Invalida el historial temporal tras cargar una escena o cambiar de escena.
+    pub fn reset_taa_history(&mut self) {
+        self.taa_history_valid = false;
+    }
+
     /// Transita la imagen del swapchain a `PRESENT_SRC_KHR`.
     ///
     /// La llama el host standalone tras `record`. En ventana única el editor graba egui

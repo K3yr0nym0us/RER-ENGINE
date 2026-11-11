@@ -325,6 +325,8 @@ impl State {
             msaa_sample_count,
             taa_enabled: false,
             taa_blend: 0.2,
+            taa_jitter_scale: 1.0,
+            taa_frame: 0,
             texture_detail_near_m:
                 crate::engine3d::config_3d::entity_textures::default_texture_detail_near_m(),
             glb_texture_catalog_cache: HashMap::new(),

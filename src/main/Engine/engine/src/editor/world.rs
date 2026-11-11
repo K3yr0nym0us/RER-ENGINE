@@ -225,7 +225,7 @@ impl Default for WorldSettings {
             target_fps: 60,
             light_ambient: 0.06,
             light_intensity: 1.0,
-            shadow_darkness: 0.22,
+            shadow_darkness: 0.9,
             graphics_texture_tier: TextureTier::Medium,
             texture_detail_distance: 10.0,
             reflection_tier: ReflectionTier::Off,
@@ -236,8 +236,8 @@ impl Default for WorldSettings {
             shadow_tier: ShadowTier::Low,
             msaa_tier: MsaaTier::Low,
             msaa_sample_count: 1,
-            taa_enabled: true,
-            taa_blend: 0.62,
+            taa_enabled: false,
+            taa_blend: 0.2,
             taa_jitter_scale: 1.0,
             camera2d: None,
         }
@@ -282,7 +282,10 @@ impl WorldSettings {
             self.light_intensity = value as f32;
         }
         if let Some(value) = number(world, "shadow_darkness") {
-            self.shadow_darkness = value as f32;
+            self.shadow_darkness = (value as f32).clamp(
+                crate::engine3d::SHADOW_DARKNESS_MIN,
+                crate::engine3d::SHADOW_DARKNESS_MAX,
+            );
         }
         if let Some(value) = world.get("graphics_texture_tier").and_then(Value::as_str) {
             self.graphics_texture_tier = TextureTier::parse(value);
@@ -304,6 +307,15 @@ impl WorldSettings {
         }
         if let Some(value) = world.get("msaa_tier").and_then(Value::as_str) {
             self.msaa_tier = MsaaTier::parse(value);
+        }
+        if let Some(value) = boolean(world, "taa_enabled") {
+            self.taa_enabled = value;
+        }
+        if let Some(value) = number(world, "taa_blend") {
+            self.taa_blend = value as f32;
+        }
+        if let Some(value) = number(world, "taa_jitter_scale") {
+            self.taa_jitter_scale = value as f32;
         }
 
         self.camera2d = scene.get("camera2d").and_then(|camera| {
@@ -368,7 +380,10 @@ impl WorldSettings {
                     self.light_intensity = value as f32;
                 }
                 if let Some(value) = number(command, "shadow_darkness") {
-                    self.shadow_darkness = value as f32;
+                    self.shadow_darkness = (value as f32).clamp(
+                        crate::engine3d::SHADOW_DARKNESS_MIN,
+                        crate::engine3d::SHADOW_DARKNESS_MAX,
+                    );
                 }
             }
             "set_graphics_texture_tier" => {

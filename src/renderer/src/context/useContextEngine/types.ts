@@ -248,8 +248,8 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	ssrDebugMode: false,
 	shadowTier: 'low',
 	msaaTier: 'low',
-	taaEnabled: true,
-	taaBlend: 0.62,
+	taaEnabled: false,
+	taaBlend: 0.2,
 	taaJitterScale: 1.0,
 };
 
@@ -1259,6 +1259,10 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					reflectionProbes: Boolean(p.world.reflectionProbes),
 					shadowTier: normalizeShadowTier(p.world.shadowTier),
 					msaaTier: normalizeMsaaTier(p.world.msaaTier),
+					taaEnabled: p.world.taaEnabled ?? prevState.worldConfig.taaEnabled,
+					taaBlend: p.world.taaBlend ?? prevState.worldConfig.taaBlend,
+					taaJitterScale:
+						p.world.taaJitterScale ?? prevState.worldConfig.taaJitterScale,
 				},
 				sounds: p.sounds,
 				fonts: p.fonts ?? [],

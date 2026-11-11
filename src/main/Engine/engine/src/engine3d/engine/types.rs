@@ -119,9 +119,9 @@ pub(crate) struct SceneUniforms {
     /// rgb = color de luz; w > 0.5 activa sombras proyectadas.
     pub(crate) light_color: [f32; 4],
     pub(crate) light_view_proj: [[f32; 4]; 4],
-    /// x = intensidad, z = 1/texel sombra, w = radio PCF (y sin uso en GPU).
+    /// x = intensidad, y = oscuridad de sombra, z = 1/texel sombra, w = radio PCF.
     pub(crate) light_params: [f32; 4],
-    /// xy = jitter subpíxel en espacio de proyección; zw sin uso (near/far en `depth_plane`).
+    /// xy = jitter subpíxel de TAA; z = peso del IBL de sondas; w sin uso.
     pub(crate) jitter: [f32; 4],
     /// x = near, y = far; z = 1 cuando SSR/reflejos activos (forward IBL cede especular).
     pub(crate) depth_plane: [f32; 4],

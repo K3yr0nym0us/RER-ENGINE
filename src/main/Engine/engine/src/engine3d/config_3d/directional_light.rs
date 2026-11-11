@@ -15,8 +15,12 @@ pub const DEFAULT_LIGHT_COLOR: Vec3 = Vec3::new(1.0, 0.96, 0.88);
 pub const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
 /// Multiplicador de color de luz direccional.
 pub const DEFAULT_LIGHT_INTENSITY: f32 = 1.0;
-/// Factor mínimo en zona de sombra (0–1). Bajo = sombras más oscuras.
-pub const DEFAULT_SHADOW_DARKNESS: f32 = 0.22;
+/// Factor de oscuridad en zona de sombra (0–1). Alto = sombras más oscuras.
+pub const DEFAULT_SHADOW_DARKNESS: f32 = 0.9;
+/// Mínimo del rango de oscuridad de sombra en la UI.
+pub const SHADOW_DARKNESS_MIN: f32 = 0.9;
+/// Máximo del rango de oscuridad de sombra en la UI.
+pub const SHADOW_DARKNESS_MAX: f32 = 1.0;
 /// Desplazamiento mínimo hacia la luz al comparar sombras (metros).
 pub const SHADOW_NORMAL_BIAS_MIN: f32 = 0.0;
 /// Desplazamiento máximo en superficies casi paralelas a los rayos del sol.
@@ -182,7 +186,7 @@ impl State {
             self.light_intensity = v.clamp(0.05, 4.0);
         }
         if let Some(v) = shadow_darkness {
-            self.shadow_darkness = v.clamp(0.02, 1.0);
+            self.shadow_darkness = v.clamp(SHADOW_DARKNESS_MIN, SHADOW_DARKNESS_MAX);
         }
     }
 

@@ -357,7 +357,7 @@ export interface SavedScript {
 /** Valores por defecto de luz direccional 3D (alineados con el motor). */
 export const DEFAULT_LIGHT_AMBIENT = 0.06
 export const DEFAULT_LIGHT_INTENSITY = 1.0
-export const DEFAULT_SHADOW_DARKNESS = 0.22
+export const DEFAULT_SHADOW_DARKNESS = 0.9
 
 export interface SavedWorldConfig {
   worldWidth:   number
@@ -373,7 +373,7 @@ export interface SavedWorldConfig {
   lightAmbient?:     number
   /** 3D: intensidad de la luz direccional. */
   lightIntensity?:   number
-  /** 3D: oscuridad de sombras proyectadas (0.02–1, menor = más oscuro). */
+  /** 3D: oscuridad de sombras proyectadas (0.9–1, mayor = más oscuro). */
   shadowDarkness?:   number
   /** 3D: nivel global de texturas GLB embebidas. */
   graphicsTextureTier?: 'low' | 'medium' | 'high' | 'ultra'
@@ -389,6 +389,10 @@ export interface SavedWorldConfig {
   shadowTier?: 'off' | 'low' | 'medium' | 'high' | 'ultra'
   /** 3D: MSAA del pase forward (Low=Off, Medium 2x, High 4x, Ultra 8x). */
   msaaTier?: 'low' | 'medium' | 'high' | 'ultra'
+  /** 3D: TAA de escena. */
+  taaEnabled?: boolean
+  taaBlend?: number
+  taaJitterScale?: number
 }
 
 /** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */
@@ -701,6 +705,9 @@ export interface EngineSaveSceneSnapshot {
     reflection_probes?: boolean | null
     shadow_tier?: 'off' | 'low' | 'medium' | 'high' | 'ultra' | null
     msaa_tier?: 'low' | 'medium' | 'high' | 'ultra' | null
+    taa_enabled?: boolean | null
+    taa_blend?: number | null
+    taa_jitter_scale?: number | null
   }
   background_path?: string | null
   entities: Entity3D[]
@@ -1127,6 +1134,7 @@ declare global {
       restoreEngineViewport:   (bounds?: ViewportBounds) => void
       openModalElectron:       (request: ModalElectronOpenRequest) => Promise<void>
       closeModalElectron:      () => Promise<void>
+      resolveEditorExit:      (action: 'save' | 'discard' | 'cancel') => void
       completeModalElectron:   (handlerId: string, result: unknown, callbackKey?: string) => void
       notifyModalElectronReady: () => void
       resizeModalElectron:     (contentHeight: number) => void

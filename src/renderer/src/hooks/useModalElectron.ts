@@ -372,6 +372,11 @@ export function useModalElectron() {
 	useEffect(() => {
 		const remove = window.electronAPI.onModalElectronClosed((data) => {
 			activeModalRef.current = null
+			if (data.componentKey === 'ExitConfirmBody') {
+				// Cierre con X/Esc o fallo de la modal: el editor debe reanudarse.
+				// Si ya se eligió Guardar/Salir, main ignora esta acción.
+				window.electronAPI.resolveEditorExit('cancel')
+			}
 			if (data.componentKey === 'SocketConfigModalBody' && activeSocketConfigModalHandlerRef.current) {
 				unregisterSocketConfigModalSession(activeSocketConfigModalHandlerRef.current)
 			}

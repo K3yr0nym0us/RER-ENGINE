@@ -124,6 +124,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeModalElectron: (): Promise<void> => {
     return ipcRenderer.invoke('modal-electron:close')
   },
+  /** Acción elegida en la modal de salida del editor Rust. */
+  resolveEditorExit: (action: 'save' | 'discard' | 'cancel'): void => {
+    ipcRenderer.send('editor:exit-action', action)
+  },
   completeModalElectron: (handlerId: string, result: unknown, callbackKey?: string): void => {
     ipcRenderer.send('modal-electron:result', { handlerId, result, callbackKey })
   },

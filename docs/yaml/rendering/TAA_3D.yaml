@@ -8,8 +8,8 @@
 #   - docs/yaml/rendering/Shadows_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 2
-updated: 2026-11-08
+version: 3
+updated: 2026-11-10
 
 principle:
   owner: motor_3d
@@ -19,22 +19,26 @@ principle:
     2. Shadow map único 2D (depth compare, resolución por tier de sombras).
     3. TAA de escena: `shaders/raster/taa.frag` reproyecta con la velocidad del G-buffer,
        recorta el historial con el min/max de la vecindad 3×3 del frame actual y mezcla
-       `mix(history, current, blend)`.
+       `mix(current, history, blend)`. `blend` es el peso del historial (0 = frame actual,
+       1 = historial completo).
     4. Composite/present leen el resultado; los overlays del editor se dibujan después.
   note: |
     En Ash hay UN solo TAA (escena). El TAA de máscara de sombra (`SHADOW_HISTORY_BLEND`,
     lit-composite por separado) era de la era wgpu y se retiró con `src/taa/`.
-    El historial es un ping-pong de dos imágenes (`targets.history[2]`) y la acumulación no
-    arranca hasta el segundo frame con TAA activo (`taa_history_valid`): el primer frame usa
-    blend = 1.0 para no mezclar con un historial sin definir.
+    El historial es un ping-pong de dos imágenes (`targets.history[2]` sin reflejos y
+    `targets.refl_history[2]` con reflejos) y la acumulación no arranca hasta el segundo frame
+    con TAA activo (`taa_history_valid`): el primer frame usa blend = 0 para no mezclar con un
+    historial sin definir.
     Con MSAA encendido, `taa.frag` muestrea en `1.0 - v_uv.y` (copia neutra bajo el viewport de
     altura negativa) e invierte `velocity.y`, que viene en el espacio del G-buffer.
 
 jitter:
-  status: |
-    Sin efecto en el renderizador Ash. `SceneUniforms.jitter` viaja a cero y `set_taa`
-    acepta `jitter_scale` solo para registrarlo en el log/evento; el anti-aliasing temporal
-    reproyecta con velocidad, no con subpíxel jitter.
+  status: implemented
+  detail: |
+    `State::render_into` genera un offset Halton (2, 3) por frame, en NDC, de ±1 píxel
+    escalado por `taa_jitter_scale` (0–2). El offset se aplica solo a `view_proj` (la matriz
+    que rasteriza); `view_proj_stable` se usa para `v_curr`/`v_prev` y para el historial, de
+    modo que velocity no contiene el jitter. Con TAA off o jitter 0 el offset es cero.
   previous: |
     La era wgpu usaba Halton (2, 3) centrado en [-0.5, 0.5] escalado por `jitter_scale`.
 
@@ -43,11 +47,11 @@ commands:
     params:
       enabled: bool
       blend: float (0–1, opcional)
-      jitter_scale: float (0–2, opcional; se ignora en Ash)
+      jitter_scale: float (0–2, opcional)
     effect: |
-      Activa/desactiva el TAA de escena.
-      blend controla la acumulación temporal (más alto = menos ghosting, más ruido).
-      Se requiere un frame completo antes de acumular sobre el historial.
+      Activa/desactiva el TAA de escena y ajusta blend/jitter.
+      `blend` es el peso del historial: más alto = más suave/estable, más bajo = más nítido y
+      con más ruido. `jitter_scale` controla el offset subpíxel Halton.
     examples:
       - '{"cmd":"set_taa","enabled":true}'
       - '{"cmd":"set_taa","enabled":true,"blend":0.7,"jitter_scale":0.8}'
@@ -62,6 +66,7 @@ events:
 persistence:
   save_field: taaEnabled, taaBlend, taaJitterScale en world del .save
   default: { enabled: false, blend: 0.2, jitter_scale: 1.0 }
+  note: El motor serializa los tres campos en `SaveWorldSnapshot` y los restaura al cargar escena.
 
 scripting:
   rhai:
@@ -80,5 +85,5 @@ ui:
   accordion: World → Anti-Aliasing
   controls:
     - toggle: enabled/disabled
-    - slider: blend (0–1, paso 0.01)
-    - slider: jitter_scale (0–2, paso 0.05)
+    - slider: blend (0–1, 0 = nítido/actual, 1 = suave/historial)
+    - slider: jitter_scale (0–2, 0 = sin jitter, 2 = jitter máximo)

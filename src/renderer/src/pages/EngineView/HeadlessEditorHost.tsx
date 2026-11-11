@@ -4,6 +4,7 @@ import { EngineProvider, useContextEngine } from '@engine';
 import { ModalProvider, useModal } from '@modal';
 import { useAutoSave, useTraslate } from '@hooks';
 import { ModalConfirmBody } from '../../modal-electron/ModalConfirmBody';
+import { ExitConfirmBody } from '../../modal-electron/ExitConfirmBody';
 import { SocketConfigModalBody } from '../../modal-electron/SocketConfigModalElectronHost';
 import { EntityPropertiesModalBody } from '../../modal-electron/EntityPropertiesElectronHost';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
@@ -102,6 +103,13 @@ function LegacyWindowListener() {
           break
         case 'create_scene':
           openCreateSceneModal()
+          break
+        case 'exit_confirm':
+          openModal({
+            title: t('Exit RER-ENGINE'),
+            size: 'sm',
+            body: createElement(ExitConfirmBody),
+          })
           break
         case 'delete_scene': {
           const sceneId = Number(payload.scene_id ?? 0)

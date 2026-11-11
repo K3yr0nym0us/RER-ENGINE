@@ -53,16 +53,16 @@ export default function WorldShadowsAccordion() {
 				>
 					<span>{t('Shadow darkness')}</span>
 					<span className="text-info fw-bold">
-						{(worldConfig.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS).toFixed(2)}
+						{(worldConfig.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS).toFixed(3)}
 					</span>
 				</label>
 				<input
 					id="shadow-darkness-range"
 					type="range"
 					className="form-range mb-0"
-					min={0.02}
-					max={0.85}
-					step={0.01}
+					min={0.9}
+					max={1.0}
+					step={0.001}
 					value={worldConfig.shadowDarkness ?? DEFAULT_SHADOW_DARKNESS}
 					disabled={!engineReady}
 					onChange={(e) => setDirectionalLight({ shadowDarkness: parseFloat(e.target.value) })}

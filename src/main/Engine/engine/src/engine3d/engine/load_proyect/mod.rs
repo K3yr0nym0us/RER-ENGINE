@@ -23,7 +23,8 @@ use rer_engine_core::assets::AssetState;
 const SCRIPT_FILE_PREFIX: &str = "@file:";
 const DEFAULT_LIGHT_AMBIENT: f32 = 0.06;
 const DEFAULT_LIGHT_INTENSITY: f32 = 1.0;
-const DEFAULT_SHADOW_DARKNESS: f32 = 0.22;
+const DEFAULT_SHADOW_DARKNESS: f32 =
+    crate::engine3d::config_3d::directional_light::DEFAULT_SHADOW_DARKNESS;
 const ENTITY_MARKERS: &[&str] = &[
     "[EditorBox]",
     "[Ground]",
@@ -94,7 +95,13 @@ pub(crate) fn apply_loaded_proyect_3d(
     state: &mut State,
     project: &ProjectSaveData,
 ) -> Result<ActiveSaveView, String> {
-    scene::apply_loaded_proyect_3d_with_scene(state, project, None)
+    let result = scene::apply_loaded_proyect_3d_with_scene(state, project, None);
+    if result.is_ok()
+        && let Some(renderer) = state.frame_renderer.as_mut()
+    {
+        renderer.reset_taa_history();
+    }
+    result
 }
 
 pub(crate) fn apply_editor_scene_switch(
@@ -102,5 +109,11 @@ pub(crate) fn apply_editor_scene_switch(
     project: &ProjectSaveData,
     scene: &SavedScene,
 ) -> Result<ActiveSaveView, String> {
-    scene::apply_loaded_proyect_3d_with_scene(state, project, Some(scene))
+    let result = scene::apply_loaded_proyect_3d_with_scene(state, project, Some(scene));
+    if result.is_ok()
+        && let Some(renderer) = state.frame_renderer.as_mut()
+    {
+        renderer.reset_taa_history();
+    }
+    result
 }

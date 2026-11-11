@@ -280,6 +280,9 @@ fn build_world(world: Option<&Value>) -> Value {
         ("reflectionProbes", "reflection_probes"),
         ("shadowTier", "shadow_tier"),
         ("msaaTier", "msaa_tier"),
+        ("taaEnabled", "taa_enabled"),
+        ("taaBlend", "taa_blend"),
+        ("taaJitterScale", "taa_jitter_scale"),
     ];
     for (target, source) in fields {
         if let Some(value) = world.get(source).filter(|value| !value.is_null()) {

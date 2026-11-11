@@ -22,6 +22,14 @@ flow: |
     → dispatchModalElectronResult
     → callback en el editor
 
+exit_confirm:
+  note: |
+    El editor Rust emite `exit_request`; main abre la modal React `ExitConfirmBody`
+    (Guardar y salir / Salir sin guardar / Cancelar) vía `legacy-window:open`.
+    La modal es una ventana `modal-electron` sin parent visible y con `alwaysOnTop`,
+    para quedar por encima del editor nativo. Sus acciones envían
+    `editor:exit-action` a main; cerrar con X equivale a Cancelar.
+
 key_files:
   - path: src/renderer/src/context/ModalContext.tsx
     role: useModal() delega en Electron

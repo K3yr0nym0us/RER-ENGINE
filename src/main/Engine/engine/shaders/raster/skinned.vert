@@ -58,8 +58,7 @@ void main() {
     v_uv = uv;
     v_flag = flag_pad;
     v_tex = tex_layer_pad;
-    vec4 curr = u.view_proj * world;
-    v_curr = curr;
+    v_curr = u.view_proj_stable * world;
     v_prev = u.prev_view_proj * world;
-    gl_Position = curr;
+    gl_Position = u.view_proj * world;
 }

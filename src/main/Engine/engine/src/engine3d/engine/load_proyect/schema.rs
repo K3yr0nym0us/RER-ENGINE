@@ -108,6 +108,12 @@ pub(crate) struct SavedWorldConfig {
     pub(crate) shadowTier: Option<String>,
     #[serde(default)]
     pub(crate) msaaTier: Option<String>,
+    #[serde(default)]
+    pub(crate) taaEnabled: Option<bool>,
+    #[serde(default)]
+    pub(crate) taaBlend: Option<f32>,
+    #[serde(default)]
+    pub(crate) taaJitterScale: Option<f32>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]

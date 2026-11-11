@@ -107,6 +107,9 @@ pub(crate) fn send_project_loaded_3d(
                     .to_string(),
             )
         }),
+        taaEnabled: view.world.taaEnabled,
+        taaBlend: view.world.taaBlend,
+        taaJitterScale: view.world.taaJitterScale,
     };
 
     let models = editor_models_from_manifest(project);

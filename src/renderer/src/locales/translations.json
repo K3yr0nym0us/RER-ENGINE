@@ -706,5 +706,10 @@
   "Inherit from entity": "Heredar de la entidad",
   "Static": "Estático",
   "Dynamic": "Dinámico",
-  "Kinematic": "Cinemático"
+  "Kinematic": "Cinemático",
+  "Exit RER-ENGINE": "Salir de RER-ENGINE",
+  "Do you want to save your progress before exiting?": "¿Quieres guardar tu progreso antes de salir?",
+  "Unsaved changes will be lost.": "Los cambios sin guardar se perderán.",
+  "Save and exit": "Guardar y salir",
+  "Exit without saving": "Salir sin guardar"
 }

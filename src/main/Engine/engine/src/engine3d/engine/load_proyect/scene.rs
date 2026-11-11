@@ -313,6 +313,10 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
         state,
         view.world.msaaTier.as_deref(),
     );
+    let taa_enabled = view.world.taaEnabled.unwrap_or(false);
+    let taa_blend = view.world.taaBlend.unwrap_or(0.2);
+    let taa_jitter_scale = view.world.taaJitterScale.unwrap_or(1.0);
+    state.set_taa(taa_enabled, Some(taa_blend), Some(taa_jitter_scale));
     state.ensure_material_validation_demo();
     send_event(&EngineEvent::GraphicsTextureTierChanged {
         tier: state.graphics_texture_tier.wire().to_string(),
@@ -335,6 +339,11 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
     send_event(&EngineEvent::MsaaTierChanged {
         tier: state.msaa_tier.wire().to_string(),
         sample_count: state.msaa_sample_count,
+    });
+    send_event(&EngineEvent::TaaChanged {
+        enabled: state.taa_enabled,
+        blend: Some(state.taa_blend),
+        jitter_scale: Some(state.taa_jitter_scale),
     });
     load_project_asset_stores(state, project);
     log_load_step(

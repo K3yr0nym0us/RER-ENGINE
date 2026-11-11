@@ -43,6 +43,10 @@ pub struct State {
     /// TAA del pase de escena (historial + velocity).
     pub(crate) taa_enabled: bool,
     pub(crate) taa_blend: f32,
+    /// Escala del jitter subpíxel Halton de TAA (0 = sin jitter).
+    pub(crate) taa_jitter_scale: f32,
+    /// Contador de frames para la secuencia Halton del jitter.
+    pub(crate) taa_frame: u32,
 
     pub(crate) texture_array: crate::engine3d::texture::TextureArray,
     /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
@@ -494,11 +498,14 @@ impl State {
         if let Some(blend) = blend {
             self.taa_blend = blend.clamp(0.0, 1.0);
         }
+        if let Some(jitter_scale) = jitter_scale {
+            self.taa_jitter_scale = jitter_scale.clamp(0.0, 2.0);
+        }
         self.taa_enabled = enabled;
         log::info!(
             "[taa] TAA: enabled={enabled}, blend={:.2}, jitter={:.2}",
             self.taa_blend,
-            jitter_scale.unwrap_or(1.0)
+            self.taa_jitter_scale
         );
     }
 }
