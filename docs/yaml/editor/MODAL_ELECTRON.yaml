@@ -24,10 +24,11 @@ flow: |
 
 exit_confirm:
   note: |
-    El editor Rust emite `exit_request`; main abre la modal React `ExitConfirmBody`
-    (Guardar y salir / Salir sin guardar / Cancelar) vía `legacy-window:open`.
-    La modal es una ventana `modal-electron` sin parent visible y con `alwaysOnTop`,
-    para quedar por encima del editor nativo. Sus acciones envían
+    El editor Rust emite `exit_request` con el rect físico de su ventana (posición,
+    tamaño y escala); main lo convierte a DIP y centra la modal sobre el motor.
+    La modal React `ExitConfirmBody` (Guardar y salir / Salir sin guardar / Cancelar)
+    se abre vía `legacy-window:open` como ventana `modal-electron` sin parent visible
+    y con `alwaysOnTop`, para quedar por encima del editor nativo. Sus acciones envían
     `editor:exit-action` a main; cerrar con X equivale a Cancelar.
 
 legacy_window_kinds:
@@ -46,6 +47,33 @@ legacy_window_kinds:
     remove_asset: Recursos → confirmar borrado de asset
     socket_config: Herramientas → configuración de sockets
     entity_properties: Selección en viewport → propiedades de entidad
+    control_bindings: Controles -> modal de bindings; mode keyboard_mouse | gamepad
+    quick_build: Herramientas -> modal de Blueprints; action open | toggle
+    ui_create_screen: Interfaz de usuario -> nueva pantalla; scope player | menu
+    ui_edit_screen: Interfaz de usuario → editar HUD o renombrar menú
+    ui_delete_screen: Interfaz de usuario → eliminar pantalla con confirmación
+    ui_set_active_screen: Interfaz de usuario → activar/desactivar HUD de play
+
+native_state_bridges:
+  note: |
+    Mensajes React → main → stdin del editor para mantener la UI egui sincronizada.
+    No son comandos del motor; el editor los consume en `handle_electron_message`.
+  channels:
+    ui_screens_sync:
+      ipc: ui-screens:sync
+      payload: '{ player: [{id,name,active}], menu: [{id,name,active}] }'
+      effect: actualiza las listas del dropdown nativo Interfaz de usuario.
+    quick_build_state:
+      ipc: quick-build:state
+      payload: '{ active: bool, name?: string }'
+      effect: resalta la tarjeta Quick build y decide si el clic abre o desactiva.
+
+preload:
+  note: |
+    Tras `editor_ready`, main crea la ventana modal oculta (`preloadModalElectronWindow`)
+    y carga `#/modal-electron` con `backgroundThrottling: false`. Así la primera
+    apertura no paga la creación del BrowserWindow ni la carga del bundle de React;
+    `openModalElectronWindow` reutiliza esa instancia y solo envía el payload.
 
 key_files:
   - path: src/renderer/src/context/ModalContext.tsx

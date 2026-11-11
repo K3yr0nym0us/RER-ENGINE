@@ -8,8 +8,8 @@
 #   - docs/yaml/scripting/RHAI_API.yaml (gravity_and_controls_2d, callbacks on_press)
 #   - docs/yaml/engine/IPC_Protocol.yaml (set_control_bindings, run_control_script)
 
-version: 1
-updated: 2026-06-14
+version: 2
+updated: 2026-11-11
 
 principle:
   scope: personajes (character / player), no escenarios ni objetos estáticos
@@ -21,6 +21,14 @@ ui:
   modal: ControlBindingsModalBody.tsx
   hook: useControlBindings (selección de personaje, contadores, abrir modal)
   runtime_hook: useControlBindingsRuntime.ts (envía bindings al motor en play)
+  native_editor:
+    accordion: Controles (egui)
+    buttons: Configurar teclado + ratón / Configurar mandos
+    legacy_kind: control_bindings; mode keyboard_mouse | gamepad
+    modal: ControlBindingsModalBody
+    effect: |
+      Abre la modal de bindings con el personaje efectivo (jugador primero) y los
+      scripts existentes; los cambios se guardan en el proyecto y se aplican en play.
 
 binding_kinds:
   keyboard_mouse:
@@ -50,6 +58,8 @@ defaults:
 
 key_files:
   ui: src/renderer/src/pages/EngineView/components/sidebar/ControlsAccordion/
+  native_ui: src/main/Engine/engine/src/editor/ui/sidebar_left/controls.rs
+  native_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (control_bindings)
   hooks: src/renderer/src/hooks/useControlBindings*.ts
   scripting: src/main/Engine/core/src/scripting/
 

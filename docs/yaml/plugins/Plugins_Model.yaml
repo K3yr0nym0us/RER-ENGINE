@@ -1,8 +1,8 @@
 # RER-ENGINE — Modelo de plugins opcionales
 # Referencia para IAs y contribuidores. Junio 2026.
 
-version: 1
-updated: 2026-06-04
+version: 2
+updated: 2026-11-11
 
 summary: |
   Plugins opcionales se instalan bajo demanda desde el pie del sidebar (Plugins).
@@ -53,6 +53,9 @@ ipc:
 
 ui:
   sidebar_footer: src/renderer/src/pages/EngineView/components/SideBarLeft.tsx
+  native_footer: |
+    El pie del editor nativo emite `legacy_window_request` kind `plugins`;
+    HeadlessEditorHost abre PluginsModalBody en la ventana modal Electron.
   modal: src/renderer/src/plugins/PluginsModalBody.tsx
   chat_overlay: src/main/aiAssistantWindow.ts
   chat_ui: src/renderer/src/ai-overlay/AiAssistantOverlayApp.tsx

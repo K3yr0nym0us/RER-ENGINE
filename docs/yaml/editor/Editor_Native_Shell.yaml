@@ -1,0 +1,84 @@
+# Editor nativo (egui) - ventana, foco, cursor y arranque
+#
+# El editor visible es un proceso Rust/winit independiente. Electron mantiene
+# su ventana React oculta como host de modales legacy.
+#
+# Relacionado con:
+#   - docs/yaml/editor/MODAL_ELECTRON.yaml (ventana modal, exit_confirm centrada)
+#   - docs/yaml/editor/Player_UI_Model.yaml (dropdown Interfaz de usuario)
+#   - docs/yaml/gameplay/Blueprints_Model_2D.yaml / _3D.yaml (quick build)
+
+version: 1
+updated: 2026-11-11
+
+window:
+  single_window: true
+  owner: src/main/Engine/engine/src/editor/host.rs
+  focus_on_ready: |
+    Al crear la ventana nativa se llama a focus_window(); main oculta la ventana
+    React en `editor_ready`.
+  react_host:
+    hidden: true
+    note: |
+      `hideMainWindowForEditor` oculta la ventana React y la saca del taskbar.
+      `focusMainEditorWindow` solo actúa si esa ventana está visible, para no
+      robar el foco a una ventana oculta.
+
+play_mode:
+  entry: botón Play del top bar
+  cursor:
+    hidden: true
+    grab: CursorGrabMode::Confined
+    clip: ClipCursor al rect del viewport
+    recenter: set_cursor_position al centro del viewport cada frame
+  exit: Escape
+  release:
+    - focus loss
+    - window occluded/minimized
+    - release_cursor_for_dialog (modal de salida)
+  note: |
+    Al perder foco u ocultarse la ventana se libera ClipCursor + grab + cursor
+    visible. No se reaplica el clip si la ventana no tiene foco o está minimizada.
+  camera:
+    editor_restore: |
+      Al salir de play se restauran editor_orbit_target, editor_viewport_yaw/pitch/
+      distance desde el snapshot de entrada. La cámara de juego conserva su estado
+      y offset respecto al jugador.
+    game_camera_untouched: true
+
+startup:
+  select_project_type:
+    effect: |
+      `set-game-style` oculta el selector y lanza el editor nativo en el siguiente
+      tick del event loop. La ventana nativa se enfoca al crearse.
+  loading:
+    ui: spinner nativo de `engine_loading` en el viewport
+    note: no hay loader Electron adicional.
+
+devtools:
+  auto_open: false
+  shortcut:
+    - Ctrl+Shift+I
+    - Cmd+Shift+I
+    - F12
+  mode: detached
+  scope: ventana Electron con foco (main o modal)
+  file: src/main/devToolsShortcut.ts
+
+sidebar_native:
+  sections:
+    - Escenas, Camara, Recursos, Crear entidad, Interfaz de usuario, Herramientas, Controles
+  direct_commands:
+    world_background: load_background / clear_background (dropdown 2D)
+  legacy_bridges:
+    controls: control_bindings -> ControlBindingsModalBody
+    plugins: plugins -> PluginsModalBody
+    user_guide: user_guide -> UserGuide
+    ui: ui_create_screen / ui_edit_screen / ui_delete_screen / ui_set_active_screen
+    quick_build: quick_build (open | toggle)
+
+key_files:
+  editor_host: src/main/Engine/engine/src/editor/host.rs
+  cursor_play: src/main/Engine/engine/src/engine3d/host.rs
+  camera_restore: src/main/Engine/engine/src/engine3d/config_3d/preview_editor.rs
+  devtools: src/main/devToolsShortcut.ts

@@ -92,6 +92,14 @@ quick_build:
   ui:
     - Herramientas → Construcción → modal Blueprint → pestaña Character / Environment / Objects
     - Click en viewport coloca instancia (ghost semitransparente sigue al cursor)
+  native_editor:
+    entry: tarjeta Construcción rápida del editor egui (Herramientas)
+    modal: legacy quick_build (action open | toggle) -> BluePrintModalBody
+    activation: |
+      QuickBuildBridge envía `set_active_tool quick_build_place` con preview_path,
+      preview_kind (scenario/character), escala y crop del primer frame.
+    placement: el viewport nativo recibe el clic; el motor 2D coloca el ghost/instancia.
+    state_sync: quick_build_state mantiene activa/resaltada la tarjeta.
   ipc:
     set_active_tool:
       tool: quick_build_place
@@ -187,6 +195,7 @@ key_files:
   types: src/shared-types/types.ts (BluePrintEntry / Blueprint3D compartido)
   paths: src/renderer/src/utils/blueprintModelPath.ts
   quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
+  native_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (QuickBuildBridge)
   actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   modal: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/BluePrintModalBody.tsx
   motor_ghost: src/main/Engine/engine/src/engine2d/config_2d/assets.rs

@@ -101,6 +101,18 @@ quick_build:
   ui:
     - Herramientas → Construcción → modal Blueprint → categoría → elegir plantilla
     - Click en viewport coloca instancia (ghost semitransparente previo)
+  native_editor:
+    entry: tarjeta Construcción rápida del editor egui (Herramientas)
+    modal: legacy quick_build (action open | toggle) -> BluePrintModalBody
+    activation: |
+      QuickBuildBridge (HeadlessEditorHost) envía `set_active_tool quick_build_place`
+      con preview_path/preview_blueprint/scale/física al seleccionar el blueprint.
+    toggle: |
+      Con un blueprint activo, la tarjeta emite `quick_build action: toggle`; React
+      limpia el blueprint y el bridge envía `set_active_tool` vacío.
+    state_sync: |
+      React → main → stdin (`quick_build_state`) mantiene el estado activo en la tarjeta. 
+    placement: el viewport nativo (winit) recibe el clic y el motor coloca la instancia.
   ipc:
     set_active_tool:
       tool: quick_build_place
@@ -202,6 +214,7 @@ key_files:
   paths: src/renderer/src/utils/blueprintModelPath.ts
   actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
+  native_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (QuickBuildBridge)
   modal: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/BluePrintModalBody.tsx
   motor_registry: src/main/Engine/engine/src/engine3d/engine/commands.rs (RegisterBlueprint)
   motor_placement: src/main/Engine/engine/src/engine3d/config_3d/quick_build.rs

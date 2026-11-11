@@ -93,6 +93,7 @@
 | Documento | Contenido |
 |-----------|-----------|
 | [MODAL_ELECTRON.yaml](./yaml/editor/MODAL_ELECTRON.yaml) | Ventanas hijas (propiedades, blueprint, player UI, scripting) |
+| [Editor_Native_Shell.yaml](./yaml/editor/Editor_Native_Shell.yaml) | Ventana nativa, foco, cursor en play, arranque y DevTools |
 | [Entity_Properties_Modal.yaml](./yaml/editor/Entity_Properties_Modal.yaml) | Modal propiedades entidad (transform, animaciones, texturas, blueprint) |
 | [Sockets_3D.yaml](./yaml/editor/Sockets_3D.yaml) | Sockets en huesos skinned, vínculos objeto↔socket, modal Configuración de sockets |
 | [Bone_Physics_3D.yaml](./yaml/editor/Bone_Physics_3D.yaml) | Física secundaria por hueso (jiggle), modal Editar física de huesos |
