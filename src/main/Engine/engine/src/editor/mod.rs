@@ -15,6 +15,7 @@ mod save;
 mod scenes;
 mod theme;
 mod ui;
+mod ui_screens;
 mod user_event;
 mod world;
 

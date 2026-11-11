@@ -524,6 +524,12 @@ impl App {
             .is_some_and(|state| state.is_preview_playing())
     }
 
+    /// `true` mientras el modo play mantiene el cursor capturado (3D FPS).
+    #[cfg(feature = "editor")]
+    pub(crate) fn is_cursor_captured(&self) -> bool {
+        self.cursor_captured
+    }
+
     /// Movimiento relativo del ratón (DeviceEvent::MouseMotion) durante play.
     pub fn handle_device_motion(&mut self, delta_x: f32, delta_y: f32) {
         if !self.cursor_captured {
@@ -603,11 +609,15 @@ impl App {
             return;
         }
 
-        // En el editor la ventana es compartida: el clip se aplica al sub-rect del
-        // viewport en `apply_viewport_cursor_clip`, no con CursorGrabMode de toda la ventana.
+        // En el editor la ventana es compartida: ocultamos el cursor y lo confinamos
+        // a la ventana; `apply_viewport_cursor_clip` lo restringe al viewport del juego.
         if state.embedded {
             let window = state.window();
             window.set_cursor_visible(false);
+            if let Err(err) = window.set_cursor_grab(CursorGrabMode::Confined) {
+                log::warn!("[preview] no se pudo confinar el cursor a la ventana: {err}");
+            }
+            self.clip_rect = None;
             self.cursor_captured = true;
             log::info!("[preview] cursor capturado (editor; ClipCursor al viewport)");
             return;
@@ -656,7 +666,9 @@ impl App {
     #[cfg_attr(not(feature = "editor"), allow(dead_code))]
     pub(crate) fn release_cursor_for_dialog(&mut self) {
         if let Some(state) = self.state.as_ref() {
-            state.window().set_cursor_visible(true);
+            let window = state.window();
+            window.set_cursor_visible(true);
+            let _ = window.set_cursor_grab(CursorGrabMode::None);
         }
         rer_engine_core::platform::release_cursor_clip();
         self.clip_rect = None;
@@ -671,6 +683,13 @@ impl App {
         let Some(state) = self.state.as_ref() else {
             return;
         };
+        // Si la ventana perdió el foco o está minimizada, no se puede dejar el cursor
+        // atrapado en el viewport: el usuario no podría usar la barra de tareas ni Alt+Tab.
+        if !state.engine_window_focused || state.window().is_minimized().unwrap_or(false) {
+            rer_engine_core::platform::release_cursor_clip();
+            self.clip_rect = None;
+            return;
+        }
         let Ok(window_pos) = state.window().inner_position() else {
             return;
         };
@@ -680,10 +699,17 @@ impl App {
             frame.extent.width,
             frame.extent.height,
         );
-        if self.clip_rect != Some(rect) {
-            rer_engine_core::platform::clip_cursor_to_rect(rect.0, rect.1, rect.2, rect.3);
-            self.clip_rect = Some(rect);
-        }
+        // Reaplica el clip cada frame: Windows puede resetearlo al cambiar de foco.
+        rer_engine_core::platform::clip_cursor_to_rect(rect.0, rect.1, rect.2, rect.3);
+        self.clip_rect = Some(rect);
+
+        // Recentra el cursor en el viewport para que el look relativo no llegue nunca
+        // al borde del clip y siga girando de forma continua.
+        let center = PhysicalPosition::new(
+            (frame.offset.x + frame.extent.width as i32 / 2) as f64,
+            (frame.offset.y + frame.extent.height as i32 / 2) as f64,
+        );
+        let _ = state.window().set_cursor_position(center);
     }
 
     fn sync_preview_playback_side_effects(

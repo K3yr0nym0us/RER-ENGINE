@@ -101,8 +101,14 @@ impl EditorGpu {
         viewport: Option<egui::Rect>,
     ) -> Result<bool, String> {
         let raw_input = egui_state.take_egui_input(window);
+        let cursor_captured = engine.as_ref().is_some_and(|app| app.is_cursor_captured());
         let full_output = egui_ctx.run_ui(raw_input, build);
         egui_state.handle_platform_output(window, full_output.platform_output);
+        // egui_winit vuelve a mostrar el cursor al aplicar el icono; en modo play
+        // el cursor debe permanecer oculto aunque la UI siga dibujándose.
+        if cursor_captured {
+            window.set_cursor_visible(false);
+        }
 
         let primitives = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
         let repaint_now = full_output

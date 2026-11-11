@@ -80,7 +80,21 @@ impl InProcessEngine {
         }
     }
 
+    pub(crate) fn is_cursor_captured(&self) -> bool {
+        match self {
+            Self::Three(app) => app.is_cursor_captured(),
+            Self::Two(_) => false,
+        }
+    }
+
     pub(crate) fn release_cursor(&mut self) {
+        if let Self::Three(app) = self {
+            app.release_cursor_for_dialog();
+        }
+    }
+
+    /// Libera el cursor al perder foco/ocluirse la ventana, aunque egui consuma el evento.
+    pub(crate) fn release_cursor_for_focus_loss(&mut self) {
         if let Self::Three(app) = self {
             app.release_cursor_for_dialog();
         }
@@ -136,6 +150,19 @@ struct EditorWindow {
 }
 
 impl EditorWindow {
+    /// Rectángulo físico de la ventana nativa + escala, para anclar modales de Electron.
+    fn engine_window_rect(&self) -> Option<serde_json::Value> {
+        let pos = self.window.outer_position().ok()?;
+        let size = self.window.outer_size();
+        Some(serde_json::json!({
+            "x": pos.x,
+            "y": pos.y,
+            "width": size.width,
+            "height": size.height,
+            "scale": self.window.scale_factor(),
+        }))
+    }
+
     fn new(window: Arc<Window>, cli: Cli) -> Result<Self, String> {
         let options = if cli.context.is_3d() {
             VulkanOptions::three_d()
@@ -433,12 +460,27 @@ impl EditorWindow {
                 }
                 engine.handle_window_event(event.clone());
             }
+            WindowEvent::Focused(_) => {
+                // El foco debe llegar siempre al motor: de él depende liberar el cursor.
+                engine.handle_window_event(event.clone());
+            }
             WindowEvent::KeyboardInput { .. }
             | WindowEvent::ModifiersChanged(_)
-            | WindowEvent::Ime(_)
-            | WindowEvent::Focused(_) => {
+            | WindowEvent::Ime(_) => {
                 if self.egui_ctx.egui_wants_keyboard_input() {
-                    return;
+                    // Escape debe salir del modo play aunque egui tenga foco de teclado.
+                    let escape_in_play = engine.is_preview_playing()
+                        && matches!(
+                            event,
+                            WindowEvent::KeyboardInput { event: key_event, .. }
+                                if key_event.physical_key
+                                    == winit::keyboard::PhysicalKey::Code(
+                                        winit::keyboard::KeyCode::Escape,
+                                    )
+                        );
+                    if !escape_in_play {
+                        return;
+                    }
                 }
                 engine.handle_window_event(event.clone());
             }
@@ -507,6 +549,8 @@ struct EditorApplication {
     exit_after_save: bool,
     /// Hay una confirmación de salida abierta en Electron.
     exit_request_pending: bool,
+    /// Sincronización de pantallas UI recibida antes de crear la ventana.
+    pending_ui_screens: Option<Value>,
 }
 
 impl EditorApplication {
@@ -559,6 +603,35 @@ impl EditorApplication {
                     if let Some(saving) = message.get("saving").and_then(Value::as_bool) {
                         editor.app.saving = saving;
                     }
+                }
+            }
+            "ui_screens_sync" => {
+                if let Some(screens) = message.get("screens").cloned() {
+                    if let Some(editor) = self.editor.as_mut() {
+                        editor.app.ui_screens.apply_sync(&screens);
+                        editor.window.request_redraw();
+                    } else {
+                        self.pending_ui_screens = Some(screens);
+                    }
+                }
+            }
+            "quick_build_state" => {
+                let state = message.get("state");
+                let active = state
+                    .and_then(|state| state.get("active"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let name = state
+                    .and_then(|state| state.get("name"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.app.quick_build_active = if active {
+                        Some(name.unwrap_or_else(|| "Quick build".to_string()))
+                    } else {
+                        None
+                    };
+                    editor.window.request_redraw();
                 }
             }
             "project_state" => {
@@ -719,6 +792,13 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                     self.cli.locale.as_str()
                 );
                 self.editor = Some(editor);
+                window.focus_window();
+
+                if let Some(pending) = self.pending_ui_screens.take()
+                    && let Some(editor) = self.editor.as_mut()
+                {
+                    editor.app.ui_screens.apply_sync(&pending);
+                }
 
                 // La UI se pinta ya; el motor se construye en un hilo y avisa al terminar.
                 if let Some(editor) = self.editor.as_mut() {
@@ -838,6 +918,17 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             return;
         }
 
+        // Al perder foco u ocultarse la ventana, soltar siempre el clip del cursor
+        // antes de que egui pueda consumir el evento.
+        if matches!(
+            event,
+            WindowEvent::Focused(false) | WindowEvent::Occluded(true)
+        ) && let Some(editor) = self.editor.as_mut()
+            && let Some(engine) = editor.engine.as_mut()
+        {
+            engine.release_cursor_for_focus_loss();
+        }
+
         if matches!(event, WindowEvent::CloseRequested) {
             if !self.cli.electron_host {
                 exit_editor_now();
@@ -846,13 +937,15 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 return;
             }
             self.exit_request_pending = true;
+            let mut engine_rect = None;
             if let Some(editor) = self.editor.as_mut() {
                 editor.paused = true;
+                engine_rect = editor.engine_window_rect();
                 if let Some(engine) = editor.engine.as_mut() {
                     engine.release_cursor();
                 }
             }
-            crate::editor::bridge::request_exit_confirmation();
+            crate::editor::bridge::request_exit_confirmation(engine_rect);
             return;
         }
 
@@ -976,6 +1069,7 @@ pub fn run() {
         target_fps: 60,
         exit_after_save: false,
         exit_request_pending: false,
+        pending_ui_screens: None,
     };
     event_loop
         .run_app(&mut application)

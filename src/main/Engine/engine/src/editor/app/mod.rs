@@ -16,6 +16,7 @@ use crate::editor::save::SaveSuccess;
 use crate::editor::scenes::SceneList;
 use crate::editor::ui::sidebar_left::SidebarLeftState;
 use crate::editor::ui::sidebar_right::SidebarRightState;
+use crate::editor::ui_screens::UiScreenLists;
 use crate::editor::user_event::UserEvent;
 use crate::editor::world::WorldSettings;
 
@@ -46,6 +47,9 @@ pub struct EditorApp {
     pub world_sync_pending: bool,
     pub scenes: SceneList,
     pub assets: AssetLists,
+    pub ui_screens: UiScreenLists,
+    /// Blueprint activo de construcción rápida (lo gestiona React).
+    pub quick_build_active: Option<String>,
     pub player_controls: Option<ControlSummary>,
     /// Fondo 2D activo (ruta del asset), sincronizado con el motor.
     pub background_path: Option<String>,
@@ -92,6 +96,8 @@ impl EditorApp {
             world_sync_pending: false,
             scenes: SceneList::default(),
             assets: AssetLists::default(),
+            ui_screens: UiScreenLists::default(),
+            quick_build_active: None,
             player_controls: None,
             background_path: None,
             selected_entity: None,

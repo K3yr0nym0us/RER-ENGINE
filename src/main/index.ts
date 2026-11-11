@@ -35,8 +35,12 @@ import {
   sendPatchToModal,
   restackModalElectronIfOpen,
   repositionViewportCornerModalIfOpen,
+  setModalElectronAnchorRect,
+  preloadModalElectronWindow,
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
+import { registerDevToolsShortcut } from './devToolsShortcut';
+import { engineWindowRectToDip } from './modalElectronSizes';
 import { registerEngineCmdIpc } from './Engine/registerEngineCmdIpc';
 import { sendEngineStartupScene } from './Engine/engineStartupScene';
 import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
@@ -145,7 +149,7 @@ function sendEventToRenderer(event: EngineEvent): void {
 }
 
 function focusMainEditorWindow(): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return
   mainWindow.focus()
   mainWindow.webContents.focus()
 }
@@ -177,10 +181,8 @@ function createMainWindow(): void {
     },
   })
 
-  // Abrir DevTools automáticamente en desarrollo
-  if (process.env.NODE_ENV === 'development' || !app.isPackaged) {
-    mainWindow.webContents.openDevTools()
-  }
+  // Abrir DevTools queda solo con el atajo manual (Ctrl+Shift+I / F12).
+  registerDevToolsShortcut(mainWindow)
 
   // En desarrollo carga el servidor de Vite; en producción, el build.
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -247,7 +249,6 @@ function hideMainWindowForEditor(): void {
   if (editorHostHidden) return
   editorHostHidden = true
   if (!mainWindow || mainWindow.isDestroyed()) return
-  mainWindow.webContents.closeDevTools()
   mainWindow.hide()
   mainWindow.setSkipTaskbar(true)
   console.log('[editor] ventana React oculta; Electron sigue como host de ventanas legacy')
@@ -325,6 +326,9 @@ function handleEditorMessage(message: Record<string, unknown>): boolean {
   switch (message.type) {
     case 'editor_ready': {
       hideMainWindowForEditor();
+      // Precarga la modal oculta después de que el editor nativo ya está en pantalla,
+      // para no competir con el arranque del motor/GPU.
+      setTimeout(() => preloadModalElectronWindow(), 600);
       return true
     }
     case 'legacy_window_request': {
@@ -341,7 +345,7 @@ function handleEditorMessage(message: Record<string, unknown>): boolean {
       return true
     }
     case 'exit_request': {
-      requestExitModal()
+      requestExitModal(message.rect)
       return true
     }
     case 'project_state_request': {
@@ -2274,9 +2278,6 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
   // El editor Rust abre directamente el motor; ya no se renderiza el editor
   // React ni se espera a `viewport-bounds`.
   //
-  // Ocultamos el selector AHORA y lanzamos el proceso en el siguiente tick del
-  // event loop: así el usuario ve la ventana desaparecer de inmediato y el
-  // coste de arrancar Rust/GPU no bloquea el ocultado.
   hideMainWindowForEditor()
   setImmediate(() => startEngineSession())
 })
@@ -2288,10 +2289,11 @@ let exitDialogOpen = false
 let exitModalActionHandled = false
 
 /** Abre la modal React de salida en Electron (por encima del editor nativo). */
-function requestExitModal(): void {
+function requestExitModal(engineRect?: unknown): void {
   if (exitDialogOpen) return
   exitDialogOpen = true
   exitModalActionHandled = false
+  setModalElectronAnchorRect(engineWindowRectToDip(engineRect))
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('legacy-window:open', {
       kind: 'exit_confirm',
@@ -2299,9 +2301,20 @@ function requestExitModal(): void {
     })
     return
   }
+  setModalElectronAnchorRect(null)
   exitDialogOpen = false
   sendToEditor({ type: 'exit_cancelled' })
 }
+
+ipcMain.on('ui-screens:sync', (_event, screens: unknown) => {
+  if (!screens || typeof screens !== 'object') return
+  sendToEditor({ type: 'ui_screens_sync', screens })
+})
+
+ipcMain.on('quick-build:state', (_event, state: unknown) => {
+  if (!state || typeof state !== 'object') return
+  sendToEditor({ type: 'quick_build_state', state })
+})
 
 ipcMain.on('editor:exit-action', (_event, action: unknown) => {
   if (!exitDialogOpen || exitModalActionHandled) return

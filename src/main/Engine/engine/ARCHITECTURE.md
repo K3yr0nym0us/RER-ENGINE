@@ -53,8 +53,10 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
   `ExitConfirmBody` (Guardar y salir / Salir sin guardar / Cancelar) en una ventana
   `modal-electron` por encima del editor nativo. Tras guardar o descartar,
   `exit_editor_now` sale sin esperar el `Drop` de Vulkan (~3 s en debug).
-- En play 3D el cursor se restringe al sub-rect del viewport con `ClipCursor`
-  (`engine3d/host.rs`); no se usa `CursorGrabMode` sobre toda la ventana compartida.
+- En play 3D el cursor se oculta, se confina con `CursorGrabMode::Confined` y se
+  restringe al sub-rect del viewport con `ClipCursor` (`engine3d/host.rs`); se recentra
+  cada frame para el mouse-look. Al perder foco, ocultarse/minimizarse o abrir la modal
+  de salida se liberan grab + clip y se muestra el cursor. Escape sale de play.
 - En modo embebido los motores ignoran `resize`/`set_vsync` sobre la ventana
   compartida: el tamaño lo fija el editor.
 - No hay fallback por proceso ni overlay: el motor siempre vive en el editor.

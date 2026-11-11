@@ -50,8 +50,17 @@ pub fn request_project_state(id: u64) {
 }
 
 /// Pide a Electron la modal de confirmación de salida (guardar antes de cerrar).
-pub fn request_exit_confirmation() {
-    write_line(&json!({ "type": "exit_request" }).to_string());
+///
+/// `rect` lleva posición/tamaño físicos de la ventana del editor y su factor de
+/// escala, para que Electron centre la modal sobre el motor y no sobre la pantalla.
+pub fn request_exit_confirmation(rect: Option<serde_json::Value>) {
+    write_line(
+        &json!({
+            "type": "exit_request",
+            "rect": rect,
+        })
+        .to_string(),
+    );
 }
 
 /// Notifica que el `.save` se escribió correctamente.

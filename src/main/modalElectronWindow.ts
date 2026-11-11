@@ -3,15 +3,18 @@ import path from 'path'
 import { pathToFileURL } from 'url'
 
 import { resolveAppWindowIcon } from './appWindowIcon'
+import { registerDevToolsShortcut } from './devToolsShortcut'
 import type { ModalElectronOpenRequest } from '../shared-types/types'
 import {
   clampModalElectronContentHeight,
+  centerRectInBounds,
   MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS,
   MODAL_ELECTRON_MIN_CONTENT_HEIGHT,
   MODAL_VIEWPORT_CORNER_COMPONENT_KEYS,
   MODAL_VIEWPORT_CORNER_OFFSET,
   resolveModalElectronInitialContentHeight,
   resolveModalElectronWidth,
+  type ModalAnchorRect,
 } from './modalElectronSizes'
 
 let lastModalContentWidth = 400
@@ -22,6 +25,15 @@ let getMainWindow: () => BrowserWindow | null = () => null
 let getViewportScreenOrigin: () => { x: number; y: number } | null = () => null
 let modalWindow: BrowserWindow | null = null
 let pendingRenderPayload: ModalElectronOpenRequest | null = null
+/** Rect (DIP) de la ventana del motor sobre la que centrar la próxima modal. */
+let modalAnchorRect: ModalAnchorRect | null = null
+/** La modal visible está centrada sobre la ventana del motor (recentrar al cambiar alto). */
+let modalCenteredOnEngine = false
+
+/** Ancla la próxima modal al centro de la ventana nativa del motor. */
+export function setModalElectronAnchorRect(rect: ModalAnchorRect | null): void {
+  modalAnchorRect = rect
+}
 
 /** Modal visible (no oculta por closeModalElectronWindow). */
 function isModalElectronShown(): boolean {
@@ -83,6 +95,25 @@ function placeModalAtViewportCorner(win: BrowserWindow): void {
     y: Math.round(y),
     width: outerWidth,
     height: outerHeight,
+  })
+}
+
+/**
+ * Centra la modal en el rect (DIP) de la ventana del motor, recortando al área de trabajo.
+ */
+function placeModalCenteredOnRect(win: BrowserWindow, rect: ModalAnchorRect): void {
+  const frame = win.getBounds()
+  const display = electronScreen.getDisplayNearestPoint({
+    x: Math.round(rect.x + rect.width * 0.5),
+    y: Math.round(rect.y + rect.height * 0.5),
+  })
+  const { x, y } = centerRectInBounds(rect, frame, display.workArea)
+
+  win.setBounds({
+    x,
+    y,
+    width: frame.width,
+    height: frame.height,
   })
 }
 
@@ -167,7 +198,7 @@ function getOrCreateModalWindow(wantsNativeModal: boolean): BrowserWindow {
   const usableParent =
     parent && !parent.isDestroyed() && parent.isVisible() ? parent : undefined
 
-  modalWindow = new BrowserWindow({
+  const win = new BrowserWindow({
     parent: usableParent,
     modal: wantsNativeModal && usableParent != null,
     show: false,
@@ -182,23 +213,40 @@ function getOrCreateModalWindow(wantsNativeModal: boolean): BrowserWindow {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
+      // La ventana modal puede estar oculta mientras se precarga: que el renderer
+      // no se duerma y la primera apertura sea inmediata.
+      backgroundThrottling: false,
     },
   })
+  modalWindow = win
+  registerDevToolsShortcut(win)
 
-  modalWindow.on('close', (e) => {
+  win.on('close', (e) => {
     e.preventDefault()
     if (pendingRenderPayload?.blockingOverlay) return
     if (pendingRenderPayload?.componentKey === 'ProjectSaveBlockingModalBody') return
     closeModalElectronWindow()
   })
 
-  modalWindow.on('closed', () => {
+  win.on('closed', () => {
     modalWindow = null
     pendingRenderPayload = null
   })
 
-  void modalWindow.loadURL(modalElectronUrl())
-  return modalWindow
+  void win.loadURL(modalElectronUrl())
+  return win
+}
+
+/**
+ * Crea y carga la ventana modal oculta al arrancar el editor.
+ *
+ * La primera apertura deja de pagar la creación del BrowserWindow + carga del
+ * bundle de React; luego `openModalElectronWindow` reutiliza esta instancia.
+ */
+export function preloadModalElectronWindow(): void {
+  if (modalWindow && !modalWindow.isDestroyed()) return
+  getOrCreateModalWindow(false)
+  console.log('[modal] ventana precargada')
 }
 
 function sendRenderToModal(payload: ModalElectronOpenRequest | null): void {
@@ -226,6 +274,12 @@ async function ensureModalReady(win: BrowserWindow): Promise<void> {
 }
 
 function getDisplayForModal(): Electron.Display {
+  if (modalAnchorRect) {
+    return electronScreen.getDisplayNearestPoint({
+      x: Math.round(modalAnchorRect.x + modalAnchorRect.width * 0.5),
+      y: Math.round(modalAnchorRect.y + modalAnchorRect.height * 0.5),
+    })
+  }
   const parent = getMainWindow()
   return parent
     ? electronScreen.getDisplayMatching(parent.getBounds())
@@ -242,6 +296,10 @@ export function applyModalElectronContentHeight(contentHeight: number): void {
   // Solo cambia el tamaño; no recentrar (el usuario puede haber movido la ventana
   // o el contenido crece al expandir acordeones sin saltar de posición).
   modalWindow.setContentSize(lastModalContentWidth, height)
+  // Excepción: la modal de salida debe seguir centrada sobre la ventana del motor.
+  if (modalCenteredOnEngine && modalAnchorRect) {
+    placeModalCenteredOnRect(modalWindow, modalAnchorRect)
+  }
   if (isModalElectronShown()) {
     raiseModalAboveEngineViewport(modalWindow)
   }
@@ -307,10 +365,16 @@ export async function openModalElectronWindow(payload: ModalElectronOpenRequest)
   if (!win.isVisible()) {
     win.show()
   }
-  if (isViewportCornerModal) {
+  if (modalAnchorRect) {
+    // Modal de salida: centrada sobre la ventana nativa del editor, no sobre la pantalla.
+    placeModalCenteredOnRect(win, modalAnchorRect)
+    modalCenteredOnEngine = true
+  } else if (isViewportCornerModal) {
+    modalCenteredOnEngine = false
     // Tras show(): en Windows la modal hija puede recentrarse si se posicionó antes.
     placeModalAtViewportCorner(win)
   } else {
+    modalCenteredOnEngine = false
     win.center()
   }
   raiseModalAboveEngineViewport(win)
@@ -326,6 +390,8 @@ export function closeModalElectronWindow(): void {
     pendingRenderPayload?.blockingOverlay === true
     || (pendingRenderPayload?.componentKey != null
       && MODAL_BLOCKING_OVERLAY_COMPONENT_KEYS.has(pendingRenderPayload.componentKey))
+  modalAnchorRect = null
+  modalCenteredOnEngine = false
   const parent = getMainWindow()
   if (componentKey && parent && !parent.isDestroyed()) {
     parent.webContents.send('modal-electron:closed', { componentKey })
@@ -356,4 +422,6 @@ export function destroyModalElectronWindow(): void {
   modalWindow = null
   modalWindowUsesNativeModal = false
   pendingRenderPayload = null
+  modalAnchorRect = null
+  modalCenteredOnEngine = false
 }

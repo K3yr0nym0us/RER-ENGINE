@@ -1,5 +1,38 @@
 import type { ModalElectronSize } from '../shared-types/types'
 
+/** Rect (DIP) de la ventana del motor sobre la que se ancla la modal de salida. */
+export interface ModalAnchorRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+/** Convierte el rect físico que manda el editor Rust (px + escala) a DIP de Electron. */
+export function engineWindowRectToDip(value: unknown): ModalAnchorRect | null {
+  if (!value || typeof value !== 'object') return null
+  const rect = value as Record<string, unknown>
+  const values = ['x', 'y', 'width', 'height', 'scale'].map((key) => Number(rect[key]))
+  if (values.some((number) => !Number.isFinite(number))) return null
+  const [x, y, width, height, scale] = values
+  if (scale <= 0 || width <= 0 || height <= 0) return null
+  return { x: x / scale, y: y / scale, width: width / scale, height: height / scale }
+}
+
+/** Centro (DIP) de `frame` dentro de `rect`, recortado al área de trabajo. */
+export function centerRectInBounds(
+  rect: ModalAnchorRect,
+  frame: { width: number; height: number },
+  workArea: { x: number; y: number; width: number; height: number },
+): { x: number; y: number } {
+  const x = rect.x + (rect.width - frame.width) * 0.5
+  const y = rect.y + (rect.height - frame.height) * 0.5
+  return {
+    x: Math.round(Math.max(workArea.x, Math.min(x, workArea.x + workArea.width - frame.width))),
+    y: Math.round(Math.max(workArea.y, Math.min(y, workArea.y + workArea.height - frame.height))),
+  }
+}
+
 /** Anchos de contenido alineados a Bootstrap 5 `.modal-dialog` (max-width). */
 const CONTENT_WIDTH: Record<ModalElectronSize, number> = {
   sm: 300,

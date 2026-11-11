@@ -100,9 +100,6 @@ impl State {
 
     pub(crate) fn commit_play_session_to_editor(&mut self) {
         if self.has_play_character() {
-            self.editor_viewport_yaw = self.camera.yaw;
-            self.editor_viewport_pitch = self.camera.pitch;
-
             if let Some(id) = self.play_character_entity {
                 let snap = self.preview_entity_transform_snapshots.get(&id).copied();
                 let feet = self.play_character_feet_position();
@@ -117,10 +114,16 @@ impl State {
                     } else {
                         center_from_feet(feet, snap.scale, t.rotation, None)
                     };
-                    self.editor_orbit_target = t.position;
-                } else if let Some(t) = self.world.get::<Transform>(id) {
-                    self.editor_orbit_target = t.position;
                 }
+            }
+
+            // Solo se restaura la cámara orbital del editor. La cámara FPS/de juego
+            // conserva su estado y su offset respecto al jugador para el siguiente play.
+            if let Some(fp) = self.preview_fp_view_snapshot {
+                self.editor_orbit_target = fp.editor_orbit_target;
+                self.editor_viewport_yaw = fp.editor_viewport_yaw;
+                self.editor_viewport_pitch = fp.editor_viewport_pitch;
+                self.editor_viewport_distance = fp.editor_viewport_distance;
             }
 
             self.capture_play_camera_follow_offset();
