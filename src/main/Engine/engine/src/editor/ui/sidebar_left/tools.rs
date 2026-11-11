@@ -6,6 +6,7 @@ pub(super) fn tools_body(
     is_3d: bool,
     locale: Locale,
     hint: &str,
+    quick_build_active: Option<&str>,
     actions: &mut Vec<LeftAction>,
 ) {
     // Tarjetas 64×64 como React; en 3D hay 4 y la cuarta cae a una segunda fila.
@@ -35,7 +36,7 @@ pub(super) fn tools_body(
             crate::editor::theme::DANGER,
         ),
         (
-            None,
+            Some("quick_build"),
             icons::WRENCH,
             crate::editor::i18n::tr(locale, "Construcción", "Construction"),
             crate::editor::i18n::tr(locale, "Rápida", "Quick"),
@@ -70,6 +71,7 @@ pub(super) fn tools_body(
                 if index > 0 {
                     ui.add_space(gap);
                 }
+                #[allow(clippy::collapsible_match)]
                 match tool {
                     Some("socket_config") => {
                         if widgets::tool_card_click(
@@ -78,7 +80,7 @@ pub(super) fn tools_body(
                             actions.push(LeftAction::OpenSockets);
                         }
                     }
-                    Some(tool) => {
+                    Some(tool) if *tool != "quick_build" => {
                         let active = state.active_tool == Some(*tool);
                         if widgets::tool_card_click(
                             ui, icon, top, bottom, label, *color, active, hint,
@@ -87,19 +89,19 @@ pub(super) fn tools_body(
                             actions.push(LeftAction::SetActiveTool(next));
                         }
                     }
-                    None => widgets::tool_card(
-                        ui,
-                        icon,
-                        top,
-                        bottom,
-                        label,
-                        *color,
-                        crate::editor::i18n::tr(
-                            locale,
-                            "Se configura desde la UI React por ahora",
-                            "Configured from the React UI for now",
-                        ),
-                    ),
+                    Some("quick_build") => {
+                        let active = quick_build_active.is_some();
+                        let card_hint = match quick_build_active {
+                            Some(name) => format!("{hint} · {name}"),
+                            None => hint.to_string(),
+                        };
+                        if widgets::tool_card_click(
+                            ui, icon, top, bottom, label, *color, active, &card_hint,
+                        ) {
+                            actions.push(LeftAction::QuickBuild { active });
+                        }
+                    }
+                    _ => {}
                 }
             }
         });
@@ -109,8 +111,8 @@ pub(super) fn tools_body(
         ui,
         crate::editor::i18n::tr(
             locale,
-            "Colisionador y trigger: activa y haz clic en el viewport. Quick build sigue en React; los sockets se configuran en esta ventana.",
-            "Collider and trigger: activate and click in the viewport. Quick build still lives in React; sockets are configured in this window.",
+            "Colisionador y trigger: activa y haz clic en el viewport. Quick build: elige un blueprint. Los sockets se configuran en esta ventana.",
+            "Collider and trigger: activate and click in the viewport. Quick build: pick a blueprint. Sockets are configured in this window.",
         ),
     );
 }

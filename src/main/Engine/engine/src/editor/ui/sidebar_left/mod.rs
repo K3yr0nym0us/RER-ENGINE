@@ -98,6 +98,23 @@ enum LeftAction {
     SetPlayCameraFrustum(f32),
     OpenSockets,
     OpenLegacyWindow(&'static str),
+    /// Abre la modal React de bindings para `keyboard_mouse` o `gamepad`.
+    OpenControlBindings(&'static str),
+    /// Crea una pantalla HUD/menú y la registra en React.
+    CreateUiScreen(&'static str),
+    /// Abre el editor de una pantalla HUD o el rename de un menú.
+    OpenUiEditor {
+        scope: &'static str,
+        screen_id: String,
+    },
+    /// Elimina una pantalla HUD/menú (con confirmación en React).
+    DeleteUiScreen {
+        scope: &'static str,
+        id: String,
+        name: String,
+    },
+    /// Activa/desactiva la pantalla HUD que se muestra en play.
+    SetActiveUiScreen(Option<String>),
     ImportAsset(AssetKind),
     OpenRemoveAsset {
         kind: AssetKind,
@@ -109,8 +126,10 @@ enum LeftAction {
         asset: String,
     },
     SetActiveTool(&'static str),
-    AddUiText(String),
-    AddUiImage(String),
+    /// Abre o desactiva la construcción rápida por blueprint.
+    QuickBuild {
+        active: bool,
+    },
 }
 
 impl SidebarLeftState {
@@ -157,6 +176,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let play_view = app.play_view;
     let ready = app.status == EditorStatus::Ready;
     let assets = app.assets.clone();
+    let ui_screens = app.ui_screens.clone();
+    let quick_build_active = app.quick_build_active.clone();
     let controls = app.player_controls.clone();
     let mut actions = Vec::new();
 
@@ -264,7 +285,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         Section::UserInterface,
                         icons::BROWSER,
                         crate::editor::i18n::tr(locale, "Interfaz de usuario", "User interface"),
-                        |ui, state| ui_body(ui, state, &assets, locale, phase_note, &mut actions),
+                        |ui, state| {
+                            ui_body(ui, state, &ui_screens, locale, phase_note, &mut actions)
+                        },
                     );
                     section(
                         ui,
@@ -273,7 +296,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         icons::WRENCH,
                         crate::editor::i18n::tr(locale, "Herramientas", "Tools"),
                         |ui, state| {
-                            tools_body(ui, state, context.is_3d(), locale, phase_note, &mut actions)
+                            tools_body(
+                                ui,
+                                state,
+                                context.is_3d(),
+                                locale,
+                                phase_note,
+                                quick_build_active.as_deref(),
+                                &mut actions,
+                            )
                         },
                     );
                     section(
@@ -282,7 +313,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         Section::Controls,
                         icons::GAME_CONTROLLER,
                         crate::editor::i18n::tr(locale, "Controles", "Controls"),
-                        |ui, _state| controls_body(ui, locale, phase_note, controls.as_ref()),
+                        |ui, _state| {
+                            controls_body(ui, locale, phase_note, controls.as_ref(), &mut actions)
+                        },
                     );
                 });
         });
@@ -410,6 +443,40 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
                 false,
             );
         }
+        LeftAction::OpenControlBindings(mode) => {
+            crate::editor::bridge::request_legacy_window(
+                "control_bindings",
+                json!({ "mode": mode }),
+            );
+            app.push_log(
+                format!("[Controles] Abriendo configuración ({mode})…"),
+                false,
+            );
+        }
+        LeftAction::CreateUiScreen(scope) => {
+            crate::editor::bridge::request_legacy_window(
+                "ui_create_screen",
+                json!({ "scope": scope }),
+            );
+        }
+        LeftAction::OpenUiEditor { scope, screen_id } => {
+            crate::editor::bridge::request_legacy_window(
+                "ui_edit_screen",
+                json!({ "scope": scope, "screen_id": screen_id }),
+            );
+        }
+        LeftAction::DeleteUiScreen { scope, id, name } => {
+            crate::editor::bridge::request_legacy_window(
+                "ui_delete_screen",
+                json!({ "scope": scope, "screen_id": id, "name": name }),
+            );
+        }
+        LeftAction::SetActiveUiScreen(screen_id) => {
+            crate::editor::bridge::request_legacy_window(
+                "ui_set_active_screen",
+                json!({ "screen_id": screen_id }),
+            );
+        }
         LeftAction::ImportAsset(kind) => import_asset(app, kind),
         LeftAction::OpenRemoveAsset { kind, path, name } => {
             crate::editor::bridge::request_legacy_window(
@@ -426,41 +493,20 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             app.left_sidebar.active_tool = if tool.is_empty() { None } else { Some(tool) };
             app.send_engine(json!({ "cmd": "set_active_tool", "tool": tool }));
         }
-        LeftAction::AddUiText(font_path) => {
-            let screen = app
-                .left_sidebar
-                .active_ui_screen
-                .clone()
-                .unwrap_or_else(|| "player-hud-01".to_string());
-            app.send_engine(json!({
-                "cmd": "set_player_ui_edit_mode",
-                "active": true,
-                "scope": "player",
-                "screen_id": screen,
-            }));
-            app.send_engine(json!({
-                "cmd": "add_player_ui_text_box",
-                "font_path": font_path,
-            }));
-            app.push_log("[UI] Añadiendo cuadro de texto…", false);
-        }
-        LeftAction::AddUiImage(image_path) => {
-            let screen = app
-                .left_sidebar
-                .active_ui_screen
-                .clone()
-                .unwrap_or_else(|| "player-hud-01".to_string());
-            app.send_engine(json!({
-                "cmd": "set_player_ui_edit_mode",
-                "active": true,
-                "scope": "player",
-                "screen_id": screen,
-            }));
-            app.send_engine(json!({
-                "cmd": "add_player_ui_image",
-                "image_path": image_path,
-            }));
-            app.push_log("[UI] Añadiendo imagen HUD…", false);
+        LeftAction::QuickBuild { active } => {
+            let action = if active { "toggle" } else { "open" };
+            crate::editor::bridge::request_legacy_window(
+                "quick_build",
+                json!({ "action": action }),
+            );
+            app.push_log(
+                if active {
+                    "[Quick build] Desactivando…"
+                } else {
+                    "[Quick build] Abriendo blueprints…"
+                },
+                false,
+            );
         }
     }
 }

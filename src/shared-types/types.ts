@@ -1095,6 +1095,17 @@ export interface ModalElectronResultPayload {
   callbackKey?: string
 }
 
+export interface UiScreenSyncEntry {
+  id: string
+  name: string
+  active: boolean
+}
+
+export interface UiScreensSyncPayload {
+  player: UiScreenSyncEntry[]
+  menu: UiScreenSyncEntry[]
+}
+
 // Extiende la interfaz global Window para el renderer
 declare global {
   interface Window {
@@ -1103,6 +1114,8 @@ declare global {
     engine3d: import('./engineCommands').Engine3dApi
     electronAPI: {
       setGameStyle:            (payload: EngineStartPayload) => void
+      syncUiScreens:           (screens: UiScreensSyncPayload) => void
+      syncQuickBuildState:     (state: { active: boolean; name?: string }) => void
       sendViewportBounds:      (bounds: ViewportBounds) => void
       openModelDialog:         () => Promise<string | null>
       openProjectDialog:       () => Promise<OpenProjectResult | null>

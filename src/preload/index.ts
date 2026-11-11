@@ -14,6 +14,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setGameStyle: (payload: EngineStartPayload): void => {
     ipcRenderer.send('set-game-style', payload)
   },
+  syncUiScreens: (screens: {
+    player: Array<{ id: string; name: string; active: boolean }>
+    menu: Array<{ id: string; name: string; active: boolean }>
+  }): void => {
+    ipcRenderer.send('ui-screens:sync', screens)
+  },
+  syncQuickBuildState: (state: { active: boolean; name?: string }): void => {
+    ipcRenderer.send('quick-build:state', state)
+  },
   sendViewportBounds: (bounds: { x: number; y: number; width: number; height: number }): void => {
     ipcRenderer.send('viewport-bounds', bounds)
   },

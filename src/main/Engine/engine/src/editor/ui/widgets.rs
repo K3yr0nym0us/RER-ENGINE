@@ -179,53 +179,6 @@ pub fn select_placeholder_sized(ui: &mut egui::Ui, width: f32, value: &str, hint
     response.on_hover_text(hint);
 }
 
-/// Tarjeta 64×64 de la caja de herramientas (3 líneas: texto, icono, texto).
-pub fn tool_card(
-    ui: &mut egui::Ui,
-    icon: &str,
-    top: &str,
-    bottom: &str,
-    label: &str,
-    color: Color32,
-    hint: &str,
-) {
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(64.0, 64.0), Sense::hover());
-
-    let painter = ui.painter().with_clip_rect(rect);
-    painter.rect(
-        rect,
-        egui::CornerRadius::same(5),
-        Color32::TRANSPARENT,
-        Stroke::new(1.0, color),
-        StrokeKind::Inside,
-    );
-
-    let center = rect.center();
-    painter.text(
-        center - egui::vec2(0.0, 18.0),
-        Align2::CENTER_CENTER,
-        top,
-        FontId::proportional(9.0),
-        color,
-    );
-    painter.text(
-        center,
-        Align2::CENTER_CENTER,
-        icon,
-        FontId::proportional(20.0),
-        color,
-    );
-    painter.text(
-        center + egui::vec2(0.0, 18.0),
-        Align2::CENTER_CENTER,
-        bottom,
-        FontId::proportional(9.0),
-        color,
-    );
-
-    response.on_hover_text(format!("{label} — {hint}"));
-}
-
 /// Botón compacto del idioma (muestra el idioma al que se cambiaría).
 pub fn language_button(ui: &mut egui::Ui, width: f32, label: &str, tooltip: &str) -> bool {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), Sense::click());
