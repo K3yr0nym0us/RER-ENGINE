@@ -8,9 +8,10 @@
 #   - docs/yaml/gameplay/Blueprints_Model_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 #   - docs/yaml/persistence/Escenes_Model_3D.yaml
+#   - docs/yaml/rendering/Model_LOD_3D.yaml
 
 version: 1
-updated: 2026-06-14
+updated: 2026-11-12
 
 principle: |
   Abrir un .save 3D no debe bloquear el arranque del motor ni precargar toda la
@@ -30,7 +31,10 @@ phases:
   1_resolve_paths:
     action: resolve_loaded_paths (relativas bajo extract_dir)
   2_world_and_stores:
-    action: mundo, iluminación, LoadSound/Font/HudImage, imported_model_registry (v2)
+    action: |
+      mundo, iluminación, LoadSound/Font/HudImage, imported_model_registry (v2).
+      La config LOD de modelos (lodEnabled/lod1Distance/lod2Distance del `world`) se
+      reaplica aquí vía apply_model_lod_from_world_wire; ver docs/yaml/rendering/Model_LOD_3D.yaml.
   3_clear_scene:
     action: clear_scene_entities_for_save_load (sin doble reset_runtime_scene_3d)
   4_burst_spawn:
