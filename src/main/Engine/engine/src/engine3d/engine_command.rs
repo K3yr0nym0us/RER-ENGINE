@@ -80,6 +80,25 @@ pub enum EngineCommand3dOnly {
         position: [f32; 3],
         scale: [f32; 3],
     },
+    /// Plugin worldgen: ruta de `rer_worldgen_plugin.dll` instalado por el editor.
+    WorldGenSetLibraryPath {
+        path: String,
+    },
+    /// Plugin worldgen: configuración del mundo (JSON camelCase de `WorldGenConfig`).
+    WorldGenSetConfig {
+        config_json: String,
+    },
+    /// Plugin worldgen: planifica y encola la generación de todos los chunks activos.
+    WorldGenStart,
+    /// Plugin worldgen: cancela la cola de chunks pendientes.
+    WorldGenStop,
+    /// Plugin worldgen: elimina los chunks en escena y libera el handle de la DLL.
+    WorldGenReset,
+    /// Plugin worldgen: distribuye un blueprint según reglas (JSON camelCase de
+    /// `ScatterRules` con `blueprintId`).
+    WorldGenScatter {
+        rules_json: String,
+    },
     SetDirectionalLight {
         #[serde(default)]
         ambient: Option<f32>,

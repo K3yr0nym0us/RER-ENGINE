@@ -1,0 +1,18 @@
+[package]
+name = "rer-worldgen"
+version.workspace = true
+edition.workspace = true
+description = "Generación procedural de mundos 3D para RER-ENGINE: campo de densidad, Marching Cubes, chunks, biomas y distribución de blueprints. Crate independiente del motor (lógica pura) con fachada FFI C para el plugin instalable."
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+glam.workspace = true
+rayon.workspace = true

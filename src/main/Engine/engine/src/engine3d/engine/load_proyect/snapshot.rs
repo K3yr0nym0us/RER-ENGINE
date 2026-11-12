@@ -394,5 +394,6 @@ pub(crate) fn build_minimal_project_from_store(
             crate::engine3d::config_3d::player_ui::defaults::default_3d_project_ui_objects(),
         hud_images: Vec::new(),
         resources: None,
+        worldGen3d: None,
     }
 }

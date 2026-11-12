@@ -409,6 +409,9 @@ pub struct SaveSceneSnapshotPayload {
     pub player_ui_images: Vec<SavePlayerUiImageSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub player_ui_objects: Vec<SavePlayerUiObjectSnapshot>,
+    /// Sección del plugin worldgen (config, reglas de scatter y colocaciones).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub world_gen_3d: Option<serde_json::Value>,
 }
 
 // ---------------------------------------------------------------------------

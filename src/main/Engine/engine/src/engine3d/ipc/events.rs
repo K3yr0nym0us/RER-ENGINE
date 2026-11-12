@@ -178,6 +178,37 @@ pub enum EngineEvent {
         enabled: bool,
         body_type: String,
     },
+    // -- Plugin worldgen (generación procedural de terreno) -------------------
+    /// Cambio de estado del plugin (`missing_library`, `library_error`, `idle`,
+    /// `ready`, `generating`, `complete`).
+    WorldGenStatus {
+        state: String,
+    },
+    /// Progreso de la generación (chunks completados / totales).
+    WorldGenProgress {
+        completed: u32,
+        total: u32,
+    },
+    /// Chunk de terreno listo en escena (`entity_id = 0` si el chunk era aire).
+    WorldGenChunkReady {
+        cx: i32,
+        cy: i32,
+        cz: i32,
+        entity_id: u32,
+    },
+    /// Generación completa.
+    WorldGenCompleted {
+        chunks: u32,
+    },
+    /// Error del plugin (carga de DLL, ABI o generación). Nunca degrada el motor.
+    WorldGenError {
+        message: String,
+    },
+    /// Scatter completado para un blueprint.
+    WorldGenScatterDone {
+        blueprint_id: String,
+        count: u32,
+    },
     /// Emitido cuando un sprite PNG se cargó correctamente en el almacén.
     SpriteLoaded {
         path: String,

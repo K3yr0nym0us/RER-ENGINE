@@ -2457,6 +2457,7 @@ dependencies = [
  "gltf",
  "gpu-allocator",
  "image",
+ "libloading",
  "log",
  "pollster 0.4.0",
  "rapier3d",
@@ -2494,6 +2495,16 @@ dependencies = [
  "windows",
  "winit",
  "zip",
+]
+
+[[package]]
+name = "rer-worldgen"
+version = "0.1.0"
+dependencies = [
+ "glam 0.33.1",
+ "rayon",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

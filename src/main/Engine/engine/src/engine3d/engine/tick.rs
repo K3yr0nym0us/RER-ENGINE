@@ -234,6 +234,8 @@ impl State {
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         self.tick_fp_baseline_defer();
+        // Plugin worldgen: avanza la cola de chunks con presupuesto por frame.
+        self.worldgen_tick();
 
         self.metrics_frame_count += 1;
         if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {

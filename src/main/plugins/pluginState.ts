@@ -42,6 +42,10 @@ export function writePluginsState(state: PluginsState): void {
 export function isPluginInstalled(pluginId: PluginId): boolean {
   const state = readPluginsState()
   const record = state.installed[pluginId]
+  if (pluginId === 'world-gen') {
+    // Plugin nativo: vale la DLL instalada en su carpeta.
+    return Boolean(record?.libraryPath && fs.existsSync(record.libraryPath))
+  }
   if (!record?.modelPath || !record.llamaServerPath) return false
   return fs.existsSync(record.modelPath) && fs.existsSync(record.llamaServerPath)
 }

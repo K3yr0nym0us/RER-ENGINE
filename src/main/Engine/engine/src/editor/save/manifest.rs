@@ -127,6 +127,11 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
         Value::Array(state.backgrounds.clone()),
     );
     root.insert("blueprints".into(), Value::Array(blueprints));
+    // Sección del plugin worldgen (persistencia F8): se pasa tal cual del
+    // snapshot del engine; sin mundo generado no aparece.
+    if let Some(world_gen_3d) = engine_scene.get("world_gen_3d") {
+        root.insert("worldGen3d".into(), world_gen_3d.clone());
+    }
     root.insert(
         "language".into(),
         json!(state.locale.as_deref().unwrap_or("en")),

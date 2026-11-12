@@ -2,6 +2,7 @@
 members = [
 	"core",
 	"engine",
+	"worldgen",
 ]
 resolver = "2"
 

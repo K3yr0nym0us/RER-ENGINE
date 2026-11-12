@@ -19,7 +19,7 @@ export function pluginInstallStatusLabel(
   if (phase === 'extracting') {
     return t('Installing…')
   }
-  if (phase === 'llama-server' || phase === 'model') {
+  if (phase === 'llama-server' || phase === 'model' || phase === 'artifact') {
     return t('Downloading…')
   }
   return t('Preparing download…')

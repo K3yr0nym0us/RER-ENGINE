@@ -671,6 +671,7 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
     restore_entity_projectile_config_after_scene_load(state, &view);
     restore_entity_attachments_after_scene_load(state, &view);
     state.sanitize_reflection_probe_entities();
+    state.restore_worldgen_3d(project);
     state.restoring_save_manifest = false;
     Ok(view)
 }

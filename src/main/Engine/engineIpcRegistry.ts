@@ -1,7 +1,18 @@
 import type { EngineCommand, ProjectType } from '../../shared-types/types'
 import { isCommandAllowedForMotor } from './engineCommandCatalog'
+import { isPluginEnabled } from '../plugins/pluginState'
 
 export type EngineCmdSend = (cmd: EngineCommand) => void
+
+/** Comandos que solo se reenvían al engine con el plugin world-gen activo. */
+const WORLDGEN_GATED_COMMANDS = new Set([
+  'world_gen_set_library_path',
+  'world_gen_set_config',
+  'world_gen_start',
+  'world_gen_stop',
+  'world_gen_reset',
+  'world_gen_scatter',
+])
 
 export interface EngineIpcRegistryDeps {
   getProjectType: () => ProjectType | null
@@ -29,6 +40,11 @@ export function handleEngineCommand(cmd: EngineCommand, deps: EngineIpcRegistryD
   if (!isCommandAllowedForMotor(cmdName, projectType)) {
     const motor = projectType ?? '(sin motor)'
     console.warn(`[ipc] comando "${cmdName}" rechazado para motor ${motor}`)
+    return
+  }
+
+  if (WORLDGEN_GATED_COMMANDS.has(cmdName) && !isPluginEnabled('world-gen')) {
+    console.warn(`[ipc] comando "${cmdName}" rechazado: el plugin world-gen no está instalado/activo`)
     return
   }
 

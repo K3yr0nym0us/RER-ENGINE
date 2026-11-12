@@ -276,6 +276,7 @@ impl State {
             imported_model_registry: crate::engine3d::assets::ImportedModelRegistry::default(),
             rerasset_material_tex: std::collections::HashMap::new(),
             static_model_cache: HashMap::new(),
+            worldgen: crate::engine3d::config_3d::worldgen::StateWorldgenState::default(),
             model_preload_rx,
             model_preload_tx,
             model_preload_inflight: HashSet::new(),

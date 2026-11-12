@@ -1,4 +1,4 @@
-export type PluginId = 'local-ai-assistant'
+export type PluginId = 'local-ai-assistant' | 'world-gen'
 
 export interface PluginModelManifest {
   repo: string
@@ -16,20 +16,37 @@ export interface PluginLlamaServerManifest {
   sizeBytes: number
 }
 
+/** Artefacto binario de un plugin nativo (DLL) publicado en GitHub Releases. */
+export interface PluginArtifactManifest {
+  /** Nombre del archivo dentro del ZIP del release. */
+  archiveInnerPath: string
+  /** Nombre del binario una vez instalado (p. ej. `rer_worldgen.dll`). */
+  executableName: string
+  downloadUrl: string
+  sizeBytes: number
+  /** SHA-256 hexadecimal del ZIP (opcional: si está, se valida al instalar). */
+  sha256?: string
+}
+
 export interface PluginCatalogEntry {
   id: PluginId
   name: string
   description: string
   version: string
   downloadSizeLabel: string
-  model: PluginModelManifest
-  llamaServer: PluginLlamaServerManifest
+  /** `download`: se descarga de internet al instalar. `bundled`: viene con la app. */
+  kind: 'download' | 'bundled'
+  model?: PluginModelManifest
+  llamaServer?: PluginLlamaServerManifest
+  artifact?: PluginArtifactManifest
 }
 
 export interface PluginInstalledRecord {
   version: string
   modelPath?: string
   llamaServerPath?: string
+  /** Ruta del binario nativo instalado (plugins con `artifact`). */
+  libraryPath?: string
   installedAt: string
 }
 
@@ -46,7 +63,7 @@ export type PluginLlmStatus =
   | 'running'
   | 'error'
 
-export type PluginDownloadPhase = 'msvc-redist' | 'llama-server' | 'extracting' | 'model'
+export type PluginDownloadPhase = 'msvc-redist' | 'llama-server' | 'extracting' | 'model' | 'artifact'
 
 export interface PluginDownloadProgress {
   pluginId: PluginId

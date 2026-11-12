@@ -149,7 +149,45 @@ impl State {
             player_ui_buttons: self.export_player_ui_buttons_snapshot(),
             player_ui_images: self.export_player_ui_images_snapshot(),
             player_ui_objects: self.export_player_ui_objects_snapshot(),
+            world_gen_3d: self.build_world_gen_3d_snapshot(),
         }
+    }
+
+    /// Sección `worldGen3d` del snapshot: config, reglas de scatter y
+    /// colocaciones de blueprints. `None` si no hay mundo generado.
+    fn build_world_gen_3d_snapshot(&self) -> Option<serde_json::Value> {
+        let config: serde_json::Value =
+            serde_json::from_str(self.worldgen.config_json.as_deref()?).ok()?;
+        let scatter_rules: Vec<serde_json::Value> = self
+            .worldgen
+            .scatter_rules
+            .iter()
+            .filter_map(|(id, json)| {
+                let mut value: serde_json::Value = serde_json::from_str(json).ok()?;
+                if value.get("blueprintId").is_none() {
+                    value["blueprintId"] = serde_json::Value::String(id.clone());
+                }
+                Some(value)
+            })
+            .collect();
+        let placements: Vec<serde_json::Value> = self
+            .worldgen
+            .placements
+            .iter()
+            .map(|p| {
+                serde_json::json!({
+                    "blueprintId": p.blueprint_id,
+                    "position": p.position,
+                    "rotation": p.rotation,
+                    "scale": p.scale,
+                })
+            })
+            .collect();
+        Some(serde_json::json!({
+            "config": config,
+            "scatterRules": scatter_rules,
+            "placements": placements,
+        }))
     }
 
     fn export_player_ui_text_boxes_snapshot(&self) -> Vec<SavePlayerUiTextBoxSnapshot> {
