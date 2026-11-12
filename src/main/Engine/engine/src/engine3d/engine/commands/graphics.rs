@@ -95,6 +95,18 @@ impl State {
                     jitter_scale,
                 });
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetModelLod {
+                enabled,
+                lod1_distance_m,
+                lod2_distance_m,
+            }) => {
+                self.set_model_lod(enabled, lod1_distance_m, lod2_distance_m);
+                send_event(&EngineEvent::ModelLodChanged {
+                    enabled: self.model_lod_enabled,
+                    lod1_distance_m: self.model_lod1_distance_m,
+                    lod2_distance_m: self.model_lod2_distance_m,
+                });
+            }
             EngineCommand::Common(EngineCommandCommon::SetDebugMode { show }) => {
                 self.debug_mode = show;
                 log::info!("[debug] modo debug (colisiones): {}", show);

@@ -114,6 +114,12 @@ pub(crate) struct SavedWorldConfig {
     pub(crate) taaBlend: Option<f32>,
     #[serde(default)]
     pub(crate) taaJitterScale: Option<f32>,
+    #[serde(default)]
+    pub(crate) lodEnabled: Option<bool>,
+    #[serde(default)]
+    pub(crate) lod1Distance: Option<f32>,
+    #[serde(default)]
+    pub(crate) lod2Distance: Option<f32>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]

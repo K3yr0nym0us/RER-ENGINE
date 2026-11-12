@@ -1,0 +1,103 @@
+# LOD de modelos 3D (mallas GLB estáticas por distancia)
+#
+# Cada parte de modelo estático genera hasta dos variantes simplificadas (LOD1/LOD2) por
+# vertex clustering cuando se sube a GPU. El pase forward selecciona el nivel por distancia
+# cámara→entidad y reparte los lotes de instancing por `mesh_idx`, así que no hay coste por
+# entidad: solo cambia la clave de lote.
+#
+# Relacionado con:
+#   - docs/yaml/rendering/MSAA_3D.yaml (mismo patrón de configuración de mundo)
+#   - docs/yaml/rendering/Reflections_3D.yaml (RT usa colección de geometría aparte)
+#   - docs/yaml/assets/Rerasset_Format.yaml (formato de modelos importados)
+#   - docs/yaml/engine/IPC_Protocol.yaml
+
+version: 1
+updated: 2026-11-12
+
+principle:
+  owner: motor_3d
+  pipeline: |
+    1. Carga: `upload_mesh_for_cpu_part_with_lod` (static_model_cache/preload.rs) sube la
+       malla LOD0 y, si la parte tiene >= MODEL_LOD_MIN_VERTICES (2048) vértices, decima
+       dos variantes más y las registra en `State.mesh_lod_variants` (LOD0 idx → [LOD1, LOD2]).
+    2. Decimación (`config_3d/model_lod.rs::decimate_mesh`): vertex clustering. Se cuantiza
+       la posición de cada vértice a una rejilla de celda `extent * cell_factor` y los
+       vértices de la misma celda (con UV y normales cuantizadas a la clave) se colapsan a
+       uno solo promediando posición/UV/normal. Los triángulos que quedan con índices
+       repetidos se descartan. Si la reducción de triángulos es < 10 %, no se crea variante.
+       Factores de celda: LOD1 = 0.02 × extensión, LOD2 = 0.05 × extensión.
+    3. Selección (`render/mod.rs`, colección de entidades): `select_lod_level(distancia,
+       lod1_m, lod2_m)` → 0 si dist < LOD1, 1 si dist < LOD2, 2 en otro caso. Solo cambia
+       `mesh_idx` si existe variante registrada para ese nivel; el culling (AABB y frustum)
+       usa siempre la geometría LOD0.
+    4. Batching: `build_scene_instance_batches` ya agrupa por `mesh_idx`, así que entidades
+       con LOD distinto caen en lotes distintos sin cambios adicionales.
+  note: |
+    Ámbito: solo mallas estáticas de entidades GLB/FBX importadas. Fuera de alcance:
+      - Modelos skinned (camino de joints en `model_animation.rs`).
+      - RT/BVH (coleccionan la geometría por su cuenta; siguen dibujando LOD0).
+      - worldgen (tiene su propio LOD de chunks por anillos de distancia).
+      - Captura de probes (su colección no pasa por el swap; siguen viendo LOD0).
+    La variante LOD es para el dibujo; picking, física y picking AABB siguen usando la
+    geometría completa.
+    Coste de decimación: O(V) por nivel en la subida GPU (presupuestada en pasos, igual
+    que las mallas). Se ejecuta en el event loop; mallas muy grandes (millones de
+    vértices) pueden añadir un hitch puntual de un paso de precarga.
+
+graphics_levels:
+  - id: 0
+    note: Malla original (LOD0, la que siempre se ha dibujado)
+  - id: 1
+    cell_factor: 0.02
+    note: ~mitad de triángulos en mallas densas
+  - id: 2
+    cell_factor: 0.05
+    note: silueta aproximada (~1/4 a 1/8 de triángulos)
+
+commands:
+  set_model_lod:
+    params:
+      enabled: bool
+      lod1_distance_m: f32 (opcional)
+      lod2_distance_m: f32 (opcional)
+    effect: |
+      Recorta `lod1_distance_m` a [5, 1000] y `lod2_distance_m` a [lod1, 1000]. Si un
+      parámetro no viene, se conserva el valor actual. No emite el evento (el llamador
+      lo hace, mismo contrato que `set_taa`).
+
+events:
+  model_lod_changed:
+    payload: { enabled: bool, lod1_distance_m: f32, lod2_distance_m: f32 }
+
+persistence:
+  save_fields: |
+    `lodEnabled`, `lod1Distance`, `lod2Distance` en `world` del `.save`
+    (camelCase, mapeados desde `model_lod_enabled`/`model_lod1_distance_m`/
+    `model_lod2_distance_m` del snapshot del motor por `build_world`).
+  default: lodEnabled=true, lod1Distance=40, lod2Distance=100
+
+ui:
+  accordion: World → LOD (solo proyectos 3D)
+  controls:
+    - switch "LOD de modelos" (on/off)
+    - distancia LOD 1 (slider 5–200 m)
+    - distancia LOD 2 (slider 10–400 m)
+    - nota: mallas con menos de 2048 vértices no generan variantes LOD
+
+# Puntos abiertos para QA / siguientes iteraciones.
+extended_scope:
+  quality_tuning:
+    status: abierto
+    detail: |
+      Los factores de celda (0.02/0.05) son el punto de partida. Si en QA las variantes
+      pierden demasiada silueta, bajar LOD1 a 0.01–0.015 o subir el umbral de vértices.
+  per_entity_override:
+    status: no_implementado
+    detail: |
+      No hay override por entidad (marcar "no simplificar"); si hace falta, sería un campo
+      del `.save` por entidad consultado en la colección de render.
+  lod_on_rt_and_probes:
+    status: no_implementado
+    detail: |
+      RT/BVH y captura de probes siguen usando LOD0. Coordinar el mismo nivel de LOD
+      exigiría propagar la distancia de cámara de la vista principal a esas colecciones.

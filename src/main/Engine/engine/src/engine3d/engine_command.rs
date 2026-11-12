@@ -164,6 +164,13 @@ pub enum EngineCommand3dOnly {
         #[serde(default)]
         jitter_scale: Option<f32>,
     },
+    SetModelLod {
+        enabled: bool,
+        #[serde(default)]
+        lod1_distance_m: Option<f32>,
+        #[serde(default)]
+        lod2_distance_m: Option<f32>,
+    },
     SetCameraFov {
         fov_y: f32,
     },
@@ -325,6 +332,24 @@ mod tests {
                 assert_eq!(jitter_scale, Some(0.8));
             }
             other => panic!("expected Only3d SetTaa, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserialize_set_model_lod_command() {
+        let json = r#"{"cmd":"set_model_lod","enabled":true,"lod1_distance_m":35.0,"lod2_distance_m":90.0}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("set_model_lod IPC");
+        match cmd {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetModelLod {
+                enabled,
+                lod1_distance_m,
+                lod2_distance_m,
+            }) => {
+                assert!(enabled);
+                assert_eq!(lod1_distance_m, Some(35.0));
+                assert_eq!(lod2_distance_m, Some(90.0));
+            }
+            other => panic!("expected Only3d SetModelLod, got {other:?}"),
         }
     }
 

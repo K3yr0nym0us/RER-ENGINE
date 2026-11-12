@@ -317,6 +317,12 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
     let taa_blend = view.world.taaBlend.unwrap_or(0.2);
     let taa_jitter_scale = view.world.taaJitterScale.unwrap_or(1.0);
     state.set_taa(taa_enabled, Some(taa_blend), Some(taa_jitter_scale));
+    crate::engine3d::config_3d::model_lod::apply_model_lod_from_world_wire(
+        state,
+        view.world.lodEnabled,
+        view.world.lod1Distance,
+        view.world.lod2Distance,
+    );
     state.ensure_material_validation_demo();
     send_event(&EngineEvent::GraphicsTextureTierChanged {
         tier: state.graphics_texture_tier.wire().to_string(),
@@ -344,6 +350,11 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
         enabled: state.taa_enabled,
         blend: Some(state.taa_blend),
         jitter_scale: Some(state.taa_jitter_scale),
+    });
+    send_event(&EngineEvent::ModelLodChanged {
+        enabled: state.model_lod_enabled,
+        lod1_distance_m: state.model_lod1_distance_m,
+        lod2_distance_m: state.model_lod2_distance_m,
     });
     load_project_asset_stores(state, project);
     log_load_step(

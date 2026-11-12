@@ -53,6 +53,12 @@ pub struct SaveWorldSnapshot {
     pub taa_blend: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taa_jitter_scale: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_lod_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_lod1_distance_m: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_lod2_distance_m: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -683,6 +689,12 @@ pub struct ProjectLoaded3dWorld {
     pub taaBlend: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub taaJitterScale: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lodEnabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lod1Distance: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lod2Distance: Option<f32>,
 }
 
 /// Evento `project_loaded_3d` (fuera de `EngineEvent` para no heredar snake_case del enum).

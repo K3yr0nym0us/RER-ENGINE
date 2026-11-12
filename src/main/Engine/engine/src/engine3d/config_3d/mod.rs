@@ -20,6 +20,7 @@ pub(crate) mod mesh_3d_fbx;
 pub(crate) mod model_animation;
 pub(crate) mod model_asset;
 pub(crate) mod model_asset_fbx;
+pub(crate) mod model_lod;
 pub(crate) mod msaa_graphics;
 pub(crate) mod msaa_settings;
 pub(crate) mod pbr_presets;

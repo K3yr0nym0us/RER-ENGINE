@@ -208,6 +208,12 @@ pub struct WorldSettings {
     pub taa_enabled: bool,
     pub taa_blend: f32,
     pub taa_jitter_scale: f32,
+    /// LOD de mallas GLB por distancia (selección en 3 niveles).
+    pub model_lod_enabled: bool,
+    /// Distancia (m) desde la que una entidad usa su variante LOD1.
+    pub model_lod1_distance: f32,
+    /// Distancia (m) desde la que una entidad usa su variante LOD2.
+    pub model_lod2_distance: f32,
     /// Cámara del editor 2D (`None` en 3D o si el motor aún no la reportó).
     pub camera2d: Option<Camera2d>,
 }
@@ -239,6 +245,9 @@ impl Default for WorldSettings {
             taa_enabled: false,
             taa_blend: 0.2,
             taa_jitter_scale: 1.0,
+            model_lod_enabled: crate::engine3d::DEFAULT_MODEL_LOD_ENABLED,
+            model_lod1_distance: crate::engine3d::DEFAULT_MODEL_LOD1_DISTANCE_M,
+            model_lod2_distance: crate::engine3d::DEFAULT_MODEL_LOD2_DISTANCE_M,
             camera2d: None,
         }
     }
@@ -316,6 +325,15 @@ impl WorldSettings {
         }
         if let Some(value) = number(world, "taa_jitter_scale") {
             self.taa_jitter_scale = value as f32;
+        }
+        if let Some(value) = boolean(world, "model_lod_enabled") {
+            self.model_lod_enabled = value;
+        }
+        if let Some(value) = number(world, "model_lod1_distance_m") {
+            self.model_lod1_distance = value as f32;
+        }
+        if let Some(value) = number(world, "model_lod2_distance_m") {
+            self.model_lod2_distance = value as f32;
         }
 
         self.camera2d = scene.get("camera2d").and_then(|camera| {
@@ -440,6 +458,17 @@ impl WorldSettings {
                     self.taa_jitter_scale = value as f32;
                 }
             }
+            "set_model_lod" => {
+                if let Some(value) = boolean(command, "enabled") {
+                    self.model_lod_enabled = value;
+                }
+                if let Some(value) = number(command, "lod1_distance_m") {
+                    self.model_lod1_distance = value as f32;
+                }
+                if let Some(value) = number(command, "lod2_distance_m") {
+                    self.model_lod2_distance = value as f32;
+                }
+            }
             "set_camera_2d" => {
                 if let (Some(x), Some(y), Some(half_h)) = (
                     number(command, "x"),
@@ -518,6 +547,17 @@ impl WorldSettings {
                 }
                 if let Some(value) = number(event, "jitter_scale") {
                     self.taa_jitter_scale = value as f32;
+                }
+            }
+            "model_lod_changed" => {
+                if let Some(value) = boolean(event, "enabled") {
+                    self.model_lod_enabled = value;
+                }
+                if let Some(value) = number(event, "lod1_distance_m") {
+                    self.model_lod1_distance = value as f32;
+                }
+                if let Some(value) = number(event, "lod2_distance_m") {
+                    self.model_lod2_distance = value as f32;
                 }
             }
             "camera_2d_updated" => {
@@ -637,6 +677,44 @@ mod tests {
             .apply_event(&json!({ "event": "taa_changed", "enabled": false, "jitter_scale": 0.5 }));
         assert!(!world.taa_enabled);
         assert_eq!(world.taa_jitter_scale, 0.5);
+    }
+
+    #[test]
+    fn applies_model_lod_settings() {
+        let mut world = WorldSettings::default();
+
+        world.apply_command(&json!({
+            "cmd": "set_model_lod",
+            "enabled": false,
+            "lod1_distance_m": 30.0,
+            "lod2_distance_m": 80.0,
+        }));
+        assert!(!world.model_lod_enabled);
+        assert_eq!(world.model_lod1_distance, 30.0);
+        assert_eq!(world.model_lod2_distance, 80.0);
+
+        world.apply_event(
+            &json!({
+                "event": "model_lod_changed",
+                "enabled": true,
+                "lod1_distance_m": 45.0,
+                "lod2_distance_m": 120.0,
+            }),
+        );
+        assert!(world.model_lod_enabled);
+        assert_eq!(world.model_lod1_distance, 45.0);
+        assert_eq!(world.model_lod2_distance, 120.0);
+
+        world.apply_snapshot(&json!({
+            "world": {
+                "model_lod_enabled": false,
+                "model_lod1_distance_m": 25.0,
+                "model_lod2_distance_m": 70.0,
+            }
+        }));
+        assert!(!world.model_lod_enabled);
+        assert_eq!(world.model_lod1_distance, 25.0);
+        assert_eq!(world.model_lod2_distance, 70.0);
     }
 
     #[test]

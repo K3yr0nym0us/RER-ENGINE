@@ -329,6 +329,13 @@ impl State {
             taa_frame: 0,
             texture_detail_near_m:
                 crate::engine3d::config_3d::entity_textures::default_texture_detail_near_m(),
+            model_lod_enabled:
+                crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD_ENABLED,
+            model_lod1_distance_m:
+                crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD1_DISTANCE_M,
+            model_lod2_distance_m:
+                crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD2_DISTANCE_M,
+            mesh_lod_variants: HashMap::new(),
             glb_texture_catalog_cache: HashMap::new(),
             entity_texture_effective_cap: HashMap::new(),
             texture_lod_last_update: Instant::now(),

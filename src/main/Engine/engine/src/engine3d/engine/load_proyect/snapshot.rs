@@ -122,6 +122,9 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             taaEnabled: p.world.taa_enabled,
             taaBlend: p.world.taa_blend,
             taaJitterScale: p.world.taa_jitter_scale,
+            lodEnabled: p.world.model_lod_enabled,
+            lod1Distance: p.world.model_lod1_distance_m,
+            lod2Distance: p.world.model_lod2_distance_m,
         },
         backgroundPath: p.background_path.clone(),
         entities: p.entities.iter().map(map_entity).collect(),
@@ -206,6 +209,15 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         taaEnabled: None,
         taaBlend: None,
         taaJitterScale: None,
+        lodEnabled: Some(
+            crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD_ENABLED,
+        ),
+        lod1Distance: Some(
+            crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD1_DISTANCE_M,
+        ),
+        lod2Distance: Some(
+            crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD2_DISTANCE_M,
+        ),
     };
 
     let ground_scale = [28.0 / 40.0, 0.02, 56.0 / 40.0];

@@ -110,6 +110,34 @@ impl State {
         mesh_idx
     }
 
+    /// Sube la malla LOD0 y sus variantes LOD1/LOD2 (si la parte las merece),
+    /// registrándolas en `mesh_lod_variants` para la selección por distancia.
+    pub(crate) fn upload_mesh_for_cpu_part_with_lod(
+        &mut self,
+        part: &CpuModelMeshPart,
+        part_index: usize,
+        label: &str,
+    ) -> usize {
+        let mesh_idx = self.upload_mesh_for_cpu_part(part, part_index, label);
+        let mut variants: [Option<usize>; 2] = [None, None];
+        for level in 1..=2 {
+            let Some((vertices, indices)) = crate::engine3d::config_3d::model_lod::decimate_part_for_level(&part.vertices, &part.indices, level) else {
+                continue;
+            };
+            let lod_mesh_idx = self.meshes.len();
+            self.meshes.push(crate::engine3d::mesh::upload(
+                &self.vulkan,
+                &vertices,
+                &indices,
+                &format!("{label}-{part_index}-lod{level}"),
+                None,
+            ));
+            variants[level - 1] = Some(lod_mesh_idx);
+        }
+        self.register_mesh_lod_variants(mesh_idx, variants[0], variants[1]);
+        mesh_idx
+    }
+
     pub(crate) fn cache_rerasset_material_tex_map(
         &mut self,
         model_id: &str,
@@ -427,7 +455,7 @@ impl State {
             }
 
             let part = &pending.parts[part_index];
-            let mesh_idx = self.upload_mesh_for_cpu_part(part, part_index, "preload");
+            let mesh_idx = self.upload_mesh_for_cpu_part_with_lod(part, part_index, "preload");
             pending.pending_part_mesh_idx = Some(mesh_idx);
             budget -= 1;
             self.model_preload_gpu_queue.insert(0, pending);

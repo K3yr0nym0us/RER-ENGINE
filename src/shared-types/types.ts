@@ -393,6 +393,12 @@ export interface SavedWorldConfig {
   taaEnabled?: boolean
   taaBlend?: number
   taaJitterScale?: number
+  /** 3D: LOD de mallas GLB por distancia (3 niveles, vertex clustering en carga). */
+  lodEnabled?:   boolean
+  /** 3D: distancia (m) desde la que se usa LOD1. */
+  lod1Distance?: number
+  /** 3D: distancia (m) desde la que se usa LOD2. */
+  lod2Distance?: number
 }
 
 /** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */

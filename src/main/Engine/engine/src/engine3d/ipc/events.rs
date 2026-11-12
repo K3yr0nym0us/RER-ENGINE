@@ -523,6 +523,13 @@ pub enum EngineEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         jitter_scale: Option<f32>,
     },
+    /// Confirmación de la configuración LOD de modelos (`set_model_lod`).
+    #[serde(rename = "model_lod_changed")]
+    ModelLodChanged {
+        enabled: bool,
+        lod1_distance_m: f32,
+        lod2_distance_m: f32,
+    },
     /// Emitido ~1 vez por segundo con métricas de rendimiento del motor.
     DebugMetrics {
         fps: f32,
