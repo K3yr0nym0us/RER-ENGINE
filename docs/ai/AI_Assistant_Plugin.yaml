@@ -1,109 +1,172 @@
-# RER-ENGINE — Plugin Asistente de IA local
-# Junio 2026
+# RER-ENGINE — Plugin Asistente RER-AI (OpenCode)
+# Noviembre 2026 — v2 (reemplaza la IA local Qwen3 + llama.cpp)
 
-version: 1
+version: 2
 plugin_id: local-ai-assistant
 
-model:
-  source: official
-  repo: Qwen/Qwen3-1.7B-GGUF
-  repo_url: https://huggingface.co/Qwen/Qwen3-1.7B-GGUF
-  filename: Qwen3-1.7B-Q8_0.gguf
-  download_url: https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf
-  license: apache-2.0
-  approx_size: "~1.83 GB"
-
 runtime:
-  name: llama.cpp
-  binary: llama-server.exe
-  download: on-demand from GitHub releases (win x64 avx2 in v1)
-  api: OpenAI-compatible http://127.0.0.1:8765/v1
-  spawn_from: Electron main (src/main/plugins/local-ai-assistant/llamaServerProcess.ts)
+  name: OpenCode standalone
+  binary: opencode.exe
+  version_pinned: 2.2.x
+  download: |
+    https://opencode.ai/update/api/latest/cli/opencode/opencode-windows-x64.zip
+    (~125 MB; binario autocontenido, sin Node/Bun/npm ni VC++)
+  install_layout: |
+    {userData}/plugins/local-ai-assistant/
+      bin/opencode.exe
+      workspace/            ← sandbox (Location de OpenCode)
+      xdg/{config,data,cache,state}   ← perfil XDG aislado
+      logs/opencode-serve.log
+  serve: opencode serve --service --hostname 127.0.0.1 --port <libre>
+  auth: |
+    El modo --service escribe {xdg-state}/opencode/service.json con url + password.
+    La API usa Basic auth: usuario fijo `opencode`, password del service.json.
+    Sin header → 401. spawn + lectura del service.json en
+    src/main/plugins/local-ai-assistant/openCodeRuntime.ts
+  spawn_from: Electron main (src/main/plugins/local-ai-assistant/openCodeRuntime.ts)
   system_requirements:
     os: Windows x64 only (v1)
-    msvc_redistributable:
-      name: Microsoft Visual C++ 2015–2022 Redistributable (x64)
-      download_url: https://aka.ms/vs/17/release/vc_redist.x64.exe
-      bundled_installer: src/resources/vc_redist.x64.exe (build input only)
-      packaged_as: |
-        Installed layout (electron-builder extraResources):
-          {appInstallDir}/resources/vc_redist/vc_redist.x64.exe
-          (process.resourcesPath + /vc_redist/vc_redist.x64.exe)
-        Working copy while installing:
-          {userData}/plugins/vc_redist/vc_redist.x64.exe
-          (app.getPath('userData'), typically %APPDATA%/rer-engine/…)
-        Dev-only fallback: repo src/resources/ — never used when app.isPackaged.
-      preflight: |
-        Before installPlugin download and before startLlamaServer spawn,
-        main probes HKLM VisualStudio\14.0\VC\Runtimes\x64 (Installed=1)
-        and falls back to System32\vcruntime140.dll
-        (src/main/plugins/local-ai-assistant/msvcRedistributable.ts).
-      on_missing: |
-        Packaged app: copy from resources/vc_redist → userData/plugins/vc_redist,
-        run with UAC (/install /passive /norestart), wait, re-probe.
-        On success, delete the userData copy and best-effort delete
-        resources/vc_redist/vc_redist.x64.exe (~25 MB).
-        Never deletes repo src/resources (dev). On failure, keep files for retry.
-        Exit code 0xC0000135 maps to the manual Microsoft download URL message.
 
-context:
-  strategy: compact prompt — one file per locale (ES/EN only, no dual load)
-  module: src/main/plugins/local-ai-assistant/editorDocsIndex.ts
-  guide_files:
-    es: docs/ai/AI_Assistant_Editor_Guide.es.prompt.txt
-    en: docs/ai/AI_Assistant_Editor_Guide.en.prompt.txt
-  ui_targets: data-plugin-target attributes in sidebar
+sandbox:
+  workspace: |
+    workspace/
+      opencode.jsonc
+      .opencode/agents/rer-assistant-es.md
+      .opencode/agents/rer-assistant-en.md
+      .opencode/plugins/rer-ui/index.ts
+      docs/ai/                 ← copia de docs/ai empaquetadas
+      ui-actions.log           ← registro de tools rer_ui
+  config:
+    default_agent: rer-assistant-es
+    update: disable
+    snapshots: false
+    permissions:
+      - { action: '*', resource: '*', effect: 'deny' }
+      - { action: read, resource: 'docs/ai/**', effect: allow }
+      - { action: glob, resource: '*', effect: allow }
+      - { action: grep, resource: '*', effect: allow }
+      - { action: 'rer_ui_*', resource: '*', effect: allow }
+  docs_source: |
+    Empaquetadas con electron-builder extraResources docs/ai → resources/docs/ai.
+    Dev fallback: repo docs/ai. Copia al sandbox en install/arranque
+    (stamp de versión por re-preparar).
+  module: src/main/plugins/local-ai-assistant/openCodeSandbox.ts
 
-assistant_tools_v1:
-  - single locale guide file (es or en)
-  - OPEN_ACCORDION:scenes|resources|entities|ui|herramientas|controles|mundo|camera
-  - HIGHLIGHT:target-id
+models:
+  default: primer modelo free disponible (GET /api/model, coste 0, provider opencode)
+  catalog: |
+    GET /api/model filtrando type=chat, enabled, capabilities.tools,
+    providers opencode (free) y opencode-go (pago).
+  selector: |
+    El usuario elige el modelo antes de enviar; popover en el header del panel
+    del chat y sección "Modelo y conexión" en el modal de Plugins.
+    Preferencia persistida en plugins.json (preferences.selectedModel).
+  free_no_login: |
+    F0 (2026-11-12): los modelos free están disponibles sin credenciales con el
+    perfil aislado. El login device OAuth queda como fallback si cambia.
+  opencode_go:
+    connect: POST /api/integration/opencode-go/connect/key { key }
+    status: GET /api/credential (integrationID=opencode-go)
+    disconnect: DELETE /api/credential/{credentialID}
+    storage: perfil XDG aislado de OpenCode; RER nunca guarda el token.
+
+assistant_tools:
+  plugin: .opencode/plugins/rer-ui (plugin local de OpenCode, codemode: false)
+  tools:
+    - rer_ui_open_accordion(accordionKey)  # abre acordeón del sidebar
+    - rer_ui_highlight(targetId)           # resalta un control (dom-id)
+  callback: |
+    Cada tool registra la acción en workspace/ui-actions.log;
+    Electron (openCodePaths.getUiActionsLogPath) es la ruta canónica.
+    Fallback: el texto del modelo puede traer etiquetas OPEN_ACCORDION/HIGHLIGHT,
+    que assistantChat.ts sigue parseando.
+
+chat_flow:
+  session: |
+    Una sesión OpenCode por conversación del overlay (location = workspace,
+    agent = rer-assistant-es|en, model = selección del usuario).
+    POST /api/session + POST /api/session/{id}/prompt.
+  streaming: |
+    Polling de GET /api/session/{id}/message cada 800 ms con deltas incrementales
+    por mensaje (assistantChat.ts). Eventos emitidos por IPC `plugins:chat-delta`
+    (kind: text | tool | done | error).
+  finish: |
+    Turno terminado cuando el último mensaje assistant trae finish=stop.
+    Estabilización a 45 s sin crecimiento y tope de 240 s como salvavidas.
+  cancel: POST /api/session/{id}/interrupt vía plugins:chat-cancel.
+
+ui:
+  overlay: |
+    FAB (126×126) + panel expandible (~470×680, anclado abajo-derecha, resize
+    persistido). Header con avatar, estado de OpenCode, selector de modelo,
+    nueva conversación y cerrar. Historial con scroll, streaming, chips de tools,
+    composer multilínea y errores con Reintentar. Footer: "Lee solo docs/ai".
+    Ventana: src/main/aiAssistantWindow.ts (layout 'panel').
+  plugins_modal: |
+    Sección "Modelo y conexión": selector de modelos (Free/OpenCode Go) y
+    token de OpenCode Go (conectar/desconectar).
+  files:
+    renderer:
+      - src/renderer/src/ai-overlay/AiAssistantOverlayApp.tsx
+      - src/renderer/src/ai-overlay/AssistantReplyText.tsx
+      - src/renderer/src/plugins/PluginsModalBody.tsx
+      - src/renderer/src/plugins/usePlugins.ts
+      - src/renderer/src/plugins/pluginInstallUi.ts
+    main_shared:
+      - src/main/plugins/pluginCatalog.ts
+      - src/main/plugins/pluginState.ts
+      - src/main/plugins/pluginInstall.ts
+      - src/main/plugins/fileDownload.ts
+      - src/main/plugins/pluginProgressBroadcast.ts
+      - src/main/plugins/registerPluginIpc.ts
+    main_local_ai_assistant:
+      - src/main/plugins/local-ai-assistant/install.ts
+      - src/main/plugins/local-ai-assistant/openCodePaths.ts
+      - src/main/plugins/local-ai-assistant/openCodeSandbox.ts
+      - src/main/plugins/local-ai-assistant/openCodeRuntime.ts
+      - src/main/plugins/local-ai-assistant/openCodeClient.ts
+      - src/main/plugins/local-ai-assistant/assistantChat.ts
+      - src/main/plugins/local-ai-assistant/assistantReplyFormat.ts
+      - src/main/plugins/local-ai-assistant/assistantChatLog.ts
+      - src/main/plugins/local-ai-assistant/ipc.ts
+    overlay_window:
+      file: src/main/aiAssistantWindow.ts
+      layouts: fab | panel (legacy intro/thinking/input/answer conservados)
+      position: anclado abajo-derecha; arrastrable; posición persistida
+
+ipc:
+  channels:
+    - plugins:llm-status          # estado del servidor OpenCode
+    - plugins:chat                # turno completo (con streaming por eventos)
+    - plugins:chat-cancel         # interrupt del turno
+    - plugins:chat-delta          # streaming text/tool/done/error (broadcast)
+    - plugins:start-llm           # prepara sandbox + arranca serve
+    - plugins:stop-llm
+    - plugins:list-models
+    - plugins:set-model
+    - plugins:get-assistant-settings
+    - plugins:connect-go
+    - plugins:disconnect-go
+    - plugins:ui-action           # acciones de UI (sidebar)
+
+f0_validated:
+  date: 2026-11-12
+  - binario standalone sin Node/Bun/npm ni VC++
+  - perfil XDG aislado (db y credenciales propias)
+  - Basic auth con password de service.json
+  - 12 modelos free sin credenciales
+  - agente local cargado y usado
+  - permisos: lectura externa denegada
+  - tools rer_ui ejecutadas y registradas en ui-actions.log
 
 out_of_scope_v1:
   - engine:cmd / crear entidades desde la IA
   - embeddings / RAG vectorial
-  - macOS / Linux binary for llama-server (fuera de alcance; producto Windows-only)
+  - macOS / Linux binary for opencode
+  - login device OAuth automático (fallback manual)
 
-files:
-  context:
-    - docs/ai/AI_Assistant_Editor_Guide.es.prompt.txt
-    - docs/ai/AI_Assistant_Editor_Guide.en.prompt.txt
-  main_shared:
-    - src/main/plugins/pluginCatalog.ts
-    - src/main/plugins/pluginState.ts
-    - src/main/plugins/pluginInstall.ts
-    - src/main/plugins/fileDownload.ts
-    - src/main/plugins/pluginProgressBroadcast.ts
-    - src/main/plugins/registerPluginIpc.ts
-  main_local_ai_assistant:
-    - src/main/plugins/local-ai-assistant/install.ts
-    - src/main/plugins/local-ai-assistant/llamaServerProcess.ts
-    - src/main/plugins/local-ai-assistant/llamaRuntime.ts
-    - src/main/plugins/local-ai-assistant/msvcRedistributable.ts
-    - src/main/plugins/local-ai-assistant/pluginUiLocale.ts
-    - src/main/plugins/local-ai-assistant/assistantChat.ts
-    - src/main/plugins/local-ai-assistant/assistantReplyFormat.ts
-    - src/main/plugins/local-ai-assistant/editorDocsIndex.ts
-    - src/main/plugins/local-ai-assistant/ipc.ts
-  renderer:
-    - src/renderer/src/plugins/PluginsButton.tsx
-    - src/renderer/src/plugins/PluginsModalBody.tsx
-    - src/renderer/src/ai-overlay/AiAssistantOverlayApp.tsx
-    - src/renderer/src/plugins/useAiAssistantOverlaySync.ts
-    - src/renderer/src/plugins/usePlugins.ts
-    - src/renderer/src/context/SidebarAccordionContext.tsx
-  overlay_window:
-    file: src/main/aiAssistantWindow.ts
-    position: absolute screen coords (user-draggable; saved across sessions)
-    z_order: alwaysOnTop floating above winit engine
-    parent: main BrowserWindow (closes with editor)
-    phases: [idle, input, thinking, answer]
-    drag: app-region on padding + fab pointer drag via main process loop
-    i18n: locale from editor LanguageContext; synced on set_locale and project load
-
-overlay_ui_v1:
-  intro: speech bubble above mascot (greeting)
-  input: side bubble with ask + send; mascot thinking face while typing
-  thinking: bubble above mascot; no input
-  answer: pointing mascot + response bubble below with close button
-  assets: RER-AI.png, RER-AI-THINKING.png, RER-AI-POINTING.png
+removed_v2:
+  - Qwen3-1.7B GGUF (~1.83 GB) y descarga de modelos
+  - llama.cpp runtime + llama-server.exe
+  - Microsoft Visual C++ 2015–2022 Redistributable y preflight MSVC
+  - HTTP local llama-server en 127.0.0.1:8765

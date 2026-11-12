@@ -320,10 +320,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pluginsCancelInstall: () => ipcRenderer.invoke('plugins:cancel-install'),
   pluginsUninstall: (pluginId: string) => ipcRenderer.invoke('plugins:uninstall', pluginId),
   pluginsGetLlmStatus: () => ipcRenderer.invoke('plugins:llm-status'),
-  pluginsChat: (request: { messages: Array<{ role: string; content: string }> }) =>
-    ipcRenderer.invoke('plugins:chat', request),
+  pluginsChat: (request: {
+    messages: Array<{ role: string; content: string }>
+    locale?: 'en' | 'es'
+    conversationId?: string
+    model?: string
+  }) => ipcRenderer.invoke('plugins:chat', request),
+  pluginsChatCancel: (conversationId: string) =>
+    ipcRenderer.invoke('plugins:chat-cancel', conversationId),
   pluginsStartLlm: () => ipcRenderer.invoke('plugins:start-llm'),
   pluginsStopLlm: () => ipcRenderer.invoke('plugins:stop-llm'),
+  pluginsListModels: () => ipcRenderer.invoke('plugins:list-models'),
+  pluginsSetModel: (modelRef: string | null) => ipcRenderer.invoke('plugins:set-model', modelRef),
+  pluginsGetAssistantSettings: () => ipcRenderer.invoke('plugins:get-assistant-settings'),
+  pluginsConnectGo: (apiKey: string) => ipcRenderer.invoke('plugins:connect-go', apiKey),
+  pluginsDisconnectGo: () => ipcRenderer.invoke('plugins:disconnect-go'),
+  pluginsStartOpenCodeLogin: () => ipcRenderer.invoke('plugins:start-opencode-login'),
+  onPluginsChatDelta: (
+    cb: (delta: import('../shared-types/plugins').AssistantChatDelta) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      data: import('../shared-types/plugins').AssistantChatDelta,
+    ) => {
+      cb(data)
+    }
+    ipcRenderer.on('plugins:chat-delta', listener)
+    return () => ipcRenderer.removeListener('plugins:chat-delta', listener)
+  },
   onPluginsDownloadProgress: (
     cb: (progress: import('../shared-types/plugins').PluginDownloadProgress) => void,
   ): (() => void) => {
@@ -353,7 +377,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiAssistantShow: (config: { locale?: 'en' | 'es' }) =>
     ipcRenderer.invoke('ai-assistant:show', config),
   aiAssistantHide: () => ipcRenderer.invoke('ai-assistant:hide'),
-  aiAssistantSetLayout: (layout: 'intro' | 'thinking' | 'input' | 'answer') => {
+  aiAssistantSetLayout: (layout: 'intro' | 'thinking' | 'input' | 'answer' | 'fab' | 'panel') => {
     ipcRenderer.send('ai-assistant:set-layout', layout)
   },
   aiAssistantFabDragStart: () => {

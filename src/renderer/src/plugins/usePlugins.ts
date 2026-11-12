@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import type {
+  AssistantGoConnectResult,
+  AssistantModelOption,
+  AssistantModelsResult,
+  AssistantSettings,
   PluginCatalogEntry,
   PluginDownloadProgress,
   PluginId,
@@ -116,6 +120,34 @@ export function usePlugins() {
     [state, isInstalled],
   )
 
+  const listModels = useCallback(async (): Promise<AssistantModelsResult> => {
+    return window.electronAPI.pluginsListModels()
+  }, [])
+
+  const setModel = useCallback(async (modelRef: string | null) => {
+    await window.electronAPI.pluginsSetModel(modelRef)
+  }, [])
+
+  const getAssistantSettings = useCallback(async (): Promise<AssistantSettings> => {
+    return window.electronAPI.pluginsGetAssistantSettings()
+  }, [])
+
+  const connectGo = useCallback(async (apiKey: string): Promise<AssistantGoConnectResult> => {
+    const result = await window.electronAPI.pluginsConnectGo(apiKey)
+    await refresh()
+    return result
+  }, [refresh])
+
+  const disconnectGo = useCallback(async (): Promise<AssistantGoConnectResult> => {
+    const result = await window.electronAPI.pluginsDisconnectGo()
+    await refresh()
+    return result
+  }, [refresh])
+
+  const startOpenCodeLogin = useCallback(async (): Promise<{ ok: boolean; url?: string; error?: string }> => {
+    return window.electronAPI.pluginsStartOpenCodeLogin()
+  }, [])
+
   return {
     catalog,
     state,
@@ -129,7 +161,13 @@ export function usePlugins() {
     uninstall,
     isInstalled,
     isEnabled,
+    listModels,
+    setModel,
+    getAssistantSettings,
+    connectGo,
+    disconnectGo,
+    startOpenCodeLogin,
   }
 }
 
-export type { PluginUiAction }
+export type { PluginUiAction, AssistantModelOption }

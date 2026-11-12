@@ -14,7 +14,7 @@
 - `yaml/scripting/`: API Rhai y programación visual.
 - `yaml/editor/`: modales, propiedades, UI del jugador, sockets y física de huesos.
 - `yaml/plugins/`: sistema de plugins.
-- `ai/`: asistente IA local y prompts de contexto.
+- `ai/`: asistente RER-AI (OpenCode) y prompts de contexto.
 - Los documentos de calidad (`.md`) quedan en la raíz de `docs/`.
 
 ---
@@ -114,7 +114,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [AI_Assistant_Plugin.yaml](./ai/AI_Assistant_Plugin.yaml) | Asistente IA local (Qwen GGUF, ventana del asistente, herramientas v1) |
+| [AI_Assistant_Plugin.yaml](./ai/AI_Assistant_Plugin.yaml) | Asistente RER-AI (OpenCode free, sandbox docs/ai, herramientas v2) |
 | [AI_Assistant_Editor_Guide.es.prompt.txt](./ai/AI_Assistant_Editor_Guide.es.prompt.txt) | Contexto FAQ español para el modelo |
 | [AI_Assistant_Editor_Guide.en.prompt.txt](./ai/AI_Assistant_Editor_Guide.en.prompt.txt) | Contexto FAQ inglés para el modelo |
 

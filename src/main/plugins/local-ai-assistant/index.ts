@@ -1,8 +1,7 @@
-export { runAssistantChat, stripThinkingFromResponse } from './assistantChat'
-export type { AssistantToolResult, UiActionEmitter } from './assistantChat'
+export { runAssistantChat, stripThinkingFromResponse, cancelAssistantChat, resetAssistantSessions } from './assistantChat'
+export type { UiActionEmitter, ChatDeltaEmitter, RunAssistantChatContext } from './assistantChat'
 export { polishAssistantReply } from './assistantReplyFormat'
 export { aiLog, getAiAssistantLogFilePath } from './assistantChatLog'
-export { buildSystemContext, refreshAiEditorGuideCache } from './editorDocsIndex'
 export {
   autoStartLocalAiAssistant,
   registerLocalAiAssistantIpc,
@@ -11,22 +10,24 @@ export {
   cancelPluginInstall as cancelLocalAiInstall,
   installPlugin as installLocalAiAssistant,
   isPluginInstallInProgress,
+  prepareWorkspaceForInstalledPlugin,
   uninstallPlugin as uninstallLocalAiAssistant,
 } from './install'
 export {
-  getLlamaServerPort,
-  getLlamaServerStatus,
-  isLlamaServerRunning,
-  probeLlamaServerHttp,
-  refreshLlamaServerReachability,
-  startLlamaServer,
-  stopLlamaServer,
-} from './llamaServerProcess'
+  getOpenCodeEndpoint,
+  getOpenCodeServerStatus,
+  refreshOpenCodeReachability,
+  startOpenCodeServer,
+  stopOpenCodeServer,
+} from './openCodeRuntime'
 export {
-  downloadAndExtractLlamaRuntime,
-  ensureLlamaRuntime,
-  extractLlamaRuntimeZip,
-  formatWindowsExitCode,
-  getLlamaBinDir,
-  isLlamaRuntimeComplete,
-} from './llamaRuntime'
+  listModels as listOpenCodeModels,
+  isOpenCodeGoConnected,
+  connectOpenCodeGo,
+  disconnectOpenCodeGo,
+} from './openCodeClient'
+export {
+  buildWorkspacePlan,
+  applyWorkspacePlan,
+  workspaceStampMatches,
+} from './openCodeSandbox'

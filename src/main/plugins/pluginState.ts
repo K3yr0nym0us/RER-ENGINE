@@ -27,6 +27,7 @@ export function readPluginsState(): PluginsState {
     return {
       installed: parsed.installed ?? {},
       enabled: Array.isArray(parsed.enabled) ? parsed.enabled : [],
+      preferences: parsed.preferences ?? {},
     }
   } catch {
     return { ...EMPTY_STATE }
@@ -42,11 +43,33 @@ export function writePluginsState(state: PluginsState): void {
 export function isPluginInstalled(pluginId: PluginId): boolean {
   const state = readPluginsState()
   const record = state.installed[pluginId]
-  if (!record?.modelPath || !record.llamaServerPath) return false
-  return fs.existsSync(record.modelPath) && fs.existsSync(record.llamaServerPath)
+  if (!record?.opencodePath || !record.workspaceDir) return false
+  return fs.existsSync(record.opencodePath) && fs.existsSync(record.workspaceDir)
 }
 
 export function isPluginEnabled(pluginId: PluginId): boolean {
   const state = readPluginsState()
   return state.enabled.includes(pluginId) && isPluginInstalled(pluginId)
+}
+
+export function getAssistantPreferences(pluginId: PluginId) {
+  const state = readPluginsState()
+  return state.preferences?.[pluginId] ?? {}
+}
+
+export function updateAssistantPreferences(
+  pluginId: PluginId,
+  patch: { selectedModel?: string | null; goConnected?: boolean },
+): void {
+  const state = readPluginsState()
+  const current = state.preferences?.[pluginId] ?? {}
+  const next = { ...current }
+  if (patch.selectedModel !== undefined) {
+    next.selectedModel = patch.selectedModel ?? undefined
+  }
+  if (patch.goConnected !== undefined) {
+    next.goConnected = patch.goConnected
+  }
+  state.preferences = { ...state.preferences, [pluginId]: next }
+  writePluginsState(state)
 }

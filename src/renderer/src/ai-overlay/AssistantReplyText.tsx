@@ -1,27 +1,65 @@
 import type { ReactNode } from 'react'
 
-function parseBoldLine(line: string): ReactNode[] {
-  const parts = line.split(/(\*\*[^*]+\*\*)/g)
+const INLINE_RE = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g
+
+function renderInlineSegment(text: string, keyPrefix: string): ReactNode[] {
+  const parts = text.split(INLINE_RE)
   return parts.map((part, index) => {
-    const match = part.match(/^\*\*([^*]+)\*\*$/)
-    if (match) {
-      return <strong key={index}>{match[1]}</strong>
+    const key = `${keyPrefix}-${index}`
+    if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+      return <strong key={key}>{part.slice(2, -2)}</strong>
     }
-    return <span key={index}>{part}</span>
+    if (part.startsWith('`') && part.endsWith('`') && part.length > 2) {
+      return <code key={key} className="ai-assistant-md-code">{part.slice(1, -1)}</code>
+    }
+    const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/)
+    if (link) {
+      return (
+        <a key={key} href={link[2]} target="_blank" rel="noreferrer noopener">
+          {link[1]}
+        </a>
+      )
+    }
+    return <span key={key}>{part}</span>
   })
 }
 
-/** Renderiza respuestas del asistente: saltos de línea + **negrita** simple. */
+function isListItem(line: string): boolean {
+  return /^\d+\.\s/.test(line) || /^[-*]\s/.test(line)
+}
+
+/** Renderiza respuestas del asistente: markdown mínimo (negrita, código, enlaces, listas). */
 export function AssistantReplyText({ text }: { text: string }) {
-  const lines = text.split('\n')
+  const blocks = text.split(/```[a-zA-Z0-9_-]*\n?/)
+
   return (
     <>
-      {lines.map((line, lineIndex) => (
-        <span key={lineIndex}>
-          {lineIndex > 0 && <br />}
-          {parseBoldLine(line)}
-        </span>
-      ))}
+      {blocks.map((block, blockIndex) => {
+        if (blockIndex % 2 === 1) {
+          return (
+            <pre key={`code-${blockIndex}`} className="ai-assistant-md-pre">
+              <code>{block.replace(/\n$/, '')}</code>
+            </pre>
+          )
+        }
+        const lines = block.split('\n')
+        return (
+          <span key={`text-${blockIndex}`}>
+            {lines.map((line, lineIndex) => (
+              <span
+                key={lineIndex}
+                className={
+                  isListItem(line.trim())
+                    ? 'ai-assistant-md-line ai-assistant-md-line--item'
+                    : 'ai-assistant-md-line'
+                }
+              >
+                {renderInlineSegment(line, `${blockIndex}-${lineIndex}`)}
+              </span>
+            ))}
+          </span>
+        )
+      })}
     </>
   )
 }

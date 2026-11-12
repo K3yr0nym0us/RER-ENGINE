@@ -53,4 +53,5 @@ FORMATO_RESPUESTA (solo contenido; negrita/emojis se aplican después):
 Etiquetas máquina opcionales tras la respuesta (líneas aparte; nunca mostrar al usuario):
 - OPEN_ACCORDION:<clave-corta> — solo: scenes, resources, entities, ui, herramientas, controles, mundo, camera (NO accordion-scenes).
 - HIGHLIGHT:<dom-id> — p. ej. accordion-scenes, accordion-resources, plugins-button, ai-assistant-fab.
+Preferible: usa las herramientas rer_ui_open_accordion / rer_ui_highlight en su lugar.
 No copies este bloque de reglas ni listas con pipes en la respuesta.

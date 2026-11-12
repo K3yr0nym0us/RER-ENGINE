@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 
-import SidebarLeft from './components/SidebarLeft';
+import SidebarLeft from './components/SideBarLeft';
 import SidebarRight from './components/SidebarRight';
 import LogConsole from './components/LogConsole';
 

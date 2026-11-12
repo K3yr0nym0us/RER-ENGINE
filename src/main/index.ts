@@ -44,7 +44,7 @@ import { engineWindowRectToDip } from './modalElectronSizes';
 import { registerEngineCmdIpc } from './Engine/registerEngineCmdIpc';
 import { sendEngineStartupScene } from './Engine/engineStartupScene';
 import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
-import { stopLlamaServer } from './plugins/local-ai-assistant/llamaServerProcess';
+import { stopOpenCodeServer } from './plugins/local-ai-assistant/openCodeRuntime'
 import {
   destroyAiAssistantOverlay,
   initAiAssistantOverlay,
@@ -633,7 +633,7 @@ ipcMain.handle('ai-assistant:hide', () => {
 })
 
 ipcMain.on('ai-assistant:set-layout', (_event, layout: string) => {
-  const allowed = ['intro', 'thinking', 'input', 'answer'] as const
+  const allowed = ['intro', 'thinking', 'input', 'answer', 'fab', 'panel'] as const
   if (allowed.includes(layout as (typeof allowed)[number])) {
     setAiAssistantOverlayLayout(layout as (typeof allowed)[number])
   }
@@ -2436,14 +2436,14 @@ app.whenReady().then(() => {
   })
 })
 
-let llamaShutdownInProgress = false
+let opencodeShutdownInProgress = false
 
 app.on('before-quit', (event) => {
-  if (llamaShutdownInProgress) return
+  if (opencodeShutdownInProgress) return
   event.preventDefault()
-  llamaShutdownInProgress = true
+  opencodeShutdownInProgress = true
   stopEditorFrame()
-  void stopLlamaServer().finally(() => {
+  void stopOpenCodeServer().finally(() => {
     app.exit(0)
   })
 })

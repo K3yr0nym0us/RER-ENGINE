@@ -2,7 +2,7 @@ import { ipcMain, type BrowserWindow } from 'electron'
 
 import type { PluginId, PluginInstallResult, PluginsState } from '../../shared-types/plugins'
 import { autoStartLocalAiAssistant, registerLocalAiAssistantIpc } from './local-ai-assistant/ipc'
-import { startLlamaServer, stopLlamaServer } from './local-ai-assistant/llamaServerProcess'
+import { startOpenCodeServer, stopOpenCodeServer } from './local-ai-assistant/openCodeRuntime'
 import { cancelPluginInstall, installPlugin, uninstallPlugin } from './pluginInstall'
 import { PLUGIN_CATALOG } from './pluginCatalog'
 import {
@@ -33,27 +33,22 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
 
   ipcMain.handle(
     'plugins:set-enabled',
-    (_event, pluginId: PluginId, enabled: boolean): PluginsState => {
+    async (_event, pluginId: PluginId, enabled: boolean): Promise<PluginsState> => {
       const state = readPluginsState()
       if (enabled) {
         if (!isPluginInstalled(pluginId)) return state
         if (!state.enabled.includes(pluginId)) state.enabled.push(pluginId)
         writePluginsState(state)
-        const record = state.installed[pluginId]
-        if (pluginId === 'local-ai-assistant' && record?.modelPath && record.llamaServerPath) {
-          void startLlamaServer(record.llamaServerPath, record.modelPath).then(() => {
-            notifyPluginsStateChanged(getMainWindow)
-          })
-        } else {
-          notifyPluginsStateChanged(getMainWindow)
+        if (pluginId === 'local-ai-assistant') {
+          await startOpenCodeServer()
         }
-        return state
+      } else {
+        state.enabled = state.enabled.filter((id) => id !== pluginId)
+        if (pluginId === 'local-ai-assistant') {
+          await stopOpenCodeServer()
+        }
+        writePluginsState(state)
       }
-      state.enabled = state.enabled.filter((id) => id !== pluginId)
-      if (pluginId === 'local-ai-assistant') {
-        void stopLlamaServer()
-      }
-      writePluginsState(state)
       notifyPluginsStateChanged(getMainWindow)
       return state
     },
@@ -64,11 +59,7 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
     async (_event, pluginId: PluginId): Promise<PluginInstallResult> => {
       const result = await installPlugin(pluginId)
       if (result.ok && pluginId === 'local-ai-assistant') {
-        const state = readPluginsState()
-        const record = state.installed[pluginId]
-        if (record?.modelPath && record.llamaServerPath) {
-          await startLlamaServer(record.llamaServerPath, record.modelPath)
-        }
+        await startOpenCodeServer()
       }
       notifyPluginsStateChanged(getMainWindow)
       return result

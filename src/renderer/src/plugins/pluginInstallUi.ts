@@ -8,19 +8,19 @@ export function formatDownloadBytes(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
-/** Etiqueta única: descargando o instalando (extracción / VC++). */
+/** Etiqueta por fase: descarga de OpenCode, extracción o preparación del sandbox. */
 export function pluginInstallStatusLabel(
   phase: PluginDownloadPhase | undefined,
   t: (key: string) => string,
 ): string {
-  if (phase === 'msvc-redist') {
-    return t('Installing Visual C++ Redistributable…')
+  if (phase === 'opencode') {
+    return t('Downloading OpenCode…')
   }
   if (phase === 'extracting') {
     return t('Installing…')
   }
-  if (phase === 'llama-server' || phase === 'model') {
-    return t('Downloading…')
+  if (phase === 'preparing') {
+    return t('Preparing assistant workspace…')
   }
   return t('Preparing download…')
 }

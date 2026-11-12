@@ -1224,6 +1224,16 @@ declare global {
       ) => Promise<import('./plugins').AssistantChatResponse>
       pluginsStartLlm: () => Promise<{ ok: boolean; error?: string }>
       pluginsStopLlm: () => Promise<{ ok: boolean }>
+      pluginsChatCancel: (conversationId: string) => Promise<{ ok: boolean }>
+      pluginsListModels: () => Promise<import('./plugins').AssistantModelsResult>
+      pluginsSetModel: (modelRef: string | null) => Promise<{ ok: boolean }>
+      pluginsGetAssistantSettings: () => Promise<import('./plugins').AssistantSettings>
+      pluginsConnectGo: (apiKey: string) => Promise<import('./plugins').AssistantGoConnectResult>
+      pluginsDisconnectGo: () => Promise<import('./plugins').AssistantGoConnectResult>
+      pluginsStartOpenCodeLogin: () => Promise<{ ok: boolean; url?: string; error?: string }>
+      onPluginsChatDelta: (
+        cb: (delta: import('./plugins').AssistantChatDelta) => void,
+      ) => () => void
       onPluginsDownloadProgress: (
         cb: (progress: import('./plugins').PluginDownloadProgress) => void,
       ) => () => void
@@ -1233,7 +1243,9 @@ declare global {
       onPluginsStateChanged: (cb: () => void) => () => void
       aiAssistantShow: (config: { locale?: 'en' | 'es' }) => Promise<void>
       aiAssistantHide: () => Promise<void>
-      aiAssistantSetLayout: (layout: 'intro' | 'thinking' | 'input' | 'answer') => void
+      aiAssistantSetLayout: (
+        layout: 'intro' | 'thinking' | 'input' | 'answer' | 'fab' | 'panel',
+      ) => void
       aiAssistantFabDragStart: () => void
       aiAssistantFabDragEnd: () => void
       notifyAiAssistantReady: () => void

@@ -5,7 +5,7 @@ import {
   isPluginInstallInProgress as isLocalAiInstallInProgress,
   uninstallPlugin as uninstallLocalAiAssistant,
 } from './local-ai-assistant/install'
-import { stopLlamaServer } from './local-ai-assistant/llamaServerProcess'
+import { stopOpenCodeServer } from './local-ai-assistant/openCodeRuntime'
 
 export function isPluginInstallInProgress(): boolean {
   return isLocalAiInstallInProgress()
@@ -24,7 +24,7 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
 
 export async function uninstallPlugin(pluginId: PluginId): Promise<PluginInstallResult> {
   if (pluginId === 'local-ai-assistant') {
-    await stopLlamaServer()
+    await stopOpenCodeServer()
     return uninstallLocalAiAssistant(pluginId)
   }
   return { ok: false, error: 'Unknown plugin' }

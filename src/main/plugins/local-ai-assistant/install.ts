@@ -1,5 +1,7 @@
 import fs from 'fs'
 import path from 'path'
+import AdmZip from 'adm-zip'
+
 import type {
   PluginCatalogEntry,
   PluginDownloadPhase,
@@ -9,15 +11,29 @@ import type {
 } from '../../../shared-types/plugins'
 import { cancelActiveDownload, DownloadCancelledError, downloadFile, resetDownloadCancelState } from '../fileDownload'
 import { getPluginCatalogEntry } from '../pluginCatalog'
-import { downloadAndExtractLlamaRuntime } from './llamaRuntime'
-import { ensureMsvc2015to2022X64 } from './msvcRedistributable'
-import { resolvePluginUiLocale } from './pluginUiLocale'
 import {
+  getAssistantPreferences,
   getPluginDir,
   readPluginsState,
   writePluginsState,
 } from '../pluginState'
 import { broadcastPluginsProgress, resetProgressBroadcastThrottle } from '../pluginProgressBroadcast'
+import { stopOpenCodeServer } from './openCodeRuntime'
+import {
+  applyOpenCodeGlobalConfig,
+  applyWorkspacePlan,
+  buildWorkspacePlan,
+  writeWorkspaceStamp,
+  workspaceStampMatches,
+} from './openCodeSandbox'
+import {
+  ASSISTANT_PLUGIN_ID,
+  getOpenCodeGlobalConfigPath,
+  getWorkspaceDir,
+  getUiActionsLogPath,
+  resolveDocsAiSourceDir,
+} from './openCodePaths'
+import { resetAssistantSessions } from './assistantChat'
 
 const INSTALL_CANCELLED_ERROR = 'Installation cancelled'
 
@@ -36,32 +52,25 @@ function buildProgress(
   bytesReceived: number,
   bytesTotal: number,
 ): PluginDownloadProgress {
-  const bytesOverallTotal = entry.llamaServer.sizeBytes + entry.model.sizeBytes
+  const bytesOverallTotal = entry.openCode.sizeBytes
   let bytesOverallReceived: number
   let step: number
-  let stepsTotal = 2
+  const stepsTotal = 3
 
-  if (phase === 'msvc-redist') {
-    bytesOverallReceived = 0
-    step = 0
-    stepsTotal = 3
-    percent = Math.max(percent, 5)
-  } else if (phase === 'llama-server') {
+  if (phase === 'opencode') {
     bytesOverallReceived = bytesReceived
-    step = 1
+    step = 0
   } else if (phase === 'extracting') {
-    bytesOverallReceived = entry.llamaServer.sizeBytes
+    bytesOverallReceived = entry.openCode.sizeBytes
     step = 1
     percent = 100
   } else {
-    bytesOverallReceived = entry.llamaServer.sizeBytes + bytesReceived
+    bytesOverallReceived = entry.openCode.sizeBytes
     step = 2
+    percent = 100
   }
 
-  const overallPercent =
-    phase === 'msvc-redist'
-      ? Math.min(15, Math.max(5, percent))
-      : Math.min(100, Math.round((bytesOverallReceived / bytesOverallTotal) * 100))
+  const overallPercent = Math.min(100, Math.round((bytesOverallReceived / bytesOverallTotal) * 100))
 
   return {
     pluginId,
@@ -84,6 +93,7 @@ function throwIfInstallCancelled(): void {
 }
 
 function cleanupPartialPluginDir(pluginDir: string): void {
+  void stopOpenCodeServer()
   try {
     if (fs.existsSync(pluginDir)) {
       fs.rmSync(pluginDir, { recursive: true, force: true })
@@ -103,18 +113,47 @@ export function cancelPluginInstall(): void {
   cancelActiveDownload()
 }
 
+/** Prepara/renueva el sandbox del plugin ya instalado (docs/ai + config + agentes). */
+export async function prepareWorkspaceForInstalledPlugin(): Promise<{ ok: boolean; error?: string }> {
+  const state = readPluginsState()
+  const record = state.installed[ASSISTANT_PLUGIN_ID]
+  const entry = getPluginCatalogEntry(ASSISTANT_PLUGIN_ID)
+  if (!record || !entry) return { ok: false, error: 'Plugin not installed' }
+
+  const workspaceDir = record.workspaceDir ?? getWorkspaceDir()
+  if (workspaceStampMatches(workspaceDir, record.version)) return { ok: true }
+
+  const docsSourceDir = resolveDocsAiSourceDir()
+  if (!docsSourceDir) return { ok: false, error: 'docs/ai bundle not found' }
+
+  const plan = buildWorkspacePlan({
+    workspaceDir,
+    docsSourceDir,
+    uiActionsLogPath: getUiActionsLogPath(),
+  })
+  applyWorkspacePlan(plan, getUiActionsLogPath())
+  applyOpenCodeGlobalConfig(getOpenCodeGlobalConfigPath())
+  writeWorkspaceStamp(workspaceDir, record.version)
+  return { ok: true }
+}
+
 export async function installPlugin(pluginId: PluginId): Promise<PluginInstallResult> {
   if (installInProgress) {
     return { ok: false, error: 'Another plugin installation is in progress' }
   }
 
   if (process.platform !== 'win32') {
-    return { ok: false, error: 'Local AI plugin install is only supported on Windows in v1' }
+    return { ok: false, error: 'Assistant plugin install is only supported on Windows in v1' }
   }
 
   const entry = getPluginCatalogEntry(pluginId)
   if (!entry) {
     return { ok: false, error: 'Unknown plugin' }
+  }
+
+  const docsSourceDir = resolveDocsAiSourceDir()
+  if (!docsSourceDir) {
+    return { ok: false, error: 'docs/ai bundle not found; cannot prepare assistant workspace' }
   }
 
   installInProgress = true
@@ -125,94 +164,74 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
   const pluginDir = getPluginDir(pluginId)
 
   try {
-    sendProgress(buildProgress(pluginId, entry, 'msvc-redist', 5, 0, 0), true)
-    const msvc = await ensureMsvc2015to2022X64(resolvePluginUiLocale(), undefined, () => {
-      sendProgress(buildProgress(pluginId, entry, 'msvc-redist', 10, 0, 0), true)
-    })
-    if (!msvc.ok) {
-      return msvc
-    }
-    throwIfInstallCancelled()
-
     const binDir = path.join(pluginDir, 'bin')
-    const modelsDir = path.join(pluginDir, 'models')
     fs.mkdirSync(binDir, { recursive: true })
-    fs.mkdirSync(modelsDir, { recursive: true })
 
-    const llamaExePath = path.join(binDir, entry.llamaServer.executableName)
+    const exePath = path.join(binDir, entry.openCode.executableName)
+    const zipPath = path.join(binDir, 'opencode.zip')
 
-    if (!fs.existsSync(llamaExePath)) {
-      sendProgress(
-        buildProgress(pluginId, entry, 'llama-server', 0, 0, entry.llamaServer.sizeBytes),
-        true,
-      )
-
-      await downloadAndExtractLlamaRuntime(
-        entry.llamaServer,
-        binDir,
-        (percent, bytesReceived, bytesTotal) => {
-          throwIfInstallCancelled()
-          sendProgress(
-            buildProgress(pluginId, entry, 'llama-server', percent, bytesReceived, bytesTotal),
-          )
-        },
-        () => {
-          throwIfInstallCancelled()
-          sendProgress(
-            buildProgress(
-              pluginId,
-              entry,
-              'extracting',
-              100,
-              entry.llamaServer.sizeBytes,
-              entry.llamaServer.sizeBytes,
-            ),
-            true,
-          )
-        },
-      )
-
-      throwIfInstallCancelled()
-    }
-
-    const modelPath = path.join(modelsDir, entry.model.filename)
-
-    if (!fs.existsSync(modelPath)) {
-      throwIfInstallCancelled()
-
-      sendProgress(
-        buildProgress(pluginId, entry, 'model', 0, 0, entry.model.sizeBytes),
-        true,
-      )
-
+    if (!fs.existsSync(exePath)) {
+      sendProgress(buildProgress(pluginId, entry, 'opencode', 0, 0, entry.openCode.sizeBytes), true)
       await downloadFile(
-        entry.model.downloadUrl,
-        modelPath,
+        entry.openCode.downloadUrl,
+        zipPath,
         (p) => {
           throwIfInstallCancelled()
           sendProgress(
-            buildProgress(
-              pluginId,
-              entry,
-              'model',
-              p.percent,
-              p.bytesReceived,
-              p.bytesTotal || entry.model.sizeBytes,
-            ),
+            buildProgress(pluginId, entry, 'opencode', p.percent, p.bytesReceived, p.bytesTotal || entry.openCode.sizeBytes),
           )
         },
-        entry.model.sizeBytes * 0.5,
-        entry.model.sizeBytes,
+        entry.openCode.sizeBytes * 0.9,
+        entry.openCode.sizeBytes,
       )
+      throwIfInstallCancelled()
+
+      sendProgress(
+        buildProgress(pluginId, entry, 'extracting', 100, entry.openCode.sizeBytes, entry.openCode.sizeBytes),
+        true,
+      )
+      const zip = new AdmZip(zipPath)
+      zip.extractAllTo(binDir, true)
+      try {
+        fs.unlinkSync(zipPath)
+      } catch {
+        // ignore
+      }
+      if (!fs.existsSync(exePath)) {
+        throw new Error(`${entry.openCode.executableName} was not extracted from runtime archive`)
+      }
+      throwIfInstallCancelled()
     }
 
+    sendProgress(
+      buildProgress(pluginId, entry, 'preparing', 100, entry.openCode.sizeBytes, entry.openCode.sizeBytes),
+      true,
+    )
+
+    const workspaceDir = getWorkspaceDir()
+    const plan = buildWorkspacePlan({
+      workspaceDir,
+      docsSourceDir,
+      uiActionsLogPath: getUiActionsLogPath(),
+    })
+    applyWorkspacePlan(plan, getUiActionsLogPath())
+    applyOpenCodeGlobalConfig(getOpenCodeGlobalConfigPath())
+    writeWorkspaceStamp(workspaceDir, entry.version)
     throwIfInstallCancelled()
+
+    // Limpia preferencias obsoletas de instalaciones anteriores (modelos no-OpenCode).
+    const prefs = getAssistantPreferences(pluginId)
+    if (prefs.selectedModel && !prefs.selectedModel.startsWith('opencode')) {
+      const state = readPluginsState()
+      state.preferences = { ...state.preferences, [pluginId]: {} }
+      writePluginsState(state)
+    }
 
     const state = readPluginsState()
     state.installed[pluginId] = {
       version: entry.version,
-      modelPath,
-      llamaServerPath: llamaExePath,
+      opencodePath: exePath,
+      workspaceDir,
       installedAt: new Date().toISOString(),
     }
     if (!state.enabled.includes(pluginId)) {
@@ -221,7 +240,7 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
     writePluginsState(state)
 
     sendProgress(
-      buildProgress(pluginId, entry, 'model', 100, entry.model.sizeBytes, entry.model.sizeBytes),
+      buildProgress(pluginId, entry, 'preparing', 100, entry.openCode.sizeBytes, entry.openCode.sizeBytes),
       true,
     )
 
@@ -246,9 +265,16 @@ export async function uninstallPlugin(pluginId: PluginId): Promise<PluginInstall
 
   delete state.installed[pluginId]
   state.enabled = state.enabled.filter((id) => id !== pluginId)
+  if (state.preferences) {
+    delete state.preferences[pluginId]
+    if (Object.keys(state.preferences).length === 0) delete state.preferences
+  }
   writePluginsState(state)
 
+  resetAssistantSessions()
+
   try {
+    await stopOpenCodeServer()
     if (fs.existsSync(pluginDir)) {
       fs.rmSync(pluginDir, { recursive: true, force: true })
     }

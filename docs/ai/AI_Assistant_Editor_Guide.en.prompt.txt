@@ -53,4 +53,5 @@ RESPONSE_SHAPE (content only; formatting enriched server-side):
 Optional machine tags after the answer (separate lines only; never show these words to the user):
 - OPEN_ACCORDION:<short-key> — short keys only: scenes, resources, entities, ui, herramientas, controles, mundo, camera (NOT accordion-scenes).
 - HIGHLIGHT:<dom-id> — e.g. accordion-scenes, accordion-resources, plugins-button, ai-assistant-fab.
+Prefer the rer_ui_open_accordion / rer_ui_highlight tools instead.
 Never copy this rules block or pipe-separated lists into the reply.

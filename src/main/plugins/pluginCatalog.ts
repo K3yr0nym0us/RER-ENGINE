@@ -1,29 +1,24 @@
 import type { PluginCatalogEntry } from '../../shared-types/plugins'
 
-/** Catálogo embebido (ligero). El modelo y llama-server se descargan on-demand. */
+/**
+ * Catálogo embebido (ligero). El runtime de OpenCode se descarga on-demand;
+ * la inferencia no es local: usa modelos free de OpenCode Console por defecto
+ * y OpenCode Go (token opcional) para modelos de pago.
+ */
 export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
   {
     id: 'local-ai-assistant',
-    name: 'Local AI Assistant',
+    name: 'RER-AI (OpenCode)',
     description:
-      'On-device assistant powered by Qwen3-1.7B. Guides you through the editor sidebar and docs. Optional download; not included in the base install.',
-    version: '1.0.0',
-    downloadSizeLabel: '~1.9 GB (model + llama.cpp runtime)',
-    model: {
-      repo: 'Qwen/Qwen3-1.7B-GGUF',
-      repoUrl: 'https://huggingface.co/Qwen/Qwen3-1.7B-GGUF',
-      filename: 'Qwen3-1.7B-Q8_0.gguf',
+      'Assistant powered by OpenCode. Reads only the docs/ai editor guides and acts on the UI with dedicated tools. Free models by default; OpenCode Go token enables paid models.',
+    version: '2.0.0',
+    downloadSizeLabel: '~125 MB (OpenCode runtime)',
+    openCode: {
       downloadUrl:
-        'https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf',
-      sizeBytes: 1_830_000_000,
-      license: 'apache-2.0',
-    },
-    llamaServer: {
-      downloadUrl:
-        'https://github.com/ggml-org/llama.cpp/releases/download/b5212/llama-b5212-bin-win-avx2-x64.zip',
-      archiveInnerPath: 'llama-server.exe',
-      executableName: 'llama-server.exe',
-      sizeBytes: 45_000_000,
+        'https://opencode.ai/update/api/latest/cli/opencode/opencode-windows-x64.zip',
+      archiveInnerPath: 'opencode.exe',
+      executableName: 'opencode.exe',
+      sizeBytes: 124_800_929,
     },
   },
 ]

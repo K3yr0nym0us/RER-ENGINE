@@ -27,8 +27,20 @@ const OVERLAY_WIDTH = COLLAPSED_INPUT_WIDTH
 const OVERLAY_HEIGHT =
   Math.max(COLLAPSED_INTRO_HEIGHT, COLLAPSED_INPUT_HEIGHT, COLLAPSED_ANSWER_HEIGHT) + 16
 
-export type AiAssistantLayout = 'intro' | 'thinking' | 'input' | 'answer'
+export type AiAssistantLayout =
+  | 'intro'
+  | 'thinking'
+  | 'input'
+  | 'answer'
+  | 'fab'
+  | 'panel'
 const INITIAL_MARGIN = 16
+
+/** Tamaño del panel de chat expandido (FAB + panel expandible). */
+const PANEL_WIDTH = 470
+const PANEL_HEIGHT = 680
+
+let currentLayout: AiAssistantLayout | null = null
 
 let getMainWindow: () => BrowserWindow | null = () => null
 
@@ -122,11 +134,19 @@ function rememberPosition(win: BrowserWindow): void {
   updateOffsetFromAbsolutePosition(x, y)
 }
 
-function syncOverlayPositionToMain(win: BrowserWindow, preferSaved = true): void {
+function currentOverlaySize(): { width: number; height: number } {
+  if (currentLayout === 'panel') return { width: PANEL_WIDTH, height: PANEL_HEIGHT }
+  return { width: OVERLAY_WIDTH, height: OVERLAY_HEIGHT }
+}
+
+function syncOverlayPositionToMain(
+  win: BrowserWindow,
+  preferSaved = true,
+  size: { width: number; height: number } = currentOverlaySize(),
+): void {
   if (dragGrabOffset) return
 
-  const width = OVERLAY_WIDTH
-  const height = OVERLAY_HEIGHT
+  const { width, height } = size
 
   if (!preferSaved || !savedOffsetFromContent) {
     savedOffsetFromContent = defaultInitialOffset(width, height)
@@ -328,8 +348,36 @@ export function restackAiAssistantOverlayIfOpen(): void {
   raiseOverlayAboveEngine(overlayWindow)
 }
 
-export function setAiAssistantOverlayLayout(_layout: AiAssistantLayout): void {
-  if (!overlayWindow || overlayWindow.isDestroyed()) return
+export function setAiAssistantOverlayLayout(layout: AiAssistantLayout): void {
+  if (!overlayWindow || overlayWindow.isDestroyed()) {
+    currentLayout = layout
+    return
+  }
+  const previous = currentLayout
+  currentLayout = layout
+  const size = currentOverlaySize()
+  const bounds = overlayWindow.getBounds()
+  const sameSize = bounds.width === size.width && bounds.height === size.height
+  if (previous !== layout && !sameSize) {
+    // Ancla inferior derecha: el overlay crece hacia arriba/izquierda sin saltos.
+    const right = bounds.x + bounds.width
+    const bottom = bounds.y + bounds.height
+    let x = right - size.width
+    let y = bottom - size.height
+    const display = electronScreen.getDisplayNearestPoint({ x: Math.round(x), y: Math.round(y) })
+    const { x: workX, y: workY, width: workW, height: workH } = display.workArea
+    x = Math.max(workX, Math.min(x, workX + workW - size.width))
+    y = Math.max(workY, Math.min(y, workY + workH - size.height))
+    overlayWindow.setMinimumSize(size.width, size.height)
+    overlayWindow.setMaximumSize(size.width, size.height)
+    overlayWindow.setBounds({
+      x: Math.round(x),
+      y: Math.round(y),
+      width: size.width,
+      height: size.height,
+    })
+    rememberPosition(overlayWindow)
+  }
   raiseOverlayAboveEngine(overlayWindow)
 }
 
