@@ -1,6 +1,51 @@
-import { describe, expect, it } from 'vitest'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
-import { buildWorkspacePlan } from './openCodeSandbox'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import {
+  buildWorkspacePlan,
+  computeDocsSourceStamp,
+  workspaceStampMatches,
+  writeWorkspaceStamp,
+} from './openCodeSandbox'
+
+describe('workspace stamp', () => {
+  const tmpRoots: string[] = []
+
+  afterEach(() => {
+    for (const root of tmpRoots.splice(0)) {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('computeDocsSourceStamp es estable y cambia cuando los docs cambian', () => {
+    const docs = fs.mkdtempSync(path.join(os.tmpdir(), 'rer-docs-'))
+    tmpRoots.push(docs)
+    fs.writeFileSync(path.join(docs, 'guide.txt'), 'v1', 'utf8')
+
+    const stamp1 = computeDocsSourceStamp(docs)
+    const stamp2 = computeDocsSourceStamp(docs)
+    expect(stamp1).toBe(stamp2)
+
+    fs.writeFileSync(path.join(docs, 'guide.txt'), 'v2 con más contenido', 'utf8')
+    expect(computeDocsSourceStamp(docs)).not.toBe(stamp1)
+  })
+
+  it('workspaceStampMatches exige versión y hash de docs coincidentes', () => {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'rer-ws-'))
+    tmpRoots.push(ws)
+
+    writeWorkspaceStamp(ws, '2.0.0', 'abc123')
+    expect(workspaceStampMatches(ws, '2.0.0', 'abc123')).toBe(true)
+    expect(workspaceStampMatches(ws, '2.0.0', 'otro')).toBe(false)
+    expect(workspaceStampMatches(ws, '2.0.1', 'abc123')).toBe(false)
+    expect(workspaceStampMatches(ws, '2.0.0')).toBe(true)
+    expect(workspaceStampMatches('C:/fake/workspace', '2.0.0')).toBe(false)
+  })
+})
+
 
 describe('buildWorkspacePlan', () => {
   const plan = buildWorkspacePlan({

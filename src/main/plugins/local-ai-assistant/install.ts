@@ -23,6 +23,7 @@ import {
   applyOpenCodeGlobalConfig,
   applyWorkspacePlan,
   buildWorkspacePlan,
+  computeDocsSourceStamp,
   writeWorkspaceStamp,
   workspaceStampMatches,
 } from './openCodeSandbox'
@@ -121,10 +122,13 @@ export async function prepareWorkspaceForInstalledPlugin(): Promise<{ ok: boolea
   if (!record || !entry) return { ok: false, error: 'Plugin not installed' }
 
   const workspaceDir = record.workspaceDir ?? getWorkspaceDir()
-  if (workspaceStampMatches(workspaceDir, record.version)) return { ok: true }
 
   const docsSourceDir = resolveDocsAiSourceDir()
   if (!docsSourceDir) return { ok: false, error: 'docs/ai bundle not found' }
+
+  // Re-prepara si cambió la versión del plugin O los docs/ai de origen.
+  const docsStamp = computeDocsSourceStamp(docsSourceDir)
+  if (workspaceStampMatches(workspaceDir, record.version, docsStamp)) return { ok: true }
 
   const plan = buildWorkspacePlan({
     workspaceDir,
@@ -133,7 +137,7 @@ export async function prepareWorkspaceForInstalledPlugin(): Promise<{ ok: boolea
   })
   applyWorkspacePlan(plan, getUiActionsLogPath())
   applyOpenCodeGlobalConfig(getOpenCodeGlobalConfigPath())
-  writeWorkspaceStamp(workspaceDir, record.version)
+  writeWorkspaceStamp(workspaceDir, record.version, docsStamp)
   return { ok: true }
 }
 
@@ -216,7 +220,7 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
     })
     applyWorkspacePlan(plan, getUiActionsLogPath())
     applyOpenCodeGlobalConfig(getOpenCodeGlobalConfigPath())
-    writeWorkspaceStamp(workspaceDir, entry.version)
+    writeWorkspaceStamp(workspaceDir, entry.version, computeDocsSourceStamp(docsSourceDir))
     throwIfInstallCancelled()
 
     // Limpia preferencias obsoletas de instalaciones anteriores (modelos no-OpenCode).

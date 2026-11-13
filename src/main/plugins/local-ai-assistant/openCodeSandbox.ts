@@ -1,3 +1,4 @@
+import crypto from 'node:crypto'
 import fs from 'fs'
 import path from 'path'
 
@@ -198,18 +199,59 @@ export function applyOpenCodeGlobalConfig(globalConfigPath: string): void {
   fs.writeFileSync(globalConfigPath, OPENCODE_GLOBAL_CONFIG, 'utf8')
 }
 
-/** Stamp para saber si el sandbox corresponde a la versión instalada. */
-export function workspaceStampMatches(workspaceDir: string, pluginVersion: string): boolean {
+/** Stamp para saber si el sandbox corresponde a la versión instalada y a los docs actuales. */
+export function computeDocsSourceStamp(docsSourceDir: string): string {
+  const hash = crypto.createHash('sha256')
+  const walk = (dir: string, prefix: string): void => {
+    let entries: fs.Dirent[]
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))
+    } catch {
+      return
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name)
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        walk(full, rel)
+      } else if (entry.isFile()) {
+        const stat = fs.statSync(full)
+        hash.update(`${rel}:${stat.size}:${stat.mtimeMs}\n`)
+      }
+    }
+  }
+  walk(docsSourceDir, '')
+  return hash.digest('hex')
+}
+
+export function workspaceStampMatches(
+  workspaceDir: string,
+  pluginVersion: string,
+  docsSourceStamp?: string,
+): boolean {
   const stampPath = path.join(workspaceDir, '.rer-stamp.json')
   try {
-    const parsed = JSON.parse(fs.readFileSync(stampPath, 'utf8')) as { version?: string }
-    return parsed.version === pluginVersion
+    const parsed = JSON.parse(fs.readFileSync(stampPath, 'utf8')) as {
+      version?: string
+      docsHash?: string
+    }
+    if (parsed.version !== pluginVersion) return false
+    if (docsSourceStamp && parsed.docsHash !== docsSourceStamp) return false
+    return true
   } catch {
     return false
   }
 }
 
-export function writeWorkspaceStamp(workspaceDir: string, pluginVersion: string): void {
+export function writeWorkspaceStamp(
+  workspaceDir: string,
+  pluginVersion: string,
+  docsSourceStamp?: string,
+): void {
   const stampPath = path.join(workspaceDir, '.rer-stamp.json')
-  fs.writeFileSync(stampPath, `${JSON.stringify({ version: pluginVersion }, null, 2)}\n`, 'utf8')
+  fs.writeFileSync(
+    stampPath,
+    `${JSON.stringify({ version: pluginVersion, docsHash: docsSourceStamp ?? null }, null, 2)}\n`,
+    'utf8',
+  )
 }
