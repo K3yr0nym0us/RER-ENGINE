@@ -124,7 +124,14 @@ export function WorldGenPanelBody() {
   /** Ruta de la DLL instalada (del estado del sistema de plugins). */
   const resolveLibraryPath = async (): Promise<string | null> => {
     const state = await window.electronAPI.pluginsGetState()
-    return state.installed['world-gen']?.libraryPath ?? null
+    const record = state.installed['world-gen']
+    if (!record?.libraryPath) return null
+    // El gating del proceso main exige plugin activo, no solo instalado.
+    if (!state.enabled.includes('world-gen')) {
+      setStatus(t('The World Generator plugin is installed but disabled. Enable it in Plugins.'))
+      return null
+    }
+    return record.libraryPath
   }
 
   const buildConfigJson = (): string => {

@@ -99,6 +99,11 @@ export async function installWorldGenPlugin(_pluginId: PluginId): Promise<Plugin
       libraryPath,
       installedAt: new Date().toISOString(),
     }
+    // Activación automática: sin esto, el gating de `engineIpcRegistry`
+    // rechazaría los comandos `world_gen_*` aunque la DLL esté instalada.
+    if (!state.enabled.includes(WORLDGEN_PLUGIN_ID)) {
+      state.enabled.push(WORLDGEN_PLUGIN_ID)
+    }
     writePluginsState(state)
     return { ok: true }
   } catch (err) {
