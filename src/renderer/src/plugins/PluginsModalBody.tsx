@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ProgressBar } from 'react-bootstrap'
-import { Hourglass } from 'react-bootstrap-icons'
+import { Globe, Hourglass } from 'react-bootstrap-icons'
 
 import { useTraslate } from '@hooks'
 import type { PluginCatalogEntry, PluginDownloadProgress, PluginId } from '@shared-types'
@@ -93,12 +93,16 @@ function PluginCard({
   return (
     <div className="plugin-square-card plugin-square-card--active card border-secondary-subtle">
       <div className="card-body d-flex flex-column align-items-center text-center px-3 pb-3 pt-2">
-        <img
-          src={rerAiIcon}
-          alt=""
-          className="plugin-square-card__icon"
-          draggable={false}
-        />
+        {entry.id === 'world-gen' ? (
+          <Globe size={88} className="plugin-square-card__icon" aria-hidden />
+        ) : (
+          <img
+            src={rerAiIcon}
+            alt=""
+            className="plugin-square-card__icon"
+            draggable={false}
+          />
+        )}
         <h6 className="plugin-square-card__title mb-2">{pluginTitle(entry, t)}</h6>
         <p className="plugin-square-card__meta small mb-0">
           <span className="badge text-bg-secondary">v{entry.version}</span>
