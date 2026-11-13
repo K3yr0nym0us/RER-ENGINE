@@ -44,6 +44,19 @@ describe('buildWorkspacePlan', () => {
     expect(plugin?.content).not.toContain('__RER_UI_ACTION_LOG__')
   })
 
+  it('normaliza la ruta del log a forward slashes (los backslashes rompen escapes JS)', () => {
+    const windowsPathPlan = buildWorkspacePlan({
+      workspaceDir: 'C:\\fake\\workspace',
+      docsSourceDir: 'C:\\fake\\docs\\ai',
+      uiActionsLogPath: 'C:\\fake\\workspace\\ui-actions.log',
+    })
+    const plugin = windowsPathPlan.files.find(
+      (file) => file.relativePath === '.opencode/plugins/rer-ui/index.ts',
+    )
+    expect(plugin?.content).toContain('C:/fake/workspace/ui-actions.log')
+    expect(plugin?.content).not.toMatch(/\\fake\\workspace/)
+  })
+
   it('copia docs/ai al sandbox', () => {
     expect(plan.docsTargetDir.replace(/\\/g, '/')).toBe('C:/fake/workspace/docs/ai')
     expect(plan.docsSourceDir.replace(/\\/g, '/')).toBe('C:/fake/docs/ai')

@@ -146,7 +146,10 @@ export function buildWorkspacePlan(input: {
   docsSourceDir: string
   uiActionsLogPath: string
 }): WorkspacePlan {
-  const { workspaceDir, docsSourceDir, uiActionsLogPath } = input
+  const { workspaceDir, docsSourceDir } = input
+  // El plugin usa la ruta dentro de un string JS: los backslashes de Windows
+  // romperían escapes (\u, \r, \t...) y provocarían "Syntax Error" al transpilar.
+  const uiActionsLogPath = input.uiActionsLogPath.replace(/\\/g, '/')
   const pluginSource = RER_UI_PLUGIN_TEMPLATE.replace(UI_ACTION_LOG_PLACEHOLDER, uiActionsLogPath)
 
   return {
