@@ -40,6 +40,14 @@ export async function installWorldGenPlugin(_pluginId: PluginId): Promise<Plugin
   installInProgress = true
   resetProgressBroadcastThrottle()
   try {
+    // La URL debe ser la del ASSET (`/releases/download/...`), no la página del
+    // release (`/releases/tag/...`): la página es HTML y la descarga "funciona"
+    // pero con unos KB de HTML que fallarían la verificación de tamaño/SHA.
+    if (!/\/releases\/download\//.test(entry.artifact.downloadUrl)) {
+      throw new Error(
+        `artifact.downloadUrl must point to the release asset (/releases/download/...), got: ${entry.artifact.downloadUrl}`,
+      )
+    }
     const dir = getPluginDir(WORLDGEN_PLUGIN_ID)
     fs.mkdirSync(dir, { recursive: true })
     const zipPath = path.join(dir, `${entry.id}-${entry.version}.zip`)

@@ -34,17 +34,19 @@ export const PLUGIN_CATALOG: PluginCatalogEntry[] = [
       'Generación procedural de mundos 3D: Marching Cubes con superficies suaves, montañas, lagos, ríos, cuevas y biomas configurables con semilla determinista. La DLL nativa se descarga desde GitHub Releases al instalar (se publica como release del repo del proyecto).',
     version: '1.0.0',
     // La lógica de pago (licencia) se enganchará aquí: validar antes de descargar.
-    downloadSizeLabel: '~0.3 MB (rer_worldgen_plugin.dll)',
+    downloadSizeLabel: '~0.2 MB (rer_worldgen_plugin.zip)',
     kind: 'download',
     artifact: {
       archiveInnerPath: 'rer_worldgen.dll',
       executableName: 'rer_worldgen.dll',
-      // TODO(pago): reemplazar por la URL real del release al publicarlo.
+      // URL del ASSET del release (no de la página): la página devolvería HTML
+      // y el instalador lo rechazaría por tamaño.
       downloadUrl:
-        'https://github.com/TsokasGit/rer-engine/releases/download/worldgen-v1.0.0/rer-worldgen-1.0.0-win-x64.zip',
-      sizeBytes: 320_000,
+        'https://github.com/K3yr0nym0us/RER-ENGINE/releases/download/worldgen-v1.0.0/rer-worldgen-1.0.0-win-x64.zip',
+      // Tamaño exacto del ZIP publicado (verificado).
+      sizeBytes: 201_366,
       // SHA-256 esperado del ZIP; se valida durante la instalación si está presente.
-      sha256: undefined,
+      sha256: '9a9819609643995d5433db9e124f7556ba9bdf604648c26a7d7db20a26516249',
     },
   },
 ]
