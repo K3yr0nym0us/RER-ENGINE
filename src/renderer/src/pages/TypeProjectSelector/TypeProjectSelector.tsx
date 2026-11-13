@@ -169,7 +169,7 @@ export function TypeProjectSelector({ onSelect, onLoadProject }: Props) {
       </div>
 
       <div className="mt-5" style={{ fontSize: 12, color: '#374151', letterSpacing: '0.04em' }}>
-        React TS · Electron TS · Rust (wgpu)
+        React · Electron · Rust
       </div>
     </div>
   )
