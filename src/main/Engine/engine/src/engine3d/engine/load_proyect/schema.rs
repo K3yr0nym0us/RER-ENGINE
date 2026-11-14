@@ -37,6 +37,8 @@ pub(crate) struct ProjectSaveData {
     pub scenes: Vec<SavedScene>,
     #[serde(default)]
     pub(crate) blueprints: Vec<SavedBlueprint>,
+    #[serde(default, rename = "worldGen3d")]
+    pub(crate) worldGen3d: Option<serde_json::Value>,
     #[serde(default)]
     pub(crate) language: Option<String>,
     #[serde(default)]
@@ -114,6 +116,12 @@ pub(crate) struct SavedWorldConfig {
     pub(crate) taaBlend: Option<f32>,
     #[serde(default)]
     pub(crate) taaJitterScale: Option<f32>,
+    #[serde(default)]
+    pub(crate) lodEnabled: Option<bool>,
+    #[serde(default)]
+    pub(crate) lod1Distance: Option<f32>,
+    #[serde(default)]
+    pub(crate) lod2Distance: Option<f32>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]

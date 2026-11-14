@@ -2,7 +2,7 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** noviembre 2026 (motores 2D y 3D sobre Ash/Vulkan; el 2D ya no depende de wgpu y comparte el núcleo Vulkan de `core`; reflejos, sondas, MSAA, sombras y TAA del 3D actualizados a la implementación real). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
+**Última revisión:** noviembre 2026 (motores 2D y 3D sobre Ash/Vulkan; el 2D ya no depende de wgpu y comparte el núcleo Vulkan de `core`; reflejos, sondas, MSAA, sombras y TAA del 3D actualizados a la implementación real; nuevo LOD de mallas GLB estáticas por distancia en `yaml/rendering/Model_LOD_3D.yaml`). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
 
 ## Estructura
 
@@ -59,6 +59,7 @@
 | [TAA_3D.yaml](./yaml/rendering/TAA_3D.yaml) | Anti-aliasing temporal: blend, historial ping-pong, formatos G-buffer, IPC |
 | [MSAA_3D.yaml](./yaml/rendering/MSAA_3D.yaml) | MSAA forward 3D por tier, resolve a G-buffers 1×, IPC |
 | [Shadows_3D.yaml](./yaml/rendering/Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
+| [Model_LOD_3D.yaml](./yaml/rendering/Model_LOD_3D.yaml) | LOD de mallas GLB estáticas por distancia (vertex clustering, `set_model_lod`) |
 
 ---
 

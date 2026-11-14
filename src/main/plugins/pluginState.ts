@@ -43,6 +43,11 @@ export function writePluginsState(state: PluginsState): void {
 export function isPluginInstalled(pluginId: PluginId): boolean {
   const state = readPluginsState()
   const record = state.installed[pluginId]
+  if (pluginId === 'world-gen') {
+    // Plugin nativo: vale la DLL instalada en su carpeta.
+    return Boolean(record?.libraryPath && fs.existsSync(record.libraryPath))
+  }
+  // RER-AI: valen el runtime OpenCode y su sandbox.
   if (!record?.opencodePath || !record.workspaceDir) return false
   return fs.existsSync(record.opencodePath) && fs.existsSync(record.workspaceDir)
 }

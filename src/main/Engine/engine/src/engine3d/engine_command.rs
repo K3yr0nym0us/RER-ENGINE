@@ -80,6 +80,25 @@ pub enum EngineCommand3dOnly {
         position: [f32; 3],
         scale: [f32; 3],
     },
+    /// Plugin worldgen: ruta de `rer_worldgen_plugin.dll` instalado por el editor.
+    WorldGenSetLibraryPath {
+        path: String,
+    },
+    /// Plugin worldgen: configuración del mundo (JSON camelCase de `WorldGenConfig`).
+    WorldGenSetConfig {
+        config_json: String,
+    },
+    /// Plugin worldgen: planifica y encola la generación de todos los chunks activos.
+    WorldGenStart,
+    /// Plugin worldgen: cancela la cola de chunks pendientes.
+    WorldGenStop,
+    /// Plugin worldgen: elimina los chunks en escena y libera el handle de la DLL.
+    WorldGenReset,
+    /// Plugin worldgen: distribuye un blueprint según reglas (JSON camelCase de
+    /// `ScatterRules` con `blueprintId`).
+    WorldGenScatter {
+        rules_json: String,
+    },
     SetDirectionalLight {
         #[serde(default)]
         ambient: Option<f32>,
@@ -163,6 +182,13 @@ pub enum EngineCommand3dOnly {
         blend: Option<f32>,
         #[serde(default)]
         jitter_scale: Option<f32>,
+    },
+    SetModelLod {
+        enabled: bool,
+        #[serde(default)]
+        lod1_distance_m: Option<f32>,
+        #[serde(default)]
+        lod2_distance_m: Option<f32>,
     },
     SetCameraFov {
         fov_y: f32,
@@ -325,6 +351,24 @@ mod tests {
                 assert_eq!(jitter_scale, Some(0.8));
             }
             other => panic!("expected Only3d SetTaa, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn deserialize_set_model_lod_command() {
+        let json = r#"{"cmd":"set_model_lod","enabled":true,"lod1_distance_m":35.0,"lod2_distance_m":90.0}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("set_model_lod IPC");
+        match cmd {
+            EngineCommand::Only3d(EngineCommand3dOnly::SetModelLod {
+                enabled,
+                lod1_distance_m,
+                lod2_distance_m,
+            }) => {
+                assert!(enabled);
+                assert_eq!(lod1_distance_m, Some(35.0));
+                assert_eq!(lod2_distance_m, Some(90.0));
+            }
+            other => panic!("expected Only3d SetModelLod, got {other:?}"),
         }
     }
 

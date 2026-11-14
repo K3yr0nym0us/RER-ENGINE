@@ -160,6 +160,13 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'set_projectile_config',
   'set_entity_hardness',
   'fire_projectile',
+  // Plugin worldgen (generación procedural de terreno; gating en engineIpcRegistry).
+  'world_gen_set_library_path',
+  'world_gen_set_config',
+  'world_gen_start',
+  'world_gen_stop',
+  'world_gen_reset',
+  'world_gen_scatter',
 ] as const
 
 function toSet<T extends string>(items: readonly T[]): ReadonlySet<string> {

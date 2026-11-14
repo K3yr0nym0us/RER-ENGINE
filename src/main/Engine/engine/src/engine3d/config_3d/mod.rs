@@ -20,6 +20,7 @@ pub(crate) mod mesh_3d_fbx;
 pub(crate) mod model_animation;
 pub(crate) mod model_asset;
 pub(crate) mod model_asset_fbx;
+pub(crate) mod model_lod;
 pub(crate) mod msaa_graphics;
 pub(crate) mod msaa_settings;
 pub(crate) mod pbr_presets;
@@ -44,6 +45,7 @@ pub(crate) mod static_model_cache;
 pub(crate) mod texture_graphics;
 pub(crate) mod transform_gizmo;
 pub(crate) mod world_bounds;
+pub(crate) mod worldgen;
 
 use crate::engine3d::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
 use crate::engine3d::config_3d::transform_gizmo::TransformGizmoMode;

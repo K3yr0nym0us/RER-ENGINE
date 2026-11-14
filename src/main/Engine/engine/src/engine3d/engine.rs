@@ -282,6 +282,8 @@ pub struct State {
         std::collections::HashMap<String, std::collections::HashMap<u32, u32>>,
     /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
     pub(crate) static_model_cache: crate::engine3d::config_3d::static_model_cache::StaticModelCache,
+    /// Plugin de generación procedural de terreno (`rer_worldgen_plugin.dll`).
+    pub(crate) worldgen: crate::engine3d::config_3d::worldgen::StateWorldgenState,
     pub(crate) model_preload_rx: crate::engine3d::config_3d::static_model_cache::ModelPreloadRx,
     pub(crate) model_preload_tx: crate::engine3d::config_3d::static_model_cache::ModelPreloadTx,
     pub(crate) model_preload_inflight: std::collections::HashSet<String>,
@@ -365,6 +367,14 @@ pub struct State {
     pub(crate) rt_skinned_tick: u32,
     /// Distancia (m) a la cámara con textura al tope del tier activo.
     pub(crate) texture_detail_near_m: f32,
+    /// LOD de mallas estáticas GLB por distancia (`set_model_lod`).
+    pub(crate) model_lod_enabled: bool,
+    /// Distancia (m) desde la que una entidad usa su variante LOD1.
+    pub(crate) model_lod1_distance_m: f32,
+    /// Distancia (m) desde la que una entidad usa su variante LOD2.
+    pub(crate) model_lod2_distance_m: f32,
+    /// `mesh_idx` LOD0 → variantes simplificadas `[LOD1, LOD2]` en `self.meshes`.
+    pub(crate) mesh_lod_variants: HashMap<usize, [Option<usize>; 2]>,
     pub(crate) glb_texture_catalog_cache:
         HashMap<String, Vec<crate::engine3d::config_3d::entity_textures::MaterialTexturesCatalog>>,
     pub(crate) entity_texture_effective_cap: HashMap<EntityId, u32>,

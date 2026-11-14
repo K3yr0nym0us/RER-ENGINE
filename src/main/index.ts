@@ -37,6 +37,7 @@ import {
   repositionViewportCornerModalIfOpen,
   setModalElectronAnchorRect,
   preloadModalElectronWindow,
+  forwardEngineEventToModal,
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
 import { registerDevToolsShortcut } from './devToolsShortcut';
@@ -146,6 +147,8 @@ function sendEventToRenderer(event: EngineEvent): void {
   } else {
     eventBuffer.push(event)
   }
+  // La modal worldgen abierta necesita eventos del engine (models_list).
+  forwardEngineEventToModal(event)
 }
 
 function focusMainEditorWindow(): void {

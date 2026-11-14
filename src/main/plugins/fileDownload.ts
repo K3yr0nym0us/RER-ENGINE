@@ -62,7 +62,10 @@ export async function downloadFile(
     const stat = fs.statSync(tempPath)
     if (expectedMinBytes != null && stat.size < expectedMinBytes * 0.9) {
       fs.unlinkSync(tempPath)
-      throw new Error(`Downloaded file is too small (${stat.size} bytes)`)
+      throw new Error(
+        `Downloaded file is too small (${stat.size} bytes, expected at least ${Math.round(expectedMinBytes * 0.9)}). ` +
+          'This usually means the URL returned an HTML error page instead of the release asset.',
+      )
     }
 
     if (fs.existsSync(destPath)) fs.unlinkSync(destPath)

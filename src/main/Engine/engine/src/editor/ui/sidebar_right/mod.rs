@@ -74,12 +74,19 @@ enum WorldAction {
         blend: f32,
         jitter_scale: f32,
     },
+    /// LOD de modelos: `None` = mantener el valor actual (actualizaciones parciales).
+    SetModelLod {
+        enabled: Option<bool>,
+        lod1_distance: Option<f32>,
+        lod2_distance: Option<f32>,
+    },
 }
 
 mod fps;
 mod gravity;
 mod grid;
 mod lighting;
+mod lod;
 mod metrics;
 mod msaa;
 mod reflections;
@@ -92,6 +99,7 @@ use self::fps::*;
 use self::gravity::*;
 use self::grid::*;
 use self::lighting::*;
+use self::lod::*;
 use self::metrics::*;
 use self::msaa::*;
 use self::reflections::*;
@@ -293,6 +301,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             enabled,
                             |ui| taa_body(ui, world, locale, &mut actions),
                         );
+                        sub(
+                            ui,
+                            open,
+                            "world_lod",
+                            icons::STACK,
+                            "LOD",
+                            enabled,
+                            |ui| lod_body(ui, world, locale, &mut actions),
+                        );
                     }
 
                     sub(
@@ -485,6 +502,36 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
                 "blend": blend,
                 "jitter_scale": jitter_scale,
             }));
+        }
+        WorldAction::SetModelLod {
+            enabled,
+            lod1_distance,
+            lod2_distance,
+        } => {
+            if let Some(value) = enabled {
+                app.world.model_lod_enabled = value;
+            }
+            if let Some(value) = lod1_distance {
+                app.world.model_lod1_distance = value;
+            }
+            if let Some(value) = lod2_distance {
+                app.world.model_lod2_distance = value;
+            }
+            app.send_engine(json!({
+                "cmd": "set_model_lod",
+                "enabled": app.world.model_lod_enabled,
+                "lod1_distance_m": app.world.model_lod1_distance,
+                "lod2_distance_m": app.world.model_lod2_distance,
+            }));
+            app.push_log(
+                format!(
+                    "[LOD] {} · LOD1 {:.0} m · LOD2 {:.0} m",
+                    on_off(app.world.model_lod_enabled),
+                    app.world.model_lod1_distance,
+                    app.world.model_lod2_distance,
+                ),
+                false,
+            );
         }
     }
 }

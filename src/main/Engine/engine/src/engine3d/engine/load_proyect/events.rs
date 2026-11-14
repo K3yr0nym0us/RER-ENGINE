@@ -110,6 +110,9 @@ pub(crate) fn send_project_loaded_3d(
         taaEnabled: view.world.taaEnabled,
         taaBlend: view.world.taaBlend,
         taaJitterScale: view.world.taaJitterScale,
+        lodEnabled: view.world.lodEnabled,
+        lod1Distance: view.world.lod1Distance,
+        lod2Distance: view.world.lod2Distance,
     };
 
     let models = editor_models_from_manifest(project);

@@ -26,6 +26,7 @@ mod scripts;
 mod sockets;
 mod system;
 mod world;
+mod worldgen;
 
 impl State {
     pub fn window(&self) -> &std::sync::Arc<winit::window::Window> {
@@ -376,6 +377,9 @@ impl State {
         }
         if let Some(c) = cmd.take() {
             cmd = self.cmd_world(c);
+        }
+        if let Some(c) = cmd.take() {
+            cmd = self.cmd_worldgen(c);
         }
         if let Some(c) = cmd.take() {
             cmd = self.cmd_player_ui(c);

@@ -175,7 +175,7 @@ impl State {
             .map(|(id, _)| id)
     }
 
-    fn pack_scene_checker_texture(&mut self) -> usize {
+    pub(crate) fn pack_scene_checker_texture(&mut self) -> usize {
         const S: u32 = 128;
         const TILE: u32 = 8;
         let mut px: Vec<u8> = Vec::with_capacity((S * S * 4) as usize);

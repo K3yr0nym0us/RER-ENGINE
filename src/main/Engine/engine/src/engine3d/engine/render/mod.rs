@@ -196,7 +196,6 @@ impl State {
                 if self.model_animation_bindings.contains_key(&id) {
                     return None;
                 }
-                let mesh_idx = mc.mesh_idx;
                 let is_ground = self
                     .world
                     .get::<crate::engine3d::ecs::NameComponent>(id)
@@ -215,6 +214,21 @@ impl State {
                 }
                 if !is_ground && !is_aabb_visible_3d(&frustum_vp, mesh_center, mesh_half) {
                     return None;
+                }
+                // LOD por distancia: solo entidades con variantes registradas
+                // (`mesh_lod_variants`); el culling usa el AABB LOD0 sin cambios.
+                let mut mesh_idx = mc.mesh_idx;
+                if self.model_lod_enabled {
+                    let level = crate::engine3d::config_3d::model_lod::select_lod_level(
+                        mesh_center.distance(eye),
+                        self.model_lod1_distance_m,
+                        self.model_lod2_distance_m,
+                    );
+                    if level > 0
+                        && let Some(lod_idx) = self.lod_mesh_idx_for(mc.mesh_idx, level)
+                    {
+                        mesh_idx = lod_idx;
+                    }
                 }
                 Some((id, mesh_idx, mc.tex_idx, t.to_matrix(), 0))
             })

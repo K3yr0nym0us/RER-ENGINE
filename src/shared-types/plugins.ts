@@ -1,4 +1,4 @@
-export type PluginId = 'local-ai-assistant'
+export type PluginId = 'local-ai-assistant' | 'world-gen'
 
 export interface PluginOpenCodeManifest {
   downloadUrl: string
@@ -7,19 +7,39 @@ export interface PluginOpenCodeManifest {
   sizeBytes: number
 }
 
+/** Artefacto binario de un plugin nativo (DLL) publicado en GitHub Releases. */
+export interface PluginArtifactManifest {
+  /** Nombre del archivo dentro del ZIP del release. */
+  archiveInnerPath: string
+  /** Nombre del binario una vez instalado (p. ej. `rer_worldgen.dll`). */
+  executableName: string
+  downloadUrl: string
+  sizeBytes: number
+  /** SHA-256 hexadecimal del ZIP (opcional: si está, se valida al instalar). */
+  sha256?: string
+}
+
 export interface PluginCatalogEntry {
   id: PluginId
   name: string
   description: string
   version: string
   downloadSizeLabel: string
-  openCode: PluginOpenCodeManifest
+  /** `download`: se descarga de internet al instalar. `bundled`: viene con la app. */
+  kind: 'download' | 'bundled'
+  /** Runtime OpenCode (plugin RER-AI). */
+  openCode?: PluginOpenCodeManifest
+  /** Binario nativo DLL publicado en GitHub Releases (world-gen). */
+  artifact?: PluginArtifactManifest
 }
 
 export interface PluginInstalledRecord {
   version: string
+  /** Runtime OpenCode (RER-AI). */
   opencodePath?: string
   workspaceDir?: string
+  /** Ruta del binario nativo instalado (world-gen). */
+  libraryPath?: string
   installedAt: string
 }
 
@@ -44,7 +64,11 @@ export type PluginLlmStatus =
   | 'running'
   | 'error'
 
-export type PluginDownloadPhase = 'opencode' | 'extracting' | 'preparing'
+export type PluginDownloadPhase =
+  | 'opencode'
+  | 'extracting'
+  | 'preparing'
+  | 'artifact'
 
 export interface PluginDownloadProgress {
   pluginId: PluginId

@@ -24,6 +24,10 @@ pub(crate) mod vulkan;
 mod config_3d;
 #[cfg(feature = "editor")]
 pub(crate) use config_3d::directional_light::{SHADOW_DARKNESS_MAX, SHADOW_DARKNESS_MIN};
+#[cfg(feature = "editor")]
+pub(crate) use config_3d::model_lod::{
+    DEFAULT_MODEL_LOD1_DISTANCE_M, DEFAULT_MODEL_LOD2_DISTANCE_M, DEFAULT_MODEL_LOD_ENABLED,
+};
 mod config_base;
 #[path = "config_compat/mod.rs"]
 mod config_compat;

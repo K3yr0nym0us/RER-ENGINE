@@ -37,6 +37,8 @@ ufbx = { workspace = true, optional = true }
 image.workspace = true
 rayon = { workspace = true, optional = true }
 rapier3d.workspace = true
+# Carga del plugin `rer_worldgen_plugin.dll` (ABI C versionada; ver worldgen/abi.rs).
+libloading = "0.8"
 rodio.workspace = true
 getrandom.workspace = true
 gilrs.workspace = true

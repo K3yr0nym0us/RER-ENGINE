@@ -127,6 +127,11 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
         Value::Array(state.backgrounds.clone()),
     );
     root.insert("blueprints".into(), Value::Array(blueprints));
+    // Sección del plugin worldgen (persistencia F8): se pasa tal cual del
+    // snapshot del engine; sin mundo generado no aparece.
+    if let Some(world_gen_3d) = engine_scene.get("world_gen_3d") {
+        root.insert("worldGen3d".into(), world_gen_3d.clone());
+    }
     root.insert(
         "language".into(),
         json!(state.locale.as_deref().unwrap_or("en")),
@@ -283,6 +288,9 @@ fn build_world(world: Option<&Value>) -> Value {
         ("taaEnabled", "taa_enabled"),
         ("taaBlend", "taa_blend"),
         ("taaJitterScale", "taa_jitter_scale"),
+        ("lodEnabled", "model_lod_enabled"),
+        ("lod1Distance", "model_lod1_distance_m"),
+        ("lod2Distance", "model_lod2_distance_m"),
     ];
     for (target, source) in fields {
         if let Some(value) = world.get(source).filter(|value| !value.is_null()) {
@@ -815,6 +823,24 @@ mod tests {
         assert_eq!(manifest["world"], Value::Null);
         assert_eq!(manifest["playerUiScreens"][0]["id"], json!("main"));
         assert_eq!(manifest["playerUiTextBoxes"][0]["id"], json!(1));
+    }
+
+    #[test]
+    fn manifest_maps_model_lod_world_fields() {
+        let mut scene = engine_scene();
+        scene["world"]["model_lod_enabled"] = json!(true);
+        scene["world"]["model_lod1_distance_m"] = json!(35.0);
+        scene["world"]["model_lod2_distance_m"] = json!(90.0);
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &scene,
+            state: &state(),
+            project_type: "3D",
+            game_style: "third-person",
+        });
+        let world = &manifest["scenes"][0]["world"];
+        assert_eq!(world["lodEnabled"], json!(true));
+        assert_eq!(world["lod1Distance"], json!(35.0));
+        assert_eq!(world["lod2Distance"], json!(90.0));
     }
 
     #[test]

@@ -276,6 +276,7 @@ impl State {
             imported_model_registry: crate::engine3d::assets::ImportedModelRegistry::default(),
             rerasset_material_tex: std::collections::HashMap::new(),
             static_model_cache: HashMap::new(),
+            worldgen: crate::engine3d::config_3d::worldgen::StateWorldgenState::default(),
             model_preload_rx,
             model_preload_tx,
             model_preload_inflight: HashSet::new(),
@@ -329,6 +330,13 @@ impl State {
             taa_frame: 0,
             texture_detail_near_m:
                 crate::engine3d::config_3d::entity_textures::default_texture_detail_near_m(),
+            model_lod_enabled:
+                crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD_ENABLED,
+            model_lod1_distance_m:
+                crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD1_DISTANCE_M,
+            model_lod2_distance_m:
+                crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD2_DISTANCE_M,
+            mesh_lod_variants: HashMap::new(),
             glb_texture_catalog_cache: HashMap::new(),
             entity_texture_effective_cap: HashMap::new(),
             texture_lod_last_update: Instant::now(),

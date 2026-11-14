@@ -22,5 +22,8 @@ export function pluginInstallStatusLabel(
   if (phase === 'preparing') {
     return t('Preparing assistant workspace…')
   }
+  if (phase === 'artifact') {
+    return t('Downloading…')
+  }
   return t('Preparing download…')
 }

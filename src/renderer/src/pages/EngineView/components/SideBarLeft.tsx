@@ -5,6 +5,7 @@ import EntitiesAccordion from './sidebar/EntitiesAccordion/EntitiesAccordion';
 import UIAccordion from './sidebar/UIAccordion/UIAccordion';
 import UserGuideButton from './sidebar/UserGuideButton';
 import PluginsButton from '../../../plugins/PluginsButton';
+import WorldGenButton from '../../../worldgen/WorldGenButton';
 import { LanguageToggleButton } from '@components';
 import { useSidebarAccordion } from '../../../context/SidebarAccordionContext';
 
@@ -68,6 +69,7 @@ export function SidebarLeft({
 
       <div className="pt-3 mt-2 border-top border-secondary-subtle d-flex flex-column gap-2">
         <PluginsButton />
+        <WorldGenButton />
         <div className="d-flex gap-2">
           <UserGuideButton />
           <LanguageToggleButton variant="sidebar" />
