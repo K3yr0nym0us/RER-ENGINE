@@ -22,7 +22,6 @@ enum Section {
     Entities,
     UserInterface,
     Tools,
-    WorldGen,
     Controls,
 }
 
@@ -35,7 +34,6 @@ impl Section {
             Self::Entities => "entities",
             Self::UserInterface => "ui",
             Self::Tools => "tools",
-            Self::WorldGen => "worldgen",
             Self::Controls => "controls",
         }
     }
@@ -58,7 +56,6 @@ pub struct SidebarLeftState {
     selected_model: Option<String>,
     pub(crate) active_tool: Option<&'static str>,
     pub(crate) active_ui_screen: Option<String>,
-    pub(crate) worldgen: WorldGenPanelState,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -133,22 +130,6 @@ enum LeftAction {
     QuickBuild {
         active: bool,
     },
-    /// Plugin worldgen: registra la DLL instalada en el engine.
-    WorldGenSetLibraryPath(String),
-    /// Plugin worldgen: aplica config y lanza la generación.
-    WorldGenGenerate {
-        config_json: String,
-    },
-    /// Plugin worldgen: cancela la cola de chunks.
-    WorldGenStop,
-    /// Plugin worldgen: limpia el mundo de la escena.
-    WorldGenReset,
-    /// Plugin worldgen: distribuye un modelo del proyecto sobre el terreno.
-    WorldGenScatter {
-        blueprint_id: String,
-        model: String,
-        rules_json: String,
-    },
 }
 
 impl SidebarLeftState {
@@ -178,7 +159,6 @@ mod interface;
 mod resources;
 mod scenes;
 mod tools;
-mod worldgen;
 use self::camera::*;
 use self::controls::*;
 use self::entities::*;
@@ -186,7 +166,6 @@ use self::interface::*;
 use self::resources::*;
 use self::scenes::*;
 use self::tools::*;
-use self::worldgen::*;
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let locale = app.cli.locale;
@@ -328,29 +307,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             )
                         },
                     );
-                    if context.is_3d() {
-                        section(
-                            ui,
-                            state,
-                            Section::WorldGen,
-                            icons::GLOBE,
-                            crate::editor::i18n::tr(
-                                locale,
-                                "Generador de mundos",
-                                "World Generator",
-                            ),
-                            |ui, state| {
-                                worldgen_body(
-                                    ui,
-                                    state,
-                                    &assets.models,
-                                    locale,
-                                    phase_note,
-                                    &mut actions,
-                                )
-                            },
-                        );
-                    }
                     section(
                         ui,
                         state,
@@ -551,73 +507,6 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
                 },
                 false,
             );
-        }
-        LeftAction::WorldGenSetLibraryPath(path) => {
-            app.send_engine(json!({
-                "cmd": "world_gen_set_library_path",
-                "path": path,
-            }));
-            app.push_log("[WorldGen] DLL del plugin registrada.", false);
-        }
-        LeftAction::WorldGenGenerate { config_json } => {
-            if app.left_sidebar.worldgen.dll_path.is_none() {
-                app.push_log(
-                    "[WorldGen] Selecciona primero la DLL del plugin (botón «Cargar DLL»).",
-                    true,
-                );
-                return;
-            }
-            // La DLL ya registrada no se vuelve a enviar (el engine la retiene),
-            // pero re-enviarla es idempotente y cubre reinicios del mundo.
-            if let Some(path) = app.left_sidebar.worldgen.dll_path.clone() {
-                app.send_engine(json!({
-                    "cmd": "world_gen_set_library_path",
-                    "path": path,
-                }));
-            }
-            app.send_engine(json!({
-                "cmd": "world_gen_set_config",
-                "config_json": config_json,
-            }));
-            app.send_engine(json!({ "cmd": "world_gen_start" }));
-            app.push_log("[WorldGen] Generando mundo…", false);
-        }
-        LeftAction::WorldGenStop => {
-            app.send_engine(json!({ "cmd": "world_gen_stop" }));
-            app.push_log("[WorldGen] Generación cancelada.", false);
-        }
-        LeftAction::WorldGenReset => {
-            app.send_engine(json!({ "cmd": "world_gen_reset" }));
-            app.push_log("[WorldGen] Mundo eliminado de la escena.", false);
-        }
-        LeftAction::WorldGenScatter {
-            blueprint_id,
-            model,
-            rules_json,
-        } => {
-            // Sintetiza el registro de blueprint para que el scatter use la vía
-            // existente (caché de modelos compartida por todas las instancias).
-            let name = std::path::Path::new(&model)
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .unwrap_or("modelo")
-                .to_string();
-            app.send_engine(json!({
-                "cmd": "register_blueprint",
-                "blueprint": {
-                    "blueprint_id": blueprint_id,
-                    "model": model,
-                    "template_name": name,
-                    "category": "object",
-                    "colision": false,
-                    "physics_type": "dynamic",
-                },
-            }));
-            app.send_engine(json!({
-                "cmd": "world_gen_scatter",
-                "rules_json": rules_json,
-            }));
-            app.push_log("[WorldGen] Distribuyendo blueprints…", false);
         }
     }
 }

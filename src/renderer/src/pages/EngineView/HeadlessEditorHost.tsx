@@ -9,6 +9,7 @@ import { SocketConfigModalBody } from '../../modal-electron/SocketConfigModalEle
 import { EntityPropertiesModalBody } from '../../modal-electron/EntityPropertiesElectronHost';
 import { usePlayerUiEditorModal } from '../../modal-electron/usePlayerUiEditorModal';
 import { PluginsModalBody } from '../../plugins/PluginsModalBody';
+import { WorldGenModalBody } from '../../plugins/worldgen/WorldGenModalBody';
 import { UserGuide } from './components/sidebar/UserGuide';
 import { BluePrintModalBody } from './components/sidebar/ToolsAccordion/components/BluePrintModalBody';
 import { useQuickBuild } from '../../context/QuickBuildContext';
@@ -304,6 +305,13 @@ function LegacyWindowListener() {
             title: t('Plugins'),
             size: 'lg',
             body: createElement(PluginsModalBody),
+          })
+          break
+        case 'worldgen':
+          openModal({
+            title: t('World Generator'),
+            size: 'lg',
+            body: createElement(WorldGenModalBody),
           })
           break
         case 'user_guide':

@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { ProgressBar } from 'react-bootstrap'
-import { Globe, Hourglass } from 'react-bootstrap-icons'
+import { Globe, Hourglass, PlayCircle, Trash3 } from 'react-bootstrap-icons'
 
+import { useLanguage } from '@context'
 import { useTraslate } from '@hooks'
 import type { PluginCatalogEntry, PluginDownloadProgress, PluginId } from '@shared-types'
 import rerAiIcon from '../../../resources/RER-AI.png'
+import { openWorldGenPluginModal } from './worldgen/WorldGenModalBody'
 import { formatDownloadBytes, pluginInstallStatusLabel } from './pluginInstallUi'
 import { usePlugins } from './usePlugins'
 
@@ -140,12 +142,22 @@ function PluginCard({
                     {t('Enabled')}
                   </label>
                 </div>
+                {entry.id === 'world-gen' && (
+                  <RunWorldGenPluginButton enabled={enabled} />
+                )}
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-danger w-100"
                   onClick={onUninstall}
                 >
-                  {t('Uninstall')}
+                  {entry.id === 'world-gen' ? (
+                    <>
+                      <Trash3 size={12} className="me-1" aria-hidden />
+                      {t('Delete plugin')}
+                    </>
+                  ) : (
+                    t('Uninstall')
+                  )}
                 </button>
               </div>
             )}
@@ -153,6 +165,29 @@ function PluginCard({
         )}
       </div>
     </div>
+  )
+}
+
+/** Abre la modal del generador de mundos (reemplaza la modal de plugins). */
+function RunWorldGenPluginButton({ enabled }: { enabled: boolean }) {
+  const { t } = useTraslate()
+  const { locale } = useLanguage()
+
+  return (
+    <>
+      <button
+        type="button"
+        className="btn btn-sm btn-success w-100"
+        title={enabled ? undefined : t('The World Generator plugin is installed but disabled. Enable it in Plugins.')}
+        onClick={() => openWorldGenPluginModal(t('World Generator'), locale)}
+      >
+        <PlayCircle size={14} className="me-1" aria-hidden />
+        {t('Run plugin')}
+      </button>
+      {!enabled && (
+        <span className="text-warning small">{t('Enable the plugin to use it')}</span>
+      )}
+    </>
   )
 }
 
