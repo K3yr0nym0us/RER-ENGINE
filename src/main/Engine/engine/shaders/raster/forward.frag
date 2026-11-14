@@ -118,12 +118,21 @@ float value_noise(vec2 p) {
 }
 
 vec3 terrain_materials(vec3 n) {
-    vec4 w = texture(albedo_tex, vec3(v_uv, max(v_tex.x, 0.0)));
+    // REPEAT en el array: UVs interpoladas fuera de [0,1] envuelven a la capa 0
+    // (checker del editor) y pintan damero. El splat vive en [0,1] por chunk.
+    vec2 splat_uv = clamp(v_uv, 0.0, 1.0);
+    float splat_layer = max(v_tex.x, 0.0);
+    vec4 w = textureLod(albedo_tex, vec3(splat_uv, splat_layer), 0.0);
     // El uniforme manda. `v_tex.w` se queda en 0 cuando el IOR del terreno pisa
     // la capa, y base 0 es el checker del editor: solo Grass (base+0) se ve a cuadros.
     float base = floor(u.depth_plane.w + 0.5);
     if (base < 0.5) {
         base = floor(v_tex.w + 0.5);
+    }
+    // Capa 0 = checker del editor. Si el uniforme o el IOR se quedan en 0,
+    // Grass no puede usar esa capa: se salta a 1 (aislamiento verde).
+    if (base < 0.5) {
+        base = 1.0;
     }
     vec2 tuv = v_world.xz * TERRAIN_TEXTURE_SCALE;
     vec3 grass = terrain_layer(tuv, base + 0.0, vec3(0.31, 0.52, 0.24));

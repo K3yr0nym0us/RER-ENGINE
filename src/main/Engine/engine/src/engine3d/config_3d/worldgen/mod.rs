@@ -783,12 +783,13 @@ impl super::super::engine::State {
         // # Seguridad: buffers entregados por wg_mesh_chunk en esta misma DLL.
         unsafe { (library.free_mesh_buffers)(&buffers) };
 
-        let (vertices, indices) = clip_chunk_to_world_disk(
+        let (mut vertices, indices) = clip_chunk_to_world_disk(
             &vertices,
             &indices,
             self.worldgen.scene_offset,
             self.world_bounds_3d.radius,
         );
+        clamp_chunk_uvs(&mut vertices);
 
         self.worldgen.completed_chunks += 1;
         if vertices.is_empty() || indices.is_empty() {
@@ -1002,11 +1003,35 @@ fn worldgen_pack_column_texture(
         }
 
         match texture_array.pack(vulkan, &pixels, dim, dim) {
-            Ok(gpu_layer) => {
+            Ok(gpu_layer)
+                if gpu_layer != crate::engine3d::texture::TextureArray::fallback_layer() =>
+            {
                 let tex_idx = tex_layers.len();
                 tex_layers.push(gpu_layer);
                 columns.insert((cx, cz), (tex_idx, epoch));
                 return Some(tex_idx);
+            }
+            Ok(_) => {
+                // El array de 256 capas se llena con splats (uno por columna).
+                // `pack` cae a la capa 0 (checker del editor): se reescribe una
+                // columna vieja para no pintar el damero en el terreno.
+                if let Some(tex_idx) = recycle_column_layer(columns, tex_layers, epoch, cx, cz) {
+                    if let Some(&gpu_layer) = tex_layers.get(tex_idx)
+                        && texture_array
+                            .replace_layer(vulkan, gpu_layer, &pixels, dim, dim)
+                            .is_ok()
+                    {
+                        columns.insert((cx, cz), (tex_idx, epoch));
+                        return Some(tex_idx);
+                    }
+                    log::warn!(
+                        "[worldgen] array de texturas lleno: la columna ({cx},{cz}) reutiliza una capa vieja"
+                    );
+                    return Some(tex_idx);
+                }
+                log::warn!(
+                    "[worldgen] array de texturas lleno: no hay capa para la columna ({cx},{cz})"
+                );
             }
             Err(error) => {
                 log::warn!("[worldgen] no se pudo empaquetar el splat de la columna: {error}")
@@ -1017,6 +1042,45 @@ fn worldgen_pack_column_texture(
         unsafe { (library.free_chunk_textures)(&buffers) };
     }
     columns.get(&(cx, cz)).map(|(tex_idx, _)| *tex_idx)
+}
+
+/// Capa de una columna de otra generación (o la más antigua) para reescribir
+/// su splat cuando el array ya no admite más capas.
+fn recycle_column_layer(
+    columns: &mut HashMap<(i32, i32), (usize, u64)>,
+    tex_layers: &[crate::engine3d::texture::TextureLayer],
+    epoch: u64,
+    cx: i32,
+    cz: i32,
+) -> Option<usize> {
+    let mut best: Option<((i32, i32), bool, u64, usize)> = None;
+    for (&key, &(tex_idx, cached)) in columns.iter() {
+        if key == (cx, cz) || tex_layers.get(tex_idx).is_none() {
+            continue;
+        }
+        let stale = cached != epoch;
+        let better = match best {
+            None => true,
+            Some((_, best_stale, best_epoch, _)) => {
+                stale && !best_stale || (stale == best_stale && cached < best_epoch)
+            }
+        };
+        if better {
+            best = Some((key, stale, cached, tex_idx));
+        }
+    }
+    let (key, _, _, tex_idx) = best?;
+    columns.remove(&key);
+    Some(tex_idx)
+}
+
+/// El recorte al disco interpola UVs; un valor fuera de `[0, 1]` con sampler
+/// REPEAT envuelve a la capa 0 (checker) y pinta damero en el terreno.
+fn clamp_chunk_uvs(vertices: &mut [crate::engine3d::mesh::Vertex]) {
+    for vertex in vertices {
+        vertex.uv[0] = vertex.uv[0].clamp(0.0, 1.0);
+        vertex.uv[1] = vertex.uv[1].clamp(0.0, 1.0);
+    }
 }
 
 /// Ordena por capa alta y cercanía, asigna LOD y deja el vector listo para
@@ -1308,7 +1372,10 @@ fn edge_on_world_disk(
             mix(a.normal[1], b.normal[1]),
             mix(a.normal[2], b.normal[2]),
         ],
-        uv: [mix(a.uv[0], b.uv[0]), mix(a.uv[1], b.uv[1])],
+        uv: [
+            mix(a.uv[0], b.uv[0]).clamp(0.0, 1.0),
+            mix(a.uv[1], b.uv[1]).clamp(0.0, 1.0),
+        ],
     }
 }
 
@@ -1419,6 +1486,52 @@ mod tests {
         assert_eq!(offset.x, -112.0);
         assert_eq!(offset.z, -64.0);
         assert!((offset.y + 8.0).abs() < 1.0e-4);
+    }
+
+    fn vertex(position: [f32; 3], uv: [f32; 2]) -> crate::engine3d::mesh::Vertex {
+        crate::engine3d::mesh::Vertex {
+            position,
+            normal: [0.0, 1.0, 0.0],
+            uv,
+        }
+    }
+
+    #[test]
+    fn recycle_column_layer_prefers_stale_epoch() {
+        let mut columns = std::collections::HashMap::from([
+            ((0, 0), (10, 1u64)),
+            ((1, 0), (11, 2)),
+            ((2, 0), (12, 2)),
+        ]);
+        let layers = vec![0u32; 20];
+        let recycled = super::recycle_column_layer(&mut columns, &layers, 2, 3, 0);
+        assert_eq!(recycled, Some(10));
+        assert!(!columns.contains_key(&(0, 0)));
+        assert!(columns.contains_key(&(1, 0)));
+    }
+
+    #[test]
+    fn clamp_chunk_uvs_keeps_splat_inside_the_layer() {
+        let mut vertices = [vertex([0.0, 0.0, 0.0], [-0.2, 1.4])];
+        super::clamp_chunk_uvs(&mut vertices);
+        assert_eq!(vertices[0].uv, [0.0, 1.0]);
+    }
+
+    #[test]
+    fn clip_to_disk_keeps_interpolated_uvs_in_range() {
+        let vertices = [
+            vertex([0.0, 0.0, 0.0], [0.0, 0.0]),
+            vertex([40.0, 0.0, 0.0], [1.2, 0.0]),
+            vertex([0.0, 0.0, 40.0], [0.0, 1.2]),
+        ];
+        let (mut clipped, _) =
+            super::clip_chunk_to_world_disk(&vertices, &[0, 1, 2], glam::Vec3::ZERO, 16.0);
+        super::clamp_chunk_uvs(&mut clipped);
+        assert!(!clipped.is_empty());
+        for vertex in &clipped {
+            assert!((0.0..=1.0).contains(&vertex.uv[0]));
+            assert!((0.0..=1.0).contains(&vertex.uv[1]));
+        }
     }
 
     #[test]
