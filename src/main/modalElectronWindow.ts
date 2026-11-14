@@ -414,6 +414,20 @@ export function resendPendingRenderToModal(webContentsId: number): void {
   sendRenderToModal(pendingRenderPayload)
 }
 
+/**
+ * Reenvía un evento del engine a la modal worldgen abierta.
+ *
+ * La ventana modal no recibe `engine:event` (solo va a la ventana principal);
+ * la modal del generador de mundos lo necesita para la lista de modelos
+ * (`models_list`). Solo se reenvía mientras esa modal esté visible para no
+ * acumular eventos en el buffer del preload.
+ */
+export function forwardEngineEventToModal(event: unknown): void {
+  if (pendingRenderPayload?.componentKey !== 'WorldGenModalBody') return
+  if (!modalWindow || modalWindow.isDestroyed()) return
+  modalWindow.webContents.send('engine:event', event)
+}
+
 export function destroyModalElectronWindow(): void {
   if (modalWindow && !modalWindow.isDestroyed()) {
     clearModalAboveEngineViewport(modalWindow)

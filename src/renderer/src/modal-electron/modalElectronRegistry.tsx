@@ -53,6 +53,7 @@ import { EntityPropertiesModalBody } from './EntityPropertiesElectronHost'
 import { AttachToSocketModalBody } from '../pages/EngineView/components/sidebar/PropertiesAccordion/AttachToSocketModalBody'
 import { SocketConfigModalBody } from './SocketConfigModalElectronHost'
 import { PluginsModalBody } from '../plugins/PluginsModalBody'
+import { WorldGenModalBody } from '../plugins/worldgen/WorldGenModalBody'
 import { wireModalCallbacksForHost } from './modalElectronCallbacks'
 
 export type ModalElectronHostProps = ModalElectronOpenRequest & {
@@ -103,6 +104,7 @@ export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
 	AttachToSocketModalBody: modalEntry(AttachToSocketModalBody),
 	SocketConfigModalBody: modalEntry(SocketConfigModalBody),
 	PluginsModalBody: modalEntry(PluginsModalBody),
+	WorldGenModalBody: modalEntry(WorldGenModalBody),
 }
 
 export function buildModalElectronHostProps(
