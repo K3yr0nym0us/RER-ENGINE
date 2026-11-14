@@ -11,6 +11,34 @@ use super::loader::WorldgenLibrary;
 /// Subidas de chunk a GPU por frame. Dos chunks de 32³ consumen ~1-2 ms de
 /// generación + subida en release; ajustable si el profiling lo pide.
 pub(crate) const CHUNKS_PER_FRAME: usize = 2;
+/// Tope de columnas XZ por frame. El tick también corta por
+/// [`SCAN_BUDGET_MS`] para emitir progreso aunque una columna sea cara.
+pub(crate) const SCAN_COLUMNS_PER_FRAME: usize = 512;
+/// Presupuesto de barrido por frame: el UI recibe `completed/total` de columnas.
+pub(crate) const SCAN_BUDGET_MS: u64 = 8;
+
+/// Lado del tile de splat en el atlas (debe coincidir con `SPLAT_DIM` lod 0).
+pub(crate) const SPLAT_ATLAS_TILE_PX: u32 = 64;
+/// Tiles por eje en una capa 1024²: 16×16 = 256 columnas por página.
+pub(crate) const SPLAT_ATLAS_TILES: u32 = 16;
+
+/// Páginas del atlas de splats (una capa GPU = 256 columnas).
+#[derive(Debug, Default)]
+pub(crate) struct SplatAtlas {
+    /// Índices en `tex_layers` de cada página.
+    pub pages: Vec<usize>,
+    /// Siguiente tile global (página * 256 + local). Al regenerar se vuelve a 0
+    /// y se pisan tiles en orden; no se reutiliza el tile de una columna viva.
+    pub next_tile: u32,
+}
+
+impl SplatAtlas {
+    /// Olvida las páginas (el array GPU se resetea aparte).
+    pub fn reset(&mut self) {
+        self.pages.clear();
+        self.next_tile = 0;
+    }
+}
 
 /// Handle opaco del mundo en la DLL.
 ///
@@ -139,8 +167,12 @@ pub(crate) struct WorldgenState {
     pub completed_chunks: u32,
     /// Chunks activos en escena.
     pub spawned: HashMap<ChunkKey, WorldgenChunk>,
-    /// Splat de la columna XZ: `(índice en tex_layers, epoch que lo escribió)`.
-    pub columns: HashMap<(i32, i32), (usize, u64)>,
+    /// Splat de la columna XZ: `(tex_idx del atlas, tile local 0..255, epoch)`.
+    pub columns: HashMap<(i32, i32), (usize, u32, u64)>,
+    /// Atlas de splats: varias columnas en una capa 1024² (tiles 64×64).
+    pub splat_atlas: SplatAtlas,
+    /// Tile de splat por entidad de chunk (para el instance buffer).
+    pub entity_splat_tile: HashMap<crate::engine3d::ecs::EntityId, u32>,
     /// Capa GPU de `Grass.jpg`. Las cinco siguientes, en orden, son Dirt, Clay,
     /// Sand, Stone y Snow.
     pub material_base: Option<u32>,
@@ -173,6 +205,8 @@ impl Default for WorldgenState {
             completed_chunks: 0,
             spawned: HashMap::new(),
             columns: HashMap::new(),
+            splat_atlas: SplatAtlas::default(),
+            entity_splat_tile: HashMap::new(),
             material_base: None,
             fallback_tex_idx: None,
             placements: Vec::new(),

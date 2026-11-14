@@ -2,7 +2,7 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** noviembre 2026 (motores 2D y 3D sobre Ash/Vulkan; el 2D ya no depende de wgpu y comparte el núcleo Vulkan de `core`; reflejos, sondas, MSAA, sombras y TAA del 3D actualizados a la implementación real; nuevo LOD de mallas GLB estáticas por distancia en `yaml/rendering/Model_LOD_3D.yaml`). Revisión anterior: junio 2026 (reflejos: quality preset, RT espejo → SSR, docs SSR/Probes/RT).
+**Última revisión:** 14 nov 2026 (World Generator: porcentajes de bioma, nieve en cumbres, atlas de splats, progreso del barrido; ver `yaml/plugins/` y `worldgen/README.md`). Revisión anterior: noviembre 2026 (motores 2D y 3D Ash/Vulkan; LOD GLB). Antes: junio 2026 (reflejos).
 
 ## Estructura
 
@@ -107,7 +107,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Plugins_Model.yaml](./yaml/plugins/Plugins_Model.yaml) | Sistema de plugins descargables |
+| [Plugins_Model.yaml](./yaml/plugins/Plugins_Model.yaml) | Plugins descargables: RER-AI y World Generator |
 
 ---
 
@@ -126,3 +126,4 @@
 - [`engine/src/engine2d/ARCHITECTURE.md`](../src/main/Engine/engine/src/engine2d/ARCHITECTURE.md)
 - [`engine/ARCHITECTURE.md`](../src/main/Engine/engine/ARCHITECTURE.md)
 - [`renderer/ARCHITECTURE.md`](../src/renderer/ARCHITECTURE.md)
+- [`worldgen/README.md`](../src/main/Engine/worldgen/README.md) — plugin World Generator (DLL, biomas, engine)

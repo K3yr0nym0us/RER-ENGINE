@@ -342,15 +342,21 @@ fn biome_shares_put_snow_on_the_highest_ground() {
     let peak = central_peak(&config);
     let fractions = disk_fractions_on(&config, &peak);
     let snow = fractions[Biome::Snow.index()];
-    assert!((snow - 0.15).abs() < 0.04, "nieve {:.1} %", snow * 100.0);
+    assert!(
+        snow < 0.08,
+        "nieve no debe bajar de las cumbres ({:.1} % del disco)",
+        snow * 100.0
+    );
 
     let mut map = BiomeMap::new(&config);
     map.fit_snow_to_terrain(&peak);
     let (cx, cz) = (config.bounds.width * 0.5, config.bounds.length * 0.5);
+    let mid = peak(cx + 40.0, cz);
     assert_eq!(map.biome_at(cx, cz, peak(cx, cz)), Biome::Snow);
-    assert_eq!(
-        map.biome_at(cx + 120.0, cz, peak(cx + 120.0, cz)),
-        Biome::Grassland
+    assert_eq!(map.biome_at(cx + 40.0, cz, mid), Biome::Grassland);
+    assert!(
+        mid > 8.0 && mid < peak(cx, cz) - 4.0,
+        "el control de ladera debe ser más bajo que la cumbre"
     );
 }
 

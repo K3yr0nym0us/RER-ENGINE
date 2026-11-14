@@ -213,7 +213,8 @@ pub const RENDER_KIND_TERRAIN: f32 = 4.0;
 ///   offset  0..64  → model matrix, column-major (4 × vec4<f32>)
 ///   offset 64..80  → flag_pad  (x = selection flag, y = alpha, z = render_kind, w = roughness o -1)
 ///   offset 80..96  → tex_layer_pad  (x = capa en texture_2d_array; y = metallic; z = índice
-///                    de reflection probe en el cube array, -1 = sin probe)
+///                    de reflection probe en el cube array, -1 = sin probe;
+///                    en terreno y = tile del atlas de splat)
 ///
 /// Coincide con las locations 3..8 de `InstanceInput` en `shaders/raster/forward.vert`.
 #[repr(C)]

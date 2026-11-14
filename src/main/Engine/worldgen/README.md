@@ -4,69 +4,111 @@ Crate independiente del motor RER-ENGINE que genera **terreno natural con
 superficies suaves** (Marching Cubes), por chunks, con cuotas configurables por
 feature y distribución automática de blueprints.
 
+La lógica vive **solo en Rust**. El editor (React) envía la config y muestra
+progreso; el engine 3D sube mallas y splats a GPU. No se duplica generación
+en TypeScript.
+
 ## Arquitectura
 
 ```
-WorldGenConfig (JSON camelCase, validado)
-   → FeaturePlan   (planner: sitios con cuotas máximas, cuevas, ríos, lagos)
-   → Terrain       (heightfield con plan: montañas/colinas/valles/llanuras/
-                    acantilados/lagos)  + CarveIndex (cuevas/ríos/lagos/roca)
+WorldGenConfig (JSON camelCase, validado + fit_config_to_world)
+   → FeaturePlan   (planner: sitios con cuotas, lagos lejos de montañas,
+                    cuevas, ríos)
+   → Terrain       (heightfield + CarveIndex; lecho de río con suelo mínimo)
    → DensityGrid   (grid con padding por chunk, Y-layer pruning, LOD)
-   → mesh_chunk    (Marching Cubes + normales por gradiente + dedup)
-   → chunk_splat   (biomas → pesos RGBA de material + albedo de preview)
+   → mesh_chunk    (Marching Cubes, normales hacia fuera, UV de columna)
+   → chunk_splat   (biomas → pesos RGBA; nieve solo en cumbres)
    → scatter       (reglas por blueprint → colocaciones deterministas)
 ```
 
-Contrato central: **todo es función pura de `(seed, config)`**. Sin estado
-global, sin relojes, sin entropía externa. Los chunks vecinos comparten puntos
-de grid exactos ⇒ las costuras son imposibles por construcción.
+Contrato: **todo es función pura de `(seed, config)`**. Sin estado global, sin
+relojes, sin entropía externa. Chunks vecinos comparten puntos de grid ⇒ las
+costuras coinciden por construcción.
 
-## Fases implementadas
+Densidad **positiva = sólido**. El mundo es un disco; `fit_config_to_world`
+escala features al radio.
 
-- **F1/F2**: config + seeds por dominio + port propio de FastNoiseLite (MIT) +
-  Marching Cubes (tablas de Bourke, orientación por gradiente, normales
-  centrales) + chunks con Y-layer pruning.
-- **F3/F4**: planificador con cuotas duras (`maxCount`), separación mínima,
-  filtros cruzados; ríos descendentes con cascadas detectadas; lagos con nivel
-  de agua; cuevas por carving (túneles-gusano + rooms, gates de profundidad,
-  bocas naturales); formaciones rocosas aditivas (overhangs).
-- **F5**: mapa de biomas (ruido de baja frecuencia restringido a los activados,
-  override de nieve por altitud) + splat RGBA por chunk (R=hierba, G=roca,
-  B=arena, A=nieve) + albedo de preview para el TextureArray del engine.
-- **F7**: scatter de blueprints con reglas (biomas, altitud, pendiente,
-  `maxInstances`, densidad, escala, rotación, distancia mínima, clústeres).
-  El engine coloca por `spawn_cached_model_part_at` con `blueprint_id`
-  (recursos GPU compartidos; el plugin nunca carga modelos).
-- **F9**: LOD por anillos de distancia (voxel ×2/×4) + presupuestos de
-  rendimiento verificados por test.
+## Configuración (modal del editor)
+
+`src/renderer/src/plugins/worldgen/WorldGenModalBody.tsx` arma el JSON.
+
+- **Tamaño** del disco (m) y **voxel size** (m): el voxel es la celda de
+  Marching Cubes. Más pequeño = más detalle y **muchas más columnas** (el
+  chunk sigue siendo 32 celdas).
+- **Biomas activos** con **porcentaje del mundo** (`biomes.shares`). Los
+  activos suman 100 % y cada uno tiene un mínimo del 10 % (salvo un solo
+  bioma al 100 %).
+- **Nieve**: no es una zona en planta. Su porcentaje cubre las **cumbres**
+  (cota alta del relieve, no lomas ni llanuras).
+- **Lagos**: el borde queda fuera del pie de las montañas (radios + margen).
+- Semilla, montañas/colinas/valles/llanuras/acantilados, ríos, cuevas,
+  cascadas, scatter de blueprints.
+
+Límites de tamaño y biomas: `worldgenLimits.ts` (frontend) y `scale.rs` /
+`config.rs` (Rust).
+
+## Biomas y splat
+
+Con porcentajes, un campo de **regiones grandes** (`biomes/regions.rs`) se
+reparte por cuantiles entre biomas de suelo. Trozo aislado &lt; 4 % del disco
+se funde con el vecino; cada bioma conserva su región mayor.
+
+Splat por columna XZ (64×64, lod 0): R=hierba, G=roca, B=arena, A=nieve.
+El engine **no** sube un splat por capa 1024² del `TextureArray` (256 capas
+compartidas con modelos): las columnas van a un **atlas** (16×16 tiles de
+64 px por página). Si el array GPU se llena, el chunk nuevo usa fallback;
+**no** se pisa el splat de una columna ya en escena.
+
+Fotos de suelo (Grass, Dirt, Clay, Sand, Stone, Snow) en
+`engine/assets/terrain/`. El shader `forward.frag` mezcla esas capas con el
+splat. Capa 0 del array = checker del editor; Grass no puede usarla.
+
+## Consumo en el engine
+
+`engine3d/config_3d/worldgen/`:
+
+1. `world_gen_start` → barrido de columnas (presupuesto
+   `SCAN_BUDGET_MS` / `SCAN_COLUMNS_PER_FRAME`, progreso `phase: scan`
+   con `completed/total` de columnas) para saber qué capas Y tienen
+   terreno.
+2. Cola de chunks: 2 mallas/frame (`CHUNKS_PER_FRAME`), progreso
+   `phase: mesh`.
+3. Recorte al disco del mundo; UVs de splat acotadas a `[0, 1]`.
+
+Instalación de la DLL: `%APPDATA%\rer-engine\plugins\world-gen\rer_worldgen.dll`.
+Tras cambiar el crate, `cargo build --release -p rer-worldgen` y copiar la
+DLL (el editor no debe tenerla cargada). Un cambio de shader/engine pide
+reiniciar `yarn dev`. No reinstalar el plugin desde el catálogo para una
+DLL local.
+
+Generar el mundo es **CPU** (densidad, mesh, splat). La GPU pinta después.
+Eso es normal.
 
 ## Fachada FFI (`plugin_ffi`, ABI v2)
 
-La DLL `rer_worldgen.dll` (target `cdylib`) se instala desde el editor
-(descarga de GitHub Releases vía la sección de Plugins). El engine **no
-depende del crate**: consume la ABI con `libloading` y espejo del contrato en
+La DLL `rer_worldgen.dll` (`cdylib`) se instala desde Plugins (GitHub
+Releases). El engine **no depende del crate**: `libloading` + espejo en
 `engine3d/config_3d/worldgen/abi.rs`.
 
 Exports: `wg_abi_version`, `wg_world_create`, `wg_world_free`,
 `wg_chunk_status`, `wg_mesh_chunk(lod)`, `wg_chunk_textures`,
-`wg_scatter`, y los `wg_free_*` correspondientes.
+`wg_scatter`, y los `wg_free_*`.
 
-Reglas del contrato:
-1. Cada export captura panics con `catch_unwind` (nunca cruzan la frontera).
-2. **Allocator único**: la DLL allocó → la DLL libera (`wg_free_*`).
-3. Errores: códigos `Status` + `wg_last_error` (UTF-8).
-4. Cualquier cambio de firma incrementa `ABI_VERSION` (el engine rechaza DLL
-   incompatibles).
+1. Cada export captura panics (`catch_unwind`).
+2. Allocator único: la DLL allocó → `wg_free_*`.
+3. Errores: `Status` + `wg_last_error`.
+4. Cambio de firma → incrementar `ABI_VERSION`.
+
+`wg_chunk_status` cachea el pruning Y por columna XZ (no recalcular 3×3
+alturas por cada capa Y).
 
 ## Tests
 
-- Determinismo (ruido, campo, plan, scatter, hash dorado de mallas).
-- Topología de Marching Cubes: cierre de malla (cada arista usada 2×), seams
-  bit-idénticos entre chunks vecinos, orientación de normales.
-- Cuotas y separación del planner; cuevas (bocas naturales, sin perforaciones
-  espurias, salas excavadas); reglas de scatter nunca violadas.
-- Conformancia de la DLL real contra el engine (`engine3d/config_3d/worldgen`).
-- Presupuestos de rendimiento (release: chunk 32³ < 60 ms, `world_create` < 150 ms).
+- Determinismo (ruido, campo, plan, scatter, hash de mallas).
+- Topología MC: costuras, normales hacia fuera, UV en `[0, 1]`.
+- Planner: cuotas, lagos lejos de montañas, suelo de lagos/ríos.
+- Biomas: porcentajes, nieve en cumbres, orilla de arena continua.
+- FFI contra la DLL; presupuestos en release (ver `tests/performance.rs`).
 
 ## Publicación
 
@@ -74,6 +116,5 @@ Reglas del contrato:
 powershell -File scripts\publish-worldgen.ps1 -Version "1.0.0"
 ```
 
-Construye la DLL, empaqueta `rer_worldgen.dll` en el ZIP
-`rer-worldgen-<versión>-win-x64.zip` y calcula el SHA-256 para el catálogo del
-editor (`src/main/plugins/pluginCatalog.ts`).
+Empaqueta `rer_worldgen.dll` en `rer-worldgen-<versión>-win-x64.zip` y el
+SHA-256 para `src/main/plugins/pluginCatalog.ts`.

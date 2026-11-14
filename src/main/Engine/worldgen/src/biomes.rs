@@ -75,9 +75,14 @@ const SHARE_WARP_CELLS: f32 = 1.5;
 /// Frecuencia del desplazamiento relativa al campo de regiones.
 const SHARE_WARP_SCALE: f32 = 6.1;
 /// Media anchura de la transición vertical de la nieve (metros).
-const SNOW_BLEND_M: f32 = 1.5;
+const SNOW_BLEND_M: f32 = 1.0;
 /// La nieve nunca baja de esta altura sobre las llanuras (metros).
-const SNOW_MIN_RISE_M: f32 = 4.0;
+const SNOW_MIN_RISE_M: f32 = 32.0;
+/// Aunque el porcentaje pida más, la nieve no baja de este tramo superior
+/// del relieve sobre las llanuras (1 = cumbre). 0.97 ≈ solo el último 3 %.
+const SNOW_PEAK_SPAN: f32 = 0.97;
+/// Solo las muestras más altas del disco pueden ser nieve (0.98 = percentil 98).
+const SNOW_HEIGHT_QUANTILE: f32 = 0.98;
 
 /// Reparto por porcentajes: regiones de suelo y cota de nieve.
 #[derive(Debug, Clone)]
@@ -165,8 +170,8 @@ impl BiomeMap {
         map
     }
 
-    /// Fija la cota de nieve en el cuantil de altura que deja `snow_fraction`
-    /// del disco por encima, sin bajar de las llanuras + [`SNOW_MIN_RISE_M`].
+    /// Fija la cota de nieve en las cumbres: el porcentaje solo decide cuánto
+    /// del tramo alto se cubre, nunca baja a lomas ni llanuras.
     pub fn fit_snow_to_terrain(&mut self, height_at: impl Fn(f32, f32) -> f32) {
         let floor = self.plains_y + SNOW_MIN_RISE_M;
         let Some(fraction) = self.shares.as_ref().map(|s| s.snow_fraction) else {
@@ -176,12 +181,23 @@ impl BiomeMap {
             return;
         }
         let mut heights = self.disk_samples(height_at);
-        heights.sort_by(f32::total_cmp);
-        let Some(last) = heights.len().checked_sub(1) else {
+        if heights.is_empty() {
             return;
-        };
-        let rank = ((1.0 - fraction) * last as f32).round() as usize;
-        let snow_y = heights[rank.min(last)].max(floor);
+        }
+        heights.sort_by(|a, b| a.total_cmp(b));
+        let high = heights[heights.len() - 1];
+        // El mínimo del disco incluye lechos de lago: no sirve de llanura.
+        let base = self.plains_y;
+        let peak = high.max(base + 1.0);
+        let summit_floor = base + (peak - base) * SNOW_PEAK_SPAN;
+        let quantile_idx = ((heights.len() - 1) as f32 * SNOW_HEIGHT_QUANTILE).floor() as usize;
+        let quantile_y = heights[quantile_idx];
+        let span = (peak - summit_floor).max(1.0);
+        let snow_y = (peak - span * fraction)
+            .max(quantile_y)
+            .max(summit_floor)
+            .max(floor);
+        self.snow_line = snow_y;
         if let Some(shares) = self.shares.as_mut() {
             shares.snow_y = snow_y;
         }

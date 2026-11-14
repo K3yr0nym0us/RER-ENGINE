@@ -1,4 +1,4 @@
-//! Fachada C ABI del plugin (`rer_worldgen_plugin.dll`).
+//! Fachada C ABI del plugin (`rer_worldgen.dll`).
 //!
 //! Este es el **único módulo del crate con código `unsafe`**, justificado como FFI
 //! de plataforma (mismo criterio que las GPU FFI del engine; ver `clippy.toml`).

@@ -5,6 +5,7 @@
 //! las exports son adaptadores finos sobre la API segura del crate, y los bloques
 //! `unsafe` se limitan a la desreferenciación validada de punteros del contrato.
 
+use std::collections::HashMap;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Mutex;
 
@@ -25,8 +26,9 @@ pub struct WgWorld {
     field: DensityField,
     biomes: BiomeMap,
     last_error: Mutex<String>,
-    /// Última columna consultada por `wg_chunk_status` para no repetir el pruning.
-    column_cache: Mutex<Option<(i32, i32, Vec<i32>)>>,
+    /// Capas Y activas por columna XZ. El barrido pregunta cada (cx,cy,cz);
+    /// sin esto el pruning 5×5 se recalcula por cada capa Y.
+    column_cache: Mutex<HashMap<(i32, i32), Vec<i32>>>,
 }
 
 impl WgWorld {
@@ -79,7 +81,7 @@ pub unsafe extern "C" fn wg_world_create(
             field,
             biomes,
             last_error: Mutex::new(String::new()),
-            column_cache: Mutex::new(None),
+            column_cache: Mutex::new(HashMap::new()),
         };
         Ok(Box::into_raw(Box::new(world)))
     }));
@@ -430,18 +432,15 @@ fn set_global_error(message: String) {
 /// Verifica que el chunk esté dentro de los límites del mundo configurado (X, Z
 /// contra los límites de dimensiones; Y contra la altura máxima en chunks).
 fn cached_active_y(world: &WgWorld, cx: i32, cz: i32) -> Vec<i32> {
-    let mut slot = world
+    let mut cache = world
         .column_cache
         .lock()
         .unwrap_or_else(|poison| poison.into_inner());
-    if let Some((cached_x, cached_z, active)) = slot.as_ref()
-        && *cached_x == cx
-        && *cached_z == cz
-    {
+    if let Some(active) = cache.get(&(cx, cz)) {
         return active.clone();
     }
     let active = active_y_chunks(&world.field, &world.config, cx, cz);
-    *slot = Some((cx, cz, active.clone()));
+    cache.insert((cx, cz), active.clone());
     active
 }
 

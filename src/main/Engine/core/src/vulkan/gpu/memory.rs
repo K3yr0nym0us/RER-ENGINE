@@ -554,11 +554,26 @@ impl SharedGpu {
         height: u32,
         rgba: &[u8],
     ) -> Result<(), VulkanError> {
+        self.upload_rgba_layer_region(image, 0, 0, x, y, width, height, rgba)
+    }
+
+    /// Sube un subrectángulo RGBA a una capa del array (atlas de splats).
+    pub fn upload_rgba_layer_region(
+        &self,
+        image: &GpuImage,
+        mip: u32,
+        layer: u32,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Result<(), VulkanError> {
         let staging = self.create_buffer_with_data(
             rgba,
             vk::BufferUsageFlags::TRANSFER_SRC,
             MemoryLocation::CpuToGpu,
-            "hud-atlas-staging",
+            "tex-atlas-staging",
         )?;
         let image_handle = image.image;
         let aspect = image.aspect;
@@ -582,8 +597,8 @@ impl SharedGpu {
             let region = vk::BufferImageCopy::default()
                 .image_subresource(vk::ImageSubresourceLayers {
                     aspect_mask: aspect,
-                    mip_level: 0,
-                    base_array_layer: 0,
+                    mip_level: mip,
+                    base_array_layer: layer,
                     layer_count: 1,
                 })
                 .image_offset(vk::Offset3D {

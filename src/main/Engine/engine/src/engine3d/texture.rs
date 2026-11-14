@@ -95,11 +95,14 @@ impl TextureArray {
         self.upload_layer_from_mips(gpu, mips)
     }
 
-    /// Reescribe una capa ya empaquetada (mismo índice). No avanza `next_layer`.
-    pub fn replace_layer(
-        &mut self,
+    /// Copia un tile RGBA en una capa ya empaquetada (mip 0). El shader de
+    /// terreno lee el splat en LOD 0, así que no hace falta regenerar mips.
+    pub fn blit_layer_tile(
+        &self,
         gpu: &SharedGpu,
         layer: TextureLayer,
+        x: u32,
+        y: u32,
         rgba: &[u8],
         w: u32,
         h: u32,
@@ -110,13 +113,14 @@ impl TextureArray {
                 self.next_layer
             )));
         }
-        let chain = build_layer_mip_chain_timed(rgba.to_vec(), w, h);
-        for (level, mip_data) in chain.mips.iter().enumerate() {
-            let mip_w = (self.width >> level).max(1);
-            let mip_h = (self.height >> level).max(1);
-            gpu.upload_rgba_layer(&self.image, level as u32, layer, mip_w, mip_h, mip_data)?;
+        if w == 0 || h == 0 || x.saturating_add(w) > self.width || y.saturating_add(h) > self.height
+        {
+            return Err(VulkanError::new(format!(
+                "tile {w}×{h} en ({x},{y}) fuera de {}×{}",
+                self.width, self.height
+            )));
         }
-        Ok(())
+        gpu.upload_rgba_layer_region(&self.image, 0, layer, x, y, w, h, rgba)
     }
 
     fn upload_layer_from_mips(

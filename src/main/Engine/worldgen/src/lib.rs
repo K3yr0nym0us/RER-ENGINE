@@ -9,7 +9,8 @@
 //! - `field` (F2+): heightfield + SDF + carving (terreno, agua, cuevas).
 //! - `mesher` (F2+): Marching Cubes con normales por gradiente.
 //! - `chunks` (F2+): pipeline de chunks con Y-layer pruning.
-//! - `plugin_ffi` (F2+): fachada C ABI para el plugin instalable (`rer_worldgen_plugin.dll`).
+//! - [`biomes`] / [`splat`]: regiones por porcentaje, nieve en cumbres, splat RGBA.
+//! - [`plugin_ffi`]: fachada C ABI (`rer_worldgen.dll`, ABI v2).
 //!
 //! Contrato de determinismo: toda la generación es función pura de
 //! `(seed, config)`. No hay estado global, relojes ni entropía externa.

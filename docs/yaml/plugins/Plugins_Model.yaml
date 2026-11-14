@@ -1,27 +1,42 @@
 # RER-ENGINE — Modelo de plugins opcionales
-# Referencia para IAs y contribuidores. Junio 2026.
+# Referencia para IAs y contribuidores.
 
-version: 2
-updated: 2026-11-11
+version: 3
+updated: 2026-11-14
 
 summary: |
   Plugins opcionales se instalan bajo demanda desde el pie del sidebar (Plugins).
   No se empaquetan modelos ni runtimes en el instalador base ni en el motor Rust.
   Estado persistido en userData/plugins/state.json.
+  World Generator es una DLL nativa (rer_worldgen.dll); RER-AI es runtime OpenCode.
 
 principles:
-  - Cero cambios en engine_2d / engine_3d / core para plugins
+  - Lógica de mundo/terreno en Rust (DLL); el editor solo envía intent y muestra estado
   - Descarga on-demand tras confirmación del usuario
-  - IPC bajo prefijo plugins:* en Electron main
+  - IPC plugins:* en Electron main; worldgen usa además engine:cmd / engine:event 3D
 
 catalog:
   - id: local-ai-assistant
-    name: Local AI Assistant
-    version: "1.0.0"
+    name: RER-AI (OpenCode)
+    version: "2.0.0"
     manifest_code: src/main/plugins/pluginCatalog.ts
     system_requirements:
       - Windows x64
       - Microsoft Visual C++ 2015–2022 Redistributable (x64); bundled installer auto-run on plugin install if missing
+  - id: world-gen
+    name: World Generator
+    version: "1.0.0"
+    crate: src/main/Engine/worldgen
+    docs: src/main/Engine/worldgen/README.md
+    modal: src/renderer/src/plugins/worldgen/WorldGenModalBody.tsx
+    engine: src/main/Engine/engine/src/engine3d/config_3d/worldgen
+    install_dir: "{userData}/plugins/world-gen/rer_worldgen.dll"
+    notes: |
+      ABI v2 (wg_*). Biomas con porcentajes (mín. 10 % por activo); nieve en cumbres;
+      atlas de splats 16×16×64 px (no una capa 1024² por columna). Barrido de
+      columnas con progreso phase=scan, luego mesh. Voxel size = detalle MC, no
+      radio del mundo. Generación en CPU; GPU pinta. No reinstalar el catálogo
+      para una DLL local de desarrollo.
 
 persistence:
   path: "{userData}/plugins/state.json"
@@ -32,7 +47,12 @@ persistence:
         modelPath: string
         llamaServerPath: string
         installedAt: ISO-8601
+      world-gen:
+        version: string
+        libraryPath: string
+        installedAt: ISO-8601
     enabled: [local-ai-assistant]
+    # world-gen no tiene interruptor: instalado implica usable.
 
 ipc:
   - plugins:get-catalog

@@ -85,6 +85,8 @@ impl State {
         self.worldgen.material_base = None;
         self.worldgen.fallback_tex_idx = None;
         self.worldgen.columns.clear();
+        self.worldgen.entity_splat_tile.clear();
+        self.worldgen.splat_atlas.reset();
         self.texture_path_layers.clear();
         self.glb_texture_catalog_cache.clear();
         self.entity_texture_effective_cap.clear();

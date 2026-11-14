@@ -152,6 +152,9 @@ pub(crate) fn build_scene_instance_batches(
         if is_terrain && let Some(base) = state.worldgen.material_base {
             inst.flag_pad[2] = crate::engine3d::mesh::RENDER_KIND_TERRAIN;
             inst.tex_layer_pad[3] = base as f32;
+            if let Some(&tile) = state.worldgen.entity_splat_tile.get(entity_id) {
+                inst.tex_layer_pad[1] = tile as f32;
+            }
         }
         let can_extend = batches.last().is_some_and(|b| {
             b.mesh_idx == *mesh_idx && b.texture_layer == layer && b.probe_layer == probe_layer

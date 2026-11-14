@@ -76,7 +76,7 @@ pub fn snow_line_meters(config: &WorldGenConfig) -> f32 {
     } else {
         (config.bounds.height - plains) * 0.55
     };
-    plains + relief * 0.55
+    plains + relief * 0.97
 }
 
 /// Altura de montaña que cabe bajo el techo del volumen.

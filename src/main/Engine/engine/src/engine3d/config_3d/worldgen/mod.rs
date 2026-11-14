@@ -17,6 +17,7 @@ mod types;
 pub(crate) use types::CHUNKS_PER_FRAME;
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use serde::Deserialize;
@@ -24,7 +25,8 @@ use serde::Deserialize;
 use crate::engine3d::config_3d::worldgen::abi::{Status, WgMeshBuffers};
 use crate::engine3d::config_3d::worldgen::loader::WorldgenLibrary;
 use crate::engine3d::config_3d::worldgen::types::{
-    ChunkKey, PendingChunk, ScanCursor, WgWorldHandle, WorldgenChunk, WorldgenPlacement,
+    ChunkKey, PendingChunk, SCAN_BUDGET_MS, SCAN_COLUMNS_PER_FRAME, SPLAT_ATLAS_TILE_PX,
+    SPLAT_ATLAS_TILES, ScanCursor, SplatAtlas, WgWorldHandle, WorldgenChunk, WorldgenPlacement,
     WorldgenStatus,
 };
 use crate::engine3d::ecs::{MeshComponent, MeshLocalAabb, NonSelectable, SurfacePbr, Transform};
@@ -168,7 +170,8 @@ impl super::super::engine::State {
         });
         send_event(&EngineEvent::WorldGenProgress {
             completed: 0,
-            total: 0,
+            total: (chunks_x * chunks_z) as u32,
+            phase: Some("scan".into()),
         });
     }
 
@@ -513,6 +516,7 @@ impl super::super::engine::State {
         send_event(&EngineEvent::WorldGenProgress {
             completed: self.worldgen.completed_chunks,
             total: self.worldgen.total_chunks,
+            phase: Some("mesh".into()),
         });
     }
 
@@ -540,6 +544,7 @@ impl super::super::engine::State {
             if let Some(chunk) = self.worldgen.spawned.remove(&key) {
                 self.physics.remove_entity_body(chunk.entity_id);
                 self.entity_colision.remove(&chunk.entity_id);
+                self.worldgen.entity_splat_tile.remove(&chunk.entity_id);
                 self.worldgen_retire_mesh(chunk.mesh_idx);
                 self.world.despawn(chunk.entity_id);
             }
@@ -644,8 +649,14 @@ impl super::super::engine::State {
                 self.worldgen.scan = Some(scan);
                 return;
             };
-            for _ in 0..CHUNKS_PER_FRAME {
-                if scan.cz >= scan.chunks_z {
+            let started = Instant::now();
+            let budget = Duration::from_millis(SCAN_BUDGET_MS);
+            let mut scanned = 0usize;
+            loop {
+                if scan.cz >= scan.chunks_z || scanned >= SCAN_COLUMNS_PER_FRAME {
+                    break;
+                }
+                if scanned > 0 && started.elapsed() >= budget {
                     break;
                 }
                 let cx = scan.cx;
@@ -666,6 +677,7 @@ impl super::super::engine::State {
                 if failed.is_some() {
                     break;
                 }
+                scanned += 1;
                 scan.cx += 1;
                 if scan.cx >= scan.chunks_x {
                     scan.cx = 0;
@@ -692,9 +704,17 @@ impl super::super::engine::State {
             send_event(&EngineEvent::WorldGenProgress {
                 completed: 0,
                 total: self.worldgen.total_chunks,
+                phase: Some("mesh".into()),
             });
             return;
         }
+        let scanned = (scan.cz * scan.chunks_x + scan.cx) as u32;
+        let columns = (scan.chunks_x * scan.chunks_z) as u32;
+        send_event(&EngineEvent::WorldGenProgress {
+            completed: scanned,
+            total: columns.max(1),
+            phase: Some("scan".into()),
+        });
         self.worldgen.scan = Some(scan);
     }
 
@@ -705,6 +725,9 @@ impl super::super::engine::State {
         self.worldgen.pending.clear();
         self.worldgen.scan = None;
         self.worldgen.column_epoch = self.worldgen.column_epoch.wrapping_add(1);
+        self.worldgen.columns.clear();
+        self.worldgen.entity_splat_tile.clear();
+        self.worldgen.splat_atlas.next_tile = 0;
         self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
 
@@ -811,6 +834,7 @@ impl super::super::engine::State {
             library,
             handle.0,
             &mut self.worldgen.columns,
+            &mut self.worldgen.splat_atlas,
             &mut self.tex_layers,
             column_epoch,
             cx,
@@ -828,6 +852,9 @@ impl super::super::engine::State {
         let entity_id = self.world.spawn(Some("TerrainChunk"));
         self.world
             .insert(entity_id, MeshComponent { mesh_idx, tex_idx });
+        if let Some(&(_, tile, _)) = self.worldgen.columns.get(&(cx, cz)) {
+            self.worldgen.entity_splat_tile.insert(entity_id, tile);
+        }
         self.world.insert(
             entity_id,
             Transform {
@@ -958,14 +985,15 @@ fn worldgen_pack_column_texture(
     vulkan: &crate::engine3d::vulkan::SharedGpu,
     library: &WorldgenLibrary,
     handle: *mut std::ffi::c_void,
-    columns: &mut HashMap<(i32, i32), (usize, u64)>,
+    columns: &mut HashMap<(i32, i32), (usize, u32, u64)>,
+    atlas: &mut SplatAtlas,
     tex_layers: &mut Vec<crate::engine3d::texture::TextureLayer>,
     epoch: u64,
     cx: i32,
     cz: i32,
     use_splat: bool,
 ) -> Option<usize> {
-    if let Some(&(tex_idx, cached_epoch)) = columns.get(&(cx, cz))
+    if let Some(&(tex_idx, _, cached_epoch)) = columns.get(&(cx, cz))
         && cached_epoch == epoch
     {
         return Some(tex_idx);
@@ -987,91 +1015,115 @@ fn worldgen_pack_column_texture(
         let dim = buffers.dim;
         unsafe { (library.free_chunk_textures)(&buffers) };
 
-        if let Some(&(tex_idx, _)) = columns.get(&(cx, cz))
-            && let Some(&gpu_layer) = tex_layers.get(tex_idx)
-        {
-            match texture_array.replace_layer(vulkan, gpu_layer, &pixels, dim, dim) {
-                Ok(()) => {
-                    columns.insert((cx, cz), (tex_idx, epoch));
-                    return Some(tex_idx);
-                }
-                Err(error) => {
-                    log::warn!("[worldgen] no se pudo reescribir el splat de la columna: {error}")
-                }
+        if let Some(&(tex_idx, tile, _)) = columns.get(&(cx, cz)) {
+            if stamp_splat_tile(
+                texture_array,
+                vulkan,
+                tex_layers,
+                tex_idx,
+                tile,
+                &pixels,
+                dim,
+            ) {
+                columns.insert((cx, cz), (tex_idx, tile, epoch));
+                return Some(tex_idx);
             }
             return Some(tex_idx);
         }
 
-        match texture_array.pack(vulkan, &pixels, dim, dim) {
-            Ok(gpu_layer)
-                if gpu_layer != crate::engine3d::texture::TextureArray::fallback_layer() =>
-            {
-                let tex_idx = tex_layers.len();
-                tex_layers.push(gpu_layer);
-                columns.insert((cx, cz), (tex_idx, epoch));
+        if let Some((tex_idx, tile)) = alloc_splat_tile(texture_array, vulkan, atlas, tex_layers) {
+            if stamp_splat_tile(
+                texture_array,
+                vulkan,
+                tex_layers,
+                tex_idx,
+                tile,
+                &pixels,
+                dim,
+            ) {
+                columns.insert((cx, cz), (tex_idx, tile, epoch));
                 return Some(tex_idx);
             }
-            Ok(_) => {
-                // El array de 256 capas se llena con splats (uno por columna).
-                // `pack` cae a la capa 0 (checker del editor): se reescribe una
-                // columna vieja para no pintar el damero en el terreno.
-                if let Some(tex_idx) = recycle_column_layer(columns, tex_layers, epoch, cx, cz) {
-                    if let Some(&gpu_layer) = tex_layers.get(tex_idx)
-                        && texture_array
-                            .replace_layer(vulkan, gpu_layer, &pixels, dim, dim)
-                            .is_ok()
-                    {
-                        columns.insert((cx, cz), (tex_idx, epoch));
-                        return Some(tex_idx);
-                    }
-                    log::warn!(
-                        "[worldgen] array de texturas lleno: la columna ({cx},{cz}) reutiliza una capa vieja"
-                    );
-                    return Some(tex_idx);
-                }
-                log::warn!(
-                    "[worldgen] array de texturas lleno: no hay capa para la columna ({cx},{cz})"
-                );
-            }
-            Err(error) => {
-                log::warn!("[worldgen] no se pudo empaquetar el splat de la columna: {error}")
-            }
+            log::warn!(
+                "[worldgen] no se pudo sellar el splat de la columna ({cx},{cz}) en el atlas"
+            );
+        } else {
+            log::warn!("[worldgen] atlas de splats lleno: la columna ({cx},{cz}) usa el fallback");
         }
     } else if !buffers.albedo.is_null() || !buffers.splat.is_null() {
         // # Seguridad: liberar buffers parciales en error.
         unsafe { (library.free_chunk_textures)(&buffers) };
     }
-    columns.get(&(cx, cz)).map(|(tex_idx, _)| *tex_idx)
+    columns.get(&(cx, cz)).map(|(tex_idx, _, _)| *tex_idx)
 }
 
-/// Capa de una columna de otra generación (o la más antigua) para reescribir
-/// su splat cuando el array ya no admite más capas.
-fn recycle_column_layer(
-    columns: &mut HashMap<(i32, i32), (usize, u64)>,
-    tex_layers: &[crate::engine3d::texture::TextureLayer],
-    epoch: u64,
-    cx: i32,
-    cz: i32,
-) -> Option<usize> {
-    let mut best: Option<((i32, i32), bool, u64, usize)> = None;
-    for (&key, &(tex_idx, cached)) in columns.iter() {
-        if key == (cx, cz) || tex_layers.get(tex_idx).is_none() {
-            continue;
-        }
-        let stale = cached != epoch;
-        let better = match best {
-            None => true,
-            Some((_, best_stale, best_epoch, _)) => {
-                stale && !best_stale || (stale == best_stale && cached < best_epoch)
+/// Reserva un tile 64×64 en el atlas. Una página = 256 columnas; no pisa tiles
+/// de columnas vivas. Si el array GPU está lleno, `None` (el caller usa fallback).
+fn alloc_splat_tile(
+    texture_array: &mut crate::engine3d::texture::TextureArray,
+    vulkan: &crate::engine3d::vulkan::SharedGpu,
+    atlas: &mut SplatAtlas,
+    tex_layers: &mut Vec<crate::engine3d::texture::TextureLayer>,
+) -> Option<(usize, u32)> {
+    let per_page = SPLAT_ATLAS_TILES * SPLAT_ATLAS_TILES;
+    let page = (atlas.next_tile / per_page) as usize;
+    let tile = atlas.next_tile % per_page;
+    while atlas.pages.len() <= page {
+        let blank = vec![0u8; (SPLAT_ATLAS_TILE_PX * SPLAT_ATLAS_TILE_PX * 4) as usize];
+        match texture_array.pack(vulkan, &blank, SPLAT_ATLAS_TILE_PX, SPLAT_ATLAS_TILE_PX) {
+            Ok(gpu_layer)
+                if gpu_layer != crate::engine3d::texture::TextureArray::fallback_layer() =>
+            {
+                let tex_idx = tex_layers.len();
+                tex_layers.push(gpu_layer);
+                atlas.pages.push(tex_idx);
             }
-        };
-        if better {
-            best = Some((key, stale, cached, tex_idx));
+            Ok(_) => {
+                log::warn!("[worldgen] no hay capa GPU libre para una página del atlas de splats");
+                return None;
+            }
+            Err(error) => {
+                log::warn!("[worldgen] no se pudo crear una página del atlas de splats: {error}");
+                return None;
+            }
         }
     }
-    let (key, _, _, tex_idx) = best?;
-    columns.remove(&key);
-    Some(tex_idx)
+    let tex_idx = *atlas.pages.get(page)?;
+    atlas.next_tile = atlas.next_tile.saturating_add(1);
+    Some((tex_idx, tile))
+}
+
+/// Copia el splat (lod 0, 64×64) en el tile del atlas, sin inflarlo a 1024².
+fn stamp_splat_tile(
+    texture_array: &crate::engine3d::texture::TextureArray,
+    vulkan: &crate::engine3d::vulkan::SharedGpu,
+    tex_layers: &[crate::engine3d::texture::TextureLayer],
+    tex_idx: usize,
+    tile: u32,
+    pixels: &[u8],
+    dim: u32,
+) -> bool {
+    let Some(&gpu_layer) = tex_layers.get(tex_idx) else {
+        return false;
+    };
+    if dim != SPLAT_ATLAS_TILE_PX {
+        log::warn!("[worldgen] splat {dim}×{dim}, el atlas espera {SPLAT_ATLAS_TILE_PX}");
+        return false;
+    }
+    let (tx, tz) = splat_tile_xy(tile);
+    let x = tx * SPLAT_ATLAS_TILE_PX;
+    let y = tz * SPLAT_ATLAS_TILE_PX;
+    match texture_array.blit_layer_tile(vulkan, gpu_layer, x, y, pixels, dim, dim) {
+        Ok(()) => true,
+        Err(error) => {
+            log::warn!("[worldgen] no se pudo copiar el tile de splat: {error}");
+            false
+        }
+    }
+}
+
+fn splat_tile_xy(tile: u32) -> (u32, u32) {
+    (tile % SPLAT_ATLAS_TILES, tile / SPLAT_ATLAS_TILES)
 }
 
 /// El recorte al disco interpola UVs; un valor fuera de `[0, 1]` con sampler
@@ -1497,17 +1549,11 @@ mod tests {
     }
 
     #[test]
-    fn recycle_column_layer_prefers_stale_epoch() {
-        let mut columns = std::collections::HashMap::from([
-            ((0, 0), (10, 1u64)),
-            ((1, 0), (11, 2)),
-            ((2, 0), (12, 2)),
-        ]);
-        let layers = vec![0u32; 20];
-        let recycled = super::recycle_column_layer(&mut columns, &layers, 2, 3, 0);
-        assert_eq!(recycled, Some(10));
-        assert!(!columns.contains_key(&(0, 0)));
-        assert!(columns.contains_key(&(1, 0)));
+    fn splat_tile_xy_covers_a_16_by_16_page() {
+        assert_eq!(super::splat_tile_xy(0), (0, 0));
+        assert_eq!(super::splat_tile_xy(15), (15, 0));
+        assert_eq!(super::splat_tile_xy(16), (0, 1));
+        assert_eq!(super::splat_tile_xy(255), (15, 15));
     }
 
     #[test]

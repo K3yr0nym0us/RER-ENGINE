@@ -59,7 +59,9 @@ pub fn active_y_chunks(
     let cell = CHUNK_SIZE as f32 * voxel;
     let base_x = cx as f32 * cell;
     let base_z = cz as f32 * cell;
-    let samples = 5u32;
+    // 3×3 cubre esquinas y centro; el ±1 chunk de holgura absorbe el error
+    // frente a 5×5 y el barrido deja de evaluar 25 alturas por columna.
+    let samples = 3u32;
     let step = cell / (samples - 1) as f32;
 
     let mut min_y = f32::MAX;

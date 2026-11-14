@@ -118,9 +118,14 @@ float value_noise(vec2 p) {
 }
 
 vec3 terrain_materials(vec3 n) {
-    // REPEAT en el array: UVs interpoladas fuera de [0,1] envuelven a la capa 0
-    // (checker del editor) y pintan damero. El splat vive en [0,1] por chunk.
-    vec2 splat_uv = clamp(v_uv, 0.0, 1.0);
+    // Atlas 16×16 tiles de 64 px en una capa 1024². `v_tex.y` es el índice
+    // local (0..255); inset de 0.5 px para no sangrar al tile vecino.
+    vec2 tile_uv = clamp(v_uv, 0.0, 1.0);
+    float tiles = 16.0;
+    float tile = floor(v_tex.y + 0.5);
+    float tx = mod(tile, tiles);
+    float tz = floor(tile / tiles);
+    vec2 splat_uv = (vec2(tx, tz) + (tile_uv * 63.0 + 0.5) / 64.0) / tiles;
     float splat_layer = max(v_tex.x, 0.0);
     vec4 w = textureLod(albedo_tex, vec3(splat_uv, splat_layer), 0.0);
     // El uniforme manda. `v_tex.w` se queda en 0 cuando el IOR del terreno pisa

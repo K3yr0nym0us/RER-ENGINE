@@ -347,7 +347,11 @@ export function WorldGenModalBody() {
   const [selectedModelPath, setSelectedModelPath] = useState('')
   const [models, setModels] = useState<ModelInfo[]>([])
   const [status, setStatus] = useState('')
-  const [generation, setGeneration] = useState<{ completed: number; total: number } | null>(null)
+  const [generation, setGeneration] = useState<{
+    completed: number
+    total: number
+    phase: 'scan' | 'mesh'
+  } | null>(null)
   const [distributing, setDistributing] = useState(false)
   const [plugin, setPlugin] = useState<{ libraryPath: string | null } | null>(null)
   const finishHandled = useRef(false)
@@ -361,9 +365,11 @@ export function WorldGenModalBody() {
       return
     }
     if (event.event === 'world_gen_progress') {
+      const phase = event.phase === 'scan' ? 'scan' : 'mesh'
       setGeneration({
         completed: Number(event.completed ?? 0),
         total: Number(event.total ?? 0),
+        phase,
       })
       return
     }
@@ -504,7 +510,7 @@ export function WorldGenModalBody() {
     pendingScatter.current = 0
     setDistributing(false)
     setStatus('')
-    setGeneration({ completed: 0, total: 0 })
+    setGeneration({ completed: 0, total: 0, phase: 'scan' })
   }
 
   const onStop = () => {
@@ -596,9 +602,14 @@ export function WorldGenModalBody() {
   if (distributing) {
     generateLabel = t('Distributing blueprints…')
   } else if (generation) {
-    generateLabel = generation.total > 0
-      ? `${t('Generating world…')} ${generation.completed}/${generation.total}`
-      : t('Scanning columns…')
+    if (generation.phase === 'scan') {
+      generateLabel =
+        generation.total > 0
+          ? `${t('Scanning columns…')} ${generation.completed}/${generation.total}`
+          : t('Scanning columns…')
+    } else {
+      generateLabel = `${t('Generating world…')} ${generation.completed}/${generation.total}`
+    }
   }
 
   return (

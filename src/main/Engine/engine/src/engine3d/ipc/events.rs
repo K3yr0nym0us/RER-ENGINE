@@ -184,10 +184,12 @@ pub enum EngineEvent {
     WorldGenStatus {
         state: String,
     },
-    /// Progreso de la generación (chunks completados / totales).
+    /// Progreso de la generación (`scan` = columnas, `mesh` = chunks).
     WorldGenProgress {
         completed: u32,
         total: u32,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        phase: Option<String>,
     },
     /// Chunk de terreno listo en escena (`entity_id = 0` si el chunk era aire).
     WorldGenChunkReady {
