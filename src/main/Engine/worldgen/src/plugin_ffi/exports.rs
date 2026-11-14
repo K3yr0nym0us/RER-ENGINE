@@ -10,6 +10,7 @@ use std::sync::Mutex;
 
 use super::abi::{ABI_VERSION, Status, WgMeshBuffers};
 use super::buffers;
+use crate::biomes::BiomeMap;
 use crate::chunks::{CHUNK_SIZE, ChunkKey, active_y_chunks, sample_chunk_grid_lod};
 use crate::config::WorldGenConfig;
 use crate::field::DensityField;
@@ -22,7 +23,10 @@ use crate::splat::{SplatContext, chunk_splat};
 pub struct WgWorld {
     config: WorldGenConfig,
     field: DensityField,
+    biomes: BiomeMap,
     last_error: Mutex<String>,
+    /// Última columna consultada por `wg_chunk_status` para no repetir el pruning.
+    column_cache: Mutex<Option<(i32, i32, Vec<i32>)>>,
 }
 
 impl WgWorld {
@@ -58,30 +62,30 @@ pub unsafe extern "C" fn wg_world_create(
     config_len: usize,
 ) -> *mut WgWorld {
     let result = catch_unwind(AssertUnwindSafe(|| {
+        if config_json.is_null() || config_len == 0 || config_len > MAX_CONFIG_BYTES {
+            return Err("config vacia o demasiado grande".to_string());
+        }
         // # Seguridad: buffer de solo lectura de `config_len` bytes según el contrato.
-        let json = unsafe {
-            if config_json.is_null() || config_len == 0 || config_len > MAX_CONFIG_BYTES {
-                return Err(Status::NullArgument);
-            }
-            std::slice::from_raw_parts(config_json, config_len)
-        };
-        let json = std::str::from_utf8(json).map_err(|_| Status::InvalidConfig)?;
-        let config =
-            serde_json::from_str::<WorldGenConfig>(json).map_err(|_| Status::InvalidConfig)?;
-        config.validate().map_err(|_| Status::InvalidConfig)?;
+        let json = unsafe { std::slice::from_raw_parts(config_json, config_len) };
+        let json = std::str::from_utf8(json).map_err(|err| err.to_string())?;
+        let config = serde_json::from_str::<WorldGenConfig>(json).map_err(|err| err.to_string())?;
+        config.validate().map_err(|err| err.to_string())?;
+        let biomes = BiomeMap::new(&config);
         let field = DensityField::new(&config);
         let world = WgWorld {
             config,
             field,
+            biomes,
             last_error: Mutex::new(String::new()),
+            column_cache: Mutex::new(None),
         };
         Ok(Box::into_raw(Box::new(world)))
     }));
 
     match result {
         Ok(Ok(handle)) => handle,
-        Ok(Err(status)) => {
-            set_global_error(format!("{status:?}: config invalida o no legible"));
+        Ok(Err(message)) => {
+            set_global_error(message);
             std::ptr::null_mut()
         }
         Err(panic) => {
@@ -126,7 +130,7 @@ pub unsafe extern "C" fn wg_chunk_status(world: *const WgWorld, cx: i32, cy: i32
         if !chunk_in_range(&world.config, cx, cy, cz) {
             return -1;
         }
-        let active = active_y_chunks(&world.field, &world.config, cx, cz);
+        let active = cached_active_y(world, cx, cz);
         if active.contains(&cy) { 1 } else { 0 }
     }));
     result.unwrap_or(-1)
@@ -218,7 +222,7 @@ pub unsafe extern "C" fn wg_last_error(
             .unwrap_or_default()
     };
     if buffer.is_null() || cap == 0 {
-        return 0;
+        return message.len();
     }
     let bytes = message.as_bytes();
     let n = bytes.len().min(cap - 1);
@@ -276,8 +280,9 @@ pub unsafe extern "C" fn wg_chunk_textures(
 
         let ctx = SplatContext::new(
             &world.field,
-            &world.config,
-            world.field.plan().sites.clone(),
+            &world.biomes,
+            world.config.bounds.height,
+            world.config.resolution.voxel_size,
         );
         let (splat, albedo, dim) = chunk_splat(&world.field, &ctx, cx, cz, lod);
         *out = buffers::textures_into_raw(splat, albedo, dim);
@@ -422,6 +427,22 @@ fn set_global_error(message: String) {
 
 /// Verifica que el chunk esté dentro de los límites del mundo configurado (X, Z
 /// contra los límites de dimensiones; Y contra la altura máxima en chunks).
+fn cached_active_y(world: &WgWorld, cx: i32, cz: i32) -> Vec<i32> {
+    let mut slot = world
+        .column_cache
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    if let Some((cached_x, cached_z, active)) = slot.as_ref()
+        && *cached_x == cx
+        && *cached_z == cz
+    {
+        return active.clone();
+    }
+    let active = active_y_chunks(&world.field, &world.config, cx, cz);
+    *slot = Some((cx, cz, active.clone()));
+    active
+}
+
 fn chunk_in_range(config: &WorldGenConfig, cx: i32, cy: i32, cz: i32) -> bool {
     let (chunks_x, chunks_z) = config.chunk_count_xz(CHUNK_SIZE);
     cx >= 0

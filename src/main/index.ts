@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, session, screen as electronScreen } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, session } from 'electron';
 import type { ChildProcess } from 'child_process';
 import { spawn } from 'child_process';
 import path from 'path';
@@ -17,14 +17,8 @@ import type {
   ProjectType,
   SavedControls,
   SavedScript,
-  AppResourceUsage,
 } from '../shared-types/types';
 import { entityPathMarker } from '../shared-types/types';
-import {
-  getGpuMetricsPlatform,
-  isElectronGpuMetricsSupported,
-  queryElectronAppGpuPercent,
-} from './gpuProcessUsage';
 import {
   initModalElectron,
   openModalElectronWindow,
@@ -269,18 +263,6 @@ function failEditorAndQuit(message: string): void {
 // ---------------------------------------------------------------------------
 // Proceso del motor Rust
 // ---------------------------------------------------------------------------
-interface ViewportBounds {
-  x:      number
-  y:      number
-  width:  number
-  height: number
-  // Offsets físicos del EngineView dentro del área de contenido de Electron.
-  // Solo se usan en Windows: el position-tracker Rust los usa como offset
-  // directo (evita conversión DPI de getContentBounds() que puede ser incorrecta).
-  rel_x?: number
-  rel_y?: number
-}
-
 function engineBinaryLabel(): string {
   if (currentProjectType === '3D') return 'rer_engine_3d'
   if (currentProjectType === '2D') return 'rer_engine_2d'
@@ -302,11 +284,6 @@ function handleEngineEvent(event: EngineEvent): void {
       is3dStartupSceneSent: () => engine3dStartupSceneSent,
       mark3dStartupSceneSent: () => { engine3dStartupSceneSent = true },
     })
-  }
-  if (event.event === 'autosave_tick') {
-    if (currentProjectFilePath && mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('autosave:request', currentProjectFilePath)
-    }
   }
   // Tras ready: omitir errores GPU genéricos; dejar pasar errores de runtime (quick_build).
   if (event.event === 'error' && engineReceivedReady) {
@@ -538,7 +515,6 @@ function stopEngine(): void {
   sendToEngine({ cmd: 'shutdown' })
   stopEditorFrame()
   engineReceivedReady = false
-  engineStarted = false
 }
 
 // ---------------------------------------------------------------------------
@@ -575,43 +551,9 @@ function clearAssetWatchers(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Uso de CPU/GPU de procesos Electron (caché; sin bloquear el hilo principal)
-// ---------------------------------------------------------------------------
-const ELECTRON_RESOURCE_SAMPLE_MS = 2000
-
-let cachedElectronResourceUsage: AppResourceUsage = {
-  electronCpuPercent: 0,
-  electronGpuPercent: null,
-  gpuMetricsPlatform: getGpuMetricsPlatform(),
-  electronGpuMetricsSupported: isElectronGpuMetricsSupported(),
-}
-
-async function sampleElectronResourceUsage(): Promise<void> {
-  let electronCpuPercent = 0
-
-  for (const metric of app.getAppMetrics()) {
-    electronCpuPercent += metric.cpu?.percentCPUUsage ?? 0
-  }
-
-  const electronGpuPercent = await queryElectronAppGpuPercent()
-
-  cachedElectronResourceUsage = {
-    electronCpuPercent,
-    electronGpuPercent,
-    gpuMetricsPlatform: getGpuMetricsPlatform(),
-    electronGpuMetricsSupported: isElectronGpuMetricsSupported(),
-  }
-}
-
-function startElectronResourceSampling(): void {
-  void sampleElectronResourceUsage()
-  setInterval(() => void sampleElectronResourceUsage(), ELECTRON_RESOURCE_SAMPLE_MS)
-}
-
-// ---------------------------------------------------------------------------
 // IPC: renderer → motor y herramientas del editor
 // ---------------------------------------------------------------------------
-registerPluginIpc(() => mainWindow)
+registerPluginIpc(() => mainWindow, sendToEngine)
 
 registerEngineCmdIpc({
   getProjectType: () => currentProjectType,
@@ -654,64 +596,7 @@ ipcMain.on('ai-assistant:ready', (event) => {
   resendAiAssistantConfig(event.sender.id)
 })
 
-ipcMain.handle('get-app-resource-usage', (): AppResourceUsage => cachedElectronResourceUsage)
-
-// Diálogo para abrir modelos 3D
-ipcMain.handle('open-model-dialog', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title:       'Abrir modelo 3D',
-    filters:     [{ name: 'Modelos 3D', extensions: ['glb', 'gltf', 'fbx'] }],
-    properties:  ['openFile'],
-  })
-  return result.canceled ? null : result.filePaths[0] ?? null
-})
-
-// Diálogo para abrir archivo de audio (WAV, OGG, MP3)
-ipcMain.handle('open-audio-dialog', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title:      'Cargar audio de animación',
-    filters:    [{ name: 'Audio', extensions: ['wav', 'ogg', 'mp3'] }],
-    properties: ['openFile'],
-  })
-  return result.canceled ? null : result.filePaths[0] ?? null
-})
-
-// Diálogo para abrir archivo de fuente (TTF, OTF)
-ipcMain.handle('open-font-dialog', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title:      'Cargar fuente',
-    filters:    [{ name: 'Fuentes', extensions: ['ttf', 'otf'] }],
-    properties: ['openFile'],
-  })
-  return result.canceled ? null : result.filePaths[0] ?? null
-})
-
-// Diálogo para abrir imagen PNG como escenario 2D
-ipcMain.handle('open-scenario-dialog', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title:      'Cargar escenario (PNG)',
-    filters:    [{ name: 'Imágenes PNG', extensions: ['png'] }],
-    properties: ['openFile'],
-  })
-  return result.canceled ? null : result.filePaths[0] ?? null
-})
-
-// Diálogo para abrir imagen PNG como personaje 2D
-ipcMain.handle('open-character-dialog', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title:      'Cargar personaje (PNG)',
-    filters:    [{ name: 'Imágenes PNG', extensions: ['png'] }],
-    properties: ['openFile'],
-  })
-  return result.canceled ? null : result.filePaths[0] ?? null
-})
-
-// Diálogo para abrir imagen PNG como sprite (solo almacenamiento en motor)
+// Diálogo para abrir imagen PNG como sprite (lo usan las modales)
 ipcMain.handle('open-sprite-dialog', async () => {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -722,18 +607,7 @@ ipcMain.handle('open-sprite-dialog', async () => {
   return result.canceled ? null : result.filePaths[0] ?? null
 })
 
-// Diálogo para imágenes HUD (transparencia: PNG o WebP)
-ipcMain.handle('open-hud-image-dialog', async () => {
-  if (!mainWindow) return null
-  const result = await dialog.showOpenDialog(mainWindow, {
-    title:      'Cargar imagen HUD',
-    filters:    [{ name: 'Imágenes HUD (PNG, JPEG, WebP)', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-    properties: ['openFile'],
-  })
-  return result.canceled ? null : result.filePaths[0] ?? null
-})
-
-// Diálogo para abrir imagen PNG/GIF como fondo del mundo 2D
+// Diálogo para abrir imagen como fondo (lo usan las modales de UI)
 ipcMain.handle('open-background-dialog', async () => {
   if (!mainWindow) return null
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -767,11 +641,8 @@ ipcMain.handle('get-image-data-url', async (_event, filePath: string): Promise<s
   }
 })
 
-// Oculta el motor (para que no tape modales del renderer)
-ipcMain.on('hide-engine-viewport', () => {
-  // El motor vive en la ventana del editor; no hay overlay que ocultar.
-})// ---------------------------------------------------------------------------
-// Modal Electron (singleton, encima del motor sin hideEngineViewport)
+// ---------------------------------------------------------------------------
+// Modal Electron
 // ---------------------------------------------------------------------------
 
 ipcMain.handle('modal-electron:open', async (_event, payload: ModalElectronOpenRequest) => {
@@ -936,55 +807,11 @@ ipcMain.on('modal-electron:result', (_event, data: ModalElectronResultPayload) =
   closeModalElectronWindow()
 })
 
-// Restaura el motor a los últimos bounds conocidos
-ipcMain.on('restore-engine-viewport', () => {
-  // El motor vive en la ventana del editor; no hay overlay que restaurar.
-})
-
 // ---------------------------------------------------------------------------
-// Helpers de guardado consolidado (.save)
+// Helpers de lectura del .save
 // ---------------------------------------------------------------------------
-
-function ensureSaveExtension(filePath: string): string {
-  return path.extname(filePath).toLowerCase() === '.save' ? filePath : `${filePath}.save`
-}
 
 const SCRIPT_FILE_PREFIX = '@file:'
-const AUDIO_EXTENSIONS = new Set(['.wav', '.ogg', '.mp3', '.flac', '.aac', '.m4a'])
-const FONT_EXTENSIONS = new Set(['.ttf', '.otf'])
-const HUD_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
-
-function sanitizeSegment(raw: string | null | undefined, fallback = 'item'): string {
-  const text = (raw ?? '').trim()
-  let cleaned = ''
-  for (const ch of text) {
-    const code = ch.charCodeAt(0)
-    if (code < 32 || '<>:"/\\|?*'.includes(ch)) {
-      cleaned += '_'
-    } else {
-      cleaned += ch
-    }
-  }
-  cleaned = cleaned.replace(/\s+/g, '_').replace(/^\.+/, '')
-  return cleaned.length > 0 ? cleaned : fallback
-}
-
-function isAudioAsset(filePath: string): boolean {
-  return AUDIO_EXTENSIONS.has(path.extname(filePath).toLowerCase())
-}
-
-function isFontAsset(filePath: string): boolean {
-  return FONT_EXTENSIONS.has(path.extname(filePath).toLowerCase())
-}
-
-function isHudImageAsset(filePath: string): boolean {
-  return HUD_IMAGE_EXTENSIONS.has(path.extname(filePath).toLowerCase())
-}
-
-function toAssetPathKey(filePath: string): string {
-  return path.normalize(filePath).toLowerCase()
-}
-
 /** Entidad 2D (`path`) o 3D (`model`) en manifest. */
 type SaveManifestEntity = Entity3D & Partial<Pick<SavedEntity, 'path' | 'kind' | 'control_bindings'>>
 
@@ -1128,10 +955,6 @@ function formatEntityKindBreakdown(data: ProjectSaveData): string {
 
 const MODEL_SOURCE_EXTS = new Set(['.glb', '.gltf', '.fbx'])
 
-function isModelSourceFile(p: string): boolean {
-  return MODEL_SOURCE_EXTS.has(path.extname(p).toLowerCase())
-}
-
 /** En 3D, `entity.model` puede ser `model_id` (sin ruta); no resolver contra extract_dir. */
 function isManifestModelIdRef(p: string, modelId?: string): boolean {
   if (entityPathMarker(p)) return true
@@ -1142,547 +965,6 @@ function isManifestModelIdRef(p: string, modelId?: string): boolean {
     return ext === '' || (!MODEL_SOURCE_EXTS.has(ext) && ext !== '.rerasset')
   }
   return false
-}
-
-function formatPackBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`
-}
-
-function filePackSizeLabel(filePath: string): string {
-  try {
-    return formatPackBytes(fs.statSync(filePath).size)
-  } catch {
-    return 'tamaño desconocido'
-  }
-}
-
-/** Lista recursiva de archivos bajo un directorio (para diagnóstico de .save). */
-function walkPackFiles(
-  rootDir: string,
-  baseDir = rootDir,
-): Array<{ rel: string; size: number }> {
-  if (!fs.existsSync(rootDir)) return []
-  const out: Array<{ rel: string; size: number }> = []
-  for (const entry of fs.readdirSync(rootDir, { withFileTypes: true })) {
-    const full = path.join(rootDir, entry.name)
-    const rel = path.relative(baseDir, full).replace(/\\/g, '/')
-    if (entry.isDirectory()) {
-      out.push(...walkPackFiles(full, baseDir))
-    } else if (entry.isFile()) {
-      try {
-        out.push({ rel, size: fs.statSync(full).size })
-      } catch {
-        out.push({ rel, size: 0 })
-      }
-    }
-  }
-  return out.sort((a, b) => a.rel.localeCompare(b.rel))
-}
-
-function countRhaiFiles(dir: string): number {
-  if (!fs.existsSync(dir)) return 0
-  let total = 0
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      total += countRhaiFiles(full)
-    } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.rhai') {
-      total += 1
-    }
-  }
-  return total
-}
-
-function logPackDirectoryTree(tag: string, rootDir: string): void {
-  const files = walkPackFiles(rootDir)
-  if (files.length === 0) {
-    console.log(`[${tag}] (sin archivos) ${rootDir}`)
-    return
-  }
-  const total = files.reduce((sum, f) => sum + f.size, 0)
-  const rerassets = files.filter((f) => f.rel.endsWith('.rerasset'))
-  const rerassetNote =
-    rerassets.length > 0
-      ? `, ${rerassets.length} .rerasset (${formatPackBytes(rerassets.reduce((s, f) => s + f.size, 0))})`
-      : ''
-  console.log(
-    `[${tag}] ${files.length} archivo/s, ${formatPackBytes(total)}${rerassetNote}`,
-  )
-}
-
-function logSaveManifestSummary(data: ProjectSaveData): void {
-  const resources = data.resources?.models ?? []
-  const modelNames = resources.map((m) => m.name).join(', ') || '(ninguno)'
-  console.log(
-    `[save-pack] v${data.version} ${data.type} ${data.gameStyle} | ${resources.length} modelo/s: ${modelNames}`,
-  )
-}
-
-/**
- * Recorre un ProjectSaveData y devuelve todos los paths de archivo absolutos
- * que hay que copiar al paquete de assets del archivo .save.
- */
-function collectAssetPaths(data: ProjectSaveData): Set<string> {
-  const paths = new Set<string>()
-  const skippedModelSources: string[] = []
-  const missingOnDisk: string[] = []
-  const hasScenes = (data.scenes?.length ?? 0) > 0
-  const add = (p: string | null | undefined) => {
-    if (!p || !path.isAbsolute(p)) return
-    if (isModelSourceFile(p)) {
-      skippedModelSources.push(p)
-      return
-    }
-    if (!fs.existsSync(p)) {
-      missingOnDisk.push(p)
-      return
-    }
-    // En Windows evitamos duplicados del mismo archivo por separadores distintos (\ vs /).
-    paths.add(toAssetPathKey(p))
-  }
-
-  if (!hasScenes) {
-    add(data.backgroundPath)
-    if (data.sprites) {
-      for (const sprite of data.sprites) add(sprite.path)
-    }
-  }
-  for (const scene of data.scenes ?? []) {
-    add(scene.backgroundPath)
-    for (const sprite of scene.sprites ?? []) add(sprite.path)
-  }
-
-  if (data.sounds) {
-    for (const sound of data.sounds) add(sound.path)
-  }
-
-  if (data.fonts) {
-    for (const font of data.fonts) add(font.path)
-  }
-
-  if (data.backgrounds) {
-    for (const bg of data.backgrounds) add(bg.path)
-  }
-
-  if (data.hudImages) {
-    for (const img of data.hudImages) add(img.path)
-  }
-
-  // playerUi* solo referencian fonts[] / hudImages[] — no empaquetar otra vez aquí.
-
-  add(data.player?.model)
-
-  for (const scene of data.scenes ?? []) {
-    add(scene.player?.model)
-  }
-
-  forEachEntity(data, (entity) => {
-    const assetPath = getEntityAssetPath(entity)
-    if (assetPath && !entityPathMarker(assetPath)) add(assetPath)
-    for (const anim of entity.animations ?? []) {
-      add(anim.audio_path)
-      for (const frame of anim.frames) {
-        add(frame.path)
-      }
-    }
-  })
-
-  for (const bp of data.blueprints ?? []) {
-    add(getBlueprintAssetPath(bp))
-    for (const anim of bp.animations ?? []) {
-      add(anim.audio_path)
-      for (const frame of anim.frames) {
-        add(frame.path)
-      }
-    }
-  }
-
-  if (skippedModelSources.length > 0) {
-    console.log(
-      `[save-pack] modelos fuente GLB/GLTF/FBX omitidos del ZIP (${skippedModelSources.length}); van como .rerasset`,
-    )
-    for (const p of skippedModelSources) {
-      console.log(`[save-pack]   omitido fuente: ${p}`)
-    }
-  }
-  if (missingOnDisk.length > 0) {
-    console.warn(`[save-pack] referencias sin archivo en disco (${missingOnDisk.length})`)
-    for (const p of missingOnDisk) {
-      console.warn(`[save-pack]   faltante: ${p}`)
-    }
-  }
-  console.log(`[save-pack] assets/ sonidos/fuentes a copiar: ${paths.size} archivo/s`)
-
-  return paths
-}
-
-/**
- * Copia todos los assets al directorio temporal (`assets/`, `sounds/`, `fonts/`) y devuelve
- * un mapa de ruta-absoluta → ruta-relativa dentro del paquete .save.
- * Si dos archivos distintos tienen el mismo nombre, se les agrega un sufijo numérico.
- */
-function copyAssetsToDir(
-  assetPaths: Set<string>,
-  assetsDir: string,
-  soundsDir: string,
-  fontsDir: string,
-  hudImagesDir: string,
-): Map<string, string> {
-  fs.mkdirSync(assetsDir, { recursive: true })
-  fs.mkdirSync(soundsDir, { recursive: true })
-  fs.mkdirSync(fontsDir, { recursive: true })
-  fs.mkdirSync(hudImagesDir, { recursive: true })
-  const map = new Map<string, string>()
-  const usedNames = new Map<string, number>()
-
-  for (const src of assetPaths) {
-    const baseName = path.basename(src)
-    let targetDir = assetsDir
-    let relPrefix = 'assets'
-    if (isAudioAsset(src)) {
-      targetDir = soundsDir
-      relPrefix = 'sounds'
-    } else if (isFontAsset(src)) {
-      targetDir = fontsDir
-      relPrefix = 'fonts'
-    } else if (isHudImageAsset(src)) {
-      targetDir = hudImagesDir
-      relPrefix = 'hud-images'
-    }
-    const key = `${relPrefix}/${baseName}`
-    const count = usedNames.get(key) ?? 0
-    usedNames.set(key, count + 1)
-
-    const destName = count === 0
-      ? baseName
-      : `${path.basename(baseName, path.extname(baseName))}_${count}${path.extname(baseName)}`
-
-    const destAbs = path.join(targetDir, destName)
-    try {
-      fs.copyFileSync(src, destAbs)
-      const rel = `${relPrefix}/${destName}`
-      map.set(src, rel)
-      console.log(
-        `[save-pack] asset copiado: ${src} → ${rel} (${filePackSizeLabel(src)})`,
-      )
-    } catch (err) {
-      console.error(`[save-pack] no se pudo copiar asset ${src}:`, err)
-    }
-  }
-  return map
-}
-
-function serializeScriptsToFiles(
-  data: ProjectSaveData,
-  scriptingDir: string,
-  extractDir: string | null,
-): { data: ProjectSaveData; written: number; copied: number } {
-  fs.mkdirSync(scriptingDir, { recursive: true })
-  const stagingRoot = path.dirname(scriptingDir)
-  const usedNames = new Map<string, number>()
-  const sourceCache = new Map<string, string>()
-  const copiedDest = new Set<string>()
-  let written = 0
-  let copied = 0
-
-  const nextName = (folderKey: string, baseName: string) => {
-    const key = `${folderKey}/${baseName}`
-    const count = usedNames.get(key) ?? 0
-    usedNames.set(key, count + 1)
-    return count === 0 ? baseName : `${path.basename(baseName, '.rhai')}_${count}.rhai`
-  }
-
-  const copyScriptFromExtract = (fileRef: string): boolean => {
-    const cached = sourceCache.get(fileRef)
-    if (cached) return true
-    const relPath = fileRef.slice(SCRIPT_FILE_PREFIX.length)
-    const destAbs = path.join(stagingRoot, relPath.split('/').join(path.sep))
-    if (copiedDest.has(destAbs) || fs.existsSync(destAbs)) {
-      sourceCache.set(fileRef, fileRef)
-      return true
-    }
-    if (!extractDir) {
-      console.warn(`[save-pack] script @file sin extract_dir: ${relPath}`)
-      return false
-    }
-    const srcAbs = path.join(extractDir, relPath.split('/').join(path.sep))
-    if (!fs.existsSync(srcAbs)) {
-      console.warn(`[save-pack] script @file no encontrado: ${srcAbs}`)
-      return false
-    }
-    fs.mkdirSync(path.dirname(destAbs), { recursive: true })
-    fs.copyFileSync(srcAbs, destAbs)
-    copiedDest.add(destAbs)
-    copied += 1
-    sourceCache.set(fileRef, fileRef)
-    console.log(
-      `[save-pack] script copiado desde .save: ${relPath} (${filePackSizeLabel(destAbs)})`,
-    )
-    return true
-  }
-
-  const saveScript = (sourceScript: { name: string; source: string }, folderParts: string[], fallbackName: string) => {
-    const rawSource = sourceScript.source ?? ''
-    if (rawSource.startsWith(SCRIPT_FILE_PREFIX)) {
-      if (copyScriptFromExtract(rawSource)) {
-        return { ...sourceScript, source: rawSource }
-      }
-    }
-
-    const safeFolderParts = folderParts.map((part) => sanitizeSegment(part, 'group'))
-    const folderRel = safeFolderParts.join('/')
-    const cacheKey = `${folderRel}\n${sourceScript.name}\n${rawSource}`
-    const cachedRef = sourceCache.get(cacheKey)
-    if (cachedRef) {
-      return {
-        ...sourceScript,
-        source: cachedRef,
-      }
-    }
-
-    const fileBase = `${sanitizeSegment(sourceScript.name, fallbackName)}.rhai`
-    const fileName = nextName(folderRel, fileBase)
-    const relPath = folderRel.length > 0 ? `scripting/${folderRel}/${fileName}` : `scripting/${fileName}`
-    const absDir = folderRel.length > 0 ? path.join(scriptingDir, ...safeFolderParts) : scriptingDir
-    fs.mkdirSync(absDir, { recursive: true })
-    fs.writeFileSync(path.join(absDir, fileName), rawSource, 'utf8')
-    written += 1
-    const sourceRef = `${SCRIPT_FILE_PREFIX}${relPath}`
-    sourceCache.set(cacheKey, sourceRef)
-    return {
-      ...sourceScript,
-      source: sourceRef,
-    }
-  }
-
-  const packControls = (
-    controls: SavedControls | undefined,
-    entityFolder: string,
-  ): SavedControls | undefined => {
-    if (!controls) return undefined
-    return {
-      keyboard_mouse: Object.fromEntries(
-        Object.entries(controls.keyboard_mouse).map(([key, script], idx) => [
-          key,
-          saveScript(
-            script,
-            [entityFolder, 'controls', 'keyboard_mouse', sanitizeSegment(key, `key_${idx + 1}`)],
-            `script_${idx + 1}`,
-          ),
-        ]),
-      ),
-      gamepad: Object.fromEntries(
-        Object.entries(controls.gamepad).map(([key, script], idx) => [
-          key,
-          saveScript(
-            script,
-            [entityFolder, 'controls', 'gamepad', sanitizeSegment(key, `btn_${idx + 1}`)],
-            `script_${idx + 1}`,
-          ),
-        ]),
-      ),
-    }
-  }
-
-  const mapEntity3d = (entity: Entity3D): Entity3D => {
-    const entityFolder = `entity_${entity.id}`
-    const controls =
-      entity.controls ??
-      (entity as Entity3D & { control_bindings?: SavedControls }).control_bindings
-    const fusion: Pick<
-      Entity3D,
-      | 'attach_parent_id'
-      | 'attach_local_position'
-      | 'attach_local_rotation'
-      | 'attach_local_scale'
-      | 'attach_socket_host_id'
-      | 'attach_socket_name'
-      | 'sockets'
-    > = {}
-    if (entity.attach_parent_id != null) fusion.attach_parent_id = entity.attach_parent_id
-    if (entity.attach_local_position != null) fusion.attach_local_position = entity.attach_local_position
-    if (entity.attach_local_rotation != null) fusion.attach_local_rotation = entity.attach_local_rotation
-    if (entity.attach_local_scale != null) fusion.attach_local_scale = entity.attach_local_scale
-    if (entity.attach_socket_host_id != null) fusion.attach_socket_host_id = entity.attach_socket_host_id
-    if (entity.attach_socket_name != null) fusion.attach_socket_name = entity.attach_socket_name
-    if (entity.sockets?.length) fusion.sockets = entity.sockets
-    return {
-      ...entity,
-      ...fusion,
-      scripts: entity.scripts?.map((script, idx) =>
-        saveScript(script, [entityFolder], `script_${idx + 1}`),
-      ),
-      animations: entity.animations?.map((anim, animIndex) => ({
-        ...anim,
-        scripts: anim.scripts?.map((script, scriptIndex) =>
-          saveScript(
-            script,
-            [entityFolder, 'animations', sanitizeSegment(anim.name, `anim_${animIndex + 1}`)],
-            `script_${scriptIndex + 1}`,
-          ),
-        ),
-      })),
-      controls: packControls(controls, entityFolder),
-    }
-  }
-
-  const mapBlueprint = (bp: NonNullable<ProjectSaveData['blueprints']>[number]) => {
-    const blueprintFolder = `blueprint_${sanitizeSegment(bp.id, 'bp')}`
-    return {
-      ...bp,
-      scripts: bp.scripts?.map((script, idx) =>
-        saveScript(script, [blueprintFolder], `script_${idx + 1}`),
-      ),
-      animations: bp.animations?.map((anim, animIndex) => ({
-        ...anim,
-        scripts: anim.scripts?.map((script, scriptIndex) =>
-          saveScript(
-            script,
-            [blueprintFolder, 'animations', sanitizeSegment(anim.name, `anim_${animIndex + 1}`)],
-            `script_${scriptIndex + 1}`,
-          ),
-        ),
-      })),
-    }
-  }
-
-  const hasScenes = (data.scenes?.length ?? 0) > 0
-
-  return {
-    written,
-    copied,
-    data: {
-      ...data,
-      // Con multi-escena, las entidades viven solo en cada `scene`.
-      entities: hasScenes ? [] : data.entities.map(mapEntity3d),
-      player: data.player ? mapEntity3d(data.player) : data.player,
-      scenes: data.scenes?.map((scene) => ({
-        ...scene,
-        entities: scene.entities.map(mapEntity3d),
-        player: scene.player ? mapEntity3d(scene.player) : scene.player,
-      })),
-      blueprints: data.blueprints?.map(mapBlueprint),
-    },
-  }
-}
-
-function resolveScriptSource(source: string | undefined, extractedDir: string): string {
-  if (!source) return ''
-  if (!source.startsWith(SCRIPT_FILE_PREFIX)) {
-    console.warn('[editor] Script con formato inválido en save (se esperaba @file:scripting/...):', source)
-    return ''
-  }
-
-  const relPath = source.slice(SCRIPT_FILE_PREFIX.length)
-
-  const normalized = relPath.split('/').join(path.sep)
-  const absPath = path.join(extractedDir, normalized)
-  if (!fs.existsSync(absPath)) {
-    console.warn(`[editor] Script referenciado no encontrado en save: ${relPath}`)
-    return ''
-  }
-  return fs.readFileSync(absPath, 'utf8')
-}
-
-/**
- * Clona el ProjectSaveData reemplazando todos los paths absolutos por relativos
- * según el mapa generado por copyAssetsToDir para serializar dentro del .save.
- */
-function remapPaths(data: ProjectSaveData, map: Map<string, string>): ProjectSaveData {
-  const remap = (p: string | null | undefined): string | null | undefined =>
-    p ? (map.get(toAssetPathKey(p)) ?? p) : p
-
-  const hasScenes = (data.scenes?.length ?? 0) > 0
-
-  const mapEntity = (e: SaveManifestEntity): SaveManifestEntity =>
-    mapEntityAnimations(mapEntityAssetPaths(e, remap), remap)
-
-  return {
-    ...data,
-    world: hasScenes ? undefined : data.world,
-    backgroundPath: hasScenes ? null : (remap(data.backgroundPath) as string | null),
-    sprites: hasScenes
-      ? []
-      : data.sprites?.map((s) => ({
-          name: s.name,
-          path: remap(s.path) as string,
-        })),
-    sounds: data.sounds?.map((s) => ({
-      name: s.name,
-      path: remap(s.path) as string,
-    })),
-    fonts: data.fonts?.map((f) => ({
-      name: f.name,
-      path: remap(f.path) as string,
-    })),
-    backgrounds: data.backgrounds?.map((b) => ({
-      name: b.name,
-      path: remap(b.path) as string,
-    })),
-    hudImages: data.hudImages?.map((img) => ({
-      name: img.name,
-      path: remap(img.path) as string,
-    })),
-    playerUiTextBoxes: data.playerUiTextBoxes?.map((box) => ({
-      ...box,
-      font_path: remap(box.font_path) as string,
-    })),
-    playerUiButtons: data.playerUiButtons?.map((btn) => ({
-      ...btn,
-      font_path: remap(btn.font_path) as string,
-      texture_path: remap(btn.texture_path) as string | undefined,
-    })),
-    playerUiImages: data.playerUiImages?.map((img) => ({
-      ...img,
-      image_path: remap(img.image_path) as string,
-    })),
-    playerUiObjects: data.playerUiObjects?.map((obj) => ({
-      ...obj,
-      texture_path: remap(obj.texture_path) as string | undefined,
-    })),
-    entities: hasScenes ? [] : data.entities.map(mapEntity),
-    player: hasScenes ? null : data.player ? mapEntity(data.player) : data.player,
-    config_camera: hasScenes ? null : data.config_camera,
-    config_editor_camera: hasScenes ? null : data.config_editor_camera,
-    camera2d: hasScenes ? null : data.camera2d,
-    scenes: data.scenes?.map((scene) => ({
-      ...scene,
-      backgroundPath: remap(scene.backgroundPath) as string | null,
-      models: [],
-      sprites: scene.sprites?.map((s) => ({
-        name: s.name,
-        path: remap(s.path) as string,
-      })),
-      entities: scene.entities.map(mapEntity),
-      player: scene.player ? mapEntity(scene.player) : scene.player,
-    })),
-    blueprints: data.blueprints?.map((bp) => {
-      const assetPath = getBlueprintAssetPath(bp)
-      const remappedAsset = assetPath ? (remap(assetPath) as string) : undefined
-      return {
-        ...bp,
-        ...(bp.model !== undefined && remappedAsset ? { model: remappedAsset } : {}),
-        ...(bp.path !== undefined && remappedAsset ? { path: remappedAsset } : {}),
-        animations: bp.animations?.map((anim) => ({
-          ...anim,
-          audio_path: remap(anim.audio_path) as string | undefined,
-          frames: anim.frames.map((f) => ({
-            ...f,
-            path: remap(f.path) as string,
-          })),
-        })),
-      }
-    }),
-  }
-}
-
-/**
- * Crea un archivo .save (ZIP) con `manifest.json` + `assets/`.
- */
-function projectWorkspaceDir(): string | null {
-  return currentProjectExtractDir ?? currentProjectSessionDir
 }
 
 function ensureProjectSessionDir(): string {
@@ -1699,214 +981,23 @@ function ensureProjectSessionDir(): string {
   return sessionDir
 }
 
-function defaultTempImportedModelsDir(): string {
-  return path.join(app.getPath('temp'), 'rer-engine-imported', 'models')
-}
-
-function resolveRerassetCandidates(
-  res: { id: string; asset?: string },
-  workspaceDir: string | null,
-): string[] {
-  const rel = (res.asset ?? `imported/models/${res.id}.rerasset`).replace(/\//g, path.sep)
-  const tempImported = defaultTempImportedModelsDir()
-  return [
-    workspaceDir ? path.join(workspaceDir, rel) : null,
-    path.join(tempImported, `${res.id}.rerasset`),
-  ].filter((p): p is string => !!p && fs.existsSync(p))
-}
-
-/** Valida que cada `.rerasset` del manifest exista en disco antes de empaquetar. */
-function validateSavePackResources(
-  data: ProjectSaveData,
-  workspaceDir: string | null,
-): string[] {
-  const errors: string[] = []
-  const models = data.resources?.models ?? []
-  for (const res of models) {
-    const rel = (res.asset ?? `imported/models/${res.id}.rerasset`).replace(/\\/g, '/')
-    const candidates = resolveRerassetCandidates(res, workspaceDir)
-    if (candidates.length === 0) {
-      const msg = `asset no encontrado en disco: ${res.id} (${rel})`
-      console.error(`[save-pack] validación FALLO: ${msg}`)
-      errors.push(msg)
-    }
-  }
-  return errors
-}
-
-function copyImportedAssetsToStaging(
-  stagingDir: string,
-  workspaceDir: string | null,
-  data: ProjectSaveData,
-): { packed: number; missing: number } {
-  const models = data.resources?.models ?? []
-  if (models.length === 0) {
-    return { packed: 0, missing: 0 }
+function resolveScriptSource(source: string | undefined, extractedDir: string): string {
+  if (!source) return ''
+  if (!source.startsWith(SCRIPT_FILE_PREFIX)) {
+    console.warn('[editor] Script con formato inválido en save (se esperaba @file:scripting/...):', source)
+    return ''
   }
 
-  let packed = 0
-  let missing = 0
-
-  for (const res of models) {
-    const rel = (res.asset ?? `imported/models/${res.id}.rerasset`).replace(/\//g, path.sep)
-    const destFile = path.join(stagingDir, rel)
-    const candidates = resolveRerassetCandidates(res, workspaceDir)
-
-    if (candidates.length === 0) {
-      console.error(
-        `[save-pack] .rerasset FALTANTE en empaquetado: id=${res.id} dest=${rel.replace(/\\/g, '/')}`,
-      )
-      missing += 1
-      continue
-    }
-
-    fs.mkdirSync(path.dirname(destFile), { recursive: true })
-    fs.copyFileSync(candidates[0], destFile)
-    packed += 1
-
-    if (workspaceDir && !candidates[0].startsWith(path.join(workspaceDir, 'imported'))) {
-      const sessionFile = path.join(workspaceDir, rel)
-      if (!fs.existsSync(sessionFile)) {
-        fs.mkdirSync(path.dirname(sessionFile), { recursive: true })
-        fs.copyFileSync(candidates[0], sessionFile)
-      }
-    }
+  const relPath = source.slice(SCRIPT_FILE_PREFIX.length)
+  const normalized = relPath.split('/').join(path.sep)
+  const absPath = path.join(extractedDir, normalized)
+  if (!fs.existsSync(absPath)) {
+    console.warn(`[editor] Script referenciado no encontrado en save: ${relPath}`)
+    return ''
   }
-
-  if (missing > 0) {
-    console.error(`[save-pack] .rerasset: ${missing} faltante/s de ${models.length}`)
-  }
-  return { packed, missing }
+  return fs.readFileSync(absPath, 'utf8')
 }
 
-function saveProjectToFile(saveFilePath: string, data: ProjectSaveData): boolean {
-  const tempRoot = app.getPath('temp')
-  const stagingDir = fs.mkdtempSync(path.join(tempRoot, 'rer-save-write-'))
-  try {
-    logSaveManifestSummary(data)
-
-    const workspaceDir = projectWorkspaceDir()
-    const packErrors = validateSavePackResources(data, workspaceDir)
-    if (packErrors.length > 0) {
-      console.error(
-        `[save-pack] guardado abortado: ${packErrors.length} .rerasset faltante/s`,
-      )
-      return false
-    }
-
-    const assetsDir = path.join(stagingDir, 'assets')
-    const soundsDir = path.join(stagingDir, 'sounds')
-    const fontsDir = path.join(stagingDir, 'fonts')
-    const hudImagesDir = path.join(stagingDir, 'hud-images')
-    const scriptingDir = path.join(stagingDir, 'scripting')
-    const importedPack = copyImportedAssetsToStaging(stagingDir, workspaceDir, data)
-    if (importedPack.missing > 0) {
-      console.error('[save-pack] guardado abortado: faltan .rerasset en empaquetado')
-      return false
-    }
-    const assetPaths = collectAssetPaths(data)
-    const pathMap = copyAssetsToDir(assetPaths, assetsDir, soundsDir, fontsDir, hudImagesDir)
-    const remapped = remapPaths(data, pathMap)
-    const scriptsPacked = serializeScriptsToFiles(
-      remapped,
-      scriptingDir,
-      currentProjectExtractDir,
-    )
-    const rhaiInStaging = countRhaiFiles(scriptingDir)
-    const manifestPath = path.join(stagingDir, 'manifest.json')
-    const manifestJson = JSON.stringify(scriptsPacked.data, null, 2)
-    fs.writeFileSync(manifestPath, manifestJson, 'utf8')
-
-    const zip = new AdmZip()
-    zip.addLocalFolder(stagingDir)
-    zip.writeZip(saveFilePath)
-    const stagingFiles = walkPackFiles(stagingDir)
-    const rerassetInZip = stagingFiles.filter((f) => f.rel.endsWith('.rerasset')).length
-    const stagingTotal = stagingFiles.reduce((sum, f) => sum + f.size, 0)
-    logPackDirectoryTree('save-pack', stagingDir)
-    console.log(`[save-pack] guardado: ${saveFilePath} (${filePackSizeLabel(saveFilePath)})`)
-
-    const addRelIfPacked = (set: Set<string>, absPath: string | null | undefined) => {
-      if (!absPath) return
-      const rel = pathMap.get(toAssetPathKey(absPath))
-      if (rel) set.add(rel)
-    }
-
-    // Desglose por recursos cargados en librería (Resources accordion), no por referencias.
-    const uniqueSounds = new Set<string>()
-    for (const sound of data.sounds ?? []) addRelIfPacked(uniqueSounds, sound.path)
-
-    const uniqueFonts = new Set<string>()
-    for (const font of data.fonts ?? []) addRelIfPacked(uniqueFonts, font.path)
-
-    const uniqueBackgrounds = new Set<string>()
-    for (const bg of data.backgrounds ?? []) addRelIfPacked(uniqueBackgrounds, bg.path)
-
-    const uniqueHudImages = new Set<string>()
-    for (const img of data.hudImages ?? []) addRelIfPacked(uniqueHudImages, img.path)
-
-    const uniqueSprites = new Set<string>()
-    for (const sprite of data.sprites ?? []) addRelIfPacked(uniqueSprites, sprite.path)
-    for (const scene of data.scenes ?? []) {
-      for (const sprite of scene.sprites ?? []) addRelIfPacked(uniqueSprites, sprite.path)
-    }
-
-    const classifiedAssets = new Set<string>([
-      ...uniqueSounds,
-      ...uniqueFonts,
-      ...uniqueBackgrounds,
-      ...uniqueHudImages,
-      ...uniqueSprites,
-    ])
-    const otherAssetNames = Array.from(pathMap.values()).filter((rel) => !classifiedAssets.has(rel)).sort()
-    const otherAssets = otherAssetNames.length
-    const packedScriptFiles = rhaiInStaging
-    const otherSuffix = otherAssets > 0 ? ` [${otherAssetNames.join(', ')}]` : ''
-    const entityCount = countSavedEntities(data)
-    const entityKindSuffix = formatEntityKindBreakdown(data)
-
-    if (data.type === '3D') {
-      const importedModels = data.resources?.models?.length ?? 0
-      const libraryLog = formatLibraryResourcesInLog({
-        backgrounds: uniqueBackgrounds.size,
-        sounds: uniqueSounds.size,
-        fonts: uniqueFonts.size,
-        hudImages: uniqueHudImages.size,
-      })
-      const modelSummary = `modelos importados: ${importedModels}, .rerasset en ZIP: ${rerassetInZip}`
-      console.log(
-        `[editor] Proyecto guardado `
-        + `(entidades: ${entityCount}${entityKindSuffix}, ${modelSummary}, `
-        + `archivos en ZIP: ${stagingFiles.length} (${formatPackBytes(stagingTotal)}), `
-        + `${libraryLog}, scripts: ${packedScriptFiles})`,
-      )
-    } else {
-      const libraryLog = formatLibraryResourcesInLog({
-        backgrounds: uniqueBackgrounds.size,
-        sounds: uniqueSounds.size,
-        fonts: uniqueFonts.size,
-        hudImages: uniqueHudImages.size,
-      })
-      console.log(
-        `[editor] Proyecto guardado `
-        + `(entidades: ${entityCount}${entityKindSuffix}, sprites: ${uniqueSprites.size}, `
-        + `archivos en ZIP: ${stagingFiles.length} (${formatPackBytes(stagingTotal)}), `
-        + `${libraryLog}, scripts: ${packedScriptFiles}, otros: ${otherAssets}${otherSuffix})`,
-      )
-    }
-    return true
-  } catch (err) {
-    console.error('[editor] Error al guardar proyecto:', err)
-    return false
-  } finally {
-    fs.rmSync(stagingDir, { recursive: true, force: true })
-  }
-}
-
-/**
- * Resuelve los paths relativos de un ProjectSaveData cargado desde un .save,
- * convirtiendo rutas relativas a absolutas respecto al directorio extraído.
- */
 function resolveLoadedPaths(data: ProjectSaveData, extractedDir: string): ProjectSaveData {
   const resolve = (p: string | null | undefined): string | null | undefined => {
     if (!p) return p
@@ -2175,57 +1266,6 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
 })
 
 // Diálogo para elegir ruta del .save (sin empaquetar aún).
-ipcMain.handle('pick-project-save-path', async (): Promise<string | null> => {
-  if (!mainWindow) return null
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Guardar proyecto',
-    defaultPath: currentProjectFilePath ?? 'project.save',
-    filters: [{ name: 'Proyecto RER Save', extensions: ['save'] }],
-  })
-  if (result.canceled || !result.filePath) return null
-  return ensureSaveExtension(result.filePath)
-})
-
-// Diálogo para guardar el proyecto (archivo .save)
-ipcMain.handle('save-project', async (_event, data: ProjectSaveData): Promise<string | null> => {
-  if (!mainWindow) return null
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Guardar proyecto',
-    defaultPath: currentProjectFilePath ?? 'project.save',
-    filters: [{ name: 'Proyecto RER Save', extensions: ['save'] }],
-  })
-  if (result.canceled || !result.filePath) return null
-
-  const savePath = ensureSaveExtension(result.filePath)
-  const ok = saveProjectToFile(savePath, data)
-  if (!ok) return null
-
-  currentProjectFilePath = savePath
-  syncExtractDirFromSavePath(savePath)
-  return savePath
-})
-
-// Guardado silencioso (auto-save): sobrescribe el archivo .save indicado.
-ipcMain.handle('save-project-silent', async (_event, filePath: string, data: ProjectSaveData): Promise<boolean> => {
-  // Ceder un tick para que la ventana modal Electron pinte antes del empaquetado (bloquea main).
-  await new Promise<void>((resolve) => setTimeout(resolve, 120))
-
-  const targetPath = path.isAbsolute(filePath)
-    ? ensureSaveExtension(filePath)
-    : path.join(app.getPath('userData'), ensureSaveExtension(filePath))
-
-  const ok = saveProjectToFile(targetPath, data)
-  if (ok) {
-    currentProjectFilePath = targetPath
-    syncExtractDirFromSavePath(targetPath)
-  }
-  return ok
-})
-
-ipcMain.handle('get-project-extract-dir', (): string | null => {
-  return currentProjectExtractDir
-})
-
 // El renderer responde al editor con el estado de proyecto para guardar en Rust.
 ipcMain.on('project-state:response', (_event, id: number, state: unknown) => {
   sendToEditor({ type: 'project_state', id, state })
@@ -2240,13 +1280,6 @@ ipcMain.handle('read-project-manifest', (): ProjectSaveData | null => {
   if (!currentProjectExtractDir) return null
   return loadProjectFromExtractDir(currentProjectExtractDir)
 })
-
-function syncExtractDirFromSavePath(savePath: string): void {
-  const extractDir = extractSaveArchive(savePath)
-  if (extractDir) {
-    currentProjectExtractDir = extractDir
-  }
-}
 
 function isEngineStartPayload(v: unknown): v is EngineStartPayload {
   if (typeof v !== 'object' || v === null) return false
@@ -2278,16 +1311,10 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
     currentProjectExtractDir = null
     currentProjectSessionDir = null
   }
-  // El editor Rust abre directamente el motor; ya no se renderiza el editor
-  // React ni se espera a `viewport-bounds`.
-  //
   hideMainWindowForEditor()
   setImmediate(() => startEngineSession())
 })
 
-// El renderer envía los bounds del viewport una vez montado (y en cada resize).
-// Se usan para posicionar el overlay del asistente IA y para arrancar el editor.
-let engineStarted = false
 let exitDialogOpen = false
 let exitModalActionHandled = false
 
@@ -2336,40 +1363,6 @@ ipcMain.on('editor:exit-action', (_event, action: unknown) => {
   closeModalElectronWindow()
 })
 
-// Caché de los bounds relativos del viewport (posición dentro del contenido de Electron,
-// pre-DPR). Se actualiza en cada 'viewport-bounds'.
-let lastRelativeBounds: ViewportBounds | null = null
-
-/** Origen en pantalla (DIP) de la esquina superior izquierda del viewport del motor. */
-function getEngineViewportScreenOrigin(): { x: number; y: number } | null {
-  if (!mainWindow || mainWindow.isDestroyed() || !lastRelativeBounds) return null
-
-  const cb = mainWindow.getContentBounds()
-  const scaleFactor = electronScreen.getDisplayMatching(mainWindow.getBounds()).scaleFactor
-  return {
-    x: cb.x + Math.round(lastRelativeBounds.x / scaleFactor),
-    y: cb.y + Math.round(lastRelativeBounds.y / scaleFactor),
-  }
-}
-
-ipcMain.on('viewport-bounds', (_event, bounds: ViewportBounds) => {
-  lastRelativeBounds = bounds
-
-  // Si el proceso murió limpiamente, permitir relanzar
-  if (engineStarted && !editorFrameProcess) {
-    engineStarted = false
-  }
-
-  repositionAiAssistantOverlayIfOpen()
-
-  if (engineStarted) {
-    return
-  }
-  // Primera vez (o relanzar tras muerte): arrancar el editor in-process.
-  engineStarted = true
-  startEngineSession()
-})
-
 // ---------------------------------------------------------------------------
 // Ciclo de vida de la app
 // ---------------------------------------------------------------------------
@@ -2385,8 +1378,6 @@ function cleanupExtractedProjectDirs(): void {
 }
 
 app.whenReady().then(() => {
-  startElectronResourceSampling()
-
   // Vite HMR needs 'unsafe-eval' in development; Electron always warns about that.
   // Silence the console warning only when not packaged (packaged CSP has no unsafe-eval).
   if (!app.isPackaged) {
@@ -2428,9 +1419,8 @@ app.whenReady().then(() => {
   })
 
   createMainWindow()
-  initModalElectron(() => mainWindow, getEngineViewportScreenOrigin)
+  initModalElectron(() => mainWindow)
   void autoStartEnabledPlugins()
-  // No arrancamos el motor aquí: esperamos el primer 'viewport-bounds'
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

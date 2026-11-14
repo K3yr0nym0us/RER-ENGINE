@@ -262,6 +262,12 @@ impl DensityField {
         &self.plan
     }
 
+    /// Índice espacial de sitios ya construido con el plan (splat y scatter).
+    #[must_use]
+    pub(crate) fn sites(&self) -> &SiteIndex {
+        &self.terrain.sites
+    }
+
     /// Densidad en el punto de mundo (positiva = sólido).
     #[inline]
     #[must_use]

@@ -30,6 +30,7 @@ fn sphere_grid(radius: f32, center: Vec3, voxel: f32) -> DensityGrid {
         data,
         origin,
         voxel_size: voxel,
+        lod: 0,
     }
 }
 
@@ -74,13 +75,22 @@ fn sphere_mesh_is_closed_manifold() {
 fn mesh_is_deterministic_per_input() {
     let config = WorldGenConfig::default();
     let field = DensityField::new(&config);
-    let chunk = ChunkKey { x: 3, y: 0, z: 2 };
+    let chunk = ChunkKey { x: 3, y: 1, z: 2 };
     let a = mesh_chunk(sample_chunk_grid(&field, &config, chunk));
     let b = mesh_chunk(sample_chunk_grid(&field, &config, chunk));
     assert_eq!(
         a.geometry_hash(),
         b.geometry_hash(),
         "mismo input => mismo hash de geometría"
+    );
+    assert!(
+        a.uvs.iter().any(|uv| uv[0] > 0.0 || uv[1] > 0.0),
+        "el albedo de la columna necesita UVs distintos de (0, 0)"
+    );
+    assert!(
+        a.uvs
+            .iter()
+            .all(|uv| (0.0..=1.0).contains(&uv[0]) && (0.0..=1.0).contains(&uv[1]))
     );
 }
 

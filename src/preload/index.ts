@@ -4,7 +4,6 @@ import type {
   EngineStartPayload,
   OpenProjectResult,
   ProjectSaveData,
-  AppResourceUsage,
   ModalElectronOpenRequest,
   ModalElectronDelegateRequest,
 } from '../shared-types/types'
@@ -23,42 +22,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncQuickBuildState: (state: { active: boolean; name?: string }): void => {
     ipcRenderer.send('quick-build:state', state)
   },
-  sendViewportBounds: (bounds: { x: number; y: number; width: number; height: number }): void => {
-    ipcRenderer.send('viewport-bounds', bounds)
-  },
-  hideEngineViewport: (): void => {
-    ipcRenderer.send('hide-engine-viewport')
-  },
-  restoreEngineViewport: (bounds?: { x: number; y: number; width: number; height: number }) => {
-    if (bounds) {
-      ipcRenderer.send('restore-engine-viewport', bounds)
-    } else {
-      ipcRenderer.send('restore-engine-viewport')
-    }
-  },
-  openModelDialog: (): Promise<string | null> => {
-    return ipcRenderer.invoke('open-model-dialog')
-  },
   openProjectDialog: (): Promise<OpenProjectResult | null> => {
     return ipcRenderer.invoke('open-project-dialog')
   },
-  openAudioDialog: (): Promise<string | null> => {
-    return ipcRenderer.invoke('open-audio-dialog')
-  },
-  openFontDialog: (): Promise<string | null> => {
-    return ipcRenderer.invoke('open-font-dialog')
-  },
-  openScenarioDialog: (): Promise<string | null> => {
-    return ipcRenderer.invoke('open-scenario-dialog')
-  },
-  openCharacterDialog: (): Promise<string | null> => {
-    return ipcRenderer.invoke('open-character-dialog')
-  },
   openSpriteDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-sprite-dialog')
-  },
-  openHudImageDialog: (): Promise<string | null> => {
-    return ipcRenderer.invoke('open-hud-image-dialog')
   },
   getImageDataUrl: (filePath: string): Promise<string | null> => {
     return ipcRenderer.invoke('get-image-data-url', filePath)
@@ -66,27 +34,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openBackgroundDialog: (): Promise<string | null> => {
     return ipcRenderer.invoke('open-background-dialog')
   },
-  saveProject: (data: ProjectSaveData): Promise<string | null> => {
-    return ipcRenderer.invoke('save-project', data)
-  },
-  pickProjectSavePath: (): Promise<string | null> => {
-    return ipcRenderer.invoke('pick-project-save-path')
-  },
-  saveProjectSilent: (filePath: string, data: ProjectSaveData): Promise<boolean> => {
-    return ipcRenderer.invoke('save-project-silent', filePath, data)
-  },
-  getProjectExtractDir: (): Promise<string | null> => {
-    return ipcRenderer.invoke('get-project-extract-dir')
-  },
   readProjectManifest: (): Promise<ProjectSaveData | null> => {
     return ipcRenderer.invoke('read-project-manifest')
-  },
-  onRequestViewportBounds: (cb: () => void): void => {
-    ipcRenderer.on('request-viewport-bounds', cb)
-  },
-  onAutoSaveRequest: (cb: (filePath: string) => void): void => {
-    ipcRenderer.removeAllListeners('autosave:request')
-    ipcRenderer.on('autosave:request', (_event, filePath: string) => cb(filePath))
   },
   /** El editor Rust pide el estado del proyecto para guardar en Rust. */
   onProjectStateRequest: (cb: (id: number) => void): (() => void) => {
@@ -123,9 +72,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) => cb(request)
     ipcRenderer.on('legacy-window:open', listener)
     return () => ipcRenderer.removeListener('legacy-window:open', listener)
-  },
-  getAppResourceUsage: (): Promise<AppResourceUsage> => {
-    return ipcRenderer.invoke('get-app-resource-usage')
   },
   openModalElectron: (request: ModalElectronOpenRequest): Promise<void> => {
     return ipcRenderer.invoke('modal-electron:open', request)

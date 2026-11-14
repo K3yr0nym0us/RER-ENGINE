@@ -111,7 +111,7 @@ export function isPluginInstallInProgress(): boolean {
 export function cancelPluginInstall(): void {
   if (!installInProgress) return
   installCancelled = true
-  cancelActiveDownload()
+  cancelActiveDownload('local-ai-assistant')
 }
 
 /** Prepara/renueva el sandbox del plugin ya instalado (docs/ai + config + agentes). */
@@ -181,6 +181,7 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
     if (!fs.existsSync(exePath)) {
       sendProgress(buildProgress(pluginId, openCode, 'opencode', 0, 0, openCode.sizeBytes), true)
       await downloadFile(
+        'local-ai-assistant',
         openCode.downloadUrl,
         zipPath,
         (p) => {

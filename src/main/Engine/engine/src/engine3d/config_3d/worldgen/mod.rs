@@ -24,7 +24,8 @@ use serde::Deserialize;
 use crate::engine3d::config_3d::worldgen::abi::{Status, WgMeshBuffers};
 use crate::engine3d::config_3d::worldgen::loader::WorldgenLibrary;
 use crate::engine3d::config_3d::worldgen::types::{
-    ChunkKey, PendingChunk, WgWorldHandle, WorldgenChunk, WorldgenPlacement, WorldgenStatus,
+    ChunkKey, PendingChunk, ScanCursor, WgWorldHandle, WorldgenChunk, WorldgenPlacement,
+    WorldgenStatus,
 };
 use crate::engine3d::ecs::{MeshComponent, NonSelectable, SurfacePbr, Transform};
 use crate::engine3d::ipc::{EngineEvent, send_event};
@@ -57,7 +58,21 @@ impl super::super::engine::State {
 
     /// `world_gen_set_library_path`: carga la DLL del plugin y aplica la config
     /// pendiente si ya se envió. Nunca degrada el motor: los fallos van a eventos.
+    ///
+    /// Si la ruta ya está cargada no se recarga (el handle seguiría vivo en la
+    /// DLL anterior). Si cambia, se libera el mundo con la biblioteca vieja
+    /// antes de soltarla.
     pub(crate) fn worldgen_set_library_path(&mut self, path: String) {
+        if self.worldgen.library.is_some()
+            && self.worldgen.library_path.as_deref() == Some(path.as_str())
+        {
+            return;
+        }
+        self.worldgen_despawn_scene();
+        self.worldgen_release_world();
+        self.worldgen.library = None;
+        self.worldgen.pending.clear();
+        self.worldgen.scan = None;
         self.worldgen.library_path = Some(path.clone());
         let result = WorldgenLibrary::load(std::path::Path::new(&path));
         match result {
@@ -67,7 +82,6 @@ impl super::super::engine::State {
                 send_event(&EngineEvent::WorldGenStatus {
                     state: self.worldgen.status.as_str().to_string(),
                 });
-                // Con biblioteca y config disponibles, creamos el mundo ya.
                 if let Some(config_json) = self.worldgen.config_json.clone() {
                     self.worldgen_apply_config(&config_json);
                 }
@@ -93,21 +107,22 @@ impl super::super::engine::State {
         self.worldgen_apply_config(&config_json);
     }
 
-    /// `world_gen_start`: planifica la cola de chunks activos (Y-layer pruning vía
-    /// `wg_chunk_status`) y ordena por distancia al centro del mundo.
+    /// `world_gen_start`: arranca el barrido de columnas (Y-layer pruning vía
+    /// `wg_chunk_status`). El barrido y el orden de la cola avanzan en
+    /// `worldgen_tick`, no en este comando.
     pub(crate) fn worldgen_start(&mut self) {
-        let Some(library) = self.worldgen.library.as_ref() else {
+        if self.worldgen.library.is_none() {
             send_event(&EngineEvent::WorldGenError {
                 message: "world_gen_start sin plugin cargado".to_string(),
             });
             return;
-        };
-        let Some(handle) = self.worldgen.world.as_ref() else {
+        }
+        if self.worldgen.world.is_none() {
             send_event(&EngineEvent::WorldGenError {
                 message: "world_gen_start sin config aplicada".to_string(),
             });
             return;
-        };
+        }
 
         let Some(config) = self
             .worldgen
@@ -122,81 +137,39 @@ impl super::super::engine::State {
         };
 
         let (chunks_x, chunks_z, max_y) = chunk_grid(&config);
-        // Anclas de LOD: se ordena por proximidad a la cámara/viewport activo.
-        let camera_pos = self.camera_world_position();
-
-        let mut pending: Vec<PendingChunk> = Vec::new();
-        for cz in 0..chunks_z {
-            for cx in 0..chunks_x {
-                for cy in 0..=max_y {
-                    // # Seguridad: handle válido de esta DLL, hilo del engine.
-                    let status = unsafe { (library.chunk_status)(handle.0, cx, cy, cz) };
-                    if status == 1 {
-                        pending.push(PendingChunk {
-                            key: (cx, cy, cz),
-                            lod: 0,
-                        });
-                    } else if status < 0 {
-                        send_event(&EngineEvent::WorldGenError {
-                            message: format!("wg_chunk_status({cx}, {cy}, {cz}) inválido"),
-                        });
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Orden: primero capas superiores (superficie visible), luego cercanía a
-        // la cámara (el streaming avanza hacia fuera); LOD por distancia.
         let cell = crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE as f32
             * config.resolution.voxel_size;
-        pending.sort_by(|a, b| {
-            let score = |c: &PendingChunk| -> (i32, f32) {
-                let chunk_center = Vec3::new(
-                    (c.key.0 as f32 + 0.5) * cell,
-                    (c.key.1 as f32 + 0.5) * cell,
-                    (c.key.2 as f32 + 0.5) * cell,
-                );
-                (-c.key.1, chunk_center.distance(camera_pos))
-            };
-            let (layer_a, dist_a) = score(a);
-            let (layer_b, dist_b) = score(b);
-            layer_a.cmp(&layer_b).then(dist_a.total_cmp(&dist_b))
-        });
-        // LOD por anillos de distancia a la cámara (F9): cercano = completo.
-        for chunk in &mut pending {
-            let chunk_center = Vec3::new(
-                (chunk.key.0 as f32 + 0.5) * cell,
-                (chunk.key.1 as f32 + 0.5) * cell,
-                (chunk.key.2 as f32 + 0.5) * cell,
-            );
-            let d = chunk_center.distance(camera_pos);
-            chunk.lod = if d < 120.0 {
-                0
-            } else if d < 320.0 {
-                1
-            } else {
-                2
-            };
-        }
+        let camera_pos = self.camera_world_position();
 
-        self.worldgen.total_chunks = pending.len() as u32;
+        self.worldgen.pending.clear();
+        self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
-        self.worldgen.pending = pending;
+        self.worldgen.scan = Some(ScanCursor {
+            cx: 0,
+            cz: 0,
+            chunks_x,
+            chunks_z,
+            max_y,
+            cell,
+            camera: camera_pos.to_array(),
+            collected: Vec::new(),
+        });
         self.worldgen_set_status(WorldgenStatus::Generating);
         send_event(&EngineEvent::WorldGenStatus {
             state: self.worldgen.status.as_str().to_string(),
         });
         send_event(&EngineEvent::WorldGenProgress {
             completed: 0,
-            total: self.worldgen.total_chunks,
+            total: 0,
         });
     }
 
-    /// `world_gen_stop`: limpia la cola y libera el mundo de la DLL (los chunks
-    /// ya en escena se mantienen hasta `world_gen_reset`).
+    /// `world_gen_stop`: vacía la cola de chunks. El handle de la DLL sigue
+    /// vivo hasta `world_gen_reset` o `world_gen_unload`. Los chunks ya en
+    /// escena se mantienen hasta el reset.
     pub(crate) fn worldgen_stop(&mut self) {
         self.worldgen.pending.clear();
+        self.worldgen.scan = None;
         self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
         if self.worldgen.library.is_some() && self.worldgen.config_json.is_some() {
@@ -211,24 +184,26 @@ impl super::super::engine::State {
         });
     }
 
-    /// `world_gen_reset`: elimina los chunks de terreno en escena y libera el
-    /// handle de la DLL.
+    /// `world_gen_reset`: elimina terreno y scatter de la escena y libera el
+    /// handle de la DLL. La biblioteca sigue cargada.
     pub(crate) fn worldgen_reset(&mut self) {
         self.worldgen_stop();
-        let keys: Vec<ChunkKey> = self.worldgen.spawned.keys().copied().collect();
-        for key in keys {
-            if let Some(chunk) = self.worldgen.spawned.remove(&key) {
-                self.world.despawn(chunk.entity_id);
-            }
-        }
-        if let Some(handle) = self.worldgen.world.take()
-            && let Some(library) = self.worldgen.library.as_ref()
-        {
-            // # Seguridad: handle creado por esta DLL; no se reutiliza.
-            unsafe { (library.world_free)(handle.0) };
-        }
-        self.worldgen.world = None;
-        self.worldgen.placements.clear();
+        self.worldgen_despawn_scene();
+        self.worldgen_release_world();
+    }
+
+    /// `world_gen_unload`: suelta escena, handle y DLL para poder borrar el
+    /// archivo (desactivar o desinstalar el plugin).
+    pub(crate) fn worldgen_unload(&mut self) {
+        self.worldgen_stop();
+        self.worldgen_despawn_scene();
+        self.worldgen_release_world();
+        self.worldgen.library = None;
+        self.worldgen.library_path = None;
+        self.worldgen_set_status(WorldgenStatus::MissingLibrary);
+        send_event(&EngineEvent::WorldGenStatus {
+            state: self.worldgen.status.as_str().to_string(),
+        });
     }
 
     /// `world_gen_scatter`: distribuye un blueprint según las reglas y coloca las
@@ -361,8 +336,8 @@ impl super::super::engine::State {
                 position: placement.position,
                 rotation,
                 scale: placement.scale,
+                entity_id,
             });
-            let _ = entity_id;
         }
         send_event(&EngineEvent::WorldGenScatterDone {
             blueprint_id,
@@ -448,7 +423,7 @@ impl super::super::engine::State {
                 .template_name
                 .clone()
                 .unwrap_or_else(|| blueprint_id.to_string());
-            self.spawn_cached_model_part_at(
+            let entity_id = self.spawn_cached_model_part_at(
                 part.mesh_idx,
                 part.tex_idx,
                 &model_path,
@@ -474,6 +449,7 @@ impl super::super::engine::State {
                 position,
                 rotation,
                 scale,
+                entity_id,
             });
         }
 
@@ -488,10 +464,14 @@ impl super::super::engine::State {
 
     // -- Tick por frame -------------------------------------------------------
 
-    /// Avanza la cola de chunks con presupuesto [`CHUNKS_PER_FRAME`]. Se llama
-    /// desde `State::update`.
+    /// Avanza el barrido de columnas o la cola de chunks con presupuesto
+    /// [`CHUNKS_PER_FRAME`]. Se llama desde `State::update`.
     pub(crate) fn worldgen_tick(&mut self) {
         if self.worldgen.status != WorldgenStatus::Generating {
+            return;
+        }
+        if self.worldgen.scan.is_some() {
+            self.worldgen_scan_columns();
             return;
         }
         for _ in 0..CHUNKS_PER_FRAME {
@@ -521,17 +501,134 @@ impl super::super::engine::State {
         self.worldgen.status = status;
     }
 
-    /// Crea (o recrea) el handle del mundo con la config actual.
-    fn worldgen_apply_config(&mut self, config_json: &str) {
-        // Libera el mundo anterior si lo hubiera (cambio de config).
-        if let Some(old) = self.worldgen.world.take()
+    /// Libera el handle con la biblioteca que lo creó. No suelta la DLL.
+    fn worldgen_release_world(&mut self) {
+        if let Some(handle) = self.worldgen.world.take()
             && let Some(library) = self.worldgen.library.as_ref()
         {
             // # Seguridad: handle creado por esta DLL; no se reutiliza.
-            unsafe { (library.world_free)(old.0) };
+            unsafe { (library.world_free)(handle.0) };
         }
+    }
+
+    /// Quita de la escena los chunks y las instancias de scatter, y suelta
+    /// las mallas GPU de los chunks sin desplazar el resto de `self.meshes`.
+    fn worldgen_despawn_scene(&mut self) {
+        let keys: Vec<ChunkKey> = self.worldgen.spawned.keys().copied().collect();
+        for key in keys {
+            if let Some(chunk) = self.worldgen.spawned.remove(&key) {
+                self.worldgen_retire_mesh(chunk.mesh_idx);
+                self.world.despawn(chunk.entity_id);
+            }
+        }
+        let placements = std::mem::take(&mut self.worldgen.placements);
+        for placement in placements {
+            if placement.entity_id != 0 {
+                self.world.despawn(placement.entity_id);
+            }
+        }
+    }
+
+    /// Sustituye la malla del chunk por un triángulo degenerado para que
+    /// `Drop` de `GpuBuffer` libere la VRAM y el índice no se mueva.
+    fn worldgen_retire_mesh(&mut self, mesh_idx: Option<usize>) {
+        let Some(mesh_idx) = mesh_idx else {
+            return;
+        };
+        if mesh_idx >= self.meshes.len() {
+            return;
+        }
+        let placeholder = crate::engine3d::mesh::upload(
+            &self.vulkan,
+            &[crate::engine3d::mesh::Vertex {
+                position: [0.0, 0.0, 0.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 0.0],
+            }; 3],
+            &[0, 0, 0],
+            "worldgen-freed",
+            None,
+        );
+        let _old = std::mem::replace(&mut self.meshes[mesh_idx], placeholder);
+    }
+
+    /// Avanza unas columnas del barrido. Al cubrir el mundo, ordena la cola
+    /// para que `pop` saque primero la superficie cercana.
+    fn worldgen_scan_columns(&mut self) {
+        let Some(mut scan) = self.worldgen.scan.take() else {
+            return;
+        };
+        let mut failed: Option<String> = None;
+        {
+            let Some(library) = self.worldgen.library.as_ref() else {
+                self.worldgen.scan = Some(scan);
+                return;
+            };
+            let Some(handle) = self.worldgen.world.as_ref() else {
+                self.worldgen.scan = Some(scan);
+                return;
+            };
+            for _ in 0..CHUNKS_PER_FRAME {
+                if scan.cz >= scan.chunks_z {
+                    break;
+                }
+                let cx = scan.cx;
+                let cz = scan.cz;
+                for cy in 0..=scan.max_y {
+                    // # Seguridad: handle válido de esta DLL, hilo del engine.
+                    let status = unsafe { (library.chunk_status)(handle.0, cx, cy, cz) };
+                    if status == 1 {
+                        scan.collected.push(PendingChunk {
+                            key: (cx, cy, cz),
+                            lod: 0,
+                        });
+                    } else if status < 0 {
+                        failed = Some(format!("wg_chunk_status({cx}, {cy}, {cz}) inválido"));
+                        break;
+                    }
+                }
+                if failed.is_some() {
+                    break;
+                }
+                scan.cx += 1;
+                if scan.cx >= scan.chunks_x {
+                    scan.cx = 0;
+                    scan.cz += 1;
+                }
+            }
+        }
+        if let Some(message) = failed {
+            self.worldgen.scan = None;
+            self.worldgen.pending.clear();
+            self.worldgen_set_status(WorldgenStatus::LibraryError);
+            send_event(&EngineEvent::WorldGenError { message });
+            return;
+        }
+        if scan.cz >= scan.chunks_z {
+            let cell = scan.cell;
+            let camera = Vec3::from_array(scan.camera);
+            let mut pending = scan.collected;
+            finalize_pending(&mut pending, cell, camera);
+            self.worldgen.total_chunks = pending.len() as u32;
+            self.worldgen.completed_chunks = 0;
+            self.worldgen.pending = pending;
+            self.worldgen.scan = None;
+            send_event(&EngineEvent::WorldGenProgress {
+                completed: 0,
+                total: self.worldgen.total_chunks,
+            });
+            return;
+        }
+        self.worldgen.scan = Some(scan);
+    }
+
+    /// Crea (o recrea) el handle del mundo con la config actual.
+    fn worldgen_apply_config(&mut self, config_json: &str) {
+        self.worldgen_despawn_scene();
+        self.worldgen_release_world();
         self.worldgen.pending.clear();
-        self.worldgen.spawned.clear();
+        self.worldgen.scan = None;
+        self.worldgen.column_epoch = self.worldgen.column_epoch.wrapping_add(1);
         self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
 
@@ -621,12 +718,14 @@ impl super::super::engine::State {
             return Ok(());
         }
 
+        let column_epoch = self.worldgen.column_epoch;
         let tex_idx = match worldgen_pack_column_texture(
             &mut self.texture_array,
             &self.vulkan,
             library,
             handle.0,
             &mut self.worldgen.columns,
+            column_epoch,
             cx,
             cz,
         ) {
@@ -663,9 +762,13 @@ impl super::super::engine::State {
         );
         // Sin registro en save_registry: los chunks se regeneran desde seed+config
         // (F8); persistirlos duplicaría la geometría en el manifest.
-        self.worldgen
-            .spawned
-            .insert(key, WorldgenChunk { entity_id });
+        self.worldgen.spawned.insert(
+            key,
+            WorldgenChunk {
+                entity_id,
+                mesh_idx: Some(mesh_idx),
+            },
+        );
         send_event(&EngineEvent::WorldGenChunkReady {
             cx,
             cy,
@@ -696,12 +799,15 @@ fn worldgen_pack_column_texture(
     vulkan: &crate::engine3d::vulkan::SharedGpu,
     library: &WorldgenLibrary,
     handle: *mut std::ffi::c_void,
-    columns: &mut HashMap<(i32, i32), usize>,
+    columns: &mut HashMap<(i32, i32), (usize, u64)>,
+    epoch: u64,
     cx: i32,
     cz: i32,
 ) -> Option<usize> {
-    if let Some(tex_idx) = columns.get(&(cx, cz)) {
-        return Some(*tex_idx);
+    if let Some(&(layer, cached_epoch)) = columns.get(&(cx, cz))
+        && cached_epoch == epoch
+    {
+        return Some(layer);
     }
 
     let mut buffers = crate::engine3d::config_3d::worldgen::abi::WgChunkTextures::empty();
@@ -715,10 +821,23 @@ fn worldgen_pack_column_texture(
         let dim = buffers.dim;
         unsafe { (library.free_chunk_textures)(&buffers) };
 
+        if let Some(&(layer, _)) = columns.get(&(cx, cz)) {
+            match texture_array.replace_layer(vulkan, layer as u32, &albedo, dim, dim) {
+                Ok(()) => {
+                    columns.insert((cx, cz), (layer, epoch));
+                    return Some(layer);
+                }
+                Err(error) => {
+                    log::warn!("[worldgen] no se pudo reescribir albedo de columna: {error}")
+                }
+            }
+            return Some(layer);
+        }
+
         match texture_array.pack(vulkan, &albedo, dim, dim) {
             Ok(layer) => {
                 let tex_idx = layer as usize;
-                columns.insert((cx, cz), tex_idx);
+                columns.insert((cx, cz), (tex_idx, epoch));
                 return Some(tex_idx);
             }
             Err(error) => log::warn!("[worldgen] no se pudo empaquetar albedo de columna: {error}"),
@@ -727,7 +846,41 @@ fn worldgen_pack_column_texture(
         // # Seguridad: liberar buffers parciales en error.
         unsafe { (library.free_chunk_textures)(&buffers) };
     }
-    None
+    columns.get(&(cx, cz)).map(|(layer, _)| *layer)
+}
+
+/// Ordena por capa alta y cercanía, asigna LOD y deja el vector listo para
+/// `pop` (el primero a generar queda al final).
+fn finalize_pending(pending: &mut [PendingChunk], cell: f32, camera: Vec3) {
+    pending.sort_by(|a, b| {
+        let score = |c: &PendingChunk| -> (i32, f32) {
+            let chunk_center = Vec3::new(
+                (c.key.0 as f32 + 0.5) * cell,
+                (c.key.1 as f32 + 0.5) * cell,
+                (c.key.2 as f32 + 0.5) * cell,
+            );
+            (-c.key.1, chunk_center.distance(camera))
+        };
+        let (layer_a, dist_a) = score(a);
+        let (layer_b, dist_b) = score(b);
+        layer_a.cmp(&layer_b).then(dist_a.total_cmp(&dist_b))
+    });
+    for chunk in pending.iter_mut() {
+        let chunk_center = Vec3::new(
+            (chunk.key.0 as f32 + 0.5) * cell,
+            (chunk.key.1 as f32 + 0.5) * cell,
+            (chunk.key.2 as f32 + 0.5) * cell,
+        );
+        let d = chunk_center.distance(camera);
+        chunk.lod = if d < 120.0 {
+            0
+        } else if d < 320.0 {
+            1
+        } else {
+            2
+        };
+    }
+    pending.reverse();
 }
 
 /// Rejilla de chunks que cubren los límites del mundo.
@@ -818,6 +971,28 @@ mod tests {
             (library.free_mesh_buffers)(&buffers);
             (library.world_free)(handle);
         }
+    }
+
+    #[test]
+    fn queue_pop_yields_highest_nearest_chunk_first() {
+        let mut pending = vec![
+            super::PendingChunk {
+                key: (0, 0, 0),
+                lod: 0,
+            },
+            super::PendingChunk {
+                key: (4, 1, 0),
+                lod: 0,
+            },
+            super::PendingChunk {
+                key: (0, 3, 0),
+                lod: 0,
+            },
+        ];
+        super::finalize_pending(&mut pending, 32.0, glam::Vec3::ZERO);
+        let first = pending.pop().expect("la cola no está vacía");
+        assert_eq!(first.key.1, 3, "la capa más alta sale primero");
+        assert_eq!(first.lod, 0);
     }
 
     #[test]

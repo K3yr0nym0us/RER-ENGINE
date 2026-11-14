@@ -33,9 +33,11 @@ fn create_with_invalid_json_returns_null_and_global_error() {
     assert!(written > 0, "el error global debe tener mensaje");
     let message = std::str::from_utf8(&buffer[..written]).unwrap();
     assert!(
-        message.contains("InvalidConfig"),
-        "mensaje inesperado: {message}"
+        message.contains("key must be a string"),
+        "el error de JSON debe llegar tal cual: {message}"
     );
+    let needed = unsafe { wg_last_error(std::ptr::null(), std::ptr::null_mut(), 0) };
+    assert_eq!(needed, message.len(), "cap 0 devuelve el largo sin el NUL");
 }
 
 #[test]

@@ -8,8 +8,6 @@ export * from './useCreateEntityFromSpriteAnimation';
 export * from './useLoadSprite';
 export * from './usePointDrawing';
 export * from './usePlayerUiObjectDrawing';
-export * from './usePlaneToolPlacement';
-export * from './useQuickBuildPlacement';
 export * from './useScripting';
 export * from './useSpritePreviewImage';
 export * from './useTraslate';

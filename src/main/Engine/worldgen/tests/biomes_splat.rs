@@ -82,9 +82,13 @@ fn disabled_biomes_never_appear() {
 fn splat_weights_sum_to_255_everywhere() {
     let config = config_for_biomes();
     let field = DensityField::new(&config);
-    let base = field.base_heightfield();
-    let plan = FeaturePlan::generate(&config, base);
-    let ctx = SplatContext::new(&field, &config, plan.sites.clone());
+    let biomes = BiomeMap::new(&config);
+    let ctx = SplatContext::new(
+        &field,
+        &biomes,
+        config.bounds.height,
+        config.resolution.voxel_size,
+    );
     for i in 0..3_000i32 {
         let x = (i * 29 % 503) as f32 + 0.25;
         let z = (i * 61 % 503) as f32 + 0.75;
@@ -104,7 +108,13 @@ fn splat_is_snow_at_high_altitude_and_rock_on_steep_slopes() {
     let field = DensityField::new(&config);
     let base = field.base_heightfield();
     let plan = FeaturePlan::generate(&config, base);
-    let ctx = SplatContext::new(&field, &config, plan.sites.clone());
+    let biomes = BiomeMap::new(&config);
+    let ctx = SplatContext::new(
+        &field,
+        &biomes,
+        config.bounds.height,
+        config.resolution.voxel_size,
+    );
 
     // Encuentra una montaña real (sitio) y verifica: nieve cerca de la cima.
     let mountain = plan
@@ -144,9 +154,13 @@ fn ctx_world_snow_line(config: &WorldGenConfig) -> f32 {
 fn chunk_splat_outputs_consistent_buffers() {
     let config = config_for_biomes();
     let field = DensityField::new(&config);
-    let base = field.base_heightfield();
-    let plan = FeaturePlan::generate(&config, base);
-    let ctx = SplatContext::new(&field, &config, plan.sites.clone());
+    let biomes = BiomeMap::new(&config);
+    let ctx = SplatContext::new(
+        &field,
+        &biomes,
+        config.bounds.height,
+        config.resolution.voxel_size,
+    );
 
     let (splat, albedo, dim) = chunk_splat(&field, &ctx, 2, 1, 0);
     assert_eq!(dim, SPLAT_DIM);

@@ -109,7 +109,8 @@ pub fn scatter(
     blueprint_hash: u64,
 ) -> Vec<Placement> {
     let mut out = Vec::new();
-    if rules.max_instances == 0 {
+    let quota = ((rules.max_instances as f32) * rules.density.clamp(0.0, 1.0)).round() as u32;
+    if quota == 0 {
         return out;
     }
     let extent = Vec2::new(config.bounds.width, config.bounds.length);
@@ -121,7 +122,7 @@ pub fn scatter(
 
     let min_distance = rules.min_distance.max(0.01);
     let mut grid: HashMap<(i32, i32), Vec<Vec2>> = HashMap::new();
-    let attempts = rules.max_instances.saturating_mul(ATTEMPTS_PER_INSTANCE);
+    let attempts = quota.saturating_mul(ATTEMPTS_PER_INSTANCE);
 
     // Centros de clúster si el agrupamiento está activo: dart-throwing con
     // separación amplia para que los clústeres no se fusionen del todo.
@@ -132,9 +133,7 @@ pub fn scatter(
         (min_distance * cluster_size as f32 * 0.5).max(min_distance * 2.0)
     };
     let cluster_count = if rules.cluster.enabled {
-        ((rules.max_instances as f32 / cluster_size as f32)
-            .ceil()
-            .max(1.0)) as usize
+        ((quota as f32 / cluster_size as f32).ceil().max(1.0)) as usize
     } else {
         0
     };
@@ -154,7 +153,7 @@ pub fn scatter(
 
     let mut biome_cache: Option<BiomeMap> = None;
     for _ in 0..attempts {
-        if out.len() as u32 >= rules.max_instances {
+        if out.len() as u32 >= quota {
             break;
         }
 

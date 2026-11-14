@@ -37,8 +37,8 @@ const PROJECT_CONFIG = `${JSON.stringify(
     permissions: [
       { action: '*', resource: '*', effect: 'deny' },
       { action: 'read', resource: 'docs/ai/**', effect: 'allow' },
-      { action: 'glob', resource: '*', effect: 'allow' },
-      { action: 'grep', resource: '*', effect: 'allow' },
+      { action: 'glob', resource: 'docs/ai/**', effect: 'allow' },
+      { action: 'grep', resource: 'docs/ai/**', effect: 'allow' },
       { action: 'rer_ui_*', resource: '*', effect: 'allow' },
     ],
   },
@@ -82,6 +82,15 @@ RULES:
 `
 
 const UI_ACTION_LOG_PLACEHOLDER = '__RER_UI_ACTION_LOG__'
+
+/** Ruta segura dentro de un string JS con comillas simples. */
+function escapeJsSingleQuoted(value: string): string {
+  return value
+    .replace(/\\/g, '/')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/'/g, "\\'")
+}
 
 const RER_UI_PLUGIN_TEMPLATE = `import { appendFile } from 'node:fs/promises'
 import { Plugin } from '@opencode/plugin'
@@ -150,7 +159,7 @@ export function buildWorkspacePlan(input: {
   const { workspaceDir, docsSourceDir } = input
   // El plugin usa la ruta dentro de un string JS: los backslashes de Windows
   // romperían escapes (\u, \r, \t...) y provocarían "Syntax Error" al transpilar.
-  const uiActionsLogPath = input.uiActionsLogPath.replace(/\\/g, '/')
+  const uiActionsLogPath = escapeJsSingleQuoted(input.uiActionsLogPath)
   const pluginSource = RER_UI_PLUGIN_TEMPLATE.replace(UI_ACTION_LOG_PLACEHOLDER, uiActionsLogPath)
 
   return {

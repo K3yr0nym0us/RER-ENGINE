@@ -45,10 +45,8 @@ interface HeadlessProject {
  * oculta al arrancar el motor.
  */
 export function HeadlessEditorHost(project: HeadlessProject) {
-  const viewportRef = useRef<HTMLDivElement | null>(null)
   return (
     <EngineProvider
-      viewportRef={viewportRef}
       projectType={project.projectType}
       gameStyle={project.gameStyle}
       initialSavePath={project.initialSavePath}

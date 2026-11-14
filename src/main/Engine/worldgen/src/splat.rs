@@ -12,10 +12,9 @@ use glam::Vec2;
 
 use crate::biomes::{Biome, BiomeMap};
 use crate::chunks::CHUNK_SIZE;
-use crate::config::WorldGenConfig;
 use crate::field::spatial::SiteIndex;
 use crate::field::{DensityField, smoothstep};
-use crate::planner::{FeatureKind, Site};
+use crate::planner::FeatureKind;
 
 /// Resolución del splat por chunk (texels por lado, lod 0).
 pub const SPLAT_DIM: u32 = 64;
@@ -53,8 +52,8 @@ const SNOW_RGB: [f32; 3] = [236.0, 240.0, 244.0];
 /// Contexto de splat: mapa de biomas + sitios (para orillas de lagos).
 pub struct SplatContext<'a> {
     field: &'a DensityField,
-    biomes: BiomeMap,
-    sites: SiteIndex,
+    biomes: &'a BiomeMap,
+    sites: &'a SiteIndex,
     /// Altura del mundo (para líneas de nieve/roca por altitud).
     world_max_y: f32,
     /// Tamaño de voxel del mundo (ancho real de chunk = CHUNK_SIZE * voxel).
@@ -62,32 +61,46 @@ pub struct SplatContext<'a> {
 }
 
 impl<'a> SplatContext<'a> {
-    /// Construye el contexto a partir del campo ya generado.
+    /// Construye el contexto reutilizando el índice de sitios del campo y un
+    /// mapa de biomas ya construido (una vez por mundo, no por columna).
     #[must_use]
-    pub fn new(field: &'a DensityField, config: &'a WorldGenConfig, sites: Vec<Site>) -> Self {
-        let biomes = BiomeMap::new(config);
-        let world_max_y = config.bounds.height;
+    pub fn new(
+        field: &'a DensityField,
+        biomes: &'a BiomeMap,
+        world_max_y: f32,
+        voxel_size: f32,
+    ) -> Self {
         Self {
             field,
             biomes,
-            sites: SiteIndex::new(sites),
+            sites: field.sites(),
             world_max_y,
-            voxel_size: config.resolution.voxel_size,
+            voxel_size,
         }
     }
 
-    /// Pesos de material en el punto de superficie `(x, z)` a la altitud `y`.
+    /// Pendiente en grados a partir de la altura con plan.
     #[must_use]
-    pub fn weights_at(&self, x: f32, z: f32, y: f32) -> SplatWeights {
-        // Pendiente por gradiente numérico de la altura con plan.
+    pub fn slope_deg(&self, x: f32, z: f32) -> f32 {
         let gx = (self.field.height_at(x + SLOPE_STEP, z)
             - self.field.height_at(x - SLOPE_STEP, z))
             / (2.0 * SLOPE_STEP);
         let gz = (self.field.height_at(x, z + SLOPE_STEP)
             - self.field.height_at(x, z - SLOPE_STEP))
             / (2.0 * SLOPE_STEP);
-        let slope_deg = gx.hypot(gz).atan().to_degrees();
+        gx.hypot(gz).atan().to_degrees()
+    }
 
+    /// Pesos de material en el punto de superficie `(x, z)` a la altitud `y`.
+    #[must_use]
+    pub fn weights_at(&self, x: f32, z: f32, y: f32) -> SplatWeights {
+        let slope_deg = self.slope_deg(x, z);
+        self.weights_with_slope(x, z, y, slope_deg)
+    }
+
+    /// Igual que [`weights_at`] con la pendiente ya calculada (un muestreo por texel).
+    #[must_use]
+    pub fn weights_with_slope(&self, x: f32, z: f32, y: f32, slope_deg: f32) -> SplatWeights {
         // Roca: pendiente alta o altitud de alta montaña.
         let rock_alt = smoothstep(self.world_max_y * 0.60, self.world_max_y * 0.72, y);
         let mut rock = crate::field::smoothstep(24.0, 42.0, slope_deg).max(rock_alt);
@@ -177,7 +190,8 @@ pub fn chunk_splat(
         for tx in 0..dim {
             let x = origin_x + (tx as f32 + 0.5) * step;
             let y = field.height_at(x, z);
-            let w = ctx.weights_at(x, z, y);
+            let slope = ctx.slope_deg(x, z);
+            let w = ctx.weights_with_slope(x, z, y, slope);
             splat.extend_from_slice(&w.to_rgba());
             let rgb = SplatContext::albedo_from_weights(w);
             albedo.extend_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);

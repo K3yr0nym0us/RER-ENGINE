@@ -30,6 +30,8 @@ pub(crate) type ChunkKey = (i32, i32, i32);
 pub(crate) struct WorldgenChunk {
     /// Entidad ECS del chunk (`MeshComponent`).
     pub entity_id: crate::engine3d::ecs::EntityId,
+    /// Índice en `State::meshes`. `None` si el chunk no subió geometría.
+    pub mesh_idx: Option<usize>,
 }
 
 /// Chunk pendiente de generar/meshear/subir.
@@ -52,6 +54,29 @@ pub(crate) struct WorldgenPlacement {
     pub rotation: [f32; 4],
     /// Escala.
     pub scale: [f32; 3],
+    /// Entidad ECS de esta instancia. `0` si se restauró sin spawn.
+    /// No se persiste: el `.save` guarda posición, rotación y escala.
+    pub entity_id: crate::engine3d::ecs::EntityId,
+}
+
+/// Barrido de columnas XZ repartido en varios frames antes de meshear.
+pub(crate) struct ScanCursor {
+    /// Próxima columna X.
+    pub cx: i32,
+    /// Próxima columna Z.
+    pub cz: i32,
+    /// Columnas X del mundo (exclusivo).
+    pub chunks_x: i32,
+    /// Columnas Z del mundo (exclusivo).
+    pub chunks_z: i32,
+    /// Capa Y máxima inclusive.
+    pub max_y: i32,
+    /// Tamaño de chunk en metros.
+    pub cell: f32,
+    /// Cámara en el momento de `world_gen_start` (orden y LOD).
+    pub camera: [f32; 3],
+    /// Chunks con contenido hallados hasta ahora.
+    pub collected: Vec<PendingChunk>,
 }
 
 /// Estados de alto nivel del plugin visibles por el editor.
@@ -100,17 +125,22 @@ pub(crate) struct WorldgenState {
     pub config_json: Option<String>,
     /// Estado de alto nivel.
     pub status: WorldgenStatus,
-    /// Cola de chunks pendientes (ordenada por distancia al origen).
+    /// Cola de chunks pendientes. Tras el barrido queda invertida para que
+    /// `pop` saque primero la capa alta y la más cercana a la cámara.
     pub pending: Vec<PendingChunk>,
+    /// Barrido de columnas en curso. `None` cuando ya se puede meshear.
+    pub scan: Option<ScanCursor>,
+    /// Generación de albedo: al cambiar la config se incrementa para reescribir
+    /// las capas ya reservadas en vez de empaquetar otras nuevas.
+    pub column_epoch: u64,
     /// Total de chunks planificados (para progreso).
     pub total_chunks: u32,
     /// Chunks completados.
     pub completed_chunks: u32,
     /// Chunks activos en escena.
     pub spawned: HashMap<ChunkKey, WorldgenChunk>,
-    /// Textura de splat/albedo por columna XZ (tex_idx compartido por los
-    /// chunks Y de la misma columna).
-    pub columns: HashMap<(i32, i32), usize>,
+    /// Textura de albedo por columna XZ: `(capa del array, epoch que la escribió)`.
+    pub columns: HashMap<(i32, i32), (usize, u64)>,
     /// Capa de textura de fallback (checker) mientras no haya texturas.
     pub fallback_tex_idx: Option<usize>,
     /// Colocaciones de blueprints registradas por el scatter (persistencia F8).
@@ -129,6 +159,8 @@ impl Default for WorldgenState {
             config_json: None,
             status: WorldgenStatus::MissingLibrary,
             pending: Vec::new(),
+            scan: None,
+            column_epoch: 0,
             total_chunks: 0,
             completed_chunks: 0,
             spawned: HashMap::new(),
@@ -136,6 +168,19 @@ impl Default for WorldgenState {
             fallback_tex_idx: None,
             placements: Vec::new(),
             scatter_rules: Vec::new(),
+        }
+    }
+}
+
+impl Drop for WorldgenState {
+    fn drop(&mut self) {
+        // El campo `library` se destruye después de este cuerpo. Liberar el
+        // handle aquí evita descargar la DLL con el mundo todavía vivo.
+        if let Some(handle) = self.world.take()
+            && let Some(library) = self.library.as_ref()
+        {
+            // # Seguridad: handle creado por esta misma biblioteca, una sola vez.
+            unsafe { (library.world_free)(handle.0) };
         }
     }
 }

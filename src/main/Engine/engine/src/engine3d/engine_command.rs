@@ -94,6 +94,8 @@ pub enum EngineCommand3dOnly {
     WorldGenStop,
     /// Plugin worldgen: elimina los chunks en escena y libera el handle de la DLL.
     WorldGenReset,
+    /// Plugin worldgen: suelta escena, handle y DLL (desactivar / desinstalar).
+    WorldGenUnload,
     /// Plugin worldgen: distribuye un blueprint según reglas (JSON camelCase de
     /// `ScatterRules` con `blueprintId`).
     WorldGenScatter {

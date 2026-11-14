@@ -53,8 +53,10 @@ export function isPluginInstalled(pluginId: PluginId): boolean {
 }
 
 export function isPluginEnabled(pluginId: PluginId): boolean {
-  const state = readPluginsState()
-  return state.enabled.includes(pluginId) && isPluginInstalled(pluginId)
+  if (!isPluginInstalled(pluginId)) return false
+  // world-gen no tiene interruptor: instalado implica usable.
+  if (pluginId === 'world-gen') return true
+  return readPluginsState().enabled.includes(pluginId)
 }
 
 export function getAssistantPreferences(pluginId: PluginId) {

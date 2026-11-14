@@ -16,7 +16,7 @@
 
 pub mod tables;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use glam::Vec3;
 
@@ -95,6 +95,8 @@ pub struct DensityGrid {
     pub origin: Vec3,
     /// Tamaño de voxel en metros.
     pub voxel_size: f32,
+    /// Nivel de LOD con el que se muestreó el grid (`0` = resolución completa).
+    pub lod: u32,
 }
 
 impl DensityGrid {
@@ -243,9 +245,9 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                         std::mem::swap(&mut nb, &mut nc);
                     }
 
-                    let ia = vertex_index(out, &mut dedup, va, na, quant);
-                    let ib = vertex_index(out, &mut dedup, vb, nb, quant);
-                    let ic = vertex_index(out, &mut dedup, vc, nc, quant);
+                    let ia = vertex_index(out, &mut dedup, va, na, quant, chunk_uv(grid, va));
+                    let ib = vertex_index(out, &mut dedup, vb, nb, quant, chunk_uv(grid, vb));
+                    let ic = vertex_index(out, &mut dedup, vc, nc, quant, chunk_uv(grid, vc));
                     if ia != ib && ib != ic && ia != ic {
                         out.indices.push(ia);
                         out.indices.push(ib);
@@ -254,6 +256,13 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                 }
             }
         }
+    }
+
+    if grid.lod > 0 {
+        add_lod_skirt(grid, out);
+    }
+    for normal in &mut out.normals {
+        *normal = Vec3::from_array(*normal).normalize_or_zero().to_array();
     }
 }
 
@@ -277,6 +286,7 @@ fn vertex_index(
     pos: Vec3,
     normal: Vec3,
     quant: f32,
+    uv: [f32; 2],
 ) -> u32 {
     let key = [
         (pos.x * quant).round() as i64,
@@ -285,13 +295,90 @@ fn vertex_index(
     ];
     if let Some(&index) = dedup.get(&key) {
         let slot = Vec3::from_array(out.normals[index as usize]);
-        out.normals[index as usize] = (slot + normal).normalize_or_zero().to_array();
+        // Suma cruda: la normalización única ocurre al cerrar el chunk.
+        out.normals[index as usize] = (slot + normal).to_array();
         return index;
     }
     let index = out.positions.len() as u32;
     dedup.insert(key, index);
     out.positions.push(pos.to_array());
     out.normals.push(normal.to_array());
-    out.uvs.push([0.0, 0.0]);
+    out.uvs.push(uv);
     index
+}
+
+/// UV de la columna XZ (sin el padding del grid), en `[0, 1]`.
+fn chunk_uv(grid: &DensityGrid, pos: Vec3) -> [f32; 2] {
+    let cells = grid.dim.saturating_sub(2 * grid.pad + 1).max(1) as f32;
+    let origin = grid.origin + Vec3::splat(grid.pad as f32 * grid.voxel_size);
+    let size = (cells * grid.voxel_size).max(1.0e-4);
+    [
+        ((pos.x - origin.x) / size).clamp(0.0, 1.0),
+        ((pos.z - origin.z) / size).clamp(0.0, 1.0),
+    ]
+}
+
+/// Falda vertical de un voxel en el perímetro XZ. Cierra el hueco entre un
+/// chunk de LOD grueso y el vecino más fino sin cambiar la ABI.
+fn add_lod_skirt(grid: &DensityGrid, out: &mut MeshBuffer) {
+    if out.positions.is_empty() {
+        return;
+    }
+    let cells = grid.dim.saturating_sub(2 * grid.pad + 1);
+    if cells == 0 {
+        return;
+    }
+    let min = grid.origin + Vec3::splat(grid.pad as f32 * grid.voxel_size);
+    let extent = cells as f32 * grid.voxel_size;
+    let max_x = min.x + extent;
+    let max_z = min.z + extent;
+    let eps = (grid.voxel_size * 0.2).max(1.0e-3);
+    let drop = grid.voxel_size;
+    let on_x = |x: f32| (x - min.x).abs() <= eps || (max_x - x).abs() <= eps;
+    let on_z = |z: f32| (z - min.z).abs() <= eps || (max_z - z).abs() <= eps;
+
+    let indices = out.indices.clone();
+    let mut seen = HashSet::<(u32, u32)>::new();
+    let mut quads: Vec<([f32; 3], [f32; 3], [f32; 3])> = Vec::new();
+    for tri in indices.chunks_exact(3) {
+        for k in 0..3 {
+            let ia = tri[k];
+            let ib = tri[(k + 1) % 3];
+            let key = if ia < ib { (ia, ib) } else { (ib, ia) };
+            if !seen.insert(key) {
+                continue;
+            }
+            let pa = out.positions[ia as usize];
+            let pb = out.positions[ib as usize];
+            let same_x = on_x(pa[0]) && on_x(pb[0]) && (pa[0] - pb[0]).abs() <= eps;
+            let same_z = on_z(pa[2]) && on_z(pb[2]) && (pa[2] - pb[2]).abs() <= eps;
+            if !same_x && !same_z {
+                continue;
+            }
+            let outward = if same_x {
+                if (pa[0] - min.x).abs() <= eps {
+                    [-1.0, 0.0, 0.0]
+                } else {
+                    [1.0, 0.0, 0.0]
+                }
+            } else if (pa[2] - min.z).abs() <= eps {
+                [0.0, 0.0, -1.0]
+            } else {
+                [0.0, 0.0, 1.0]
+            };
+            quads.push((pa, pb, outward));
+        }
+    }
+    for (pa, pb, outward) in quads {
+        let da = [pa[0], pa[1] - drop, pa[2]];
+        let db = [pb[0], pb[1] - drop, pb[2]];
+        let base = out.positions.len() as u32;
+        let uva = chunk_uv(grid, Vec3::from_array(pa));
+        let uvb = chunk_uv(grid, Vec3::from_array(pb));
+        out.positions.extend([pa, pb, db, da]);
+        out.normals.extend([outward, outward, outward, outward]);
+        out.uvs.extend([uva, uvb, uvb, uva]);
+        out.indices
+            .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+    }
 }

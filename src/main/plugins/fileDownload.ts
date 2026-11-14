@@ -20,9 +20,12 @@ export class DownloadCancelledError extends Error {
 let activeRequest: ClientRequest | null = null
 let activeWriteStream: fs.WriteStream | null = null
 let cancelRequested = false
+let activeOwner: string | null = null
 
-export function cancelActiveDownload(): void {
+export function cancelActiveDownload(owner?: string): void {
+  if (owner != null && activeOwner != null && activeOwner !== owner) return
   cancelRequested = true
+  activeOwner = null
   if (activeRequest) {
     activeRequest.destroy()
     activeRequest = null
@@ -37,6 +40,7 @@ export function resetDownloadCancelState(): void {
   cancelRequested = false
   activeRequest = null
   activeWriteStream = null
+  activeOwner = null
 }
 
 function throwIfCancelled(): void {
@@ -46,12 +50,17 @@ function throwIfCancelled(): void {
 }
 
 export async function downloadFile(
+  owner: string,
   url: string,
   destPath: string,
   onProgress?: (progress: DownloadProgress) => void,
   expectedMinBytes?: number,
   expectedTotalBytes?: number,
 ): Promise<void> {
+  if (activeOwner && activeOwner !== owner) {
+    throw new Error(`Another plugin download is in progress (${activeOwner})`)
+  }
+  activeOwner = owner
   fs.mkdirSync(path.dirname(destPath), { recursive: true })
   const tempPath = `${destPath}.part`
 
@@ -77,6 +86,8 @@ export async function downloadFile(
       // ignore
     }
     throw err
+  } finally {
+    if (activeOwner === owner) activeOwner = null
   }
 }
 

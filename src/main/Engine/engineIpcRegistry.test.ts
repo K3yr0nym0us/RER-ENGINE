@@ -9,7 +9,8 @@ vi.mock('../plugins/pluginState', async (importOriginal) => {
   const original = await importOriginal<typeof import('../plugins/pluginState')>()
   return {
     ...original,
-    isPluginEnabled: (id: string) => mockState.enabled.includes(id) && isInstalledMock(id),
+    isPluginEnabled: (id: string) =>
+      id === 'world-gen' ? isInstalledMock(id) : mockState.enabled.includes(id) && isInstalledMock(id),
     isPluginInstalled: (id: string) => isInstalledMock(id),
   }
 })
@@ -44,11 +45,12 @@ describe('gating de comandos world_gen_*', () => {
     expect(sent).toHaveLength(0)
   })
 
-  it('rechaza world_gen_* con el plugin instalado pero deshabilitado', () => {
+  it('reenvía world_gen_* si el plugin está instalado, aunque no figure como activado', () => {
     mockState.installed['world-gen'] = { version: '1.0.0', installedAt: '', libraryPath: 'x.dll' }
+    mockState.enabled = []
     const { deps, sent } = makeDeps()
     handleEngineCommand(cmd, deps)
-    expect(sent).toHaveLength(0)
+    expect(sent).toHaveLength(1)
   })
 
   it('reenvía world_gen_* con el plugin instalado y activo', () => {
@@ -70,13 +72,14 @@ describe('catálogo del plugin world-gen', () => {
     expect(entry?.artifact?.downloadUrl).toMatch(/^https:\/\/github\.com\/.+\.zip$/)
   })
 
-  it('los seis comandos world_gen_* pertenecen al catálogo 3D', () => {
+  it('los comandos world_gen_* pertenecen al catálogo 3D', () => {
     for (const name of [
       'world_gen_set_library_path',
       'world_gen_set_config',
       'world_gen_start',
       'world_gen_stop',
       'world_gen_reset',
+      'world_gen_unload',
       'world_gen_scatter',
     ]) {
       expect(ENGINE_COMMAND_SET_3D.has(name)).toBe(true)

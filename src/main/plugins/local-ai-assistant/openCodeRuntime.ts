@@ -22,6 +22,8 @@ export interface OpenCodeEndpoint {
 const STARTUP_TIMEOUT_MS = 90_000
 
 let serverProcess: ChildProcess | null = null
+/** El proceso no confirmó `exit`; no se arranca otro `serve` encima. */
+let blockNewServer = false
 let currentStatus: PluginLlmStatus = 'idle'
 let currentError: string | null = null
 let endpoint: OpenCodeEndpoint | null = null
@@ -143,7 +145,8 @@ export async function startOpenCodeServer(): Promise<{ ok: boolean; error?: stri
     return { ok: false, error: 'OpenCode runtime not installed' }
   }
 
-  await stopOpenCodeServer()
+  const stopped = await stopOpenCodeServer()
+  if (!stopped.ok) return { ok: false, error: stopped.error }
 
   currentStatus = 'starting'
   currentError = null
@@ -212,23 +215,30 @@ export async function startOpenCodeServer(): Promise<{ ok: boolean; error?: stri
   return { ok: true }
 }
 
-export async function stopOpenCodeServer(): Promise<void> {
+export async function stopOpenCodeServer(): Promise<{ ok: boolean; error?: string }> {
   const child = serverProcess
   serverProcess = null
   endpoint = null
 
   if (!child || child.pid == null) {
+    if (blockNewServer) {
+      return { ok: false, error: currentError ?? 'OpenCode server did not exit in time' }
+    }
     currentStatus = 'idle'
     currentError = null
-    return
+    return { ok: true }
   }
 
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(() => resolve(), 3_000)
-    child.once('exit', () => {
+  const exited = await new Promise<boolean>((resolve) => {
+    let settled = false
+    const finish = (didExit: boolean) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
-      resolve()
-    })
+      resolve(didExit)
+    }
+    const timer = setTimeout(() => finish(false), 3_000)
+    child.once('exit', () => finish(true))
     if (process.platform === 'win32') {
       // Mata el árbol: opencode puede mantener procesos auxiliares.
       const systemRoot = process.env['SystemRoot'] ?? 'C:\\Windows'
@@ -239,8 +249,17 @@ export async function stopOpenCodeServer(): Promise<void> {
     }
   })
 
+  if (!exited) {
+    blockNewServer = true
+    currentStatus = 'error'
+    currentError = 'OpenCode server did not exit in time'
+    return { ok: false, error: currentError }
+  }
+
+  blockNewServer = false
   currentStatus = 'idle'
   currentError = null
+  return { ok: true }
 }
 
 export async function isOpenCodeServerRunning(): Promise<boolean> {

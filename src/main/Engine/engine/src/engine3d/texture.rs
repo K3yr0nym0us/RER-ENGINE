@@ -95,6 +95,30 @@ impl TextureArray {
         self.upload_layer_from_mips(gpu, mips)
     }
 
+    /// Reescribe una capa ya empaquetada (mismo índice). No avanza `next_layer`.
+    pub fn replace_layer(
+        &mut self,
+        gpu: &SharedGpu,
+        layer: TextureLayer,
+        rgba: &[u8],
+        w: u32,
+        h: u32,
+    ) -> Result<(), VulkanError> {
+        if layer == 0 || layer >= self.next_layer {
+            return Err(VulkanError::new(format!(
+                "capa {layer} fuera de las empaquetadas (next={})",
+                self.next_layer
+            )));
+        }
+        let chain = build_layer_mip_chain_timed(rgba.to_vec(), w, h);
+        for (level, mip_data) in chain.mips.iter().enumerate() {
+            let mip_w = (self.width >> level).max(1);
+            let mip_h = (self.height >> level).max(1);
+            gpu.upload_rgba_layer(&self.image, level as u32, layer, mip_w, mip_h, mip_data)?;
+        }
+        Ok(())
+    }
+
     fn upload_layer_from_mips(
         &mut self,
         gpu: &SharedGpu,

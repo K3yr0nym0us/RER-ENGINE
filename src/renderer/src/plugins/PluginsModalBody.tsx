@@ -139,21 +139,21 @@ function PluginCard({
             )}
             {installed && (
               <div className="d-flex flex-column align-items-center gap-2">
-                <div className="form-check form-switch mb-0">
-                  <input
-                    className="form-check-input"
-                    type="checkbox"
-                    id={`plugin-enabled-${entry.id}`}
-                    checked={enabled}
-                    onChange={(e) => onToggleEnabled(e.target.checked)}
-                  />
-                  <label className="form-check-label small" htmlFor={`plugin-enabled-${entry.id}`}>
-                    {t('Enabled')}
-                  </label>
-                </div>
-                {entry.id === 'world-gen' && (
-                  <RunWorldGenPluginButton enabled={enabled} />
+                {entry.id !== 'world-gen' && (
+                  <div className="form-check form-switch mb-0">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      id={`plugin-enabled-${entry.id}`}
+                      checked={enabled}
+                      onChange={(e) => onToggleEnabled(e.target.checked)}
+                    />
+                    <label className="form-check-label small" htmlFor={`plugin-enabled-${entry.id}`}>
+                      {t('Enabled')}
+                    </label>
+                  </div>
                 )}
+                {entry.id === 'world-gen' && <RunWorldGenPluginButton />}
                 <button
                   type="button"
                   className="btn btn-sm btn-outline-danger w-100"
@@ -178,25 +178,19 @@ function PluginCard({
 }
 
 /** Abre la modal del generador de mundos (reemplaza la modal de plugins). */
-function RunWorldGenPluginButton({ enabled }: { enabled: boolean }) {
+function RunWorldGenPluginButton() {
   const { t } = useTraslate()
   const { locale } = useLanguage()
 
   return (
-    <>
-      <button
-        type="button"
-        className="btn btn-sm btn-success w-100"
-        title={enabled ? undefined : t('The World Generator plugin is installed but disabled. Enable it in Plugins.')}
-        onClick={() => openWorldGenPluginModal(t('World Generator'), locale)}
-      >
-        <PlayCircle size={14} className="me-1" aria-hidden />
-        {t('Run plugin')}
-      </button>
-      {!enabled && (
-        <span className="text-warning small">{t('Enable the plugin to use it')}</span>
-      )}
-    </>
+    <button
+      type="button"
+      className="btn btn-sm btn-success w-100"
+      onClick={() => openWorldGenPluginModal(t('World Generator'), locale)}
+    >
+      <PlayCircle size={14} className="me-1" aria-hidden />
+      {t('Run plugin')}
+    </button>
   )
 }
 
@@ -297,19 +291,12 @@ function AssistantModelConnection({
     }
   }
 
+  if (!serverRunning) return null
+
   return (
     <div className="plugin-assistant-settings card border-secondary-subtle mt-3">
       <div className="card-body py-3">
         <h6 className="plugin-assistant-settings__title mb-3">{t('Model and connection')}</h6>
-
-        {!serverRunning && (
-          <p className="small text-secondary mb-0">
-            {t('Enable the assistant plugin to configure models.')}
-          </p>
-        )}
-
-        {serverRunning && (
-          <>
             <div className="row g-2 align-items-center mb-2">
               <div className="col-sm-3">
                 <label className="col-form-label small mb-0" htmlFor="assistant-model-select">
@@ -416,8 +403,6 @@ function AssistantModelConnection({
             {error && (
               <p className="small text-danger mt-2 mb-0">{error}</p>
             )}
-          </>
-        )}
       </div>
     </div>
   )

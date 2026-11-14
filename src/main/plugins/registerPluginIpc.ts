@@ -1,5 +1,6 @@
 import { ipcMain, type BrowserWindow } from 'electron'
 
+import type { EngineCommand } from '../../shared-types/types'
 import type { PluginId, PluginInstallResult, PluginsState } from '../../shared-types/plugins'
 import { autoStartLocalAiAssistant, registerLocalAiAssistantIpc } from './local-ai-assistant/ipc'
 import { startOpenCodeServer, stopOpenCodeServer } from './local-ai-assistant/openCodeRuntime'
@@ -21,7 +22,10 @@ function notifyPluginsStateChanged(getMainWindow: GetMainWindow): void {
   win.webContents.send('plugins:state-changed')
 }
 
-export function registerPluginIpc(getMainWindow: GetMainWindow): void {
+export function registerPluginIpc(
+  getMainWindow: GetMainWindow,
+  sendToEngine?: (cmd: EngineCommand) => void,
+): void {
   if (ipcRegistered) return
   ipcRegistered = true
 
@@ -43,6 +47,9 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
           await startOpenCodeServer()
         }
       } else {
+        if (pluginId === 'world-gen') {
+          sendToEngine?.({ cmd: 'world_gen_unload' })
+        }
         state.enabled = state.enabled.filter((id) => id !== pluginId)
         if (pluginId === 'local-ai-assistant') {
           await stopOpenCodeServer()
@@ -74,6 +81,9 @@ export function registerPluginIpc(getMainWindow: GetMainWindow): void {
   ipcMain.handle(
     'plugins:uninstall',
     async (_event, pluginId: PluginId): Promise<PluginInstallResult> => {
+      if (pluginId === 'world-gen') {
+        sendToEngine?.({ cmd: 'world_gen_unload' })
+      }
       const result = await uninstallPlugin(pluginId)
       notifyPluginsStateChanged(getMainWindow)
       return result

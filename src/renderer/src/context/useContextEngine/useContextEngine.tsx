@@ -35,14 +35,12 @@ const EngineContext = createContext<EngineContextValue | undefined>(undefined);
 
 export function EngineProvider({
 	children,
-	viewportRef,
 	projectType,
 	gameStyle,
 	initialSavePath,
 	initialExtractDir,
 }: {
 	children: React.ReactNode;
-	viewportRef: React.RefObject<HTMLDivElement | null>;
 	projectType?: string;
 	gameStyle?: GameStyle;
 	initialSavePath?: string | null;
@@ -108,29 +106,11 @@ export function EngineProvider({
 	};
 
 	const reportBounds = () => {
-		if (!viewportRef.current) return;
-		const rect = viewportRef.current.getBoundingClientRect();
-		const dpr = window.devicePixelRatio ?? 1;
-		// Evitar bounds absurdos si el layout se desincroniza (p. ej. durante fusión/modales).
-		const maxW = Math.ceil(window.innerWidth * dpr);
-		const maxH = Math.ceil(window.innerHeight * dpr);
-		const width = Math.max(1, Math.min(Math.round(rect.width * dpr), maxW));
-		const height = Math.max(1, Math.min(Math.round(rect.height * dpr), maxH));
-		window.electronAPI.sendViewportBounds({
-			x: Math.round(rect.x * dpr),
-			y: Math.round(rect.y * dpr),
-			width,
-			height,
-		});
+		// El viewport ya no es una ventana de Electron: el motor tiene la suya.
 	};
 
 	const notifyScenesTabsReady = (tabCount: number) => {
 		markScenesTabsReady(dispatch, refs, reportBounds, tabCount);
-	};
-
-	const reportBoundsDebounced = () => {
-		if (refs.resizeTimerRef.current) clearTimeout(refs.resizeTimerRef.current);
-		refs.resizeTimerRef.current = setTimeout(reportBounds, 200);
 	};
 
 	const send = createEngineSend(projectType === '3D' ? '3D' : '2D');
@@ -150,11 +130,9 @@ export function EngineProvider({
 		dispatch,
 		refs,
 		addLog,
-		viewportRef,
 		projectType,
 		gameStyle,
 		reportBounds,
-		reportBoundsDebounced,
 		applyInitialAnimationFrame: actions.applyInitialAnimationFrame,
 		setLocale,
 	});

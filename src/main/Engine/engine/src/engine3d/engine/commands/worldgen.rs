@@ -28,6 +28,10 @@ impl State {
                 self.worldgen_reset();
                 None
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::WorldGenUnload) => {
+                self.worldgen_unload();
+                None
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::WorldGenScatter { rules_json }) => {
                 self.worldgen_scatter(&rules_json);
                 None

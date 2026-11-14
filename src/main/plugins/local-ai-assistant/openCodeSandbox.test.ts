@@ -71,6 +71,8 @@ describe('buildWorkspacePlan', () => {
     const rules = parsed.permissions
     expect(rules[0]).toEqual({ action: '*', resource: '*', effect: 'deny' })
     expect(rules).toContainEqual({ action: 'read', resource: 'docs/ai/**', effect: 'allow' })
+    expect(rules).toContainEqual({ action: 'glob', resource: 'docs/ai/**', effect: 'allow' })
+    expect(rules).toContainEqual({ action: 'grep', resource: 'docs/ai/**', effect: 'allow' })
     expect(rules).toContainEqual({ action: 'rer_ui_*', resource: '*', effect: 'allow' })
     const allows = rules.filter((rule) => rule.effect === 'allow')
     for (const rule of allows) {
@@ -100,6 +102,18 @@ describe('buildWorkspacePlan', () => {
     )
     expect(plugin?.content).toContain('C:/fake/workspace/ui-actions.log')
     expect(plugin?.content).not.toMatch(/\\fake\\workspace/)
+  })
+
+  it('escapa comillas simples de la ruta del log', () => {
+    const quoted = buildWorkspacePlan({
+      workspaceDir: 'C:/fake/workspace',
+      docsSourceDir: 'C:/fake/docs/ai',
+      uiActionsLogPath: "C:/Users/O'Brien/ui-actions.log",
+    })
+    const plugin = quoted.files.find(
+      (file) => file.relativePath === '.opencode/plugins/rer-ui/index.ts',
+    )
+    expect(plugin?.content).toContain("C:/Users/O\\'Brien/ui-actions.log")
   })
 
   it('copia docs/ai al sandbox', () => {

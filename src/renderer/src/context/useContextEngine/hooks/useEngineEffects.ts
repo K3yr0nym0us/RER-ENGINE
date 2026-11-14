@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, type Dispatch, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, type Dispatch } from 'react';
 import type { GameStyle } from '@shared-types';
 import type { Locale } from '../../LanguageContext';
 import { createEngineEventHandler } from './createEngineEventHandler';
@@ -16,11 +16,9 @@ interface UseEngineEffectsParams {
 	dispatch: Dispatch<EngineAction>
 	refs: EngineInternalRefs
 	addLog: (text: string, isError?: boolean) => void
-	viewportRef: RefObject<HTMLDivElement | null>
 	projectType?: string
 	gameStyle?: GameStyle
 	reportBounds: () => void
-	reportBoundsDebounced: () => void
 	applyInitialAnimationFrame: (entityId: number, animations?: import('../types').EntityAnimations) => void
 	setLocale?: (locale: Locale) => void
 }
@@ -29,16 +27,12 @@ export function useEngineEffects({
 	dispatch,
 	refs,
 	addLog,
-	viewportRef,
 	projectType,
 	gameStyle,
 	reportBounds,
-	reportBoundsDebounced,
 	applyInitialAnimationFrame,
 	setLocale,
 }: UseEngineEffectsParams) {
-	const reportBoundsRef = useRef(reportBounds);
-	const reportBoundsDebouncedRef = useRef(reportBoundsDebounced);
 	const addLogRef = useRef(addLog);
 	const projectTypeRef = useRef(projectType);
 	const gameStyleRef = useRef(gameStyle);
@@ -55,8 +49,6 @@ export function useEngineEffects({
 	}));
 
 	useEffect(() => {
-		reportBoundsRef.current = reportBounds;
-		reportBoundsDebouncedRef.current = reportBoundsDebounced;
 		addLogRef.current = addLog;
 		projectTypeRef.current = projectType;
 		gameStyleRef.current = gameStyle;
@@ -71,27 +63,19 @@ export function useEngineEffects({
 			setLocale,
 			reportBounds,
 		});
-	}, [dispatch, refs, addLog, projectType, gameStyle, applyInitialAnimationFrame, reportBounds, reportBoundsDebounced, setLocale]);
+	}, [dispatch, refs, addLog, projectType, gameStyle, applyInitialAnimationFrame, reportBounds, setLocale]);
 
 	// Mount-once: `refs` / `reportBounds` are recreated each render in EngineProvider.
 	// Re-running this effect would call beginEngineBootLoading forever (stuck scene loader).
 	useEffect(() => {
-		const onRequestViewportBounds = () => reportBoundsRef.current();
-		const onViewportResize = () => reportBoundsDebouncedRef.current();
-
 		beginEngineBootLoading(dispatch, refs);
 		if (isEngineBootScenePreloaded(projectTypeRef.current, Boolean(refs.initialExtractDirRef.current?.trim()))) {
 			beginEngineBootEntityWait(refs);
 		}
-		reportBoundsRef.current();
-		const observer = new ResizeObserver(onViewportResize);
-		if (viewportRef.current) observer.observe(viewportRef.current);
-		window.electronAPI.onRequestViewportBounds(onRequestViewportBounds);
 		return () => {
-			observer.disconnect();
 			if (refs.resizeTimerRef.current) clearTimeout(refs.resizeTimerRef.current);
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-once boot + viewport wiring
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-once boot
 	}, []);
 
 	useEffect(() => {

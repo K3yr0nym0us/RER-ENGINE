@@ -62,6 +62,26 @@ fn scatter_is_deterministic_per_blueprint() {
 }
 
 #[test]
+fn density_caps_the_instance_quota() {
+    let config = scatter_config();
+    let field = DensityField::new(&config);
+    let mut rules = base_rules();
+    rules.max_instances = 80;
+    rules.density = 0.5;
+    rules.max_slope_deg = 90.0;
+    let out = scatter(&field, &config, &rules, blueprint_hash("bp-density"));
+    assert!(
+        out.len() <= 40,
+        "density 0.5 debe recortar el cupo, devolvió {}",
+        out.len()
+    );
+    assert!(
+        !out.is_empty(),
+        "con terreno amplio debe colocar alguna instancia"
+    );
+}
+
+#[test]
 fn max_instances_is_a_hard_limit() {
     let config = scatter_config();
     let field = DensityField::new(&config);

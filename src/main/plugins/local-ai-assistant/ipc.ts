@@ -12,6 +12,7 @@ import { ASSISTANT_PLUGIN_ID } from './openCodePaths'
 import { getAssistantPreferences, isPluginEnabled, isPluginInstalled, readPluginsState, updateAssistantPreferences } from '../pluginState'
 import {
   cancelAssistantChat,
+  invalidateModelCache,
   runAssistantChat,
   type UiActionEmitter,
 } from './assistantChat'
@@ -116,6 +117,7 @@ export function registerLocalAiAssistantIpc(getMainWindow: GetMainWindow): void 
   ipcMain.handle('plugins:set-model', (_event, modelRef: string | null) => {
     const value = typeof modelRef === 'string' && modelRef ? modelRef : null
     updateAssistantPreferences(PLUGIN_ID, { selectedModel: value })
+    invalidateModelCache()
     return { ok: true }
   })
 
@@ -151,6 +153,7 @@ export function registerLocalAiAssistantIpc(getMainWindow: GetMainWindow): void 
       }
       const result = await connectOpenCodeGo(endpoint, apiKey.trim())
       updateAssistantPreferences(PLUGIN_ID, { goConnected: result.ok })
+      if (result.ok) invalidateModelCache()
       return result
     },
   )
@@ -159,7 +162,10 @@ export function registerLocalAiAssistantIpc(getMainWindow: GetMainWindow): void 
     const endpoint = getOpenCodeEndpoint()
     if (!endpoint) return { ok: false, error: 'OpenCode server is not running' }
     const result = await disconnectOpenCodeGo(endpoint)
-    if (result.ok) updateAssistantPreferences(PLUGIN_ID, { goConnected: false })
+    if (result.ok) {
+      updateAssistantPreferences(PLUGIN_ID, { goConnected: false })
+      invalidateModelCache()
+    }
     return result
   })
 }

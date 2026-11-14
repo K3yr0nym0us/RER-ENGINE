@@ -11,7 +11,7 @@ import fs from 'fs'
 import path from 'path'
 
 import type { PluginId, PluginInstallResult, PluginArtifactManifest } from '../../../shared-types/plugins'
-import { cancelActiveDownload, DownloadCancelledError, downloadFile } from '../fileDownload'
+import { cancelActiveDownload, DownloadCancelledError, downloadFile, resetDownloadCancelState } from '../fileDownload'
 import { getPluginCatalogEntry } from '../pluginCatalog'
 import { broadcastPluginsProgress, resetProgressBroadcastThrottle } from '../pluginProgressBroadcast'
 import { getPluginDir, readPluginsState, writePluginsState } from '../pluginState'
@@ -25,7 +25,7 @@ export function isWorldGenInstallInProgress(): boolean {
 }
 
 export function cancelWorldGenInstall(): void {
-  cancelActiveDownload()
+  cancelActiveDownload(WORLDGEN_PLUGIN_ID)
 }
 
 export async function installWorldGenPlugin(_pluginId: PluginId): Promise<PluginInstallResult> {
@@ -38,6 +38,7 @@ export async function installWorldGenPlugin(_pluginId: PluginId): Promise<Plugin
   }
 
   installInProgress = true
+  resetDownloadCancelState()
   resetProgressBroadcastThrottle()
   try {
     // La URL debe ser la del ASSET (`/releases/download/...`), no la página del
@@ -54,7 +55,7 @@ export async function installWorldGenPlugin(_pluginId: PluginId): Promise<Plugin
     const total = entry.artifact.sizeBytes
 
     // Gancho de pago: aquí irá la validación de licencia antes de descargar.
-    await downloadFile(entry.artifact.downloadUrl, zipPath, (progress) => {
+    await downloadFile(WORLDGEN_PLUGIN_ID, entry.artifact.downloadUrl, zipPath, (progress) => {
       const overall = total > 0 ? Math.min(99, Math.round((progress.bytesReceived / total) * 100)) : 0
       broadcastPluginsProgress({
         pluginId: WORLDGEN_PLUGIN_ID,
@@ -127,6 +128,14 @@ export async function uninstallWorldGenPlugin(): Promise<PluginInstallResult> {
     writePluginsState(state)
     return { ok: true }
   } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'EBUSY' || code === 'EPERM' || code === 'EACCES') {
+      return {
+        ok: false,
+        error:
+          'The World Generator DLL is still loaded by the engine. Disable the plugin and try uninstalling again.',
+      }
+    }
     const message = err instanceof Error ? err.message : String(err)
     return { ok: false, error: message }
   }

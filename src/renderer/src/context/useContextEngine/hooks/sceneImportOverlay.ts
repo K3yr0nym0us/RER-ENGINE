@@ -69,7 +69,6 @@ export function tryRevealSceneImportOverlay(
 	}
 	refs.bootRevealPendingRef.current = false;
 	reportBounds();
-	window.electronAPI?.restoreEngineViewport?.();
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
 	return true;
 }
@@ -441,7 +440,6 @@ function syncBlockingLoadOverlay(
 		return;
 	}
 	reportBounds();
-	window.electronAPI?.restoreEngineViewport?.();
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: false });
 }
 
@@ -451,7 +449,6 @@ export function beginSceneImportLoading(
 ) {
 	sceneImportInProgressRef.current = true;
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
-	window.electronAPI?.hideEngineViewport?.();
 }
 
 export function endSceneImportLoading(
@@ -489,7 +486,6 @@ export function beginModelReplaceLoading(
 		modelLoadOverlayKindRef.current = kind;
 	}
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
-	window.electronAPI?.hideEngineViewport?.();
 }
 
 export function trackModelAssetPreloadStart(
@@ -599,7 +595,6 @@ export function beginSceneBurstLoad(
 		refs.pendingBurstSpawnRestoreRef.current = [];
 	}
 	dispatch({ type: 'SET_SCENE_IMPORT_LOADING', payload: true });
-	window.electronAPI?.hideEngineViewport?.();
 }
 
 export function endSceneBurstLoad(

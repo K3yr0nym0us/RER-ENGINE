@@ -207,8 +207,28 @@ async function listModelsCached(getEndpoint: () => ReturnType<typeof getOpenCode
   return result
 }
 
-function invalidateModelCache(): void {
+export function invalidateModelCache(): void {
   modelCache = null
+}
+
+function messageHasPendingTools(message: {
+  content?: Array<{ type: string; state?: { status?: string } }>
+}): boolean {
+  return (message.content ?? []).some((part) => {
+    if (part.type !== 'tool') return false
+    const status = part.state?.status
+    return status === 'pending' || status === 'running'
+  })
+}
+
+/** `stop`, `length` y `error` cierran el turno; cualquier finish no vacío también, si no quedan tools abiertas. */
+function turnFinished(message: {
+  finish?: string
+  content?: Array<{ type: string; state?: { status?: string } }>
+}): boolean {
+  const finish = message.finish?.trim() ?? ''
+  if (!finish) return false
+  return !messageHasPendingTools(message)
 }
 
 async function resolveModel(
@@ -399,6 +419,7 @@ async function runTurn(
         const fullText = messageText(message)
         const emitted = emittedTextLengths.get(message.id) ?? 0
         if (fullText.length > emitted) {
+          lastGrowthAt = Date.now()
           const delta = fullText.slice(emitted)
           emittedTextLengths.set(message.id, fullText.length)
           if (delta.trim()) context.emitDelta?.({ conversationId, kind: 'text', delta })
@@ -412,11 +433,12 @@ async function runTurn(
           .filter(Boolean)
           .join('\n\n')
         observation.lastText = turnText
-        if (last.finish === 'stop') return { ok: true, observation }
+        if (turnFinished(last)) return { ok: true, observation }
       }
 
+      const toolsOpen = turn.some((message) => messageHasPendingTools(message))
       const noGrowthMs = Date.now() - lastGrowthAt
-      if (noGrowthMs > STABILITY_MS && turn.length > 0) {
+      if (!toolsOpen && noGrowthMs > STABILITY_MS && turn.length > 0) {
         aiLog('chat.stability-finalize', { conversationId, noGrowthMs, steps: turn.length })
         return { ok: true, observation }
       }
@@ -482,8 +504,6 @@ export async function runAssistantChat(
     if (!session.ok) {
       return { ok: false, error: session.error }
     }
-
-    invalidateModelCache()
 
     const result = await runTurn(conversationId, session.sessionID, userText, context)
 

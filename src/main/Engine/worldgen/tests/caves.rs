@@ -218,3 +218,26 @@ fn carving_preserves_determinism_of_meshes() {
         "el carving debe ser determinista entre instancias del campo"
     );
 }
+
+#[test]
+fn y_pruning_reaches_below_the_surface_when_caves_are_deep() {
+    use rer_worldgen::chunks::active_y_chunks;
+
+    let mut config = WorldGenConfig::default();
+    config.bounds.width = 256.0;
+    config.bounds.length = 256.0;
+    config.bounds.height = 256.0;
+    config.resolution.voxel_size = 1.0;
+    config.mountains.base.enabled = false;
+    config.hills.base.enabled = false;
+    config.caves.enabled = false;
+    let field = DensityField::new(&config);
+    let shallow = active_y_chunks(&field, &config, 1, 1);
+    config.caves.enabled = true;
+    config.caves.depth_max = 50.0;
+    let deep = active_y_chunks(&field, &config, 1, 1);
+    assert!(
+        deep.first().copied().unwrap_or(0) < shallow.first().copied().unwrap_or(0),
+        "las cuevas de 50 m deben activar una capa Y más baja ({deep:?} vs {shallow:?})"
+    );
+}

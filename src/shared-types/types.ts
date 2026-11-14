@@ -686,7 +686,7 @@ export interface EditorSceneListItem {
 }
 
 export interface EngineEvent {
-  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_properties_open' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_2d_complete' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'editor_scene_created' | 'editor_scene_switched' | 'editor_scene_switch_blocked' | 'editor_scenes_updated' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
+  event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_properties_open' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_2d_complete' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'world_gen_status' | 'world_gen_progress' | 'world_gen_chunk_ready' | 'world_gen_completed' | 'world_gen_error' | 'world_gen_scatter_done' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'editor_scene_created' | 'editor_scene_switched' | 'editor_scene_switch_blocked' | 'editor_scenes_updated' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
   [key: string]: unknown
 }
 
@@ -826,19 +826,6 @@ export interface PlayCharacterViewChanged {
   sync_editor_viewport?: boolean
   editor_camera_id?: number | null
   editor_orbit_target?: [number, number, number]
-}
-
-/** Plataforma para métricas GPU del shell Electron (no del motor Rust). Windows-only. */
-export type GpuMetricsPlatform = 'windows'
-
-export interface AppResourceUsage {
-  /** Suma de procesos Chromium/Electron de esta app (no del sistema). */
-  electronCpuPercent: number
-  /** % GPU de procesos Electron por PID. */
-  electronGpuPercent: number | null
-  gpuMetricsPlatform: GpuMetricsPlatform
-  /** Si se pueden leer % GPU de procesos Electron. */
-  electronGpuMetricsSupported: boolean
 }
 
 export interface DebugMetrics {
@@ -1040,13 +1027,6 @@ export type BluePrintCategory = BlueprintTabCategory
 /** @deprecated 3D usa `Blueprint3D` */
 export type BluePrintEntry = Blueprint3D
 
-export interface ViewportBounds {
-  x:      number
-  y:      number
-  width:  number
-  height: number
-}
-
 /** Tamaños de ventana modal Electron (aprox. Bootstrap 5). */
 export type ModalElectronSize = 'sm' | 'md' | 'lg' | 'xl' | 'xxl'
 
@@ -1122,35 +1102,18 @@ declare global {
       setGameStyle:            (payload: EngineStartPayload) => void
       syncUiScreens:           (screens: UiScreensSyncPayload) => void
       syncQuickBuildState:     (state: { active: boolean; name?: string }) => void
-      sendViewportBounds:      (bounds: ViewportBounds) => void
-      openModelDialog:         () => Promise<string | null>
       openProjectDialog:       () => Promise<OpenProjectResult | null>
-      saveProject:             (data: ProjectSaveData) => Promise<string | null>
-      /** Diálogo «Guardar como»; devuelve la ruta elegida sin empaquetar. */
-      pickProjectSavePath:     () => Promise<string | null>
-      saveProjectSilent:       (filePath: string, data: ProjectSaveData) => Promise<boolean>
-      getProjectExtractDir:    () => Promise<string | null>
       /** Manifest completo del .save abierto (escenas inactivas, visualGraph, etc.). */
       readProjectManifest:     () => Promise<ProjectSaveData | null>
       openSpriteDialog:        () => Promise<string | null>
-      openHudImageDialog:      () => Promise<string | null>
-      openScenarioDialog:      () => Promise<string | null>
-      openCharacterDialog:     () => Promise<string | null>
       getImageDataUrl:         (filePath: string) => Promise<string | null>
       openBackgroundDialog:    () => Promise<string | null>
-      openAudioDialog:         () => Promise<string | null>
-      openFontDialog:          () => Promise<string | null>
-      onRequestViewportBounds: (cb: () => void) => void
-      onAutoSaveRequest:       (cb: (filePath: string) => void) => void
       onProjectStateRequest:   (cb: (id: number) => void) => () => void
       respondProjectState:     (id: number, state: unknown) => void
       requestProjectSave:      () => void
       onProjectSaved:          (cb: (filePath: string) => void) => () => void
       onProjectSaveFailed:     (cb: (message: string) => void) => () => void
       onLegacyWindowOpen:      (cb: (request: { kind: string; payload?: Record<string, unknown> }) => void) => () => void
-      getAppResourceUsage:     () => Promise<AppResourceUsage>
-      hideEngineViewport:      () => void
-      restoreEngineViewport:   (bounds?: ViewportBounds) => void
       openModalElectron:       (request: ModalElectronOpenRequest) => Promise<void>
       closeModalElectron:      () => Promise<void>
       resolveEditorExit:      (action: 'save' | 'discard' | 'cancel') => void

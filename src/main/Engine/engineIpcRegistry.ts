@@ -11,6 +11,7 @@ const WORLDGEN_GATED_COMMANDS = new Set([
   'world_gen_start',
   'world_gen_stop',
   'world_gen_reset',
+  'world_gen_unload',
   'world_gen_scatter',
 ])
 

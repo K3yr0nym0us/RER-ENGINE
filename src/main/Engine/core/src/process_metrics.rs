@@ -8,8 +8,10 @@ use std::time::Duration;
 
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
-/// Intervalo entre lecturas (cada lectura tarda ~2 s por SampleInterval + MaxSamples).
+/// Intervalo entre lecturas. La consulta PDH solo toca los contadores de este PID.
 const GPU_SAMPLE_INTERVAL: Duration = Duration::from_secs(3);
+/// Cada cuánto se redescubren las instancias GPU del proceso (aparecen al renderizar).
+const GPU_COUNTER_REFRESH: Duration = Duration::from_secs(30);
 /// Valor centinela en `AtomicU32` (= sin dato GPU).
 const GPU_RAW_NONE: u32 = u32::MAX;
 
@@ -92,11 +94,41 @@ fn spawn_gpu_poll_thread(
         return None;
     }
     Some(thread::spawn(move || {
+        let mut counters = gpu_counters::PidGpuCounters::default();
+        let mut refreshed_at = std::time::Instant::now() - GPU_COUNTER_REFRESH;
         while !stop.load(Ordering::Relaxed) {
-            store_gpu_percent(&raw, query_process_gpu_percent(pid));
-            thread::sleep(GPU_SAMPLE_INTERVAL);
+            let now = std::time::Instant::now();
+            if counters.is_empty() || now.duration_since(refreshed_at) >= GPU_COUNTER_REFRESH {
+                counters.rebuild(pid);
+                refreshed_at = std::time::Instant::now();
+                counters.collect();
+            }
+            if !wait_or_stop(&stop, Duration::from_secs(1)) {
+                break;
+            }
+            store_gpu_percent(&raw, counters.read_percent());
+            let rest = GPU_SAMPLE_INTERVAL.saturating_sub(Duration::from_secs(1));
+            if !wait_or_stop(&stop, rest) {
+                break;
+            }
         }
+        counters.close();
     }))
+}
+
+/// Duerme a trozos para que `Drop` no espere el intervalo entero.
+fn wait_or_stop(stop: &AtomicBool, total: Duration) -> bool {
+    let step = Duration::from_millis(200);
+    let mut left = total;
+    while !left.is_zero() {
+        if stop.load(Ordering::Relaxed) {
+            return false;
+        }
+        let slice = left.min(step);
+        thread::sleep(slice);
+        left = left.saturating_sub(slice);
+    }
+    !stop.load(Ordering::Relaxed)
 }
 
 /// Indica si el motor puede intentar muestrear % GPU en esta plataforma.
@@ -108,43 +140,194 @@ fn gpu_sampling_available() -> bool {
     true
 }
 
-/// Suma utilización GPU de todos los motores/gráficos asociados a un PID (solo ese proceso).
-fn query_process_gpu_percent(pid: u32) -> Option<f32> {
-    windows::query_process_gpu_percent(pid)
-}
+/// Contadores PDH del proceso. No usa `Get-Counter` ni el comodín de todos los motores GPU:
+/// ese comodín, relanzado en PowerShell, enumeraba el sistema entero y apilaba procesos.
+mod gpu_counters {
+    use windows::Win32::System::Performance::{
+        PDH_CSTATUS_NEW_DATA, PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE, PDH_FMT_DOUBLE,
+        PDH_HCOUNTER, PDH_HQUERY, PDH_MORE_DATA, PdhAddEnglishCounterW, PdhCloseQuery,
+        PdhCollectQueryData, PdhExpandWildCardPathW, PdhGetFormattedCounterValue, PdhOpenQueryW,
+    };
+    use windows::core::{PCWSTR, PWSTR};
 
-mod windows {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
+    /// Tope para no reservar la lista completa de motores GPU del sistema si PDH se desborda.
+    const MAX_EXPAND_CHARS: u32 = 1 << 20;
+    const GPU_ENGINE_WILDCARD: &str = r"\GPU Engine(*)\Utilization Percentage";
 
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    pub fn query_process_gpu_percent(pid: u32) -> Option<f32> {
-        let script = format!(
-            r#"$ErrorActionPreference = 'SilentlyContinue'; $c = Get-Counter '\GPU Engine(*)\Utilization Percentage' -SampleInterval 1 -MaxSamples 2; if (-not $c) {{ Write-Output ''; exit 0 }}; $samples = $c[-1].CounterSamples | Where-Object {{ $_.InstanceName -match 'pid_{pid}_' }}; if (-not $samples) {{ Write-Output ''; exit 0 }}; $sum = ($samples | Measure-Object -Property CookedValue -Sum).Sum; if ($null -eq $sum) {{ Write-Output ''; exit 0 }}; Write-Output ($sum.ToString('0.###', [System.Globalization.CultureInfo]::InvariantCulture))"#
-        );
-        let out = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        parse_gpu_stdout(&String::from_utf8_lossy(&out.stdout))
+    #[derive(Default)]
+    pub struct PidGpuCounters {
+        query: PDH_HQUERY,
+        counters: Vec<PDH_HCOUNTER>,
     }
 
-    fn parse_gpu_stdout(raw: &str) -> Option<f32> {
-        let trimmed = raw.trim();
-        if trimmed.is_empty() {
+    impl PidGpuCounters {
+        pub fn is_empty(&self) -> bool {
+            self.counters.is_empty()
+        }
+
+        pub fn close(&mut self) {
+            if !self.query.is_invalid() {
+                // Seguridad: el query lo abrió este hilo con PdhOpenQueryW y no se comparte.
+                unsafe {
+                    let _ = PdhCloseQuery(self.query);
+                }
+                self.query = PDH_HQUERY::default();
+            }
+            self.counters.clear();
+        }
+
+        pub fn rebuild(&mut self, pid: u32) {
+            self.close();
+            let Some(paths) = expand_pid_paths(pid) else {
+                return;
+            };
+            let mut query = PDH_HQUERY::default();
+            // Seguridad: PDH escribe el handle en `query`; el puntero es de esta pila.
+            let opened = unsafe { PdhOpenQueryW(PCWSTR::null(), 0, &mut query) };
+            if opened != 0 || query.is_invalid() {
+                return;
+            }
+            let mut counters = Vec::with_capacity(paths.len());
+            for path in &paths {
+                let wide = wide_null(path);
+                let mut counter = PDH_HCOUNTER::default();
+                // Seguridad: `wide` vive hasta el retorno y PDH copia la ruta al añadirla.
+                let added =
+                    unsafe { PdhAddEnglishCounterW(query, PCWSTR(wide.as_ptr()), 0, &mut counter) };
+                if added == 0 && !counter.is_invalid() {
+                    counters.push(counter);
+                }
+            }
+            if counters.is_empty() {
+                unsafe {
+                    let _ = PdhCloseQuery(query);
+                }
+                return;
+            }
+            self.query = query;
+            self.counters = counters;
+        }
+
+        pub fn collect(&self) {
+            if self.query.is_invalid() {
+                return;
+            }
+            unsafe {
+                let _ = PdhCollectQueryData(self.query);
+            }
+        }
+
+        pub fn read_percent(&self) -> Option<f32> {
+            if self.query.is_invalid() || self.counters.is_empty() {
+                return None;
+            }
+            // Seguridad: el query sigue abierto y los contadores pertenecen a este hilo.
+            let collected = unsafe { PdhCollectQueryData(self.query) };
+            if collected != 0 {
+                return None;
+            }
+            let mut sum = 0.0f64;
+            let mut any = false;
+            for counter in &self.counters {
+                let mut value = PDH_FMT_COUNTERVALUE::default();
+                let status = unsafe {
+                    PdhGetFormattedCounterValue(*counter, PDH_FMT_DOUBLE, None, &mut value)
+                };
+                if status != 0 {
+                    continue;
+                }
+                if value.CStatus != PDH_CSTATUS_VALID_DATA && value.CStatus != PDH_CSTATUS_NEW_DATA
+                {
+                    continue;
+                }
+                let sample = unsafe { value.Anonymous.doubleValue };
+                if sample.is_finite() && sample >= 0.0 {
+                    sum += sample;
+                    any = true;
+                }
+            }
+            if !any {
+                return None;
+            }
+            Some((sum as f32).min(100.0))
+        }
+    }
+
+    fn expand_pid_paths(pid: u32) -> Option<Vec<String>> {
+        let needle = format!("pid_{pid}_");
+        let paths = expand_wildcard()?;
+        let matched: Vec<String> = paths
+            .into_iter()
+            .filter(|path| path_matches_pid(path, &needle))
+            .collect();
+        if matched.is_empty() {
+            None
+        } else {
+            Some(matched)
+        }
+    }
+
+    fn expand_wildcard() -> Option<Vec<String>> {
+        let pattern = wide_null(GPU_ENGINE_WILDCARD);
+        let mut len = 0u32;
+        // Seguridad: PDH solo escribe la longitud pedida; el buffer llega en la segunda llamada.
+        let status = unsafe {
+            PdhExpandWildCardPathW(PCWSTR::null(), PCWSTR(pattern.as_ptr()), None, &mut len, 0)
+        };
+        if (status != PDH_MORE_DATA && status != 0) || len == 0 || len > MAX_EXPAND_CHARS {
             return None;
         }
-        let normalized = trimmed.replace(',', ".");
-        let value: f32 = normalized.parse().ok()?;
-        if value.is_finite() && value >= 0.0 {
-            Some(value.min(100.0))
-        } else {
-            None
+        let mut buf = vec![0u16; len as usize];
+        let status = unsafe {
+            PdhExpandWildCardPathW(
+                PCWSTR::null(),
+                PCWSTR(pattern.as_ptr()),
+                Some(PWSTR(buf.as_mut_ptr())),
+                &mut len,
+                0,
+            )
+        };
+        if status != 0 {
+            return None;
         }
+        let paths = multi_sz_strings(&buf);
+        if paths.is_empty() { None } else { Some(paths) }
+    }
+
+    fn wide_null(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    pub fn multi_sz_strings(buf: &[u16]) -> Vec<String> {
+        buf.split(|unit| *unit == 0)
+            .take_while(|part| !part.is_empty())
+            .map(String::from_utf16_lossy)
+            .collect()
+    }
+
+    pub fn path_matches_pid(path: &str, needle: &str) -> bool {
+        path.contains(needle)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::gpu_counters::{multi_sz_strings, path_matches_pid};
+
+    #[test]
+    fn multi_sz_se_detiene_en_el_doble_nulo() {
+        let buf = [b'a' as u16, 0, b'b' as u16, 0, 0, b'c' as u16];
+        assert_eq!(
+            multi_sz_strings(&buf),
+            vec!["a".to_string(), "b".to_string()]
+        );
+    }
+
+    #[test]
+    fn el_filtro_de_pid_no_mezcla_otro_proceso() {
+        let path = r"\GPU Engine(pid_42_luid_0x1_phys_0_eng_0_engtype_3D)\Utilization Percentage";
+        assert!(path_matches_pid(path, "pid_42_"));
+        assert!(!path_matches_pid(path, "pid_4_"));
+        assert!(!path_matches_pid(path, "pid_420_"));
     }
 }

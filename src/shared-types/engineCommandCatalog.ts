@@ -166,6 +166,7 @@ export const ENGINE_COMMANDS_3D_ONLY = [
   'world_gen_start',
   'world_gen_stop',
   'world_gen_reset',
+  'world_gen_unload',
   'world_gen_scatter',
 ] as const
 
