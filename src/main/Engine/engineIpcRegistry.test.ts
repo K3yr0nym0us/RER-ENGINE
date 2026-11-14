@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 // El estado de plugins lee userData de Electron; en tests simulamos el estado.
-const mockState = { installed: {}, enabled: [] as string[] }
+const mockState = {
+  installed: {} as Record<string, { version: string; installedAt: string; libraryPath?: string }>,
+  enabled: [] as string[],
+}
 vi.mock('../plugins/pluginState', async (importOriginal) => {
   const original = await importOriginal<typeof import('../plugins/pluginState')>()
   return {

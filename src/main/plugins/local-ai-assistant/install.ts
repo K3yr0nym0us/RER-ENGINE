@@ -3,11 +3,11 @@ import path from 'path'
 import AdmZip from 'adm-zip'
 
 import type {
-  PluginCatalogEntry,
   PluginDownloadPhase,
   PluginDownloadProgress,
   PluginId,
   PluginInstallResult,
+  PluginOpenCodeManifest,
 } from '../../../shared-types/plugins'
 import { cancelActiveDownload, DownloadCancelledError, downloadFile, resetDownloadCancelState } from '../fileDownload'
 import { getPluginCatalogEntry } from '../pluginCatalog'
@@ -47,13 +47,13 @@ function sendProgress(progress: PluginDownloadProgress, force = false): void {
 
 function buildProgress(
   pluginId: PluginId,
-  entry: PluginCatalogEntry,
+  manifest: PluginOpenCodeManifest,
   phase: PluginDownloadPhase,
   percent: number,
   bytesReceived: number,
   bytesTotal: number,
 ): PluginDownloadProgress {
-  const bytesOverallTotal = entry.openCode.sizeBytes
+  const bytesOverallTotal = manifest.sizeBytes
   let bytesOverallReceived: number
   let step: number
   const stepsTotal = 3
@@ -62,11 +62,11 @@ function buildProgress(
     bytesOverallReceived = bytesReceived
     step = 0
   } else if (phase === 'extracting') {
-    bytesOverallReceived = entry.openCode.sizeBytes
+    bytesOverallReceived = manifest.sizeBytes
     step = 1
     percent = 100
   } else {
-    bytesOverallReceived = entry.openCode.sizeBytes
+    bytesOverallReceived = manifest.sizeBytes
     step = 2
     percent = 100
   }
@@ -154,6 +154,10 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
   if (!entry) {
     return { ok: false, error: 'Unknown plugin' }
   }
+  const openCode = entry.openCode
+  if (!openCode) {
+    return { ok: false, error: 'Catalog entry is missing its OpenCode manifest' }
+  }
 
   const docsSourceDir = resolveDocsAiSourceDir()
   if (!docsSourceDir) {
@@ -171,27 +175,27 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
     const binDir = path.join(pluginDir, 'bin')
     fs.mkdirSync(binDir, { recursive: true })
 
-    const exePath = path.join(binDir, entry.openCode.executableName)
+    const exePath = path.join(binDir, openCode.executableName)
     const zipPath = path.join(binDir, 'opencode.zip')
 
     if (!fs.existsSync(exePath)) {
-      sendProgress(buildProgress(pluginId, entry, 'opencode', 0, 0, entry.openCode.sizeBytes), true)
+      sendProgress(buildProgress(pluginId, openCode, 'opencode', 0, 0, openCode.sizeBytes), true)
       await downloadFile(
-        entry.openCode.downloadUrl,
+        openCode.downloadUrl,
         zipPath,
         (p) => {
           throwIfInstallCancelled()
           sendProgress(
-            buildProgress(pluginId, entry, 'opencode', p.percent, p.bytesReceived, p.bytesTotal || entry.openCode.sizeBytes),
+            buildProgress(pluginId, openCode, 'opencode', p.percent, p.bytesReceived, p.bytesTotal || openCode.sizeBytes),
           )
         },
-        entry.openCode.sizeBytes * 0.9,
-        entry.openCode.sizeBytes,
+        openCode.sizeBytes * 0.9,
+        openCode.sizeBytes,
       )
       throwIfInstallCancelled()
 
       sendProgress(
-        buildProgress(pluginId, entry, 'extracting', 100, entry.openCode.sizeBytes, entry.openCode.sizeBytes),
+        buildProgress(pluginId, openCode, 'extracting', 100, openCode.sizeBytes, openCode.sizeBytes),
         true,
       )
       const zip = new AdmZip(zipPath)
@@ -202,13 +206,13 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
         // ignore
       }
       if (!fs.existsSync(exePath)) {
-        throw new Error(`${entry.openCode.executableName} was not extracted from runtime archive`)
+        throw new Error(`${openCode.executableName} was not extracted from runtime archive`)
       }
       throwIfInstallCancelled()
     }
 
     sendProgress(
-      buildProgress(pluginId, entry, 'preparing', 100, entry.openCode.sizeBytes, entry.openCode.sizeBytes),
+      buildProgress(pluginId, openCode, 'preparing', 100, openCode.sizeBytes, openCode.sizeBytes),
       true,
     )
 
@@ -244,7 +248,7 @@ export async function installPlugin(pluginId: PluginId): Promise<PluginInstallRe
     writePluginsState(state)
 
     sendProgress(
-      buildProgress(pluginId, entry, 'preparing', 100, entry.openCode.sizeBytes, entry.openCode.sizeBytes),
+      buildProgress(pluginId, openCode, 'preparing', 100, openCode.sizeBytes, openCode.sizeBytes),
       true,
     )
 
