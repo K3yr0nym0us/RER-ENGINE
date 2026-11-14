@@ -101,6 +101,22 @@ vec3 terrain_layer(vec2 tuv, float layer, vec3 tint) {
     return mix(tint, sample_array_layer(tuv, layer), 0.62);
 }
 
+float hash12(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// Ruido de valor interpolado: sin la interpolación cada celda es un cuadro.
+float value_noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 s = f * f * (3.0 - 2.0 * f);
+    float a = hash12(i);
+    float b = hash12(i + vec2(1.0, 0.0));
+    float c = hash12(i + vec2(0.0, 1.0));
+    float d = hash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, s.x), mix(c, d, s.x), s.y);
+}
+
 vec3 terrain_materials(vec3 n) {
     vec4 w = texture(albedo_tex, vec3(v_uv, max(v_tex.x, 0.0)));
     // El uniforme manda. `v_tex.w` se queda en 0 cuando el IOR del terreno pisa
@@ -119,8 +135,9 @@ vec3 terrain_materials(vec3 n) {
 
     float slope = clamp(1.0 - n.y, 0.0, 1.0);
     float dirt_k = smoothstep(0.12, 0.38, slope);
-    float clay_n = fract(sin(dot(floor(v_world.xz * 0.04), vec2(127.1, 311.7))) * 43758.5453);
-    float clay_k = (1.0 - dirt_k) * smoothstep(0.62, 0.88, clay_n);
+    vec2 clay_p = v_world.xz * 0.04;
+    float clay_n = value_noise(clay_p) * 0.65 + value_noise(clay_p * 2.7 + 17.0) * 0.35;
+    float clay_k = (1.0 - dirt_k) * smoothstep(0.60, 0.78, clay_n);
     vec3 ground = mix(mix(grass, clay, clay_k), dirt, dirt_k);
     float sum = max(w.r + w.g + w.b + w.a, 0.001);
     vec3 rgb = (ground * w.r + stone * w.g + sand * w.b + snow * w.a) / sum;
@@ -133,13 +150,14 @@ void main() {
     vec4 albedo_s;
     vec3 albedo;
     if (terrain) {
-        albedo = terrain_materials(n);
-        albedo_s = vec4(albedo, 1.0);
-        // Caras invertidas del mesher: la tapa miraba al suelo y no recibía sol.
+        // Cara vista desde dentro (aleros, bordes recortados): la normal se
+        // orienta hacia la cámara antes de medir la pendiente y la luz.
         vec3 to_eye = normalize(u.cam_pos.xyz - v_world);
         if (dot(n, to_eye) < 0.0) {
             n = -n;
         }
+        albedo = terrain_materials(n);
+        albedo_s = vec4(albedo, 1.0);
     } else {
         float layer = max(v_tex.x, 0.0);
         albedo_s = texture(albedo_tex, vec3(v_uv, layer));

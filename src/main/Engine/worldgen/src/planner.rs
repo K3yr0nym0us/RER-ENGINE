@@ -121,6 +121,8 @@ pub struct FeaturePlan {
 
 /// Multiplicador de intentos por sitio aceptado (dart-throwing con rechazo).
 const ATTEMPTS_PER_SITE: u32 = 12;
+/// Margen mínimo (m) entre el borde de un lago y el pie de una montaña.
+const LAKE_MOUNTAIN_GAP: f32 = 12.0;
 
 impl FeaturePlan {
     /// Genera el plan completo de forma determinista.
@@ -149,7 +151,7 @@ impl FeaturePlan {
             &mut rng,
             &plan.sites,
             // Las colinas evitan solapar montañas (por distancia).
-            |site, d| site.kind != FeatureKind::Mountain || d >= site.radius,
+            |site, _, d| site.kind != FeatureKind::Mountain || d >= site.radius,
             |rng, r| Site {
                 kind: FeatureKind::Hill,
                 pos: rng_pos(rng, extent),
@@ -163,7 +165,7 @@ impl FeaturePlan {
             &config.valleys.base,
             &mut rng,
             &plan.sites,
-            |_, _| true,
+            |_, _, _| true,
             |rng, r| Site {
                 kind: FeatureKind::Valley,
                 pos: rng_pos(rng, extent),
@@ -177,7 +179,7 @@ impl FeaturePlan {
             &config.plains.base,
             &mut rng,
             &plan.sites,
-            |_, _| true,
+            |_, _, _| true,
             |rng, r| Site {
                 kind: FeatureKind::Plain,
                 pos: rng_pos(rng, extent),
@@ -191,7 +193,7 @@ impl FeaturePlan {
             &config.cliffs.base,
             &mut rng,
             &plan.sites,
-            |_, _| true,
+            |_, _, _| true,
             |rng, r| Site {
                 kind: FeatureKind::Cliff,
                 pos: rng_pos(rng, extent),
@@ -226,9 +228,12 @@ impl FeaturePlan {
             &mut rng,
             &plan.sites,
             // Los lagos evitan montañas y colinas (cuencas en terreno bajo/medio).
-            |site, d| {
-                (site.kind != FeatureKind::Mountain && site.kind != FeatureKind::Hill)
-                    || d >= site.radius
+            // Con la montaña cuenta el borde del vaso, no solo su centro: si no,
+            // la cuenca se come la ladera.
+            |site, candidate, d| match site.kind {
+                FeatureKind::Mountain => d >= site.radius + candidate.radius + LAKE_MOUNTAIN_GAP,
+                FeatureKind::Hill => d >= site.radius,
+                _ => true,
             },
             |rng, r| Site {
                 kind: FeatureKind::Lake,
@@ -327,7 +332,7 @@ fn place_sites<F, G>(
     make: G,
 ) -> Vec<Site>
 where
-    F: Fn(&Site, f32) -> bool,
+    F: Fn(&Site, &Site, f32) -> bool,
     G: Fn(&mut Rng, f32) -> Site,
 {
     let mut placed: Vec<Site> = Vec::new();
@@ -347,7 +352,7 @@ where
         });
         let ok_cross = existing
             .iter()
-            .all(|s| cross_ok(s, dist(s.pos, candidate.pos)));
+            .all(|s| cross_ok(s, &candidate, dist(s.pos, candidate.pos)));
         if ok_same && ok_cross {
             placed.push(candidate);
         }

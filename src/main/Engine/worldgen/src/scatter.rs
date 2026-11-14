@@ -184,7 +184,7 @@ pub fn scatter(
         }
         // Bioma compatible.
         let biome = biome_cache
-            .get_or_insert_with(|| BiomeMap::new(config))
+            .get_or_insert_with(|| BiomeMap::for_field(config, field))
             .biome_at(x, z, y);
         if !rules.biomes.is_empty() && !rules.biomes.iter().any(|name| name == biome_name(biome)) {
             continue;

@@ -215,8 +215,10 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                         grid.point_world(xb, yb, zb),
                         values[b],
                     );
-                    let ga = grid.gradient(xa, ya, za);
-                    let gb = grid.gradient(xb, yb, zb);
+                    // Densidad positiva = sólido: el gradiente apunta hacia
+                    // dentro, la normal es su opuesto (hacia el aire).
+                    let ga = -grid.gradient(xa, ya, za);
+                    let gb = -grid.gradient(xb, yb, zb);
                     edge_normal[edge] = edge_normal_at(values[a], values[b], ga, gb);
                 }
 
@@ -231,16 +233,16 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                     }
                     let (ea, eb, ec) = (ea as usize, eb as usize, ec as usize);
 
-                    // Orientación por gradiente: la normal debe apuntar hacia la
-                    // densidad decreciente (fuera del sólido).
+                    // La cara debe mirar hacia donde miran las normales de
+                    // vértice (fuera del sólido).
                     let (mut vb, mut vc) = (edge_pos[eb], edge_pos[ec]);
                     let va = edge_pos[ea];
                     let mut nb = edge_normal[eb];
                     let mut nc = edge_normal[ec];
                     let na = edge_normal[ea];
                     let face_normal = (vb - va).cross(vc - va);
-                    let gradient = (na + nb + nc) * 0.333_333_34;
-                    if face_normal.dot(gradient) > 0.0 {
+                    let outward = (na + nb + nc) * 0.333_333_34;
+                    if face_normal.dot(outward) < 0.0 {
                         std::mem::swap(&mut vb, &mut vc);
                         std::mem::swap(&mut nb, &mut nc);
                     }

@@ -40,6 +40,8 @@ pub const SALT_BIOME: u32 = 2_000;
 pub const SALT_MOISTURE: u32 = 2_100;
 /// Dominio de hotspots volcánicos.
 pub const SALT_VOLCANIC: u32 = 2_200;
+/// Dominio de las regiones del reparto de biomas por porcentajes.
+pub const SALT_BIOME_REGIONS: u32 = 2_300;
 /// Dominio de la máscara de montañas.
 pub const SALT_MOUNTAIN: u32 = 3_000;
 /// Dominio de máscara de acantilados/terrazas.

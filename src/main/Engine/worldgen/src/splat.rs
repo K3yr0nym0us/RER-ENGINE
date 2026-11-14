@@ -108,12 +108,16 @@ impl<'a> SplatContext<'a> {
         // Nieve: bioma nevado o altitud sobre la línea de nieve (transición 6 m).
         let snow_line = self.biomes.snow_line();
         let snow_alt = smoothstep(snow_line - 3.0, snow_line + 3.0, y);
-        let biome = self.biomes.biome_at(x, z, y);
-        let mut snow: f32 = if biome == Biome::Snow { 1.0 } else { 0.0 };
-        snow = snow.max(snow_alt);
+        let biome = self.biomes.biome_weights(x, z, y);
+        let mut snow = biome[Biome::Snow.index()];
+        // Con porcentajes la nieve es solo su zona; si no, también las cimas.
+        if !self.biomes.uses_shares() && self.biomes.is_enabled(Biome::Snow) {
+            snow = snow.max(snow_alt);
+        }
 
         // Arena: desierto; playas cerca del nivel del agua en lagos cercanos.
-        let mut sand: f32 = if biome == Biome::Desert { 1.0 } else { 0.0 };
+        let volcanic = biome[Biome::Volcanic.index()];
+        let mut sand = biome[Biome::Desert.index()] + volcanic * 0.25;
         for site in self.sites.query(x, z) {
             if site.kind == FeatureKind::Lake {
                 let d = (site.pos - Vec2::new(x, z)).length();
@@ -122,13 +126,13 @@ impl<'a> SplatContext<'a> {
                 sand = sand.max(shore);
             }
         }
-        // Volcánico: roca oscura en volcán (lo tratamos como roca + algo de arena).
-        if biome == Biome::Volcanic {
-            rock = rock.max(0.75);
-            sand = sand.max(0.25);
-        }
-        // Nieve no pisa roca de pendiente alta; la roca no pisa arena.
-        snow *= 1.0 - rock * 0.85;
+        // Volcánico: roca oscura (roca + algo de arena, ya sumada arriba).
+        rock = rock.max(volcanic * 0.75);
+        // Sobre la línea de nieve la nieve cubre la roca; solo resbala en
+        // paredes casi verticales. Las cimas de los mundos pequeños pasan de
+        // 24°, y con el umbral de la roca quedaban sin nieve.
+        snow *= 1.0 - smoothstep(48.0, 64.0, slope_deg) * 0.85;
+        rock *= 1.0 - snow * 0.8;
         sand *= 1.0 - rock;
 
         let mut grass = (1.0 - rock - snow - sand).max(0.0);

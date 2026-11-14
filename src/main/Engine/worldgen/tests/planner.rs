@@ -86,6 +86,31 @@ fn quotas_are_hard_limits() {
 }
 
 #[test]
+fn lakes_stay_clear_of_mountain_slopes() {
+    for seed in [7, 555, 91234, 752306577] {
+        let mut config = config_with_all_features();
+        config.seed = seed;
+        let base = rer_worldgen::field::HeightField::new(&config);
+        let plan = FeaturePlan::generate(&config, &base);
+        for lake in plan.sites.iter().filter(|s| s.kind == FeatureKind::Lake) {
+            for mountain in plan
+                .sites
+                .iter()
+                .filter(|s| s.kind == FeatureKind::Mountain)
+            {
+                let d = (lake.pos - mountain.pos).length();
+                assert!(
+                    d >= lake.radius + mountain.radius,
+                    "seed {seed}: lago a {d} m de una montaña (radios {} + {})",
+                    lake.radius,
+                    mountain.radius
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn sites_respect_min_separation() {
     let config = config_with_all_features();
     let base = rer_worldgen::field::HeightField::new(&config);
@@ -205,6 +230,36 @@ fn lake_basin_sits_below_water_level() {
         );
     }
     let _ = Vec2::ZERO;
+}
+
+#[test]
+fn lakes_keep_a_solid_floor_inside_the_volume() {
+    // Mundo de 256 m como el del editor, con varias seeds: el centro del vaso
+    // debe ser sólido en y = 0 y la densidad no puede bajar el fondo más que
+    // la altura del terreno. Sin ríos ni cuevas para aislar el vaso.
+    for seed in [752_306_577u32, 2_776_343_831, 7, 555, 91_234] {
+        let mut config = WorldGenConfig {
+            seed,
+            ..WorldGenConfig::default()
+        };
+        config.bounds.height = 70.0;
+        config.lakes.base.max_count = 3;
+        config.rivers.enabled = false;
+        config.caves.enabled = false;
+        let field = DensityField::new(&config);
+        for lake in &field.plan().lakes {
+            let (x, z) = (lake.pos.x, lake.pos.y);
+            assert!(
+                field.density_at(x, 0.0, z) > 0.0,
+                "seed {seed}: lago en ({x}, {z}) sin fondo en y = 0"
+            );
+            let floor = field.height_at(x, z);
+            assert!(
+                field.density_at(x, floor - 0.5, z) > 0.0,
+                "seed {seed}: el fondo del lago está por debajo de su altura ({floor} m)"
+            );
+        }
+    }
 }
 
 /// Recupera los lagos del plan regenerándolo (el plan no se expone en el campo).

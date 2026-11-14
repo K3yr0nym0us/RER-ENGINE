@@ -148,3 +148,110 @@ export function clampBiomes<T extends Record<WorldgenBiomeId, boolean>>(
   }
   return next
 }
+
+/** Porcentaje del mundo (0–100) por bioma. Los activos suman 100. */
+export type BiomeShares = Record<WorldgenBiomeId, number>
+
+function enabledBiomeIds(enabled: Record<WorldgenBiomeId, boolean>): WorldgenBiomeId[] {
+  return BIOME_PRIORITY.filter((id) => enabled[id])
+}
+
+/** Reparte `total` en enteros proporcionales a `weights` (mayor resto). */
+function distributeInteger(total: number, weights: number[]): number[] {
+  const sum = weights.reduce((acc, weight) => acc + weight, 0)
+  const safe = sum > 0 ? weights : weights.map(() => 1)
+  const safeSum = sum > 0 ? sum : weights.length
+  const exact = safe.map((weight) => (total * weight) / safeSum)
+  const result = exact.map(Math.floor)
+  let left = total - result.reduce((acc, value) => acc + value, 0)
+  const order = exact
+    .map((value, index) => ({ index, rest: value - Math.floor(value) }))
+    .sort((a, b) => b.rest - a.rest)
+  for (const { index } of order) {
+    if (left <= 0) break
+    result[index] += 1
+    left -= 1
+  }
+  return result
+}
+
+function sharesFrom(ids: WorldgenBiomeId[], values: number[]): BiomeShares {
+  const shares: BiomeShares = { grassland: 0, forest: 0, snow: 0, desert: 0, volcanic: 0 }
+  ids.forEach((id, index) => {
+    shares[id] = values[index]
+  })
+  return shares
+}
+
+/** Porcentaje mínimo de un bioma activo (si hay más de uno). */
+export const MIN_BIOME_SHARE = 10
+
+/**
+ * Reparte `total` entre los biomas dando a cada uno `MIN_BIOME_SHARE` y el
+ * sobrante en proporción a lo que cada uno pedía por encima del mínimo.
+ */
+function distributeWithMinimum(total: number, wanted: number[]): number[] {
+  const extra = distributeInteger(
+    total - MIN_BIOME_SHARE * wanted.length,
+    wanted.map((value) => Math.max(0, value - MIN_BIOME_SHARE)),
+  )
+  return extra.map((value) => value + MIN_BIOME_SHARE)
+}
+
+/** Rango permitido del porcentaje de un bioma con `enabledCount` activos. */
+export function biomeShareRange(enabledCount: number): { min: number; max: number } {
+  if (enabledCount <= 1) return { min: 100, max: 100 }
+  return { min: MIN_BIOME_SHARE, max: 100 - MIN_BIOME_SHARE * (enabledCount - 1) }
+}
+
+/**
+ * Deja los biomas activos sumando 100 (en proporción, cada uno con al menos
+ * `MIN_BIOME_SHARE`) y los inactivos a 0.
+ */
+export function normalizeBiomeShares(
+  shares: BiomeShares,
+  enabled: Record<WorldgenBiomeId, boolean>,
+): BiomeShares {
+  const ids = enabledBiomeIds(enabled)
+  return sharesFrom(ids, distributeWithMinimum(100, ids.map((id) => shares[id])))
+}
+
+/**
+ * Fija el porcentaje de `changed` (dentro de `biomeShareRange`) y reparte el
+ * resto entre los demás activos en proporción a su valor actual, para que la
+ * suma siga siendo 100 y ninguno baje de `MIN_BIOME_SHARE`.
+ */
+export function rebalanceBiomeShares(
+  shares: BiomeShares,
+  enabled: Record<WorldgenBiomeId, boolean>,
+  changed: WorldgenBiomeId,
+  value: number,
+): BiomeShares {
+  const others = enabledBiomeIds(enabled).filter((id) => id !== changed)
+  if (!enabled[changed]) {
+    return normalizeBiomeShares(shares, enabled)
+  }
+  if (others.length === 0) {
+    return sharesFrom([changed], [100])
+  }
+  const range = biomeShareRange(others.length + 1)
+  const fixed = Math.min(range.max, Math.max(range.min, Math.round(value)))
+  const rest = distributeWithMinimum(
+    100 - fixed,
+    others.map((id) => shares[id]),
+  )
+  return sharesFrom([changed, ...others], [fixed, ...rest])
+}
+
+/** Al activar un bioma recibe una parte igual; al desactivarlo su parte se reparte. */
+export function toggleBiomeShare(
+  shares: BiomeShares,
+  enabled: Record<WorldgenBiomeId, boolean>,
+  toggled: WorldgenBiomeId,
+): BiomeShares {
+  if (!enabled[toggled]) {
+    return normalizeBiomeShares({ ...shares, [toggled]: 0 }, enabled)
+  }
+  const count = enabledBiomeIds(enabled).length
+  return rebalanceBiomeShares(shares, enabled, toggled, 100 / count)
+}

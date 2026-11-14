@@ -502,6 +502,9 @@ pub struct BiomesConfig {
     pub grassland: bool,
     pub snow: bool,
     pub volcanic: bool,
+    /// Porcentaje del mundo por bioma. Sin él, el reparto sale del clima
+    /// (temperatura + humedad, nieve por altitud).
+    pub shares: Option<BiomeShares>,
 }
 
 impl Default for BiomesConfig {
@@ -512,8 +515,21 @@ impl Default for BiomesConfig {
             grassland: true,
             snow: true,
             volcanic: true,
+            shares: None,
         }
     }
+}
+
+/// Porcentaje de superficie (0–100) por bioma. Solo cuentan los activos; si no
+/// suman 100 se reparten en proporción.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BiomeShares {
+    pub grassland: u8,
+    pub forest: u8,
+    pub desert: u8,
+    pub snow: u8,
+    pub volcanic: u8,
 }
 
 /// Configuración raíz de generación de un mundo.
@@ -623,6 +639,21 @@ impl WorldGenConfig {
                 field: "cliffs.dropHeight".to_string(),
                 reason: "debe ser positivo".to_string(),
             });
+        }
+        if let Some(shares) = self.biomes.shares {
+            let values = [
+                shares.grassland,
+                shares.forest,
+                shares.desert,
+                shares.snow,
+                shares.volcanic,
+            ];
+            if values.iter().any(|value| *value > 100) {
+                return Err(ConfigError::InvalidField {
+                    field: "biomes.shares".to_string(),
+                    reason: "cada porcentaje debe estar entre 0 y 100".to_string(),
+                });
+            }
         }
         if self.lakes.base.enabled && self.lakes.max_depth <= 0.0 {
             return Err(ConfigError::InvalidField {

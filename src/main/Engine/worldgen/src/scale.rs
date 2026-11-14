@@ -176,6 +176,7 @@ fn clamp_biomes(requested: BiomesConfig, radius: f32) -> BiomesConfig {
         snow: flags[2],
         desert: flags[3],
         volcanic: flags[4],
+        shares: requested.shares,
     }
 }
 

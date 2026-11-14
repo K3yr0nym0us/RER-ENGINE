@@ -20,6 +20,7 @@ fn config_for_biomes() -> WorldGenConfig {
         desert: true,
         snow: true,
         volcanic: true,
+        shares: None,
     };
     config
 }
@@ -64,6 +65,7 @@ fn disabled_biomes_never_appear() {
         desert: false,
         snow: false,
         volcanic: false,
+        shares: None,
     };
     let map = BiomeMap::new(&config);
     for i in 0..1_000i32 {
@@ -219,6 +221,50 @@ fn kilometre_plains_stay_mostly_grass() {
 }
 
 #[test]
+fn lake_shore_sand_is_continuous_around_the_rim() {
+    let mut lakes_checked = 0;
+    for seed in [7, 555, 91234, 752306577, 2776343831] {
+        let mut config = config_for_biomes();
+        config.seed = seed;
+        config.biomes.desert = false;
+        config.biomes.volcanic = false;
+        config.lakes.base.enabled = true;
+        config.lakes.base.max_count = 4;
+        let field = DensityField::new(&config);
+        let plan = FeaturePlan::generate(&config, field.base_heightfield());
+        let biomes = BiomeMap::new(&config);
+        let ctx = SplatContext::new(
+            &field,
+            &biomes,
+            config.bounds.height,
+            config.resolution.voxel_size,
+        );
+        let lakes = plan
+            .sites
+            .iter()
+            .filter(|s| s.kind == rer_worldgen::planner::FeatureKind::Lake);
+        for lake in lakes {
+            lakes_checked += 1;
+            let r = lake.radius + 1.0;
+            let sand: Vec<u8> = (0..512)
+                .map(|k| {
+                    let angle = k as f32 * std::f32::consts::TAU / 512.0;
+                    let (x, z) = (lake.pos.x + angle.cos() * r, lake.pos.y + angle.sin() * r);
+                    ctx.weights_with_slope(x, z, field.height_at(x, z), 0.0)
+                        .sand
+                })
+                .collect();
+            let (min, max) = (sand.iter().min(), sand.iter().max());
+            assert!(
+                min.zip(max).is_some_and(|(min, max)| max - min <= 8),
+                "seed {seed}: la orilla debe ser uniforme (arena {min:?}..{max:?})"
+            );
+        }
+    }
+    assert!(lakes_checked > 0, "los mundos de prueba deben tener lagos");
+}
+
+#[test]
 fn chunk_splat_outputs_consistent_buffers() {
     let config = config_for_biomes();
     let field = DensityField::new(&config);
@@ -242,4 +288,145 @@ fn chunk_splat_outputs_consistent_buffers() {
     let (splat_b, albedo_b, _) = chunk_splat(&field, &ctx, 2, 1, 0);
     assert_eq!(splat, splat_b);
     assert_eq!(albedo, albedo_b);
+}
+
+fn config_with_shares(shares: BiomeShares) -> WorldGenConfig {
+    let mut config = config_for_biomes();
+    config.biomes.shares = Some(shares);
+    config
+}
+
+/// Fracción del disco que ocupa cada bioma (índice canónico) sobre el relieve
+/// `height_at`, con la nieve ajustada a ese relieve.
+fn disk_fractions_on(config: &WorldGenConfig, height_at: impl Fn(f32, f32) -> f32) -> [f32; 5] {
+    let mut map = BiomeMap::new(config);
+    map.fit_snow_to_terrain(&height_at);
+    let radius = config.bounds.width.min(config.bounds.length) * 0.5;
+    let (cx, cz) = (config.bounds.width * 0.5, config.bounds.length * 0.5);
+    let mut counts = [0u32; 5];
+    let mut total = 0u32;
+    for iz in 0..150 {
+        for ix in 0..150 {
+            let x = cx - radius + (ix as f32 + 0.37) * radius * 2.0 / 150.0;
+            let z = cz - radius + (iz as f32 + 0.61) * radius * 2.0 / 150.0;
+            if (x - cx).hypot(z - cz) > radius {
+                continue;
+            }
+            counts[map.biome_at(x, z, height_at(x, z)).index()] += 1;
+            total += 1;
+        }
+    }
+    counts.map(|count| count as f32 / total as f32)
+}
+
+fn disk_fractions(config: &WorldGenConfig) -> [f32; 5] {
+    disk_fractions_on(config, |_, _| 0.0)
+}
+
+/// Relieve sintético: llanura en el borde y cumbre de 48 m en el centro.
+fn central_peak(config: &WorldGenConfig) -> impl Fn(f32, f32) -> f32 {
+    let radius = config.bounds.width.min(config.bounds.length) * 0.5;
+    let (cx, cz) = (config.bounds.width * 0.5, config.bounds.length * 0.5);
+    move |x, z| 8.0 + 40.0 * (1.0 - (x - cx).hypot(z - cz) / radius).max(0.0)
+}
+
+#[test]
+fn biome_shares_put_snow_on_the_highest_ground() {
+    let config = config_with_shares(BiomeShares {
+        grassland: 85,
+        forest: 0,
+        desert: 0,
+        snow: 15,
+        volcanic: 0,
+    });
+    let peak = central_peak(&config);
+    let fractions = disk_fractions_on(&config, &peak);
+    let snow = fractions[Biome::Snow.index()];
+    assert!((snow - 0.15).abs() < 0.04, "nieve {:.1} %", snow * 100.0);
+
+    let mut map = BiomeMap::new(&config);
+    map.fit_snow_to_terrain(&peak);
+    let (cx, cz) = (config.bounds.width * 0.5, config.bounds.length * 0.5);
+    assert_eq!(map.biome_at(cx, cz, peak(cx, cz)), Biome::Snow);
+    assert_eq!(
+        map.biome_at(cx + 120.0, cz, peak(cx + 120.0, cz)),
+        Biome::Grassland
+    );
+}
+
+#[test]
+fn biome_shares_keep_snow_off_flat_ground() {
+    let config = config_with_shares(BiomeShares {
+        grassland: 50,
+        forest: 0,
+        desert: 0,
+        snow: 50,
+        volcanic: 0,
+    });
+    let fractions = disk_fractions_on(&config, |_, _| 8.0);
+    assert_eq!(fractions[Biome::Snow.index()], 0.0);
+}
+
+#[test]
+fn biome_shares_set_the_area_of_each_biome() {
+    let config = config_with_shares(BiomeShares {
+        grassland: 45,
+        forest: 30,
+        desert: 25,
+        snow: 0,
+        volcanic: 0,
+    });
+    let fractions = disk_fractions(&config);
+    let expected = [0.45, 0.30, 0.25, 0.0, 0.0];
+    for biome in Biome::ALL {
+        let got = fractions[biome.index()];
+        let want = expected[biome.index()];
+        assert!(
+            (got - want).abs() < 0.05,
+            "{biome:?}: {:.1} % del disco, pedido {:.0} %",
+            got * 100.0,
+            want * 100.0
+        );
+    }
+}
+
+#[test]
+fn biome_shares_ignore_disabled_biomes_and_renormalize() {
+    let mut config = config_with_shares(BiomeShares {
+        grassland: 30,
+        forest: 0,
+        desert: 30,
+        snow: 40,
+        volcanic: 0,
+    });
+    config.biomes.snow = false;
+    let fractions = disk_fractions(&config);
+    assert_eq!(fractions[Biome::Snow.index()], 0.0);
+    assert!((fractions[Biome::Grassland.index()] - 0.5).abs() < 0.05);
+    assert!((fractions[Biome::Desert.index()] - 0.5).abs() < 0.05);
+}
+
+#[test]
+fn biome_share_weights_blend_and_sum_to_one() {
+    let config = config_with_shares(BiomeShares {
+        grassland: 50,
+        forest: 0,
+        desert: 50,
+        snow: 0,
+        volcanic: 0,
+    });
+    let map = BiomeMap::new(&config);
+    let mut blended = 0;
+    for i in 0..4_000i32 {
+        let x = (i * 37 % 509) as f32 + 0.5;
+        let z = (i * 91 % 509) as f32 + 0.5;
+        let weights = map.biome_weights(x, z, 0.0);
+        let sum: f32 = weights.iter().sum();
+        assert!((sum - 1.0).abs() < 1.0e-4, "los pesos suman {sum}");
+        let grass = weights[Biome::Grassland.index()];
+        if grass > 0.05 && grass < 0.95 {
+            blended += 1;
+        }
+    }
+    assert!(blended > 0, "la frontera entre biomas debe fundirse");
 }

@@ -11,7 +11,8 @@ use rer_worldgen::field::DensityField;
 use rer_worldgen::mesher::{DensityGrid, MeshBuffer, mesh_chunk};
 
 /// Campo de esfera centrado en el centro del chunk, con aire garantizado en el
-/// borde del grid: produce una malla cerrada (superficie de esfera).
+/// borde del grid: produce una malla cerrada (superficie de esfera). Misma
+/// convención que el mundo: densidad positiva = sólido (dentro de la esfera).
 fn sphere_grid(radius: f32, center: Vec3, voxel: f32) -> DensityGrid {
     let dim = CHUNK_SIZE + 3; // CHUNK_POINTS + 2 (pad 1)
     let origin = center - Vec3::splat((dim as f32 - 1.0) * voxel / 2.0);
@@ -20,7 +21,7 @@ fn sphere_grid(radius: f32, center: Vec3, voxel: f32) -> DensityGrid {
         for py in 0..dim {
             for px in 0..dim {
                 let p = origin + Vec3::new(px as f32, py as f32, pz as f32) * voxel;
-                data.push(p.distance(center) - radius);
+                data.push(radius - p.distance(center));
             }
         }
     }
@@ -160,6 +161,37 @@ fn triangle_normals_point_away_from_solid() {
         checked += 1;
     }
     assert!(checked > 100);
+}
+
+#[test]
+fn terrain_normals_and_faces_point_up_on_flat_ground() {
+    // Heightfield plano (`altura - y`, como el campo real): suelo a y = 8.
+    let dim = CHUNK_SIZE + 3;
+    let mut data = Vec::with_capacity((dim * dim * dim) as usize);
+    for _pz in 0..dim {
+        for py in 0..dim {
+            for _px in 0..dim {
+                data.push(8.0 - (py as f32 - 1.0));
+            }
+        }
+    }
+    let mesh = mesh_chunk(DensityGrid {
+        dim,
+        pad: 1,
+        data,
+        origin: Vec3::new(0.0, -1.0, 0.0),
+        voxel_size: 1.0,
+        lod: 0,
+    });
+    assert!(mesh.triangle_count() > 0);
+    for normal in &mesh.normals {
+        assert!(normal[1] > 0.99, "normal del suelo hacia abajo: {normal:?}");
+    }
+    for tri in mesh.indices.chunks_exact(3) {
+        let [a, b, c] =
+            [tri[0], tri[1], tri[2]].map(|i| Vec3::from_array(mesh.positions[i as usize]));
+        assert!((b - a).cross(c - a).y > 0.0, "cara del suelo mirando abajo");
+    }
 }
 
 #[test]

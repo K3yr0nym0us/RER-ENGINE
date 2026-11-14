@@ -72,8 +72,8 @@ pub unsafe extern "C" fn wg_world_create(
             serde_json::from_str::<WorldGenConfig>(json).map_err(|err| err.to_string())?;
         config.validate().map_err(|err| err.to_string())?;
         crate::scale::fit_config_to_world(&mut config);
-        let biomes = BiomeMap::new(&config);
         let field = DensityField::new(&config);
+        let biomes = BiomeMap::for_field(&config, &field);
         let world = WgWorld {
             config,
             field,

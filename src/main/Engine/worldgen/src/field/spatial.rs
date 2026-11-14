@@ -13,8 +13,13 @@ use crate::planner::{CaveSystem, FeatureKind, FeaturePlan, RiverPath, Site};
 
 /// Tamaño de celda para sitios de features (metros).
 const SITE_CELL: i32 = 16;
+/// Margen (metros) del AABB de un sitio: la orilla de arena de los lagos se
+/// lee hasta radio + 1.5 m; sin él se corta en el borde de la celda.
+const SITE_QUERY_PAD: f32 = 2.0;
 /// Tamaño de celda para shapes de carving (metros).
 const CARVE_CELL: i32 = 8;
+/// Cota mínima del lecho de un río (metros). El volumen empieza en y = 0.
+const RIVER_BED_MIN_Y: f32 = 0.25;
 
 /// Índice espacial de sitios de features (montañas, colinas, valles, llanuras,
 /// acantilados, lagos).
@@ -36,7 +41,7 @@ impl SiteIndex {
             insert_aabb(
                 &mut index.buckets,
                 site.pos,
-                site.radius.max(1.0),
+                site.radius.max(1.0) + SITE_QUERY_PAD,
                 i as u32,
                 SITE_CELL,
             );
@@ -80,12 +85,6 @@ pub(crate) enum CarveShape {
         depth: f32,
         surface_y: f32,
     },
-    /// Vaso de lago (cuenca paraboloidal XZ).
-    Lake {
-        center: Vec3,
-        radius: f32,
-        depth: f32,
-    },
     /// Formación rocosa (bulto aditivo: overhangs de acantilados).
     Rock {
         center: Vec3,
@@ -106,9 +105,13 @@ pub(crate) struct CarveIndex {
 }
 
 impl CarveIndex {
-    /// Construye el índice a partir del plan (cuevas, ríos, lagos y roca de
+    /// Construye el índice a partir del plan (cuevas, ríos y roca de
     /// acantilados). Las alturas de anclaje usan el terreno **con plan** para
     /// que bocas, cauces y roca queden pegados a la superficie real.
+    ///
+    /// Los lagos no se tallan aquí: su vaso ya está en la altura del terreno,
+    /// que respeta `TERRAIN_FLOOR`. Un segundo vaso en la densidad bajaría el
+    /// fondo por debajo del volumen y dejaría el lago sin suelo.
     #[must_use]
     pub fn from_plan(
         plan: &FeaturePlan,
@@ -123,13 +126,6 @@ impl CarveIndex {
         }
         for river in &plan.rivers {
             push_river(&mut shapes, river);
-        }
-        for lake in &plan.lakes {
-            shapes.push(CarveShape::Lake {
-                center: Vec3::new(lake.pos.x, lake.water_level, lake.pos.y),
-                radius: lake.radius,
-                depth: lake.depth,
-            });
         }
         // Formaciones rocosas aditivas en los acantilados (overhangs).
         for site in plan.sites.iter().filter(|s| s.kind == FeatureKind::Cliff) {
@@ -148,7 +144,7 @@ impl CarveIndex {
     }
 
     /// Carve reductivo en el punto: **máximo** de las influencias (túneles,
-    /// salas, ríos, lagos). `surface_h` es la altura del terreno con plan en
+    /// salas, ríos). `surface_h` es la altura del terreno con plan en
     /// `(x, z)`, necesaria para los gates de profundidad.
     pub fn carve_at(&self, x: f32, y: f32, z: f32, surface_h: f32) -> f32 {
         let key = (
@@ -228,22 +224,10 @@ impl CarveIndex {
                     let profile = (1.0 - d / width).max(0.0).sqrt();
                     // Solo talla cerca de la superficie del propio cauce.
                     let gate = 1.0 - smoothstep(surface_y - 0.5, surface_y + 0.6, y);
-                    let strength = depth * profile * gate;
-                    if strength > carve {
-                        carve = strength;
-                    }
-                }
-                CarveShape::Lake {
-                    center,
-                    radius,
-                    depth,
-                } => {
-                    let d = (center.x - x).hypot(center.z - z);
-                    if d >= *radius {
-                        continue;
-                    }
-                    let t = 1.0 - (d / radius) * (d / radius);
-                    let strength = depth * t;
+                    // El lecho no llega a y = 0: un río sobre un lago ya
+                    // rebajado abriría el fondo del volumen (sin chunk debajo).
+                    let max_cut = (surface_h - RIVER_BED_MIN_Y).max(0.0);
+                    let strength = (depth * profile * gate).min(max_cut);
                     if strength > carve {
                         carve = strength;
                     }
@@ -349,9 +333,9 @@ fn insert_shape(buckets: &mut HashMap<(i32, i32), Vec<u32>>, shape: &CarveShape,
             Vec3::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5),
             a.distance(*b) * 0.5 + radius,
         ),
-        CarveShape::Room { center, radius }
-        | CarveShape::Lake { center, radius, .. }
-        | CarveShape::Rock { center, radius, .. } => (*center, *radius),
+        CarveShape::Room { center, radius } | CarveShape::Rock { center, radius, .. } => {
+            (*center, *radius)
+        }
         CarveShape::River { a, b, width, .. } => {
             let reach = a.distance(*b) * 0.5 + width.max(4.0);
             (

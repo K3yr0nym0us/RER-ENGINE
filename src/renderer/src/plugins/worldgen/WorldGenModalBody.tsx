@@ -17,7 +17,12 @@ import {
   featureSizes,
   heightForRadius,
   maxBiomeSlots,
+  MIN_BIOME_SHARE,
+  normalizeBiomeShares,
+  rebalanceBiomeShares,
   sizeToRadius,
+  toggleBiomeShare,
+  type BiomeShares,
 } from './worldgenLimits'
 
 /**
@@ -42,6 +47,7 @@ interface PanelState {
   cavesMaxCount: number
   waterfallsMaxCount: number
   biomes: { forest: boolean; desert: boolean; grassland: boolean; snow: boolean; volcanic: boolean }
+  biomeShares: BiomeShares
   replaceWorld: boolean
 }
 
@@ -65,6 +71,11 @@ function randomSeed(): number {
   return buffer[0]
 }
 
+const DEFAULT_BIOMES = clampBiomes(
+  { forest: true, desert: true, grassland: true, snow: true, volcanic: true },
+  WORLDGEN_RADIUS_DEFAULT,
+)
+
 const DEFAULT_PANEL: PanelState = {
   seed: 1,
   size: WORLDGEN_SIZE_DEFAULT,
@@ -78,9 +89,10 @@ const DEFAULT_PANEL: PanelState = {
   riversMaxCount: 2,
   cavesMaxCount: 6,
   waterfallsMaxCount: 2,
-  biomes: clampBiomes(
-    { forest: true, desert: true, grassland: true, snow: true, volcanic: true },
-    WORLDGEN_RADIUS_DEFAULT,
+  biomes: DEFAULT_BIOMES,
+  biomeShares: normalizeBiomeShares(
+    { grassland: 0, forest: 0, snow: 0, desert: 0, volcanic: 0 },
+    DEFAULT_BIOMES,
   ),
   replaceWorld: false,
 }
@@ -309,6 +321,7 @@ function countedFeature(count: number): { enabled: boolean; maxCount: number } {
 function clampPanelToSize(panel: PanelState, size: number): PanelState {
   const next = Math.min(WORLDGEN_SIZE_MAX, Math.max(WORLDGEN_SIZE_MIN, size))
   const nextCaps = featureCaps(sizeToRadius(next))
+  const biomes = clampBiomes(panel.biomes, sizeToRadius(next))
   return {
     ...panel,
     size: next,
@@ -321,7 +334,8 @@ function clampPanelToSize(panel: PanelState, size: number): PanelState {
     riversMaxCount: Math.min(panel.riversMaxCount, nextCaps.riversMaxCount),
     cavesMaxCount: Math.min(panel.cavesMaxCount, nextCaps.cavesMaxCount),
     waterfallsMaxCount: Math.min(panel.waterfallsMaxCount, nextCaps.waterfallsMaxCount),
-    biomes: clampBiomes(panel.biomes, sizeToRadius(next)),
+    biomes,
+    biomeShares: normalizeBiomeShares(panel.biomeShares, biomes),
   }
 }
 
@@ -478,7 +492,7 @@ export function WorldGenModalBody() {
         ...countedFeature(p.waterfallsMaxCount),
         minDrop: 6,
       },
-      biomes: p.biomes,
+      biomes: { ...p.biomes, shares: p.biomeShares },
     })
   }
 
@@ -707,28 +721,73 @@ export function WorldGenModalBody() {
           <div className="text-secondary small mt-1">
             {t('This size fits up to {n} biomes').replace('{n}', String(biomeSlots))}
           </div>
-          <div className="d-flex flex-wrap gap-4 mt-2">
+          <div
+            className="d-grid gap-3 mt-2"
+            style={{ gridTemplateColumns: `repeat(${BIOME_PRIORITY.length}, minmax(0, 1fr))` }}
+          >
             {BIOME_PRIORITY.map((biome) => {
-              const atCap = !panel.biomes[biome] && enabledBiomeCount >= biomeSlots
+              const enabled = panel.biomes[biome]
+              const atCap = !enabled && enabledBiomeCount >= biomeSlots
+              const shareLocked = !enabled || enabledBiomeCount <= 1
               return (
-                <div className="form-check form-switch m-0" key={biome} style={{ fontSize: '1.2rem' }}>
-                  <input
-                    className="form-check-input"
-                    type="checkbox"
-                    checked={panel.biomes[biome]}
-                    disabled={atCap}
-                    onChange={(e) => {
-                      const next = { ...panel.biomes, [biome]: e.target.checked }
-                      setPanel({ ...panel, biomes: clampBiomes(next, radius) })
-                    }}
-                    id={`worldgen-biome-${biome}`}
-                  />
-                  <label className="form-check-label mb-0" htmlFor={`worldgen-biome-${biome}`}>
-                    {t(biome)}
-                  </label>
+                <div className="min-w-0" key={biome}>
+                  <div className="form-check form-switch m-0" style={{ fontSize: '1.2rem' }}>
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={enabled}
+                      disabled={atCap}
+                      onChange={(e) => {
+                        const biomes = clampBiomes({ ...panel.biomes, [biome]: e.target.checked }, radius)
+                        setPanel({
+                          ...panel,
+                          biomes,
+                          biomeShares: toggleBiomeShare(panel.biomeShares, biomes, biome),
+                        })
+                      }}
+                      id={`worldgen-biome-${biome}`}
+                    />
+                    <label className="form-check-label mb-0" htmlFor={`worldgen-biome-${biome}`}>
+                      {t(biome)}
+                    </label>
+                  </div>
+                  <div className="d-flex align-items-center gap-2 mt-1">
+                    <input
+                      type="range"
+                      className="form-range"
+                      id={`worldgen-biome-share-${biome}`}
+                      aria-label={`${t(biome)} — ${t('World share %')}`}
+                      title={t('World share %')}
+                      min={0}
+                      max={100}
+                      step={1}
+                      disabled={shareLocked}
+                      value={panel.biomeShares[biome]}
+                      onChange={(e) =>
+                        setPanel({
+                          ...panel,
+                          biomeShares: rebalanceBiomeShares(
+                            panel.biomeShares,
+                            panel.biomes,
+                            biome,
+                            Number(e.target.value),
+                          ),
+                        })
+                      }
+                    />
+                    <span className="text-secondary text-nowrap" style={{ minWidth: '2.6rem' }}>
+                      {panel.biomeShares[biome]}%
+                    </span>
+                  </div>
                 </div>
               )
             })}
+          </div>
+          <div className="text-secondary small mt-1">
+            {t('Enabled biomes always add up to 100% of the world, at least {n}% each').replace(
+              '{n}',
+              String(MIN_BIOME_SHARE),
+            )}
           </div>
         </div>
       </fieldset>
