@@ -121,7 +121,13 @@ impl State {
         let mesh_idx = self.upload_mesh_for_cpu_part(part, part_index, label);
         let mut variants: [Option<usize>; 2] = [None, None];
         for level in 1..=2 {
-            let Some((vertices, indices)) = crate::engine3d::config_3d::model_lod::decimate_part_for_level(&part.vertices, &part.indices, level) else {
+            let Some((vertices, indices)) =
+                crate::engine3d::config_3d::model_lod::decimate_part_for_level(
+                    &part.vertices,
+                    &part.indices,
+                    level,
+                )
+            else {
                 continue;
             };
             let lod_mesh_idx = self.meshes.len();

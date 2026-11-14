@@ -693,14 +693,12 @@ mod tests {
         assert_eq!(world.model_lod1_distance, 30.0);
         assert_eq!(world.model_lod2_distance, 80.0);
 
-        world.apply_event(
-            &json!({
-                "event": "model_lod_changed",
-                "enabled": true,
-                "lod1_distance_m": 45.0,
-                "lod2_distance_m": 120.0,
-            }),
-        );
+        world.apply_event(&json!({
+            "event": "model_lod_changed",
+            "enabled": true,
+            "lod1_distance_m": 45.0,
+            "lod2_distance_m": 120.0,
+        }));
         assert!(world.model_lod_enabled);
         assert_eq!(world.model_lod1_distance, 45.0);
         assert_eq!(world.model_lod2_distance, 120.0);

@@ -215,12 +215,7 @@ impl super::super::engine::State {
 
     /// Configuración LOD de modelos (`set_model_lod`); emite el evento el
     /// llamador (mismo contrato que `set_taa`).
-    pub(crate) fn set_model_lod(
-        &mut self,
-        enabled: bool,
-        lod1: Option<f32>,
-        lod2: Option<f32>,
-    ) {
+    pub(crate) fn set_model_lod(&mut self, enabled: bool, lod1: Option<f32>, lod2: Option<f32>) {
         let lod1 = lod1
             .unwrap_or(self.model_lod1_distance_m)
             .clamp(MODEL_LOD_DISTANCE_MIN_M, MODEL_LOD_DISTANCE_MAX_M);
@@ -252,11 +247,7 @@ pub(crate) fn apply_model_lod_from_world_wire(
     lod1: Option<f32>,
     lod2: Option<f32>,
 ) {
-    state.set_model_lod(
-        enabled.unwrap_or(DEFAULT_MODEL_LOD_ENABLED),
-        lod1,
-        lod2,
-    );
+    state.set_model_lod(enabled.unwrap_or(DEFAULT_MODEL_LOD_ENABLED), lod1, lod2);
 }
 
 #[cfg(test)]

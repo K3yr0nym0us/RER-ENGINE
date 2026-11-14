@@ -209,15 +209,9 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         taaEnabled: None,
         taaBlend: None,
         taaJitterScale: None,
-        lodEnabled: Some(
-            crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD_ENABLED,
-        ),
-        lod1Distance: Some(
-            crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD1_DISTANCE_M,
-        ),
-        lod2Distance: Some(
-            crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD2_DISTANCE_M,
-        ),
+        lodEnabled: Some(crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD_ENABLED),
+        lod1Distance: Some(crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD1_DISTANCE_M),
+        lod2Distance: Some(crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD2_DISTANCE_M),
     };
 
     let ground_scale = [28.0 / 40.0, 0.02, 56.0 / 40.0];

@@ -301,15 +301,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             enabled,
                             |ui| taa_body(ui, world, locale, &mut actions),
                         );
-                        sub(
-                            ui,
-                            open,
-                            "world_lod",
-                            icons::STACK,
-                            "LOD",
-                            enabled,
-                            |ui| lod_body(ui, world, locale, &mut actions),
-                        );
+                        sub(ui, open, "world_lod", icons::STACK, "LOD", enabled, |ui| {
+                            lod_body(ui, world, locale, &mut actions)
+                        });
                     }
 
                     sub(
