@@ -8,14 +8,14 @@ El renderer **no renderiza** el mundo de juego. El editor Rust (`rer_engine_edit
 
 | Pieza | Archivo / canal |
 |-------|-----------------|
-| Área reservada | `EngineView.tsx` → `<main class="engine-viewport-area">` |
-| Bounds | `useContextEngine` → `reportBounds()` → `electronAPI.sendViewportBounds` (solo overlay IA) |
+| Host headless | `pages/EngineView/HeadlessEditorHost.tsx` — providers + listeners de modales; **no renderiza UI del editor** |
+| Bounds | `useContextEngine` → `reportBounds()` → `electronAPI.sendViewportBounds` (sin DOM reservado; early-return si no hay viewport) |
 | Main | `src/main/index.ts` → `viewport-bounds`; lanza `rer_engine_editor` |
 | Motor | Ventana winit del editor; motor 2D/3D in-process sobre el mismo `SharedGpu` |
 
 **GPU:** **Ash/Vulkan** en el editor y en los binarios standalone. El front no elige backend ni usa WebGL; el editor crea un único `SharedGpu`/swapchain y comparte el device con el motor.
 
-Si la GPU no arranca: evento `error` del motor → `engineError` → `EngineGpuErrorOverlay` (drivers / Vulkan). El resto del editor sigue usable.
+Si la GPU no arranca: evento `error` del motor → `engineError` en el estado de `useContextEngine` (creaEngineEventHandler); el mensaje se muestra en la ventana del editor Rust.
 
 ## Principio: engine-first
 
@@ -32,7 +32,7 @@ Si una feature necesita trigonometria espacial, conversion pies↔centro, forwar
 ## Que SI puede hacer el frontend
 
 - Formularios y validacion de entrada (numeros finitos, rangos de UI).
-- Montar listas de entidades, lista de escenas (acordeón Scenes), undo de **metadatos** que el motor no posee (nombres de escena, rutas de assets en el proyecto).
+- Montar listas de entidades y estado de escenas (`useSceneManager`, `sceneStateStore`), undo de **metadatos** que el motor no posee (nombres de escena, rutas de assets en el proyecto).
 - Colas de restore al cargar `.save` (`pendingRestoresRef`, `load_character`, etc.) **sin** recalcular poses 3D.
 - Constantes de **presentacion** compartidas con el save (p. ej. `PLAY_CHARACTER_BODY_SCALE` en `@shared-types`) solo como valor por defecto de archivo, no como fuente de verdad en runtime.
 - Helpers 2D acotados al editor de sprites (recortes de canvas, frames) donde no existe motor implicado.
@@ -48,7 +48,7 @@ Si una feature necesita trigonometria espacial, conversion pies↔centro, forwar
 
 Referencia completa en `src/main/Engine/engine/ARCHITECTURE.md` (seccion *Vista play character autoritativa*).
 
-**Flujo de proyecto:** al elegir tipo **3D** se abre el editor directamente. El **tipo de cámara** (`manifest.gameStyle`, p. ej. `first-person`) se elige en el acordeón **Camera** (`CameraAccordion.tsx` + `constants/cameraModeOptions.ts`). Ya no existe pantalla intermedia `GameStyleSelector`.
+**Flujo de proyecto:** al elegir tipo **3D** se abre el editor directamente. El **tipo de cámara** (`manifest.gameStyle`, p. ej. `first-person`) se elige en la **UI del editor Rust** (`src/main/Engine/engine/src/editor/ui/sidebar_left/camera.rs`). Ya no existe pantalla intermedia `GameStyleSelector` ni acordeón Camera en React.
 
 Flujo **vista / cámara** (editor y paneles; no es el guardado):
 
@@ -62,7 +62,7 @@ Archivos clave:
 
 - `src/defaults/playCharacterSceneRestore.ts` — envio de vista y aplicacion del evento (sin matematica de poses).
 - `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — handler de `play_character_view_changed`; carga de jugador con `skipTransform` si hay vista guardada.
-- `src/pages/EngineView/components/sidebar/CameraAccordion.tsx` — select tipo de cámara 3D + controles numéricos; dispara `set_play_character_view`; refresca UI con `playCharacterViewSyncSeq`.
+- `src/main/Engine/engine/src/editor/ui/sidebar_left/camera.rs` — select tipo de cámara 3D + controles numéricos en Rust; dispara `set_play_character_view`.
 - `src/shared-types/types.ts` — `PlayCharacterViewChanged`, comando `set_play_character_view`.
 
 ## Player UI HUD (proyectos 3D)
@@ -71,7 +71,7 @@ Editor de **pantallas HUD del jugador** en el acordeón UI (scope `player`). El 
 
 | Pieza | Archivo |
 |-------|---------|
-| Pantallas y edición | `UIAccordion/PlayerUiAccordion.tsx`, `UiScreensAccordion.tsx` |
+| Pantallas y edición | `EngineView/components/sidebar/UIAccordion/components/PlayerUiEditorPanel.tsx` (modal Electron) |
 | Lista de elementos | `EditingUiElementGroups.tsx` (texto, objeto, imagen; botones en lista IPC) |
 | Dibujo de polígonos | `hooks/usePlayerUiObjectDrawing.ts` → `set_player_ui_object_draw` |
 | Estado | `useContextEngine/types.ts` — `editingUiElements`, `SET_EDITING_UI_OBJECTS` vía `player_ui_text_boxes_list` |
@@ -114,7 +114,7 @@ Editor de grafos que compila a scripts Rhai para **escena** (`on_scene_start`, `
 | Escena | **Escenas → Programación** → *Lógica de escena (nodos)* o *Script de escena* | `useSceneManager` |
 | Entidad | **Propiedades → Programar entidad** → *Lógica de entidad (nodos)* o *Nuevo script* | `useScripting` |
 
-Programación **no** es un acordeón de nivel superior; vive anidado dentro de Escenas (`ScenesAccordion` + `ProgrammingAccordion`).
+Programación se abre desde el editor Rust vía `onLegacyWindowOpen` (`HeadlessEditorHost` → `LegacyWindowListener` → `useSceneManager`); no hay acordeón en React.
 
 **Modal Electron:** el canvas abre en ventana hija **sin** `EngineProvider`. `VisualScriptingModalBody` recibe `sceneEntities` y demás props serializables desde la ventana principal (`resolveSceneEntitiesForVisualScript` + `sanitizeSceneEntitiesForModal`). No usar `useContextEngine()` dentro del modal.
 
@@ -143,7 +143,7 @@ El **ZIP** lo escribe Electron/main; el **contenido de la escena activa** depend
 
 | Tipo | Quién serializa la escena | Archivos |
 |------|---------------------------|----------|
-| **2D / 3D** | Motor (`export_save_snapshot` → `save_snapshot_ready`) | `useAutoSave.ts`, `buildProjectSaveFromEngine.ts`, `ScenesAccordion` |
+| **2D / 3D** | Motor (`export_save_snapshot` → `save_snapshot_ready`) | `useAutoSave.ts`, `buildProjectSaveFromEngine.ts`, `HeadlessEditorHost` |
 
 Flujo (ambos motores):
 
@@ -157,7 +157,7 @@ El front **no** decide qué entidades ni qué modelos precargados van al save ni
 ## Relacion con los dos motores
 
 - Proyecto **2D** → el editor construye `engine2d` in-process; UI usa herramientas 2D (colliders, areas de ejecucion, `camera_2d_updated`).
-- Proyecto **3D** → el editor construye `engine3d` in-process; UI de cámara/jugador y acordeón Camera; herramientas plano (colisionador/trigger) vía `usePlaneToolPlacement` + `set_active_tool` / `place_quick_build_at_cursor`.
+- Proyecto **3D** → el editor construye `engine3d` in-process; UI de cámara/jugador en la ventana Rust; herramientas plano (colisionador/trigger) vía `usePlaneToolPlacement` + `set_active_tool` / `place_quick_build_at_cursor`.
 - `projectType` elige el módulo del motor dentro del editor; los binarios `rer_engine_2d`/`rer_engine_3d` quedan como standalone de debug. El renderer no mezcla semantica de ambos en un mismo modulo de runtime.
 
 Documentacion de motores:
@@ -169,7 +169,7 @@ Documentacion de motores:
 
 - `src/context/useContextEngine/` — estado del editor, refs, reducer, envio IPC.
 - `src/context/useContextEngine/hooks/createEngineEventHandler.ts` — unico lugar que deberia interpretar eventos del motor para estado global.
-- `src/pages/EngineView/` — layout del editor, sidebars, `ScenesAccordion`.
+- `src/pages/EngineView/HeadlessEditorHost.tsx` — host invisible tras la migración al motor Rust: mantiene providers/estado React y abre las ventanas modales Electron (`pages/EngineView/` conserva solo cuerpos de modal y hooks compartidos; el layout y sidebars del panel legacy ya no existen).
 - `src/defaults/` — plantillas y restauracion de escena (intencion, no fisica).
 - `src/hooks/useAutoSave.ts` — snapshot del motor (2D y 3D).
 - `src/hooks/usePlaneToolPlacement.ts` — herramientas plano 3D (colisionador / trigger): toggle, IPC, foco al colocar.
