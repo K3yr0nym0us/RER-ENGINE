@@ -10,6 +10,7 @@ use glam::{Vec2, Vec3};
 
 use crate::config::WorldGenConfig;
 use crate::field::HeightField;
+use crate::scale::{SITE_EDGE_MARGIN, fit_config_to_world};
 use crate::seed::{Rng, SALT_CAVES, SALT_PLANNER, SALT_RIVERS, domain_seed};
 
 /// Clases de feature localizable con sitio.
@@ -118,9 +119,6 @@ pub struct FeaturePlan {
     pub waterfalls: Vec<Vec2>,
 }
 
-/// Margen desde el borde del mundo para colocar sitios (metros).
-const SITE_EDGE_MARGIN: f32 = 24.0;
-
 /// Multiplicador de intentos por sitio aceptado (dart-throwing con rechazo).
 const ATTEMPTS_PER_SITE: u32 = 12;
 
@@ -128,22 +126,22 @@ impl FeaturePlan {
     /// Genera el plan completo de forma determinista.
     #[must_use]
     pub fn generate(config: &WorldGenConfig, base: &HeightField) -> Self {
+        let mut fitted = config.clone();
+        fit_config_to_world(&mut fitted);
+        let config = &fitted;
         let mut rng = Rng::new(domain_seed(config.seed, SALT_PLANNER));
         let extent = Vec2::new(config.bounds.width, config.bounds.length);
         let mut plan = Self::default();
 
-        let mountains = place_sites(
-            &config.mountains.base,
-            &mut rng,
-            &[],
-            |_, _| true,
-            |rng, r| Site {
-                kind: FeatureKind::Mountain,
-                pos: rng_pos(rng, extent),
-                radius: r,
-                value: config.mountains.max_height * rng.range_f32(0.6, 1.0),
-            },
-        );
+        let mountains =
+            place_spread_sites(&config.mountains.base, &mut rng, extent, |rng, r, pos| {
+                Site {
+                    kind: FeatureKind::Mountain,
+                    pos,
+                    radius: r,
+                    value: config.mountains.max_height * rng.range_f32(0.6, 1.0),
+                }
+            });
         plan.sites.extend(mountains);
 
         let hills = place_sites(
@@ -240,7 +238,10 @@ impl FeaturePlan {
             },
         );
         for site in &lake_sites {
-            let water_level = terrain_height(site.pos.x, site.pos.y) - 0.5;
+            let shore = terrain_height(site.pos.x, site.pos.y);
+            // El vaso no puede bajar del piso, así que el agua tampoco: si no,
+            // el nivel queda bajo el terreno recortado.
+            let water_level = (shore - 0.5).max(crate::config::TERRAIN_FLOOR);
             plan.lakes.push(LakeInfo {
                 pos: site.pos,
                 radius: site.radius,
@@ -268,7 +269,8 @@ impl FeaturePlan {
             for _ in 0..config.caves.max_count {
                 let Some(system) = walk_cave(config, &terrain_height, &mut cave_rng, &plan.lakes)
                 else {
-                    break;
+                    // Una boca sobre el piso no cancela el resto de cuevas.
+                    continue;
                 };
                 plan.caves.push(system);
             }
@@ -276,6 +278,42 @@ impl FeaturePlan {
 
         plan
     }
+}
+
+/// Coloca sitios repartidos por sectores del disco (las montañas no se apilan).
+fn place_spread_sites<F>(
+    config: &crate::config::FeatureConfig,
+    rng: &mut Rng,
+    extent: Vec2,
+    make: F,
+) -> Vec<Site>
+where
+    F: Fn(&mut Rng, f32, Vec2) -> Site,
+{
+    let mut placed: Vec<Site> = Vec::new();
+    if !config.enabled || config.max_count == 0 {
+        return placed;
+    }
+    let sectors = config.max_count.max(1);
+    for index in 0..sectors {
+        if placed.len() as u32 >= config.max_count {
+            break;
+        }
+        for _ in 0..ATTEMPTS_PER_SITE {
+            let radius = rng.range_f32(config.min_size, config.max_size);
+            let pos = rng_pos_sector(rng, extent, index, sectors);
+            let candidate = make(rng, radius, pos);
+            let min_same = config.min_separation.max((radius + radius) * 0.85);
+            let ok_same = placed.iter().all(|s| {
+                dist(s.pos, candidate.pos) >= min_same.max((s.radius + candidate.radius) * 0.85)
+            });
+            if ok_same {
+                placed.push(candidate);
+                break;
+            }
+        }
+    }
+    placed
 }
 
 /// Coloca sitios de una clase respetando `max_count` (límite duro), tamaños y
@@ -323,18 +361,35 @@ fn dist(a: Vec2, b: Vec2) -> f32 {
     (a - b).length()
 }
 
-/// Posición aleatoria dentro de los límites con margen al borde.
+/// Posición aleatoria en el disco jugable (no en las esquinas que se recortan).
 fn rng_pos(rng: &mut Rng, extent: Vec2) -> Vec2 {
-    Vec2::new(
-        rng.range_f32(
-            SITE_EDGE_MARGIN,
-            (extent.x - SITE_EDGE_MARGIN).max(SITE_EDGE_MARGIN + 1.0),
-        ),
-        rng.range_f32(
-            SITE_EDGE_MARGIN,
-            (extent.y - SITE_EDGE_MARGIN).max(SITE_EDGE_MARGIN + 1.0),
-        ),
-    )
+    let center = extent * 0.5;
+    let radius = world_radius_from_extent(extent);
+    let usable = (radius - SITE_EDGE_MARGIN).max(radius * 0.2);
+    let angle = rng.range_f32(0.0, std::f32::consts::TAU);
+    let dist = usable * rng.range_f32(0.0, 1.0).sqrt();
+    center + Vec2::from_angle(angle) * dist
+}
+
+fn rng_pos_sector(rng: &mut Rng, extent: Vec2, index: u32, sectors: u32) -> Vec2 {
+    let center = extent * 0.5;
+    let radius = world_radius_from_extent(extent);
+    let usable = (radius - SITE_EDGE_MARGIN).max(radius * 0.2);
+    let slices = sectors.max(1) as f32;
+    let slice = std::f32::consts::TAU / slices;
+    let angle = index as f32 * slice + rng.range_f32(0.18, 0.82) * slice;
+    let dist = usable * rng.range_f32(0.30, 0.88).sqrt();
+    center + Vec2::from_angle(angle) * dist
+}
+
+fn world_radius_from_extent(extent: Vec2) -> f32 {
+    extent.x.min(extent.y) * 0.5
+}
+
+fn inside_playable_disk(pos: Vec2, extent: Vec2) -> bool {
+    let center = extent * 0.5;
+    let radius = (world_radius_from_extent(extent) - SITE_EDGE_MARGIN).max(1.0);
+    (pos - center).length() <= radius
 }
 
 /// Random-walk descendente para un río sobre la heightfield base.
@@ -353,19 +408,21 @@ fn walk_river(
         depth: config.rivers.depth,
         ..RiverPath::default()
     };
-    let margin = SITE_EDGE_MARGIN;
-
-    // Inicio: en la mitad alta de la world height para garantizar descenso.
-    let mut pos = Vec2::new(
-        rng.range_f32(margin, (extent.x - margin).max(margin + 1.0)),
-        rng.range_f32(margin, (extent.y - margin).max(margin + 1.0)),
-    );
-    // Evita nacer dentro de un lago.
-    for _ in 0..8 {
-        if lakes.iter().all(|l| dist(l.pos, pos) > l.radius * 1.2) {
-            break;
+    let mut pos = rng_pos(rng, extent);
+    let mut best_h = height_at(pos.x, pos.y);
+    for _ in 0..12 {
+        let candidate = rng_pos(rng, extent);
+        if lakes
+            .iter()
+            .any(|l| dist(l.pos, candidate) <= l.radius * 1.2)
+        {
+            continue;
         }
-        pos = rng_pos(rng, extent);
+        let h = height_at(candidate.x, candidate.y);
+        if h > best_h {
+            pos = candidate;
+            best_h = h;
+        }
     }
 
     let mut dir = Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU));
@@ -393,12 +450,7 @@ fn walk_river(
 
         let step = rng.range_f32(step_min, step_max);
         let next = pos + dir * step;
-        // Fuera de límites: termina el río con margen.
-        if next.x < margin
-            || next.y < margin
-            || next.x > extent.x - margin
-            || next.y > extent.y - margin
-        {
+        if !inside_playable_disk(next, extent) {
             break;
         }
         // Dentro de un lago: el río desemboca y termina.
@@ -453,7 +505,9 @@ fn walk_cave(
         pos = rng_pos(rng, extent);
     }
     let surface = height_at(pos.x, pos.y);
-    if surface < 6.0 {
+    // La boca necesita un poco de suelo sobre el piso. Las llanuras están a unos
+    // metros, así que el umbral no puede ser una altura fija grande.
+    if surface <= crate::config::TERRAIN_FLOOR + 1.0 {
         return None;
     }
 

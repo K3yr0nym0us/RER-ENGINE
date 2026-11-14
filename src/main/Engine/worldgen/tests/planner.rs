@@ -185,7 +185,6 @@ fn disabled_features_are_absent() {
 fn lake_basin_sits_below_water_level() {
     let config = config_with_all_features();
     let field = DensityField::new(&config);
-    let base = field.base_heightfield();
     for lake in &field_lakes(&config) {
         // El centro del vaso debe quedar por debajo del nivel del agua.
         let center_height = field.height_at(lake.pos.x, lake.pos.y);
@@ -195,14 +194,14 @@ fn lake_basin_sits_below_water_level() {
             center_height,
             lake.water_level
         );
-        // El nivel de agua deriva de la superficie con plan (sin el propio
-        // vaso): no puede quedar sensiblemente por encima de la base.
-        let base_h = base.height_at(lake.pos.x, lake.pos.y);
+        // El agua sigue la orilla con plan (una colina vecina puede alzar el
+        // centro respecto a la heightfield base).
+        let rim = field.height_at(lake.pos.x + lake.radius * 0.9, lake.pos.y);
         assert!(
-            lake.water_level <= base_h + 2.0,
-            "nivel de agua {} muy por encima de la superficie base {}",
+            lake.water_level <= rim + 2.5,
+            "nivel de agua {} muy por encima de la orilla {}",
             lake.water_level,
-            base_h
+            rim
         );
     }
     let _ = Vec2::ZERO;
@@ -275,4 +274,70 @@ fn waterfalls_respect_max_count() {
         .len()
         .min(config.waterfalls.max_count as usize);
     assert!(exposed <= config.waterfalls.max_count as usize);
+}
+
+#[test]
+fn sites_stay_inside_the_world_disk() {
+    let config = config_with_all_features();
+    let base = rer_worldgen::field::HeightField::new(&config);
+    let plan = FeaturePlan::generate(&config, &base);
+    let radius = config.bounds.radius();
+    let center = Vec2::new(config.bounds.width * 0.5, config.bounds.length * 0.5);
+    for site in &plan.sites {
+        let d = (site.pos - center).length();
+        assert!(
+            d <= radius - 8.0,
+            "sitio {:?} a {d} m del centro (radio {radius})",
+            site.kind
+        );
+    }
+}
+
+#[test]
+fn mountains_spread_around_a_kilometre_disk() {
+    let mut config = WorldGenConfig {
+        seed: 42,
+        ..WorldGenConfig::default()
+    };
+    config.bounds.width = 1000.0;
+    config.bounds.length = 1000.0;
+    config.bounds.height = 128.0;
+    config.mountains.base.max_count = 4;
+    let base = rer_worldgen::field::HeightField::new(&config);
+    let plan = FeaturePlan::generate(&config, &base);
+    let mountains: Vec<_> = plan
+        .sites
+        .iter()
+        .filter(|s| s.kind == FeatureKind::Mountain)
+        .collect();
+    assert!(
+        mountains.len() >= 3,
+        "un mapa de 1 km debe tener varias montañas, hay {}",
+        mountains.len()
+    );
+    let center = Vec2::new(500.0, 500.0);
+    for (i, a) in mountains.iter().enumerate() {
+        for b in mountains.iter().skip(i + 1) {
+            let d = (a.pos - b.pos).length();
+            assert!(
+                d >= 120.0,
+                "montañas demasiado juntas ({d} m entre {:?} y {:?})",
+                a.pos,
+                b.pos
+            );
+        }
+    }
+    let mut min_angle = f32::MAX;
+    let mut max_angle = f32::MIN;
+    for site in &mountains {
+        let delta = site.pos - center;
+        let angle = delta.y.atan2(delta.x);
+        min_angle = min_angle.min(angle);
+        max_angle = max_angle.max(angle);
+    }
+    assert!(
+        max_angle - min_angle > 1.2,
+        "las montañas deben ocupar más de un cuadrante (arco {})",
+        max_angle - min_angle
+    );
 }

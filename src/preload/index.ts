@@ -73,6 +73,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('legacy-window:open', listener)
     return () => ipcRenderer.removeListener('legacy-window:open', listener)
   },
+  onEditorLocale: (cb: (locale: 'en' | 'es') => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, locale: 'en' | 'es') => {
+      cb(locale === 'es' ? 'es' : 'en')
+    }
+    ipcRenderer.on('editor:locale', listener)
+    return () => ipcRenderer.removeListener('editor:locale', listener)
+  },
+  getEditorLocale: (): Promise<'en' | 'es'> => ipcRenderer.invoke('editor:get-locale'),
   openModalElectron: (request: ModalElectronOpenRequest): Promise<void> => {
     return ipcRenderer.invoke('modal-electron:open', request)
   },

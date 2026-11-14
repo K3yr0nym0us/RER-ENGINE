@@ -29,7 +29,7 @@ fn full_chunk_generation_within_budget() {
     let mesh = mesh_chunk(sample_chunk_grid_lod(
         &field,
         &config,
-        ChunkKey { x: 3, y: 1, z: 2 },
+        ChunkKey { x: 3, y: 0, z: 2 },
         0,
     ));
     let elapsed = start.elapsed();
@@ -49,7 +49,7 @@ fn full_chunk_generation_within_budget() {
     let mesh_lod2 = mesh_chunk(sample_chunk_grid_lod(
         &field,
         &config,
-        ChunkKey { x: 3, y: 1, z: 2 },
+        ChunkKey { x: 3, y: 0, z: 2 },
         2,
     ));
     let elapsed_lod2 = start.elapsed();

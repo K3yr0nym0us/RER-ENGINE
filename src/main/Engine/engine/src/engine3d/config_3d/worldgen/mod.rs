@@ -27,7 +27,7 @@ use crate::engine3d::config_3d::worldgen::types::{
     ChunkKey, PendingChunk, ScanCursor, WgWorldHandle, WorldgenChunk, WorldgenPlacement,
     WorldgenStatus,
 };
-use crate::engine3d::ecs::{MeshComponent, NonSelectable, SurfacePbr, Transform};
+use crate::engine3d::ecs::{MeshComponent, MeshLocalAabb, NonSelectable, SurfacePbr, Transform};
 use crate::engine3d::ipc::{EngineEvent, send_event};
 
 /// Campos mínimos de `WorldGenConfig` que el engine necesita para planificar la
@@ -110,7 +110,7 @@ impl super::super::engine::State {
     /// `world_gen_start`: arranca el barrido de columnas (Y-layer pruning vía
     /// `wg_chunk_status`). El barrido y el orden de la cola avanzan en
     /// `worldgen_tick`, no en este comando.
-    pub(crate) fn worldgen_start(&mut self) {
+    pub(crate) fn worldgen_start(&mut self, replace_ground: bool) {
         if self.worldgen.library.is_none() {
             send_event(&EngineEvent::WorldGenError {
                 message: "world_gen_start sin plugin cargado".to_string(),
@@ -135,6 +135,14 @@ impl super::super::engine::State {
             });
             return;
         };
+
+        // El disco del mundo pasa a ser el círculo inscrito en la huella real
+        // (rejilla de chunks, no el ancho nominal). El suelo más bajo queda en y = 0.
+        self.worldgen.replace_ground = replace_ground;
+        self.ensure_terrain_materials();
+        let (extent_x, extent_z) = generated_footprint(&config);
+        self.worldgen.scene_offset = scene_offset(extent_x, extent_z);
+        self.fit_world_to_generator(extent_x, extent_z, &config.bounds);
 
         let (chunks_x, chunks_z, max_y) = chunk_grid(&config);
         let cell = crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE as f32
@@ -168,6 +176,7 @@ impl super::super::engine::State {
     /// vivo hasta `world_gen_reset` o `world_gen_unload`. Los chunks ya en
     /// escena se mantienen hasta el reset.
     pub(crate) fn worldgen_stop(&mut self) {
+        self.worldgen.replace_ground = false;
         self.worldgen.pending.clear();
         self.worldgen.scan = None;
         self.worldgen.total_chunks = 0;
@@ -310,11 +319,17 @@ impl super::super::engine::State {
         }
         for (i, placement) in placements.iter().enumerate() {
             let rotation = glam::Quat::from_rotation_y(placement.yaw).to_array();
+            let origin = self.worldgen.scene_offset;
+            let position = [
+                placement.position[0] + origin.x,
+                placement.position[1] + origin.y,
+                placement.position[2] + origin.z,
+            ];
             let entity_id = self.spawn_cached_model_part_at(
                 part.mesh_idx,
                 part.tex_idx,
                 &model_path,
-                placement.position,
+                position,
                 rotation,
                 placement.scale,
                 &format!("{display} #{i}"),
@@ -333,7 +348,7 @@ impl super::super::engine::State {
             );
             self.worldgen.placements.push(WorldgenPlacement {
                 blueprint_id: blueprint_id.clone(),
-                position: placement.position,
+                position,
                 rotation,
                 scale: placement.scale,
                 entity_id,
@@ -454,8 +469,9 @@ impl super::super::engine::State {
         }
 
         // 4) Generación del terreno: automática si el plugin está cargado.
+        // Restaurar no quita el suelo: ese check solo viaja con Generar mundo.
         if self.worldgen.library.is_some() && self.worldgen.world.is_some() {
-            self.worldgen_start();
+            self.worldgen_start(false);
         }
         send_event(&EngineEvent::WorldGenStatus {
             state: self.worldgen.status.as_str().to_string(),
@@ -476,7 +492,12 @@ impl super::super::engine::State {
         }
         for _ in 0..CHUNKS_PER_FRAME {
             let Some(pending) = self.worldgen.pending.pop() else {
+                let replace_ground = self.worldgen.replace_ground;
+                self.worldgen.replace_ground = false;
                 self.worldgen_set_status(WorldgenStatus::Complete);
+                if replace_ground {
+                    self.remove_default_ground();
+                }
                 send_event(&EngineEvent::WorldGenStatus {
                     state: self.worldgen.status.as_str().to_string(),
                 });
@@ -517,6 +538,8 @@ impl super::super::engine::State {
         let keys: Vec<ChunkKey> = self.worldgen.spawned.keys().copied().collect();
         for key in keys {
             if let Some(chunk) = self.worldgen.spawned.remove(&key) {
+                self.physics.remove_entity_body(chunk.entity_id);
+                self.entity_colision.remove(&chunk.entity_id);
                 self.worldgen_retire_mesh(chunk.mesh_idx);
                 self.world.despawn(chunk.entity_id);
             }
@@ -550,6 +573,59 @@ impl super::super::engine::State {
             None,
         );
         let _old = std::mem::replace(&mut self.meshes[mesh_idx], placeholder);
+    }
+
+    /// Colisión estática con la misma malla que se dibuja. El winding se alinea
+    /// con la normal visual para que el personaje se apoye en la cara exterior.
+    fn attach_terrain_collider(
+        &mut self,
+        entity_id: crate::engine3d::ecs::EntityId,
+        vertices: &[crate::engine3d::mesh::Vertex],
+        indices: &[u32],
+    ) {
+        if vertices.len() < 3 || indices.len() < 3 {
+            return;
+        }
+        let points: Vec<rapier3d::prelude::Vector> = vertices
+            .iter()
+            .map(|vertex| {
+                rapier3d::prelude::Vector::new(
+                    vertex.position[0],
+                    vertex.position[1],
+                    vertex.position[2],
+                )
+            })
+            .collect();
+        let mut tris = Vec::with_capacity(indices.len() / 3);
+        for triangle in indices.chunks_exact(3) {
+            let (i0, i1, i2) = (
+                triangle[0] as usize,
+                triangle[1] as usize,
+                triangle[2] as usize,
+            );
+            if i0 >= vertices.len() || i1 >= vertices.len() || i2 >= vertices.len() {
+                continue;
+            }
+            let p0 = glam::Vec3::from_array(vertices[i0].position);
+            let p1 = glam::Vec3::from_array(vertices[i1].position);
+            let p2 = glam::Vec3::from_array(vertices[i2].position);
+            let outward = glam::Vec3::from_array(vertices[i0].normal)
+                + glam::Vec3::from_array(vertices[i1].normal)
+                + glam::Vec3::from_array(vertices[i2].normal);
+            let face = (p1 - p0).cross(p2 - p0);
+            if face.dot(outward) < 0.0 {
+                tris.push([triangle[0], triangle[2], triangle[1]]);
+            } else {
+                tris.push([triangle[0], triangle[1], triangle[2]]);
+            }
+        }
+        if tris.is_empty() {
+            return;
+        }
+        let position = self.worldgen.scene_offset.to_array();
+        self.physics
+            .set_entity_static_trimesh(entity_id, position, points, tris);
+        self.entity_colision.insert(entity_id, true);
     }
 
     /// Avanza unas columnas del barrido. Al cubrir el mundo, ordena la cola
@@ -673,6 +749,7 @@ impl super::super::engine::State {
                 library.last_error_text(handle.0)
             );
             self.worldgen.last_error = Some(message.clone());
+            self.worldgen.replace_ground = false;
             self.worldgen_set_status(WorldgenStatus::LibraryError);
             send_event(&EngineEvent::WorldGenError { message });
             return Err(());
@@ -706,6 +783,13 @@ impl super::super::engine::State {
         // # Seguridad: buffers entregados por wg_mesh_chunk en esta misma DLL.
         unsafe { (library.free_mesh_buffers)(&buffers) };
 
+        let (vertices, indices) = clip_chunk_to_world_disk(
+            &vertices,
+            &indices,
+            self.worldgen.scene_offset,
+            self.world_bounds_3d.radius,
+        );
+
         self.worldgen.completed_chunks += 1;
         if vertices.is_empty() || indices.is_empty() {
             // Chunk sin superficie: cuenta como completado sin entidad.
@@ -719,15 +803,18 @@ impl super::super::engine::State {
         }
 
         let column_epoch = self.worldgen.column_epoch;
+        let use_splat = self.worldgen.material_base.is_some();
         let tex_idx = match worldgen_pack_column_texture(
             &mut self.texture_array,
             &self.vulkan,
             library,
             handle.0,
             &mut self.worldgen.columns,
+            &mut self.tex_layers,
             column_epoch,
             cx,
             cz,
+            use_splat,
         ) {
             Some(tex_idx) => tex_idx,
             None => self.worldgen_ensure_fallback_texture(),
@@ -743,14 +830,18 @@ impl super::super::engine::State {
         self.world.insert(
             entity_id,
             Transform {
-                position: Vec3::ZERO,
+                position: self.worldgen.scene_offset,
                 rotation: glam::Quat::IDENTITY,
                 scale: Vec3::ONE,
             },
         );
-        // Terreno: no seleccionable en el editor; geometría en coordenadas de mundo
-        // (transform identidad).
+        let (min, max) = chunk_vertex_aabb(&vertices);
+        self.world.insert(entity_id, MeshLocalAabb { min, max });
+        // Terreno: no seleccionable. Los vértices vienen en el espacio de la DLL;
+        // la traslación centra la huella y apoya el suelo del terreno en y = 0.
+        // La AABB local evita que el culling use un cubo de 1 m en esa esquina.
         self.world.insert(entity_id, NonSelectable);
+        self.attach_terrain_collider(entity_id, &vertices, &indices);
         self.world.insert(
             entity_id,
             SurfacePbr {
@@ -778,6 +869,74 @@ impl super::super::engine::State {
         Ok(())
     }
 
+    /// Sube Grass, Dirt, Clay, Sand, Stone y Snow a 1024 con mips, en ese orden.
+    /// El 4K se descarta al empaquetar: de lejos el GPU usa un mip pequeño.
+    fn ensure_terrain_materials(&mut self) {
+        if self.worldgen.material_base.is_some() {
+            return;
+        }
+        let Some(dir) = terrain_material_dir() else {
+            log::warn!("[worldgen] no están las texturas de terreno en assets/terrain");
+            return;
+        };
+        // Capa 0 = checker del editor. Grass es la primera foto: si queda al lado,
+        // un sampler LINEAR mezcla ambas y la pradera se ve a cuadros.
+        if !self.pack_terrain_isolation_layer() {
+            return;
+        }
+        let mut layers = [0u32; 6];
+        for (index, name) in TERRAIN_MATERIAL_FILES.iter().enumerate() {
+            let path = dir.join(name);
+            let Ok(image) = image::open(&path) else {
+                log::warn!("[worldgen] no se pudo abrir {}", path.display());
+                return;
+            };
+            let rgba = image.to_rgba8();
+            let (width, height) = rgba.dimensions();
+            let Ok(layer) = self
+                .texture_array
+                .pack(&self.vulkan, rgba.as_raw(), width, height)
+            else {
+                log::warn!("[worldgen] no se pudo subir {name}");
+                return;
+            };
+            if index == 0 && layer == crate::engine3d::texture::TextureArray::fallback_layer() {
+                log::warn!("[worldgen] Grass no puede usar la capa 0 (checker del editor)");
+                return;
+            }
+            layers[index] = layer;
+            log::info!(
+                "[worldgen] {name} quedó en la capa {layer} (origen {width}×{height}, GPU 1024 + mips)"
+            );
+        }
+        let consecutive = layers.windows(2).all(|pair| pair[1] == pair[0] + 1);
+        if !consecutive {
+            log::warn!("[worldgen] las texturas de terreno no quedaron en capas seguidas");
+            return;
+        }
+        self.worldgen.material_base = Some(layers[0]);
+    }
+
+    /// Reserva una capa verde entre el checker y Grass para que no sean vecinas.
+    fn pack_terrain_isolation_layer(&mut self) -> bool {
+        const PAD: [u8; 4] = [79, 133, 61, 255];
+        let fallback = crate::engine3d::texture::TextureArray::fallback_layer();
+        for _ in 0..2 {
+            match self.texture_array.pack(&self.vulkan, &PAD, 1, 1) {
+                Ok(layer) if layer != fallback => return true,
+                Ok(_) => continue,
+                Err(error) => {
+                    log::warn!(
+                        "[worldgen] no se pudo reservar el aislamiento del terreno: {error}"
+                    );
+                    return false;
+                }
+            }
+        }
+        log::warn!("[worldgen] no quedó capa libre para aislar Grass del checker");
+        false
+    }
+
     /// Textura de fallback compartida (checker) si la DLL no entrega albedo.
     fn worldgen_ensure_fallback_texture(&mut self) -> usize {
         if let Some(tex_idx) = self.worldgen.fallback_tex_idx {
@@ -789,64 +948,75 @@ impl super::super::engine::State {
     }
 }
 
-/// Obtiene (y cachea) la textura de splat/albedo de una columna vía la DLL.
+/// Obtiene (y cachea) el splat de una columna vía la DLL.
 ///
-/// Función libre para respetar el préstamo por campos de `State` (la DLL está
-/// prestada de `self.worldgen.library` mientras `texture_array`/`columns` se
-/// mutan, y son campos distintos).
+/// Devuelve el índice en `tex_layers` (no la capa GPU). El renderer resuelve
+/// la capa con `texture_layer_for`.
 fn worldgen_pack_column_texture(
     texture_array: &mut crate::engine3d::texture::TextureArray,
     vulkan: &crate::engine3d::vulkan::SharedGpu,
     library: &WorldgenLibrary,
     handle: *mut std::ffi::c_void,
     columns: &mut HashMap<(i32, i32), (usize, u64)>,
+    tex_layers: &mut Vec<crate::engine3d::texture::TextureLayer>,
     epoch: u64,
     cx: i32,
     cz: i32,
+    use_splat: bool,
 ) -> Option<usize> {
-    if let Some(&(layer, cached_epoch)) = columns.get(&(cx, cz))
+    if let Some(&(tex_idx, cached_epoch)) = columns.get(&(cx, cz))
         && cached_epoch == epoch
     {
-        return Some(layer);
+        return Some(tex_idx);
     }
 
     let mut buffers = crate::engine3d::config_3d::worldgen::abi::WgChunkTextures::empty();
     // # Seguridad: handle válido de esta DLL y struct del contrato ABI.
     let status = unsafe { (library.chunk_textures)(handle, cx, cz, 0, &mut buffers) };
+    let source_ptr = if use_splat && !buffers.splat.is_null() {
+        buffers.splat
+    } else {
+        buffers.albedo
+    };
     if status == crate::engine3d::config_3d::worldgen::abi::Status::Ok as i32
-        && !buffers.albedo.is_null()
+        && !source_ptr.is_null()
     {
         // # Seguridad: buffers del contrato; se copian antes de liberar.
-        let albedo = unsafe { std::slice::from_raw_parts(buffers.albedo, buffers.len) }.to_vec();
+        let pixels = unsafe { std::slice::from_raw_parts(source_ptr, buffers.len) }.to_vec();
         let dim = buffers.dim;
         unsafe { (library.free_chunk_textures)(&buffers) };
 
-        if let Some(&(layer, _)) = columns.get(&(cx, cz)) {
-            match texture_array.replace_layer(vulkan, layer as u32, &albedo, dim, dim) {
+        if let Some(&(tex_idx, _)) = columns.get(&(cx, cz))
+            && let Some(&gpu_layer) = tex_layers.get(tex_idx)
+        {
+            match texture_array.replace_layer(vulkan, gpu_layer, &pixels, dim, dim) {
                 Ok(()) => {
-                    columns.insert((cx, cz), (layer, epoch));
-                    return Some(layer);
+                    columns.insert((cx, cz), (tex_idx, epoch));
+                    return Some(tex_idx);
                 }
                 Err(error) => {
-                    log::warn!("[worldgen] no se pudo reescribir albedo de columna: {error}")
+                    log::warn!("[worldgen] no se pudo reescribir el splat de la columna: {error}")
                 }
             }
-            return Some(layer);
+            return Some(tex_idx);
         }
 
-        match texture_array.pack(vulkan, &albedo, dim, dim) {
-            Ok(layer) => {
-                let tex_idx = layer as usize;
+        match texture_array.pack(vulkan, &pixels, dim, dim) {
+            Ok(gpu_layer) => {
+                let tex_idx = tex_layers.len();
+                tex_layers.push(gpu_layer);
                 columns.insert((cx, cz), (tex_idx, epoch));
                 return Some(tex_idx);
             }
-            Err(error) => log::warn!("[worldgen] no se pudo empaquetar albedo de columna: {error}"),
+            Err(error) => {
+                log::warn!("[worldgen] no se pudo empaquetar el splat de la columna: {error}")
+            }
         }
     } else if !buffers.albedo.is_null() || !buffers.splat.is_null() {
         // # Seguridad: liberar buffers parciales en error.
         unsafe { (library.free_chunk_textures)(&buffers) };
     }
-    columns.get(&(cx, cz)).map(|(layer, _)| *layer)
+    columns.get(&(cx, cz)).map(|(tex_idx, _)| *tex_idx)
 }
 
 /// Ordena por capa alta y cercanía, asigna LOD y deja el vector listo para
@@ -883,6 +1053,135 @@ fn finalize_pending(pending: &mut [PendingChunk], cell: f32, camera: Vec3) {
     pending.reverse();
 }
 
+/// Caja local de los vértices de un chunk, en el espacio de la DLL.
+fn chunk_vertex_aabb(vertices: &[crate::engine3d::mesh::Vertex]) -> (Vec3, Vec3) {
+    let mut min = Vec3::splat(f32::MAX);
+    let mut max = Vec3::splat(f32::MIN);
+    for vertex in vertices {
+        let position = Vec3::from_array(vertex.position);
+        min = min.min(position);
+        max = max.max(position);
+    }
+    (min, max)
+}
+
+const TERRAIN_MATERIAL_FILES: [&str; 6] = [
+    "Grass.jpg",
+    "Dirt.jpg",
+    "Clay.jpg",
+    "Sand.jpg",
+    "Stone.jpg",
+    "Snow.jpg",
+];
+
+/// Carpeta `assets/terrain` del crate del engine (Grass, Dirt, Clay, Sand, Stone, Snow).
+fn terrain_material_dir() -> Option<std::path::PathBuf> {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/terrain");
+    dir.join(TERRAIN_MATERIAL_FILES[0]).is_file().then_some(dir)
+}
+
+#[cfg(test)]
+mod terrain_material_tests {
+    use super::{TERRAIN_MATERIAL_FILES, terrain_material_dir};
+
+    #[test]
+    fn terrain_photos_are_on_disk_with_grass_first() {
+        assert_eq!(TERRAIN_MATERIAL_FILES[0], "Grass.jpg");
+        let dir = terrain_material_dir().expect("assets/terrain/Grass.jpg");
+        for name in TERRAIN_MATERIAL_FILES {
+            assert!(
+                dir.join(name).is_file(),
+                "falta la foto de terreno {name} en {}",
+                dir.display()
+            );
+        }
+    }
+
+    #[test]
+    fn grass_jpeg_decodes_green_not_a_checker() {
+        let path = terrain_material_dir()
+            .expect("assets/terrain")
+            .join("Grass.jpg");
+        let image = image::open(&path).expect("Grass.jpg").to_rgba8();
+        let (width, height) = image.dimensions();
+        assert!(width >= 256 && height >= 256, "{width}x{height}");
+        let pixels = image.as_raw();
+        let mut r = 0u64;
+        let mut g = 0u64;
+        let mut b = 0u64;
+        let mut n = 0u64;
+        let step = (width / 32).max(1);
+        let mut y = 0u32;
+        while y < height {
+            let mut x = 0u32;
+            while x < width {
+                let i = ((y * width + x) * 4) as usize;
+                r += pixels[i] as u64;
+                g += pixels[i + 1] as u64;
+                b += pixels[i + 2] as u64;
+                n += 1;
+                x += step;
+            }
+            y += step;
+        }
+        let (ar, ag, ab) = (r / n, g / n, b / n);
+        assert!(
+            ag + 8 > ar && ag + 8 > ab,
+            "Grass.jpg no decodifica a verde (avg {ar},{ag},{ab})"
+        );
+    }
+}
+/// Suelo más bajo del terreno, en metros. Debe coincidir con
+/// `rer_worldgen::config::TERRAIN_FLOOR`.
+const TERRAIN_FLOOR: f32 = 2.0;
+/// Hueco bajo las llanuras. Debe coincidir con
+/// `rer_worldgen::config::TERRAIN_PLAINS_CLEARANCE`.
+const TERRAIN_PLAINS_CLEARANCE: f32 = 6.0;
+
+/// Ancho y largo reales de la rejilla. `chunk_grid` redondea hacia arriba, así
+/// que la huella puede pasar del ancho nominal; el centrado usa esta medida.
+fn generated_footprint(config: &WgConfigLite) -> (f32, f32) {
+    let (chunks_x, chunks_z, _) = chunk_grid(config);
+    let cell = crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE as f32
+        * config.resolution.voxel_size.max(0.001);
+    (chunks_x as f32 * cell, chunks_z as f32 * cell)
+}
+
+/// Centra la huella generada en el origen y apoya el suelo más bajo en y = 0.
+fn scene_offset(extent_x: f32, extent_z: f32) -> Vec3 {
+    Vec3::new(
+        -extent_x * 0.5,
+        -(TERRAIN_FLOOR + TERRAIN_PLAINS_CLEARANCE),
+        -extent_z * 0.5,
+    )
+}
+
+/// Radio del disco que el rectángulo cubre entero. Las esquinas que se salen
+/// las recorta el límite del mundo, así no queda anillo vacío ni terreno fuera.
+fn generator_world_radius(extent_x: f32, extent_z: f32) -> f32 {
+    extent_x.min(extent_z) * 0.5
+}
+
+impl super::super::engine::State {
+    /// Ajusta el radio configurado al disco cubierto por el generador y escala el suelo.
+    fn fit_world_to_generator(&mut self, extent_x: f32, extent_z: f32, bounds: &WgBoundsLite) {
+        let requested = generator_world_radius(extent_x, extent_z);
+        self.set_world_bounds_3d_radius(requested);
+        let applied = self.world_bounds_3d.radius;
+        log::info!(
+            "[worldgen] radio del mundo ajustado a {applied:.1} u (huella {extent_x:.0}×{extent_z:.0}, generador {:.0}×{:.0}×{:.0})",
+            bounds.width,
+            bounds.length,
+            bounds.height
+        );
+        if (applied - requested).abs() > 0.1 {
+            log::warn!(
+                "[worldgen] el radio pedido ({requested:.1}) supera el máximo y se recortó a {applied:.1}"
+            );
+        }
+    }
+}
+
 /// Rejilla de chunks que cubren los límites del mundo.
 fn chunk_grid(config: &WgConfigLite) -> (i32, i32, i32) {
     let cell = crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE as f32
@@ -896,6 +1195,148 @@ fn chunk_grid(config: &WgConfigLite) -> (i32, i32, i32) {
 // Reexport interno para que init.rs/engine.rs construyan el campo.
 pub(crate) use types::WorldgenState as StateWorldgenState;
 
+/// Recorta al disco del ecuador lo que el cuadrado de chunks deja fuera.
+/// Los chunks interiores no se tocan. Solo el anillo paga el corte.
+fn clip_chunk_to_world_disk(
+    vertices: &[crate::engine3d::mesh::Vertex],
+    indices: &[u32],
+    offset: Vec3,
+    radius: f32,
+) -> (Vec<crate::engine3d::mesh::Vertex>, Vec<u32>) {
+    if vertices.is_empty() || indices.len() < 3 || radius <= 0.0 {
+        return (vertices.to_vec(), indices.to_vec());
+    }
+    let r2 = radius * radius;
+    let world_xz = |position: [f32; 3]| {
+        let x = position[0] + offset.x;
+        let z = position[2] + offset.z;
+        (x, z)
+    };
+    let inside = |position: [f32; 3]| {
+        let (x, z) = world_xz(position);
+        x * x + z * z <= r2
+    };
+    let mut any_out = false;
+    let mut min_x = f32::MAX;
+    let mut max_x = f32::MIN;
+    let mut min_z = f32::MAX;
+    let mut max_z = f32::MIN;
+    for vertex in vertices {
+        let (x, z) = world_xz(vertex.position);
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_z = min_z.min(z);
+        max_z = max_z.max(z);
+        if !inside(vertex.position) {
+            any_out = true;
+        }
+    }
+    if !any_out {
+        return (vertices.to_vec(), indices.to_vec());
+    }
+    let closest_x = 0.0_f32.clamp(min_x, max_x);
+    let closest_z = 0.0_f32.clamp(min_z, max_z);
+    if closest_x * closest_x + closest_z * closest_z > r2 {
+        return (Vec::new(), Vec::new());
+    }
+
+    let mut out_vertices = Vec::new();
+    let mut out_indices = Vec::new();
+    let mut emit = |vertex: crate::engine3d::mesh::Vertex| -> u32 {
+        let index = out_vertices.len() as u32;
+        out_vertices.push(vertex);
+        index
+    };
+    for tri in indices.chunks_exact(3) {
+        let Some(a) = vertices.get(tri[0] as usize).copied() else {
+            continue;
+        };
+        let Some(b) = vertices.get(tri[1] as usize).copied() else {
+            continue;
+        };
+        let Some(c) = vertices.get(tri[2] as usize).copied() else {
+            continue;
+        };
+        let corners = [a, b, c];
+        let mask = [inside(a.position), inside(b.position), inside(c.position)];
+        let inside_count = mask.iter().filter(|flag| **flag).count();
+        if inside_count == 0 {
+            continue;
+        }
+        if inside_count == 3 {
+            out_indices.extend([emit(a), emit(b), emit(c)]);
+            continue;
+        }
+        let mut polygon = Vec::with_capacity(4);
+        for index in 0..3 {
+            let current = corners[index];
+            let next = corners[(index + 1) % 3];
+            if mask[index] {
+                polygon.push(current);
+            }
+            if mask[index] != mask[(index + 1) % 3] {
+                polygon.push(edge_on_world_disk(current, next, offset, radius));
+            }
+        }
+        if polygon.len() < 3 {
+            continue;
+        }
+        let origin = emit(polygon[0]);
+        for index in 1..polygon.len() - 1 {
+            out_indices.extend([origin, emit(polygon[index]), emit(polygon[index + 1])]);
+        }
+    }
+    (out_vertices, out_indices)
+}
+
+fn edge_on_world_disk(
+    a: crate::engine3d::mesh::Vertex,
+    b: crate::engine3d::mesh::Vertex,
+    offset: Vec3,
+    radius: f32,
+) -> crate::engine3d::mesh::Vertex {
+    let t = disk_edge_t(a.position, b.position, offset, radius);
+    let mix = |from: f32, to: f32| from + (to - from) * t;
+    crate::engine3d::mesh::Vertex {
+        position: [
+            mix(a.position[0], b.position[0]),
+            mix(a.position[1], b.position[1]),
+            mix(a.position[2], b.position[2]),
+        ],
+        normal: [
+            mix(a.normal[0], b.normal[0]),
+            mix(a.normal[1], b.normal[1]),
+            mix(a.normal[2], b.normal[2]),
+        ],
+        uv: [mix(a.uv[0], b.uv[0]), mix(a.uv[1], b.uv[1])],
+    }
+}
+
+fn disk_edge_t(a: [f32; 3], b: [f32; 3], offset: Vec3, radius: f32) -> f32 {
+    let ax = a[0] + offset.x;
+    let az = a[2] + offset.z;
+    let bx = b[0] + offset.x;
+    let bz = b[2] + offset.z;
+    let dx = bx - ax;
+    let dz = bz - az;
+    let qa = dx * dx + dz * dz;
+    if qa <= 1.0e-12 {
+        return 0.0;
+    }
+    let qb = 2.0 * (ax * dx + az * dz);
+    let qc = ax * ax + az * az - radius * radius;
+    let root = (qb * qb - 4.0 * qa * qc).max(0.0).sqrt();
+    let t0 = (-qb - root) / (2.0 * qa);
+    let t1 = (-qb + root) / (2.0 * qa);
+    if (0.0..=1.0).contains(&t0) {
+        t0
+    } else if (0.0..=1.0).contains(&t1) {
+        t1
+    } else {
+        t0.clamp(0.0, 1.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Conformancia real: carga la DLL construida (`cargo build -p rer-worldgen`)
@@ -903,6 +1344,101 @@ mod tests {
     //! existe, el test se salta (el CI puede generarla antes si lo desea).
     use super::abi::Status;
     use super::loader::WorldgenLibrary;
+    use super::{
+        WgBoundsLite, WgConfigLite, WgResolutionLite, clip_chunk_to_world_disk,
+        generator_world_radius,
+    };
+    use crate::engine3d::mesh::Vertex;
+
+    fn vert(x: f32, z: f32) -> Vertex {
+        Vertex {
+            position: [x, 0.0, z],
+            normal: [0.0, 1.0, 0.0],
+            uv: [0.0, 0.0],
+        }
+    }
+
+    #[test]
+    fn disk_clip_drops_the_corner_and_keeps_the_interior() {
+        let inside = [vert(0.0, 0.0), vert(1.0, 0.0), vert(0.0, 1.0)];
+        let (kept, indices) = clip_chunk_to_world_disk(&inside, &[0, 1, 2], glam::Vec3::ZERO, 10.0);
+        assert_eq!(kept.len(), 3);
+        assert_eq!(indices, vec![0, 1, 2]);
+
+        let outside = [vert(20.0, 20.0), vert(21.0, 20.0), vert(20.0, 21.0)];
+        let (cut, cut_idx) = clip_chunk_to_world_disk(&outside, &[0, 1, 2], glam::Vec3::ZERO, 10.0);
+        assert!(cut.is_empty());
+        assert!(cut_idx.is_empty());
+
+        let straddling = [vert(0.0, 0.0), vert(20.0, 0.0), vert(0.0, 20.0)];
+        let (ring, ring_idx) =
+            clip_chunk_to_world_disk(&straddling, &[0, 1, 2], glam::Vec3::ZERO, 10.0);
+        assert!(ring.len() >= 3);
+        assert_eq!(ring_idx.len() % 3, 0);
+        for vertex in &ring {
+            let x = vertex.position[0];
+            let z = vertex.position[2];
+            assert!(
+                x * x + z * z <= 10.0 * 10.0 + 0.05,
+                "{x},{z} fuera del disco"
+            );
+        }
+    }
+
+    fn config(width: f32, length: f32, voxel: f32) -> WgConfigLite {
+        WgConfigLite {
+            bounds: WgBoundsLite {
+                width,
+                length,
+                height: 128.0,
+            },
+            resolution: WgResolutionLite { voxel_size: voxel },
+        }
+    }
+
+    #[test]
+    fn el_radio_es_el_disco_cubierto_por_la_huella() {
+        let square = config(512.0, 512.0, 1.0);
+        let (extent_x, extent_z) = super::generated_footprint(&square);
+        assert!((extent_x - 512.0).abs() < 1.0e-3);
+        assert!((generator_world_radius(extent_x, extent_z) - 256.0).abs() < 1.0e-3);
+
+        // 200 m no caben en un número entero de chunks de 32: la huella crece
+        // y el disco usa el lado corto para no dejar el mundo vacío.
+        let wide = config(200.0, 100.0, 1.0);
+        let (wide_x, wide_z) = super::generated_footprint(&wide);
+        assert!((wide_x - 224.0).abs() < 1.0e-3);
+        assert!((wide_z - 128.0).abs() < 1.0e-3);
+        assert!((generator_world_radius(wide_x, wide_z) - 64.0).abs() < 1.0e-3);
+    }
+
+    #[test]
+    fn el_terreno_se_apoya_en_el_suelo_y_queda_centrado() {
+        let (extent_x, extent_z) = super::generated_footprint(&config(200.0, 100.0, 1.0));
+        let offset = super::scene_offset(extent_x, extent_z);
+        assert_eq!(offset.x, -112.0);
+        assert_eq!(offset.z, -64.0);
+        assert!((offset.y + 8.0).abs() < 1.0e-4);
+    }
+
+    #[test]
+    fn la_caja_del_chunk_cubre_sus_vertices() {
+        let vertices = [
+            crate::engine3d::mesh::Vertex {
+                position: [0.0, 10.0, 4.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [0.0, 0.0],
+            },
+            crate::engine3d::mesh::Vertex {
+                position: [32.0, 40.0, 32.0],
+                normal: [0.0, 1.0, 0.0],
+                uv: [1.0, 1.0],
+            },
+        ];
+        let (min, max) = super::chunk_vertex_aabb(&vertices);
+        assert_eq!(min, glam::Vec3::new(0.0, 10.0, 4.0));
+        assert_eq!(max, glam::Vec3::new(32.0, 40.0, 32.0));
+    }
 
     fn dll_path() -> Option<std::path::PathBuf> {
         if let Ok(path) = std::env::var("RER_WORLDGEN_DLL") {
@@ -963,6 +1499,7 @@ mod tests {
             assert_eq!(buffers.index_count % 3, 0);
 
             // La posición del primer vértice debe estar dentro de los límites.
+            // El apoyo en el suelo (y = 0) lo aplica el engine al colocar el chunk.
             let x = *buffers.positions;
             let y = *buffers.positions.add(1);
             assert!((-1.0..=257.0).contains(&x), "x={x} fuera de los límites");

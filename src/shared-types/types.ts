@@ -1114,6 +1114,8 @@ declare global {
       onProjectSaved:          (cb: (filePath: string) => void) => () => void
       onProjectSaveFailed:     (cb: (message: string) => void) => () => void
       onLegacyWindowOpen:      (cb: (request: { kind: string; payload?: Record<string, unknown> }) => void) => () => void
+      onEditorLocale:          (cb: (locale: 'en' | 'es') => void) => () => void
+      getEditorLocale:         () => Promise<'en' | 'es'>
       openModalElectron:       (request: ModalElectronOpenRequest) => Promise<void>
       closeModalElectron:      () => Promise<void>
       resolveEditorExit:      (action: 'save' | 'discard' | 'cancel') => void

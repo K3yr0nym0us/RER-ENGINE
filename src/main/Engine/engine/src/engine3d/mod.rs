@@ -28,6 +28,8 @@ pub(crate) use config_3d::directional_light::{SHADOW_DARKNESS_MAX, SHADOW_DARKNE
 pub(crate) use config_3d::model_lod::{
     DEFAULT_MODEL_LOD_ENABLED, DEFAULT_MODEL_LOD1_DISTANCE_M, DEFAULT_MODEL_LOD2_DISTANCE_M,
 };
+#[cfg(feature = "editor")]
+pub(crate) use config_3d::world_bounds::{MAX_WORLD_RADIUS_3D, MIN_WORLD_RADIUS_3D};
 mod config_base;
 #[path = "config_compat/mod.rs"]
 mod config_compat;

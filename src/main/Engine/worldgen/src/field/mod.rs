@@ -10,10 +10,11 @@ pub(crate) mod spatial;
 
 use glam::Vec3;
 
-use crate::config::WorldGenConfig;
+use crate::config::{WorldGenConfig, plains_height};
 use crate::field::spatial::{CarveIndex, SiteIndex};
 use crate::noise::{FractalType, Noise};
 use crate::planner::FeaturePlan;
+use crate::scale::world_radius;
 use crate::seed::{
     SALT_CAVE_NOISE, SALT_CLIFF, SALT_DETAIL, SALT_MOUNTAIN, SALT_TERRAIN, domain_seed,
 };
@@ -47,8 +48,9 @@ impl HeightField {
         let mountain_seed = domain_seed(config.seed, SALT_MOUNTAIN);
         let cliff_seed = domain_seed(config.seed, SALT_CLIFF);
 
+        let radius = world_radius(&config.bounds).max(32.0);
         Self {
-            base_height: config.bounds.height * 0.35,
+            base_height: plains_height(),
             // FBM global de baja amplitud: relieve por defecto del mundo.
             height_noise: Noise::new(terrain_seed).frequency(0.006).fractal(
                 FractalType::Fbm,
@@ -57,13 +59,11 @@ impl HeightField {
                 0.0,
             ),
             detail_noise: Noise::new(detail_seed).frequency(0.06),
-            // Ridged fractal (ya normalizado ~[0,1]): patrón de crestas.
-            mountain_noise: Noise::new(mountain_seed).frequency(0.004).fractal(
-                FractalType::Ridged,
-                4,
-                0.5,
-                0.0,
-            ),
+            // Crestas anchas: la frecuencia escala con el mundo para no llenar
+            // un mapa grande de agujas.
+            mountain_noise: Noise::new(mountain_seed)
+                .frequency((1.8 / radius).clamp(0.002, 0.012))
+                .fractal(FractalType::Ridged, 2, 0.45, 0.0),
             cliff_noise: Noise::new(cliff_seed).frequency(0.02),
             hills_amplitude: if config.hills.base.enabled { 6.0 } else { 2.0 },
             detail_amplitude: 0.35,
@@ -82,7 +82,7 @@ impl HeightField {
         let h = self.base_level()
             + self.hill_fbm_value(x, z) * self.hills_amplitude()
             + self.detail_value(x, z) * self.detail_amplitude();
-        h.clamp(2.0, self.world_max.y - 2.0)
+        h.clamp(crate::config::TERRAIN_FLOOR, self.world_max.y - 2.0)
     }
 
     /// FBM global de colinas (relieve por defecto del mundo).
@@ -187,9 +187,14 @@ impl Terrain {
             let w = 1.0 - smoothstep(site.radius * 0.45, site.radius, d);
             match site.kind {
                 crate::planner::FeatureKind::Mountain => {
-                    // Crestas ridged escaladas por la altura del sitio.
-                    let ridge = self.base.mountain_pattern(x, z);
-                    h += fallback * w * ridge * site.value;
+                    // Cúpula ancha: el ruido de cresta solo riza la cima.
+                    // Si la masa depende de un umbral de ruido, en mundos
+                    // grandes solo quedan agujas.
+                    let t = (d / site.radius.max(1.0)).clamp(0.0, 1.0);
+                    let dome = (1.0 - t * t).powi(2);
+                    let ridges = self.base.mountain_pattern(x, z);
+                    let shape = dome * (0.84 + 0.16 * ridges);
+                    h += fallback * w * shape * site.value;
                 }
                 crate::planner::FeatureKind::Hill => {
                     let bump = self.base.hill_pattern(x, z);
@@ -219,7 +224,7 @@ impl Terrain {
             }
         }
 
-        h.clamp(2.0, self.base.world_max_y() - 2.0)
+        h.clamp(crate::config::TERRAIN_FLOOR, self.base.world_max_y() - 2.0)
     }
 }
 
@@ -240,6 +245,9 @@ impl DensityField {
     /// sitios y carving.
     #[must_use]
     pub fn new(config: &WorldGenConfig) -> Self {
+        let mut fitted = config.clone();
+        crate::scale::fit_config_to_world(&mut fitted);
+        let config = &fitted;
         let base = HeightField::new(config);
         let plan = FeaturePlan::generate(config, &base);
         let terrain = Terrain::new(base, plan.sites.clone());

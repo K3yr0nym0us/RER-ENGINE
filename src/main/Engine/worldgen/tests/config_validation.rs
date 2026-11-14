@@ -30,6 +30,18 @@ fn bounds_out_of_range_are_rejected() {
 }
 
 #[test]
+fn kilometre_size_is_valid_and_oversized_is_rejected() {
+    let mut config = valid_base();
+    config.bounds.width = 1000.0;
+    config.bounds.length = 1000.0;
+    assert!(config.validate().is_ok());
+
+    config.bounds.width = 2001.0;
+    config.bounds.length = 2001.0;
+    assert!(config.validate().is_err());
+}
+
+#[test]
 fn max_count_is_a_hard_limit() {
     let mut config = valid_base();
     config.lakes.base.max_count = MAX_FEATURE_COUNT + 1;

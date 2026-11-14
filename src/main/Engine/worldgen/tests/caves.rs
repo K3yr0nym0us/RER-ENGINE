@@ -236,8 +236,14 @@ fn y_pruning_reaches_below_the_surface_when_caves_are_deep() {
     config.caves.enabled = true;
     config.caves.depth_max = 50.0;
     let deep = active_y_chunks(&field, &config, 1, 1);
-    assert!(
-        deep.first().copied().unwrap_or(0) < shallow.first().copied().unwrap_or(0),
-        "las cuevas de 50 m deben activar una capa Y más baja ({deep:?} vs {shallow:?})"
+    assert_eq!(
+        shallow.first().copied(),
+        Some(0),
+        "el suelo a unos metros ya ocupa la primera capa ({shallow:?})"
+    );
+    assert_eq!(
+        deep.first().copied(),
+        Some(0),
+        "una cueva más profunda que el suelo no abre capas bajo el piso ({deep:?})"
     );
 }

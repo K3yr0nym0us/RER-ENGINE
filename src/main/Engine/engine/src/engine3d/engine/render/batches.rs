@@ -116,11 +116,24 @@ pub(crate) fn build_scene_instance_batches(
         let flag = state.editor_selection_flag(*entity_id, is_selected, is_hovered);
         let layer = state.texture_layer_for(*tex_idx);
         let mut inst = crate::engine3d::mesh::InstanceData::new(*model_matrix, flag, layer);
+        let is_terrain = state
+            .world
+            .get::<crate::engine3d::ecs::NameComponent>(*entity_id)
+            .is_some_and(|name| name.name == "TerrainChunk");
         if let Some(pbr) = state
             .world
             .get::<crate::engine3d::ecs::SurfacePbr>(*entity_id)
         {
-            apply_surface_pbr_to_instance(&mut inst, pbr);
+            // `tex_layer_pad.w` es IOR en modelos y la capa Grass en terreno. El IOR
+            // del terreno es 0 y coincidiría con el checker (capa 0).
+            if is_terrain {
+                inst.flag_pad[3] = pbr.roughness;
+                inst.tex_layer_pad[1] = pbr.metallic;
+                inst.flag_pad[1] =
+                    crate::engine3d::config_3d::pbr_presets::instance_visual_alpha(pbr);
+            } else {
+                apply_surface_pbr_to_instance(&mut inst, pbr);
+            }
         }
         // Ranura de sonda de la entidad: la más cercana cuyo volumen la contiene (`-1` = ninguna →
         // el shader cae al cielo procedural). Se resuelve por entidad y entra en la clave de lote,
@@ -135,6 +148,10 @@ pub(crate) fn build_scene_instance_batches(
         if state.is_plane_wall_entity(*entity_id) {
             inst.flag_pad[1] = crate::engine3d::config_3d::plane_tools::PLANE_WALL_VISUAL_ALPHA;
             inst.flag_pad[2] = crate::engine3d::config_3d::plane_tools::PLANE_WALL_RENDER_KIND;
+        }
+        if is_terrain && let Some(base) = state.worldgen.material_base {
+            inst.flag_pad[2] = crate::engine3d::mesh::RENDER_KIND_TERRAIN;
+            inst.tex_layer_pad[3] = base as f32;
         }
         let can_extend = batches.last().is_some_and(|b| {
             b.mesh_idx == *mesh_idx && b.texture_layer == layer && b.probe_layer == probe_layer
@@ -153,4 +170,46 @@ pub(crate) fn build_scene_instance_batches(
         }
     }
     batches
+}
+
+fn entity_skips_shadow_cast(
+    state: &super::State,
+    entity_id: crate::engine3d::ecs::EntityId,
+) -> bool {
+    state
+        .world
+        .get::<crate::engine3d::ecs::NameComponent>(entity_id)
+        .is_some_and(|name| name.name.eq_ignore_ascii_case("ground"))
+}
+
+/// Lotes que escriben el mapa de sombras. El checker no entra (se auto-sombrea);
+/// el terreno sí, para que las montañas proyecten sobre el suelo.
+pub(crate) fn filter_shadow_cast_batches(
+    state: &super::State,
+    batches: &[SceneInstanceBatch],
+) -> Vec<SceneInstanceBatch> {
+    batches
+        .iter()
+        .filter_map(|batch| {
+            let mut instances = Vec::new();
+            let mut entity_ids = Vec::new();
+            for (instance, entity_id) in batch.instances.iter().zip(&batch.entity_ids) {
+                if entity_skips_shadow_cast(state, *entity_id) {
+                    continue;
+                }
+                instances.push(*instance);
+                entity_ids.push(*entity_id);
+            }
+            if instances.is_empty() {
+                return None;
+            }
+            Some(SceneInstanceBatch {
+                mesh_idx: batch.mesh_idx,
+                texture_layer: batch.texture_layer,
+                probe_layer: batch.probe_layer,
+                instances,
+                entity_ids,
+            })
+        })
+        .collect()
 }

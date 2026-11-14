@@ -5,7 +5,6 @@ pub(super) fn ui_body(
     state: &mut SidebarLeftState,
     ui_screens: &crate::editor::ui_screens::UiScreenLists,
     locale: Locale,
-    hint: &str,
     actions: &mut Vec<LeftAction>,
 ) {
     sub(
@@ -22,7 +21,11 @@ pub(super) fn ui_body(
                 width,
                 icons::PLUS,
                 crate::editor::i18n::tr(locale, "Nuevo HUD", "New HUD"),
-                hint,
+                crate::editor::i18n::tr(
+                    locale,
+                    "Crea una pantalla HUD nueva",
+                    "Create a new HUD screen",
+                ),
                 crate::editor::theme::SUCCESS,
             ) {
                 actions.push(LeftAction::CreateUiScreen("player"));
@@ -48,7 +51,11 @@ pub(super) fn ui_body(
                 width,
                 icons::PLUS,
                 crate::editor::i18n::tr(locale, "Nuevo men\u{00fa}", "New UI"),
-                hint,
+                crate::editor::i18n::tr(
+                    locale,
+                    "Crea un men\u{00fa} de interfaz",
+                    "Create a new UI menu",
+                ),
                 crate::editor::theme::SUCCESS,
             ) {
                 actions.push(LeftAction::CreateUiScreen("menu"));

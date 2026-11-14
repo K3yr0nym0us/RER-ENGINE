@@ -117,7 +117,7 @@ function placeModalCenteredOnRect(win: BrowserWindow, rect: ModalAnchorRect): vo
   })
 }
 
-/** Cubre la ventana principal del editor (overlay bloqueante). */
+/** Cubre la ventana principal (overlay bloqueante). */
 function placeModalAsBlockingOverlay(win: BrowserWindow): void {
   const parent = getMainWindow()
   if (!parent || parent.isDestroyed()) {
@@ -126,6 +126,7 @@ function placeModalAsBlockingOverlay(win: BrowserWindow): void {
   }
 
   const bounds = parent.getBounds()
+
   win.setBounds({
     x: Math.round(bounds.x),
     y: Math.round(bounds.y),
@@ -422,6 +423,11 @@ export function resendPendingRenderToModal(webContentsId: number): void {
  * (`models_list`). Solo se reenvía mientras esa modal esté visible para no
  * acumular eventos en el buffer del preload.
  */
+export function publishEditorLocale(locale: 'en' | 'es'): void {
+  if (!modalWindow || modalWindow.isDestroyed()) return
+  modalWindow.webContents.send('editor:locale', locale)
+}
+
 export function forwardEngineEventToModal(event: unknown): void {
   if (pendingRenderPayload?.componentKey !== 'WorldGenModalBody') return
   if (!modalWindow || modalWindow.isDestroyed()) return

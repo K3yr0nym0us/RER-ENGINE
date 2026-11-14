@@ -750,6 +750,15 @@ impl App {
 }
 
 impl App {
+    /// Radio de la esfera de mundo, si el estado 3D ya está creado.
+    /// Solo lo consulta el editor, tras `world_gen_start`.
+    #[cfg(feature = "editor")]
+    pub(crate) fn world_radius(&self) -> Option<f32> {
+        self.state
+            .as_ref()
+            .map(|state| state.world_bounds_3d.radius)
+    }
+
     /// Procesa un comando IPC. Devuelve `true` si el motor debe apagarse.
     pub fn handle_command(&mut self, cmd: EngineCommand) -> bool {
         // El IPC thread envió un comando vía EventLoopProxy — procesar de inmediato.

@@ -123,6 +123,8 @@ pub struct FrameInput<'a> {
     /// Lo pide el editor con `set_reflection_debug_view`; no requiere cambiar ningún shader.
     pub debug_ssr_view: bool,
     pub static_batches: &'a [MeshBatch<'a>],
+    /// Sin terreno ni suelo checker: evitan auto-sombra a escala de mundo.
+    pub shadow_static_batches: &'a [MeshBatch<'a>],
     /// Batches con alpha < 0.98 para el pase blend.
     pub static_transparent_batches: &'a [MeshBatch<'a>],
     pub skinned_batches: &'a [SkinnedBatch<'a>],

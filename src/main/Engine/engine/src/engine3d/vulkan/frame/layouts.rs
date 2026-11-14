@@ -406,6 +406,7 @@ pub(super) fn sampler(
             &vk::SamplerCreateInfo::default()
                 .mag_filter(vk::Filter::LINEAR)
                 .min_filter(vk::Filter::LINEAR)
+                .mipmap_mode(vk::SamplerMipmapMode::LINEAR)
                 .address_mode_u(address)
                 .address_mode_v(address)
                 .address_mode_w(address)

@@ -767,34 +767,38 @@ export function EntityPropertiesModalContent({
 													{isPlayingThis ? <StopFill /> : <PlayFill />}
 												</span>
 												{!is3D && (
-													<span
-														role="button"
-														tabIndex={canPlay ? 0 : -1}
-														className="text-warning"
-														style={{ cursor: canPlay ? 'pointer' : 'not-allowed' }}
-														onClick={canPlay ? () => editAnimation(idx) : undefined}
-													>
-														<Pencil />
-													</span>
+													<AppTooltip content={t('Edit animation')} place="top">
+														<span
+															role="button"
+															tabIndex={canPlay ? 0 : -1}
+															className="text-warning"
+															style={{ cursor: canPlay ? 'pointer' : 'not-allowed' }}
+															onClick={canPlay ? () => editAnimation(idx) : undefined}
+														>
+															<Pencil />
+														</span>
+													</AppTooltip>
 												)}
 												{!is3D && (
-													<span
-														role="button"
-														tabIndex={0}
-														className="text-danger"
-														style={{ cursor: 'pointer' }}
-														onClick={() =>
-															openConfirm(
-																<>
-																	{t('Are you sure you want to delete the animation')}{' '}
-																	<strong>{anim.name}</strong>?
-																</>,
-																() => removeAnimation(idx),
-															)
-														}
-													>
-														<Trash />
-													</span>
+													<AppTooltip content={t('Delete animation')} place="top">
+														<span
+															role="button"
+															tabIndex={0}
+															className="text-danger"
+															style={{ cursor: 'pointer' }}
+															onClick={() =>
+																openConfirm(
+																	<>
+																		{t('Are you sure you want to delete the animation')}{' '}
+																		<strong>{anim.name}</strong>?
+																	</>,
+																	() => removeAnimation(idx),
+																)
+															}
+														>
+															<Trash />
+														</span>
+													</AppTooltip>
 												)}
 											</div>
 										)

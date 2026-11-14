@@ -502,6 +502,26 @@ impl State {
         out
     }
 
+    /// Al entrar a jugar, si el personaje está bajo la superficie generada lo sube
+    /// a esa malla. El suelo plano del mundo sigue ahí para el resto de la escena.
+    pub(crate) fn snap_play_character_onto_generated_terrain(&mut self) {
+        let has_terrain = self
+            .worldgen
+            .spawned
+            .values()
+            .any(|chunk| self.physics.has_physics(chunk.entity_id));
+        if !has_terrain {
+            return;
+        }
+        let feet = self.play_character_feet_position();
+        let Some(ground_y) = self.physics.find_ground_y_at(feet.x, feet.z, 512.0, 1024.0) else {
+            return;
+        };
+        if ground_y > feet.y + 0.05 {
+            self.set_play_character_feet_position(glam::Vec3::new(feet.x, ground_y, feet.z));
+        }
+    }
+
     /// Crea o reutiliza entidad jugador sin `setup_play_character_entity` (sin órbita/rotación por defecto).
     pub(crate) fn ensure_play_character_shell(
         &mut self,

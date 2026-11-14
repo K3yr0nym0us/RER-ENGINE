@@ -19,7 +19,6 @@ pub struct Text {
     pub starting: &'static str,
     pub error: &'static str,
     pub empty_log: &'static str,
-    pub phase_note: &'static str,
 }
 
 pub fn tr(locale: Locale, es: &'static str, en: &'static str) -> &'static str {
@@ -48,7 +47,6 @@ pub fn text(locale: Locale) -> Text {
             starting: "Iniciando…",
             error: "Error",
             empty_log: "Sin eventos aún…",
-            phase_note: "Sin funcionalidad todavía (Fase 5)",
         },
         Locale::En => Text {
             window_title: "RER-ENGINE — Editor (egui)",
@@ -67,7 +65,6 @@ pub fn text(locale: Locale) -> Text {
             starting: "Starting…",
             error: "Error",
             empty_log: "No events yet…",
-            phase_note: "Not wired yet (Phase 5)",
         },
     }
 }

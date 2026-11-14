@@ -17,8 +17,8 @@ pub(super) fn workspace_3d(
     if widgets::range_slider(
         ui,
         &mut value,
-        5.0,
-        500.0,
+        crate::engine3d::MIN_WORLD_RADIUS_3D,
+        crate::engine3d::MAX_WORLD_RADIUS_3D,
         1.0,
         crate::editor::theme::CONTROL_BLUE,
     ) {

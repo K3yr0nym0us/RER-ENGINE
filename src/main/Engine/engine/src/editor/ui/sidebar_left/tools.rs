@@ -5,7 +5,6 @@ pub(super) fn tools_body(
     state: &mut SidebarLeftState,
     is_3d: bool,
     locale: Locale,
-    hint: &str,
     quick_build_active: Option<&str>,
     actions: &mut Vec<LeftAction>,
 ) {
@@ -17,6 +16,7 @@ pub(super) fn tools_body(
         &'static str,
         &'static str,
         egui::Color32,
+        &'static str,
     );
     let mut cards: Vec<ToolCard> = vec![
         (
@@ -26,6 +26,11 @@ pub(super) fn tools_body(
             crate::editor::i18n::tr(locale, "Muro", "Wall"),
             crate::editor::i18n::tr(locale, "Colisionador", "Collider"),
             crate::editor::theme::INFO,
+            crate::editor::i18n::tr(
+                locale,
+                "Activar herramienta de colisionador",
+                "Activate collider drawing tool",
+            ),
         ),
         (
             Some("draw_execution_area"),
@@ -34,6 +39,11 @@ pub(super) fn tools_body(
             "Trigger",
             crate::editor::i18n::tr(locale, "Área de ejecución", "Execution area"),
             crate::editor::theme::DANGER,
+            crate::editor::i18n::tr(
+                locale,
+                "Activar herramienta de área de ejecución",
+                "Activate execution area tool",
+            ),
         ),
         (
             Some("quick_build"),
@@ -42,6 +52,11 @@ pub(super) fn tools_body(
             crate::editor::i18n::tr(locale, "Rápida", "Quick"),
             crate::editor::i18n::tr(locale, "Quick build", "Quick build"),
             crate::editor::theme::WARNING,
+            crate::editor::i18n::tr(
+                locale,
+                "Construcción rápida con blueprint",
+                "Quick build from blueprint",
+            ),
         ),
     ];
 
@@ -53,6 +68,11 @@ pub(super) fn tools_body(
             "Config",
             crate::editor::i18n::tr(locale, "Sockets", "Sockets"),
             crate::editor::theme::ACCENT,
+            crate::editor::i18n::tr(
+                locale,
+                "Abrir configuración de sockets",
+                "Open socket configuration",
+            ),
         ));
     }
 
@@ -67,7 +87,8 @@ pub(super) fn tools_body(
                 0.0
             };
 
-            for (index, (tool, icon, top, bottom, label, color)) in row.iter().enumerate() {
+            for (index, (tool, icon, top, bottom, label, color, tooltip)) in row.iter().enumerate()
+            {
                 if index > 0 {
                     ui.add_space(gap);
                 }
@@ -75,7 +96,7 @@ pub(super) fn tools_body(
                 match tool {
                     Some("socket_config") => {
                         if widgets::tool_card_click(
-                            ui, icon, top, bottom, label, *color, false, hint,
+                            ui, icon, top, bottom, label, *color, false, tooltip,
                         ) {
                             actions.push(LeftAction::OpenSockets);
                         }
@@ -83,7 +104,7 @@ pub(super) fn tools_body(
                     Some(tool) if *tool != "quick_build" => {
                         let active = state.active_tool == Some(*tool);
                         if widgets::tool_card_click(
-                            ui, icon, top, bottom, label, *color, active, hint,
+                            ui, icon, top, bottom, label, *color, active, tooltip,
                         ) {
                             let next = if active { "" } else { *tool };
                             actions.push(LeftAction::SetActiveTool(next));
@@ -92,11 +113,18 @@ pub(super) fn tools_body(
                     Some("quick_build") => {
                         let active = quick_build_active.is_some();
                         let card_hint = match quick_build_active {
-                            Some(name) => format!("{hint} · {name}"),
-                            None => hint.to_string(),
+                            Some(name) => format!("{tooltip} · {name}"),
+                            None => (*tooltip).to_string(),
                         };
                         if widgets::tool_card_click(
-                            ui, icon, top, bottom, label, *color, active, &card_hint,
+                            ui,
+                            icon,
+                            top,
+                            bottom,
+                            label,
+                            *color,
+                            active,
+                            card_hint.as_str(),
                         ) {
                             actions.push(LeftAction::QuickBuild { active });
                         }

@@ -6,7 +6,6 @@ pub(super) fn scenes_body(
     scenes: &SceneList,
     context: ProjectContext,
     locale: Locale,
-    hint: &str,
     actions: &mut Vec<LeftAction>,
 ) {
     sub(
@@ -22,7 +21,11 @@ pub(super) fn scenes_body(
                 width,
                 icons::FILE_CODE,
                 crate::editor::i18n::tr(locale, "Script de escena", "Scene script"),
-                hint,
+                crate::editor::i18n::tr(
+                    locale,
+                    "Abre el editor de script de escena",
+                    "Open the scene script editor",
+                ),
                 crate::editor::theme::WARNING,
             ) {
                 actions.push(LeftAction::OpenLegacyWindow("scene_script"));
@@ -32,7 +35,11 @@ pub(super) fn scenes_body(
                 width,
                 icons::GRAPH,
                 crate::editor::i18n::tr(locale, "Lógica de escena (nodos)", "Scene logic (nodes)"),
-                hint,
+                crate::editor::i18n::tr(
+                    locale,
+                    "Abre el editor visual de lógica",
+                    "Open the visual logic editor",
+                ),
                 crate::editor::theme::INFO,
             ) {
                 actions.push(LeftAction::OpenLegacyWindow("scene_visual_script"));

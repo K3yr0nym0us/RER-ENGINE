@@ -171,6 +171,7 @@ impl State {
                     self.script_engine.clear_control_script_cache();
                     self.restore_preview_editor_snapshots_on_enter();
                     self.capture_play_session_rotation_baselines();
+                    self.snap_play_character_onto_generated_terrain();
                     self.run_scene_script_on_play_start();
                 } else {
                     self.clear_active_projectiles();

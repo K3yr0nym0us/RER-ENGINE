@@ -9,7 +9,7 @@
 // hojas/cristales con alfa escribirían profundidad donde el color no pinta nada.
 
 layout(location = 2) in vec2 v_uv;
-layout(location = 4) in vec4 v_tex;
+layout(location = 4) flat in vec4 v_tex;
 
 layout(set = 1, binding = 0) uniform sampler2DArray albedo_tex;
 

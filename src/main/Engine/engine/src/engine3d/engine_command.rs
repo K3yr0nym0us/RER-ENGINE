@@ -89,7 +89,11 @@ pub enum EngineCommand3dOnly {
         config_json: String,
     },
     /// Plugin worldgen: planifica y encola la generación de todos los chunks activos.
-    WorldGenStart,
+    /// `replace_world` quita el suelo checker al terminar, no al empezar.
+    WorldGenStart {
+        #[serde(default)]
+        replace_world: bool,
+    },
     /// Plugin worldgen: cancela la cola de chunks pendientes.
     WorldGenStop,
     /// Plugin worldgen: elimina los chunks en escena y libera el handle de la DLL.

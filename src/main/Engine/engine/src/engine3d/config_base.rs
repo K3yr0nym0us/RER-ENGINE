@@ -82,6 +82,9 @@ impl State {
         self.pending_load_models.clear();
         self.pending_entity_model_replaces.clear();
         let _ = self.texture_array.reset(&self.vulkan);
+        self.worldgen.material_base = None;
+        self.worldgen.fallback_tex_idx = None;
+        self.worldgen.columns.clear();
         self.texture_path_layers.clear();
         self.glb_texture_catalog_cache.clear();
         self.entity_texture_effective_cap.clear();
@@ -240,6 +243,22 @@ impl State {
             },
         );
         self.send_model_loaded_event(plane_id, "Ground");
+    }
+
+    /// Quita el suelo checker (malla y semiespacio). Lo pide el generador al terminar
+    /// si el usuario marcó reemplazar el mundo actual.
+    pub(crate) fn remove_default_ground(&mut self) {
+        self.physics.remove_static_ground();
+        let Some(id) = self.ground_entity_id() else {
+            return;
+        };
+        self.physics.remove_entity_body(id);
+        self.save_registry.remove_entity(id);
+        self.world.despawn(id);
+        send_event(&EngineEvent::EntityRemoved {
+            id,
+            kind: "model".to_string(),
+        });
     }
 
     pub(crate) fn spawn_ground_plane(&mut self, position: [f32; 3], _scale: [f32; 3]) {

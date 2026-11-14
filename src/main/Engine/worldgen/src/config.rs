@@ -4,7 +4,25 @@
 //! El esquema usa camelCase en serde para alinearse 1:1 con el catálogo de comandos
 //! del editor (`engineCommandCatalog.ts`) y con la sección `worldGen3d` del manifest.
 
+use glam::Vec3;
 use serde::{Deserialize, Serialize};
+
+/// Metros de las llanuras por encima del fondo del volumen (hueco para cuevas).
+///
+/// No escala con `bounds.height`: ese techo es para montañas y cuevas. El
+/// offset de escena resta esta cota para que las llanuras queden en y = 0.
+pub const TERRAIN_PLAINS_CLEARANCE: f32 = 6.0;
+
+/// Superficie más baja permitida, en metros. La referencia usa `min_height = 4`
+/// para que el terreno que no es cueva no cruce el fondo del volumen.
+pub const TERRAIN_FLOOR: f32 = 2.0;
+
+/// Altura Y de las llanuras en el volumen de generación.
+#[inline]
+#[must_use]
+pub const fn plains_height() -> f32 {
+    TERRAIN_FLOOR + TERRAIN_PLAINS_CLEARANCE
+}
 
 /// Límites de dimensiones del mundo (metros). Son límites duros: el planificador y
 /// el campo de densidad clampan todo a estos valores.
@@ -22,29 +40,48 @@ pub struct WorldBounds {
 impl Default for WorldBounds {
     fn default() -> Self {
         Self {
-            width: 512.0,
-            length: 512.0,
-            height: 128.0,
+            width: 256.0,
+            length: 256.0,
+            height: 72.0,
         }
     }
 }
 
 impl WorldBounds {
+    /// Traslación nominal: centra el ancho pedido y apoya las llanuras en y = 0.
+    /// El engine recentra la huella real (la rejilla redondeada a chunks).
+    #[must_use]
+    pub fn scene_offset(self) -> Vec3 {
+        Vec3::new(-self.width * 0.5, -plains_height(), -self.length * 0.5)
+    }
+
+    /// Radio del disco que el rectángulo cubre entero (el mundo es circular).
+    #[must_use]
+    pub fn radius(self) -> f32 {
+        self.width.min(self.length) * 0.5
+    }
+
     /// Valida los invariantes de dimensiones.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        const MIN_DIM: f32 = 32.0;
-        const MAX_DIM: f32 = 8192.0;
-        for (name, value) in [
-            ("width", self.width),
-            ("length", self.length),
-            ("height", self.height),
-        ] {
+        const MIN_DIM: f32 = 64.0;
+        const MAX_DIM: f32 = 2000.0;
+        const MIN_HEIGHT: f32 = 48.0;
+        const MAX_HEIGHT: f32 = 256.0;
+        for (name, value) in [("width", self.width), ("length", self.length)] {
             if !value.is_finite() || !(MIN_DIM..=MAX_DIM).contains(&value) {
                 return Err(ConfigError::InvalidField {
                     field: format!("bounds.{name}"),
-                    reason: format!("debe estar entre {MIN_DIM} y {MAX_DIM} metros"),
+                    reason: format!(
+                        "debe estar entre {MIN_DIM} y {MAX_DIM} metros (tamaño 64–2000)"
+                    ),
                 });
             }
+        }
+        if !self.height.is_finite() || !(MIN_HEIGHT..=MAX_HEIGHT).contains(&self.height) {
+            return Err(ConfigError::InvalidField {
+                field: "bounds.height".to_string(),
+                reason: format!("debe estar entre {MIN_HEIGHT} y {MAX_HEIGHT} metros"),
+            });
         }
         Ok(())
     }
@@ -153,13 +190,13 @@ impl Default for MountainsConfig {
         Self {
             base: FeatureConfig {
                 enabled: true,
-                max_count: 15,
-                min_size: 60.0,
-                max_size: 180.0,
-                min_separation: 120.0,
+                max_count: 6,
+                min_size: 40.0,
+                max_size: 90.0,
+                min_separation: 80.0,
             },
-            max_height: 90.0,
-            sharpness: 3.0,
+            max_height: 56.0,
+            sharpness: 1.2,
         }
     }
 }
@@ -179,12 +216,12 @@ impl Default for HillsConfig {
         Self {
             base: FeatureConfig {
                 enabled: true,
-                max_count: 30,
-                min_size: 40.0,
-                max_size: 120.0,
-                min_separation: 80.0,
+                max_count: 10,
+                min_size: 20.0,
+                max_size: 50.0,
+                min_separation: 50.0,
             },
-            max_height: 24.0,
+            max_height: 16.0,
         }
     }
 }
@@ -204,12 +241,12 @@ impl Default for ValleysConfig {
         Self {
             base: FeatureConfig {
                 enabled: true,
-                max_count: 8,
-                min_size: 80.0,
-                max_size: 200.0,
-                min_separation: 150.0,
+                max_count: 3,
+                min_size: 40.0,
+                max_size: 80.0,
+                min_separation: 90.0,
             },
-            max_depth: 30.0,
+            max_depth: 18.0,
         }
     }
 }
@@ -230,10 +267,10 @@ impl Default for PlainsConfig {
         Self {
             base: FeatureConfig {
                 enabled: true,
-                max_count: 10,
-                min_size: 100.0,
-                max_size: 260.0,
-                min_separation: 120.0,
+                max_count: 3,
+                min_size: 50.0,
+                max_size: 110.0,
+                min_separation: 80.0,
             },
             max_roughness: 1.5,
         }
@@ -280,12 +317,12 @@ impl Default for LakesConfig {
         Self {
             base: FeatureConfig {
                 enabled: true,
-                max_count: 8,
-                min_size: 20.0,
-                max_size: 90.0,
-                min_separation: 100.0,
+                max_count: 3,
+                min_size: 16.0,
+                max_size: 40.0,
+                min_separation: 70.0,
             },
-            max_depth: 12.0,
+            max_depth: 10.0,
         }
     }
 }
@@ -312,9 +349,9 @@ impl Default for RiversConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_count: 5,
-            length_min: 150.0,
-            length_max: 600.0,
+            max_count: 2,
+            length_min: 60.0,
+            length_max: 180.0,
             width: 4.0,
             depth: 3.0,
         }
@@ -369,9 +406,9 @@ impl Default for CavesConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            max_count: 20,
-            depth_min: 10.0,
-            depth_max: 60.0,
+            max_count: 8,
+            depth_min: 8.0,
+            depth_max: 36.0,
             radius: 3.0,
             room_chance: 0.18,
             segments: 18,
@@ -457,7 +494,7 @@ impl WaterfallsConfig {
 
 /// Biomas activables individualmente. La mezcla por altura/pendiente decide el
 /// material de superficie (splat) de cada punto.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct BiomesConfig {
     pub forest: bool,
@@ -465,6 +502,18 @@ pub struct BiomesConfig {
     pub grassland: bool,
     pub snow: bool,
     pub volcanic: bool,
+}
+
+impl Default for BiomesConfig {
+    fn default() -> Self {
+        Self {
+            forest: true,
+            desert: true,
+            grassland: true,
+            snow: true,
+            volcanic: true,
+        }
+    }
 }
 
 /// Configuración raíz de generación de un mundo.
@@ -515,13 +564,7 @@ impl Default for WorldGenConfig {
             rivers: RiversConfig::default(),
             caves: CavesConfig::default(),
             waterfalls: WaterfallsConfig::default(),
-            biomes: BiomesConfig {
-                forest: true,
-                desert: false,
-                grassland: true,
-                snow: false,
-                volcanic: false,
-            },
+            biomes: BiomesConfig::default(),
         }
     }
 }
@@ -632,3 +675,21 @@ impl std::fmt::Display for ConfigError {
 }
 
 impl std::error::Error for ConfigError {}
+
+#[cfg(test)]
+mod tests {
+    use super::{WorldBounds, plains_height};
+
+    #[test]
+    fn scene_offset_centers_the_footprint_and_seats_the_ground() {
+        let bounds = WorldBounds {
+            width: 200.0,
+            length: 100.0,
+            height: 80.0,
+        };
+        let offset = bounds.scene_offset();
+        assert_eq!(offset.x, -100.0);
+        assert_eq!(offset.z, -50.0);
+        assert!((offset.y + plains_height()).abs() < 1.0e-4);
+    }
+}

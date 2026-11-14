@@ -7,6 +7,8 @@ export type Locale = 'en' | 'es'
 interface LanguageContextValue {
   locale:    Locale
   setLocale: (locale: Locale) => void
+  /** Aplica el idioma que ya eligió el editor, sin volver a enviarlo. */
+  syncLocale: (locale: Locale) => void
   toggleLocale: () => void
 }
 
@@ -31,6 +33,10 @@ export function LanguageProvider({
     try { send2d({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
   }, [locale])
 
+  const syncLocale = useCallback((next: Locale) => {
+    setLocaleState(next)
+  }, [])
+
   const toggleLocale = useCallback(() => {
     const next: Locale = locale === 'en' ? 'es' : 'en'
     setLocaleState(next)
@@ -38,7 +44,7 @@ export function LanguageProvider({
   }, [locale])
 
   return (
-    <LanguageContext.Provider value={{ locale, setLocale, toggleLocale }}>
+    <LanguageContext.Provider value={{ locale, setLocale, syncLocale, toggleLocale }}>
       {children}
     </LanguageContext.Provider>
   )

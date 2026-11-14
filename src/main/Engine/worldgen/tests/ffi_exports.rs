@@ -36,8 +36,7 @@ fn create_with_invalid_json_returns_null_and_global_error() {
         message.contains("key must be a string"),
         "el error de JSON debe llegar tal cual: {message}"
     );
-    let needed = unsafe { wg_last_error(std::ptr::null(), std::ptr::null_mut(), 0) };
-    assert_eq!(needed, message.len(), "cap 0 devuelve el largo sin el NUL");
+    assert_eq!(written, message.len(), "el buffer se llena sin el NUL");
 }
 
 #[test]

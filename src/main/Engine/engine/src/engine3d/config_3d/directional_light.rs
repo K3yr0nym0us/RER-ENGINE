@@ -29,13 +29,33 @@ pub const SHADOW_NORMAL_BIAS_MAX: f32 = 0.0004;
 pub const SHADOW_DEPTH_BIAS_CONST: f32 = 0.0;
 /// Escala de bias por pendiente (1 - N·L).
 pub const SHADOW_DEPTH_BIAS_SLOPE: f32 = 0.00003;
-/// Distancia típica del icono del sol respecto al origen.
+/// Distancia típica del icono del sol respecto al origen (mundo de radio 50).
 pub const SUN_DISTANCE: f32 = 42.0;
 
+fn shadow_ortho_extent_m(world_radius: f32) -> f32 {
+    let diagonal = (world_radius * 2.0) * 3.0_f32.sqrt();
+    diagonal.max(48.0) * 0.55
+}
+
+fn shadow_world_texel_from(world_radius: f32, map_size: u32) -> f32 {
+    (2.0 * shadow_ortho_extent_m(world_radius)) / map_size.max(1) as f32
+}
+/// Fracción del radio: el icono queda alto, por encima del terreno.
+const SUN_ORBIT_RADIUS_FRACTION: f32 = 0.78;
+/// Nunca sale de la esfera: si se sale, el editor lo recorta y desaparece.
+const SUN_ORBIT_INSIDE_FRACTION: f32 = 0.92;
+
 impl State {
+    /// Distancia del icono: dentro de la esfera, cerca del cielo.
+    pub(crate) fn sun_orbit_distance(&self) -> f32 {
+        let radius = self.world_bounds_3d.radius;
+        let desired = (radius * SUN_ORBIT_RADIUS_FRACTION).max(SUN_DISTANCE);
+        desired.min(radius * SUN_ORBIT_INSIDE_FRACTION)
+    }
+
     pub(crate) fn default_sun_position(&self) -> Vec3 {
         let center = self.directional_light_scene_center();
-        center + DEFAULT_LIGHT_DIR.normalize() * SUN_DISTANCE
+        center + DEFAULT_LIGHT_DIR.normalize() * self.sun_orbit_distance()
     }
 
     /// Centro de la escena para calcular la dirección del sol (luz direccional).
@@ -57,6 +77,38 @@ impl State {
         if to_sun.length_squared() > 1e-8 {
             self.directional_light_dir = to_sun.normalize();
         }
+    }
+
+    /// Recoloca el icono a la distancia del cielo, sin salir de la esfera.
+    /// Conserva la dirección. No emite `ModelLoaded` para no mover la cámara.
+    pub(crate) fn keep_sun_inside_sky(&mut self) {
+        let Some(id) = self.sun_entity else {
+            return;
+        };
+        let center = self.directional_light_scene_center();
+        let target = self.sun_orbit_distance();
+        let Some(transform) = self.world.get::<Transform>(id) else {
+            return;
+        };
+        let offset = transform.position - center;
+        let dir = if offset.length_squared() > 1e-8 {
+            offset.normalize()
+        } else {
+            DEFAULT_LIGHT_DIR.normalize()
+        };
+        if (offset.length() - target).abs() < 0.5 {
+            return;
+        }
+        let position = center + dir * target;
+        if let Some(transform) = self.world.get_mut::<Transform>(id) {
+            transform.position = position;
+        }
+        self.sync_directional_light_from_sun();
+        log::info!(
+            "[luz] sol a {:.1} m del centro (radio {:.1}, dentro de la esfera)",
+            target,
+            self.world_bounds_3d.radius
+        );
     }
 
     /// Misma posición que `ensure_default_sun` / plantilla FP al arrancar sin `.save`.
@@ -148,13 +200,21 @@ impl State {
         ]
     }
 
+    /// Semi-lado de la ortho de la luz (misma fórmula que `build_light_view_proj`).
+    pub(crate) fn light_shadow_extent_m(&self) -> f32 {
+        shadow_ortho_extent_m(self.world_bounds_3d.radius)
+    }
+
+    /// Metros por texel del mapa de sombras. El shader del terreno usa esto de bias.
+    pub(crate) fn shadow_world_texel_m(&self) -> f32 {
+        shadow_world_texel_from(self.world_bounds_3d.radius, self.active_shadow_map_size())
+    }
+
     /// Proyección ortográfica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
         let center = self.directional_light_scene_center();
         let dir = self.directional_light_dir.normalize();
-        let min = self.world_bounds_3d.min_corner();
-        let max = self.world_bounds_3d.max_corner();
-        let extent = (max - min).length().max(48.0) * 0.55;
+        let extent = self.light_shadow_extent_m();
         let up = if dir.y.abs() > 0.95 { Vec3::X } else { Vec3::Y };
         let eye = center + dir * extent * 2.5;
         let view = Mat4::look_at_rh(eye, center, up);
@@ -393,5 +453,27 @@ impl State {
             position[2]
         );
         id
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{shadow_ortho_extent_m, shadow_world_texel_from};
+
+    #[test]
+    fn shadow_ortho_matches_world_aabb_diagonal() {
+        let radius = 50.0;
+        let expected = (radius * 2.0 * 3.0_f32.sqrt()).max(48.0) * 0.55;
+        assert!((shadow_ortho_extent_m(radius) - expected).abs() < 1e-5);
+    }
+
+    #[test]
+    fn shadow_texel_grows_with_world_and_shrinks_with_map() {
+        let small = shadow_world_texel_from(50.0, 1024);
+        let large = shadow_world_texel_from(250.0, 1024);
+        let fine = shadow_world_texel_from(250.0, 4096);
+        assert!(large > small);
+        assert!(fine < large);
+        assert!(small > 0.05 && small < 1.0);
     }
 }

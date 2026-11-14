@@ -147,7 +147,75 @@ fn splat_is_snow_at_high_altitude_and_rock_on_steep_slopes() {
 }
 
 fn ctx_world_snow_line(config: &WorldGenConfig) -> f32 {
-    config.bounds.height * 0.72
+    rer_worldgen::scale::snow_line_meters(config)
+}
+
+#[test]
+fn snow_stays_off_the_plains() {
+    let config = config_for_biomes();
+    let map = BiomeMap::new(&config);
+    let plains = TERRAIN_FLOOR + TERRAIN_PLAINS_CLEARANCE;
+    let mut snow = 0u32;
+    for i in 0..800i32 {
+        let x = (i * 19 % 509) as f32 + 0.5;
+        let z = (i * 47 % 509) as f32 + 0.5;
+        if map.biome_at(x, z, plains) == Biome::Snow {
+            snow += 1;
+        }
+    }
+    assert_eq!(snow, 0, "la nieve no debe pintar las llanuras");
+}
+
+#[test]
+fn plains_are_mostly_grass_not_desert() {
+    let config = config_for_biomes();
+    let map = BiomeMap::new(&config);
+    let plains = TERRAIN_FLOOR + TERRAIN_PLAINS_CLEARANCE;
+    let mut grass = 0u32;
+    let mut desert = 0u32;
+    for i in 0..1_200i32 {
+        let x = (i * 13 % 511) as f32 + 0.25;
+        let z = (i * 29 % 511) as f32 + 0.75;
+        match map.biome_at(x, z, plains) {
+            Biome::Grassland | Biome::Forest => grass += 1,
+            Biome::Desert => desert += 1,
+            _ => {}
+        }
+    }
+    assert!(
+        grass > desert * 2,
+        "la pradera/bosque debe dominar el suelo (hierba {grass}, desierto {desert})"
+    );
+}
+
+#[test]
+fn kilometre_plains_stay_mostly_grass() {
+    let mut config = config_for_biomes();
+    config.bounds.width = 1000.0;
+    config.bounds.length = 1000.0;
+    config.bounds.height = 256.0;
+    let map = BiomeMap::new(&config);
+    let plains = plains_height();
+    let mut grass = 0u32;
+    let mut desert = 0u32;
+    let samples = 2_000i32;
+    for i in 0..samples {
+        let x = (i * 17 % 997) as f32 + 0.5;
+        let z = (i * 41 % 997) as f32 + 0.5;
+        match map.biome_at(x, z, plains) {
+            Biome::Grassland | Biome::Forest => grass += 1,
+            Biome::Desert => desert += 1,
+            _ => {}
+        }
+    }
+    assert!(
+        grass > desert * 4,
+        "a 1 km el suelo debe ser hierba, no desierto (hierba {grass}, desierto {desert})"
+    );
+    assert!(
+        grass * 100 / samples as u32 > 65,
+        "al menos 65 % de pradera/bosque (hierba {grass} de {samples})"
+    );
 }
 
 #[test]

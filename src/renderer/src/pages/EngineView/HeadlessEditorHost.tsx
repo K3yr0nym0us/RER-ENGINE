@@ -3,6 +3,7 @@ import { createElement, useEffect, useRef } from 'react';
 import { EngineProvider, useContextEngine } from '@engine';
 import { ModalProvider, useModal } from '@modal';
 import { useAutoSave, useControlBindings, useTraslate } from '@hooks';
+import { useLanguage } from '../../context/LanguageContext';
 import { ModalConfirmBody } from '../../modal-electron/ModalConfirmBody';
 import { ExitConfirmBody } from '../../modal-electron/ExitConfirmBody';
 import { SocketConfigModalBody } from '../../modal-electron/SocketConfigModalElectronHost';
@@ -203,7 +204,15 @@ function UiScreensSync() {
 function LegacyWindowListener() {
   const engine = useContextEngine()
   const { openModal } = useModal()
+  const { syncLocale } = useLanguage()
   const { t } = useTraslate()
+
+  useEffect(() => {
+    void window.electronAPI.getEditorLocale().then(syncLocale)
+    return window.electronAPI.onEditorLocale((locale) => {
+      syncLocale(locale)
+    })
+  }, [syncLocale])
   const { openBindingsModal } = useControlBindings()
   const playerUiEditor = usePlayerUiEditorModal('player')
   const { activeBluePrint, setActiveBluePrint } = useQuickBuild()

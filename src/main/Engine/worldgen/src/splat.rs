@@ -2,8 +2,8 @@
 //! preview por chunk.
 //!
 //! - **Splat RGBA8** (R=hierba, G=roca, B=arena, A=nieve): pesos por texel que
-//!   el shader de terreno del engine mezclará entre 4 capas del TextureArray
-//!   cuando se implemente el modo splat. Son los datos canónicos de material.
+//!   el shader de terreno mezcla con Grass, Stone, Sand y Snow.
+//!   Tierra y arcilla salen de la hierba según la pendiente y parches.
 //! - **Albedo de preview** (RGBA): color plano sintetizado de los pesos con la
 //!   paleta, para que el engine lo suba hoy como capa de textura del chunk y el
 //!   terreno se vea por biomas sin esperar el shader de splat.

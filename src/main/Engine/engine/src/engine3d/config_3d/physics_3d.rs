@@ -34,6 +34,8 @@ pub(crate) struct PhysicsWorld {
     entity_body_types: HashMap<EntityId, String>,
     entity_colliders: HashMap<EntityId, ColliderHandle>,
     world_bounds_colliders: Vec<ColliderHandle>,
+    /// Semiespacio infinito del suelo checker. No va ligado a la entidad.
+    ground_collider: Option<ColliderHandle>,
 }
 
 impl Default for PhysicsWorld {
@@ -54,6 +56,7 @@ impl Default for PhysicsWorld {
             entity_body_types: HashMap::new(),
             entity_colliders: HashMap::new(),
             world_bounds_colliders: Vec::new(),
+            ground_collider: None,
         }
     }
 }
@@ -180,9 +183,21 @@ impl PhysicsWorld {
     }
 
     pub(crate) fn add_static_ground(&mut self) -> ColliderHandle {
+        self.remove_static_ground();
         let normal = Unit::new_unchecked(Vector::Y);
         let collider = ColliderBuilder::halfspace(normal).build();
-        self.colliders.insert(collider)
+        let handle = self.colliders.insert(collider);
+        self.ground_collider = Some(handle);
+        handle
+    }
+
+    /// Quita el semiespacio del suelo checker. Los muros del límite del mundo se quedan.
+    pub(crate) fn remove_static_ground(&mut self) {
+        let Some(handle) = self.ground_collider.take() else {
+            return;
+        };
+        self.colliders
+            .remove(handle, &mut self.island_manager, &mut self.bodies, true);
     }
 
     pub(crate) fn add_static_oriented_box(
@@ -200,6 +215,42 @@ impl PhysicsWorld {
             .colliders
             .insert_with_parent(collider, handle, &mut self.bodies);
         (handle, collider_handle)
+    }
+
+    /// Malla estática de un chunk de terreno. Los vértices van en el espacio local
+    /// del chunk; `position` es el origen en el mundo (el mismo del `Transform`).
+    pub(crate) fn set_entity_static_trimesh(
+        &mut self,
+        entity: EntityId,
+        position: [f32; 3],
+        vertices: Vec<Vector>,
+        indices: Vec<[u32; 3]>,
+    ) {
+        self.remove_entity_body(entity);
+        if vertices.len() < 3 || indices.is_empty() {
+            return;
+        }
+        let collider = match ColliderBuilder::trimesh_with_flags(
+            vertices,
+            indices,
+            TriMeshFlags::FIX_INTERNAL_EDGES,
+        ) {
+            Ok(collider) => collider,
+            Err(error) => {
+                log::warn!("[worldgen] la malla del chunk no sirvió de colisión: {error}");
+                return;
+            }
+        };
+        let body = RigidBodyBuilder::fixed()
+            .translation(Vector::new(position[0], position[1], position[2]))
+            .build();
+        let handle = self.bodies.insert(body);
+        let collider_handle = self
+            .colliders
+            .insert_with_parent(collider, handle, &mut self.bodies);
+        self.entity_bodies.insert(entity, handle);
+        self.entity_colliders.insert(entity, collider_handle);
+        self.entity_body_types.insert(entity, "static".to_string());
     }
 
     pub(crate) fn set_entity_physics(

@@ -75,7 +75,7 @@ fn sphere_mesh_is_closed_manifold() {
 fn mesh_is_deterministic_per_input() {
     let config = WorldGenConfig::default();
     let field = DensityField::new(&config);
-    let chunk = ChunkKey { x: 3, y: 1, z: 2 };
+    let chunk = ChunkKey { x: 3, y: 0, z: 2 };
     let a = mesh_chunk(sample_chunk_grid(&field, &config, chunk));
     let b = mesh_chunk(sample_chunk_grid(&field, &config, chunk));
     assert_eq!(
@@ -100,9 +100,10 @@ fn neighbor_chunks_share_boundary_seamlessly() {
     let field = DensityField::new(&config);
 
     // Dos chunks vecinos en X comparten el plano de puntos x = CHUNK_POINTS - 1.
-    // y=1 es la capa que contiene la superficie (y=0 es totalmente sólida).
-    let chunk_a = ChunkKey { x: 2, y: 1, z: 0 };
-    let chunk_b = ChunkKey { x: 3, y: 1, z: 0 };
+    // y=0 es la capa del suelo: las llanuras quedan a unos metros, dentro de
+    // los primeros 32 m.
+    let chunk_a = ChunkKey { x: 2, y: 0, z: 0 };
+    let chunk_b = ChunkKey { x: 3, y: 0, z: 0 };
     let mesh_a = mesh_chunk(sample_chunk_grid(&field, &config, chunk_a));
     let mesh_b = mesh_chunk(sample_chunk_grid(&field, &config, chunk_b));
 

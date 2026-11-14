@@ -43,7 +43,16 @@ export function ModalElectronApp() {
     return removeRender
   }, [])
 
-  const modalLocale = payload?.locale === 'es' ? 'es' : 'en'
+  const [editorLocale, setEditorLocale] = useState<'en' | 'es' | null>(null)
+
+  useEffect(() => {
+    void window.electronAPI.getEditorLocale().then(setEditorLocale)
+    return window.electronAPI.onEditorLocale((locale) => {
+      setEditorLocale(locale)
+    })
+  }, [])
+
+  const modalLocale = editorLocale ?? (payload?.locale === 'es' ? 'es' : 'en')
 
   return (
     <LanguageProvider key={payload?.handlerId ?? 'idle'} initialLocale={modalLocale}>

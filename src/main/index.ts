@@ -32,6 +32,7 @@ import {
   setModalElectronAnchorRect,
   preloadModalElectronWindow,
   forwardEngineEventToModal,
+  publishEditorLocale,
 } from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
 import { registerDevToolsShortcut } from './devToolsShortcut';
@@ -304,6 +305,14 @@ function handleEngineEvent(event: EngineEvent): void {
 /** Mensajes propios del editor Rust (no son eventos del motor). */
 function handleEditorMessage(message: Record<string, unknown>): boolean {
   switch (message.type) {
+    case 'editor_locale': {
+      const locale = message.locale === 'es' ? 'es' : 'en'
+      currentLocale = locale
+      mainWindow?.webContents.send('editor:locale', locale)
+      publishEditorLocale(locale)
+      updateAiAssistantOverlayConfig({ locale })
+      return true
+    }
     case 'editor_ready': {
       hideMainWindowForEditor();
       // Precarga la modal oculta después de que el editor nativo ya está en pantalla,
@@ -554,6 +563,8 @@ function clearAssetWatchers(): void {
 // IPC: renderer → motor y herramientas del editor
 // ---------------------------------------------------------------------------
 registerPluginIpc(() => mainWindow, sendToEngine)
+
+ipcMain.handle('editor:get-locale', () => currentLocale)
 
 registerEngineCmdIpc({
   getProjectType: () => currentProjectType,

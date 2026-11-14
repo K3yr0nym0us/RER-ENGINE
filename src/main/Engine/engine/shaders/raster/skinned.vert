@@ -40,7 +40,7 @@ layout(location = 0) out vec3 v_world;
 layout(location = 1) out vec3 v_normal;
 layout(location = 2) out vec2 v_uv;
 layout(location = 3) out vec4 v_flag;
-layout(location = 4) out vec4 v_tex;
+layout(location = 4) flat out vec4 v_tex;
 layout(location = 5) out vec4 v_curr;
 layout(location = 6) out vec4 v_prev;
 

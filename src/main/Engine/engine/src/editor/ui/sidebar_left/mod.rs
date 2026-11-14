@@ -170,7 +170,6 @@ use self::tools::*;
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let locale = app.cli.locale;
     let context = app.cli.context;
-    let phase_note = app.text().phase_note;
     let scenes = app.scenes.clone();
     let camera = app.world.camera2d;
     let play_view = app.play_view;
@@ -191,10 +190,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                 .inner_margin(egui::Margin::symmetric(4, 8)),
         )
         .show(ui, |ui| {
-            next_locale = footer(ui, locale, phase_note, &mut actions);
+            next_locale = footer(ui, locale, &mut actions);
         });
     if let Some(next) = next_locale {
         app.cli.locale = next;
+        crate::editor::bridge::notify_locale(next);
     }
 
     egui::ScrollArea::vertical()
@@ -211,17 +211,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         Section::Scenes,
                         icons::STACK,
                         crate::editor::i18n::tr(locale, "Escenas", "Scenes"),
-                        |ui, state| {
-                            scenes_body(
-                                ui,
-                                state,
-                                &scenes,
-                                context,
-                                locale,
-                                phase_note,
-                                &mut actions,
-                            )
-                        },
+                        |ui, state| scenes_body(ui, state, &scenes, context, locale, &mut actions),
                     );
                     section(
                         ui,
@@ -238,7 +228,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 play_view,
                                 ready,
                                 locale,
-                                phase_note,
                                 &mut actions,
                             )
                         },
@@ -250,15 +239,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         icons::PACKAGE,
                         crate::editor::i18n::tr(locale, "Recursos", "Resources"),
                         |ui, state| {
-                            resources_body(
-                                ui,
-                                state,
-                                &assets,
-                                context,
-                                locale,
-                                phase_note,
-                                &mut actions,
-                            )
+                            resources_body(ui, state, &assets, context, locale, &mut actions)
                         },
                     );
                     section(
@@ -268,15 +249,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         icons::USERS,
                         crate::editor::i18n::tr(locale, "Crear entidad", "Create entity"),
                         |ui, state| {
-                            entities_body(
-                                ui,
-                                state,
-                                &assets,
-                                context,
-                                locale,
-                                phase_note,
-                                &mut actions,
-                            )
+                            entities_body(ui, state, &assets, context, locale, &mut actions)
                         },
                     );
                     section(
@@ -285,9 +258,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         Section::UserInterface,
                         icons::BROWSER,
                         crate::editor::i18n::tr(locale, "Interfaz de usuario", "User interface"),
-                        |ui, state| {
-                            ui_body(ui, state, &ui_screens, locale, phase_note, &mut actions)
-                        },
+                        |ui, state| ui_body(ui, state, &ui_screens, locale, &mut actions),
                     );
                     section(
                         ui,
@@ -301,7 +272,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 state,
                                 context.is_3d(),
                                 locale,
-                                phase_note,
                                 quick_build_active.as_deref(),
                                 &mut actions,
                             )
@@ -313,9 +283,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         Section::Controls,
                         icons::GAME_CONTROLLER,
                         crate::editor::i18n::tr(locale, "Controles", "Controls"),
-                        |ui, _state| {
-                            controls_body(ui, locale, phase_note, controls.as_ref(), &mut actions)
-                        },
+                        |ui, _state| controls_body(ui, locale, controls.as_ref(), &mut actions),
                     );
                 });
         });
@@ -572,19 +540,18 @@ fn create_entity(app: &mut EditorApp, kind: EntityKind, asset: String) {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn footer(
-    ui: &mut egui::Ui,
-    locale: Locale,
-    hint: &str,
-    actions: &mut Vec<LeftAction>,
-) -> Option<Locale> {
+fn footer(ui: &mut egui::Ui, locale: Locale, actions: &mut Vec<LeftAction>) -> Option<Locale> {
     let width = ui.available_width();
     if widgets::wide_button_click_sized(
         ui,
         width,
         icons::PUZZLE_PIECE,
         crate::editor::i18n::tr(locale, "Plugins", "Plugins"),
-        hint,
+        crate::editor::i18n::tr(
+            locale,
+            "Abrir catálogo de plugins",
+            "Open the plugins catalog",
+        ),
         crate::editor::theme::OUTLINE_SECONDARY,
     ) {
         actions.push(LeftAction::OpenLegacyWindow("plugins"));
@@ -604,7 +571,7 @@ fn footer(
             guide_width,
             icons::INFO,
             crate::editor::i18n::tr(locale, "Guia de usuario", "User guide"),
-            hint,
+            crate::editor::i18n::tr(locale, "Abrir la guía de usuario", "Open the user guide"),
             crate::editor::theme::INFO,
         ) {
             actions.push(LeftAction::OpenLegacyWindow("user_guide"));

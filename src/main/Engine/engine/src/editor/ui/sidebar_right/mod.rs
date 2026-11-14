@@ -372,7 +372,10 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
             }));
         }
         WorldAction::SetRadius(radius) => {
-            let radius = radius.clamp(5.0, 500.0);
+            let radius = radius.clamp(
+                crate::engine3d::MIN_WORLD_RADIUS_3D,
+                crate::engine3d::MAX_WORLD_RADIUS_3D,
+            );
             app.world.world_radius = radius;
             app.world.world_width = radius * 2.0;
             app.world.world_height = radius * 2.0;

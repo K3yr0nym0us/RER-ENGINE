@@ -3,7 +3,6 @@ use super::*;
 pub(super) fn controls_body(
     ui: &mut egui::Ui,
     locale: Locale,
-    hint: &str,
     controls: Option<&ControlSummary>,
     actions: &mut Vec<LeftAction>,
 ) {
@@ -60,7 +59,11 @@ pub(super) fn controls_body(
             width,
             icons::KEYBOARD,
             &keyboard_label,
-            hint,
+            crate::editor::i18n::tr(
+                locale,
+                "Configura teclado y ratón del jugador",
+                "Configure player keyboard and mouse",
+            ),
             crate::editor::theme::INFO,
         ) {
             actions.push(LeftAction::OpenControlBindings("keyboard_mouse"));
@@ -71,7 +74,11 @@ pub(super) fn controls_body(
             width,
             icons::GAME_CONTROLLER,
             &gamepad_label,
-            hint,
+            crate::editor::i18n::tr(
+                locale,
+                "Configura mandos del jugador",
+                "Configure player gamepads",
+            ),
             crate::editor::theme::WARNING,
         ) {
             actions.push(LeftAction::OpenControlBindings("gamepad"));

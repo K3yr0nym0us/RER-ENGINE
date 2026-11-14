@@ -28,6 +28,17 @@ pub fn notify_editor_ready() {
     write_line(&json!({ "type": "editor_ready" }).to_string());
 }
 
+/// Avisa a Electron el idioma del editor para que las modales usen el mismo.
+pub fn notify_locale(locale: crate::editor::cli::Locale) {
+    write_line(
+        &json!({
+            "type": "editor_locale",
+            "locale": locale.as_str(),
+        })
+        .to_string(),
+    );
+}
+
 /// Pide a Electron que abra una ventana legacy por su tipo.
 ///
 /// `kind` identifica el contenido (`scene_script`, `scene_visual_script`,

@@ -139,14 +139,22 @@ pub(crate) struct WorldgenState {
     pub completed_chunks: u32,
     /// Chunks activos en escena.
     pub spawned: HashMap<ChunkKey, WorldgenChunk>,
-    /// Textura de albedo por columna XZ: `(capa del array, epoch que la escribió)`.
+    /// Splat de la columna XZ: `(índice en tex_layers, epoch que lo escribió)`.
     pub columns: HashMap<(i32, i32), (usize, u64)>,
+    /// Capa GPU de `Grass.jpg`. Las cinco siguientes, en orden, son Dirt, Clay,
+    /// Sand, Stone y Snow.
+    pub material_base: Option<u32>,
     /// Capa de textura de fallback (checker) mientras no haya texturas.
     pub fallback_tex_idx: Option<usize>,
     /// Colocaciones de blueprints registradas por el scatter (persistencia F8).
     pub placements: Vec<WorldgenPlacement>,
     /// Reglas de scatter aplicadas por blueprint (persistencia F8).
     pub scatter_rules: Vec<(String, String)>,
+    /// Traslación de la geometría de la DLL: centra la huella y apoya el suelo
+    /// del terreno en y = 0. Se fija en `worldgen_start`.
+    pub scene_offset: glam::Vec3,
+    /// Si es true, al completar la cola se quita el suelo checker.
+    pub replace_ground: bool,
 }
 
 impl Default for WorldgenState {
@@ -165,9 +173,12 @@ impl Default for WorldgenState {
             completed_chunks: 0,
             spawned: HashMap::new(),
             columns: HashMap::new(),
+            material_base: None,
             fallback_tex_idx: None,
             placements: Vec::new(),
             scatter_rules: Vec::new(),
+            scene_offset: glam::Vec3::ZERO,
+            replace_ground: false,
         }
     }
 }

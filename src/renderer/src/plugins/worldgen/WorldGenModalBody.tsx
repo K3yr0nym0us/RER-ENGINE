@@ -2,8 +2,23 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Accordion } from 'react-bootstrap'
 import { ArrowClockwise, PlayFill, PlusLg, StopFill, Trash3 } from 'react-bootstrap-icons'
 
+import { AppTooltip } from '@components'
 import { useTraslate } from '@hooks'
 import type { EngineCommand3D, EngineEvent, ModelInfo } from '@shared-types'
+
+import {
+  BIOME_PRIORITY,
+  WORLDGEN_RADIUS_DEFAULT,
+  WORLDGEN_SIZE_DEFAULT,
+  WORLDGEN_SIZE_MAX,
+  WORLDGEN_SIZE_MIN,
+  clampBiomes,
+  featureCaps,
+  featureSizes,
+  heightForRadius,
+  maxBiomeSlots,
+  sizeToRadius,
+} from './worldgenLimits'
 
 /**
  * Modal del plugin world-gen (ventana Electron hija).
@@ -15,9 +30,7 @@ import type { EngineCommand3D, EngineEvent, ModelInfo } from '@shared-types'
 
 interface PanelState {
   seed: number
-  width: number
-  length: number
-  height: number
+  size: number
   voxelSize: number
   mountains: number
   hills: number
@@ -29,6 +42,7 @@ interface PanelState {
   cavesMaxCount: number
   waterfallsMaxCount: number
   biomes: { forest: boolean; desert: boolean; grassland: boolean; snow: boolean; volcanic: boolean }
+  replaceWorld: boolean
 }
 
 interface ScatterRulesState {
@@ -53,20 +67,22 @@ function randomSeed(): number {
 
 const DEFAULT_PANEL: PanelState = {
   seed: 1,
-  width: 512,
-  length: 512,
-  height: 128,
+  size: WORLDGEN_SIZE_DEFAULT,
   voxelSize: 1,
-  mountains: 15,
-  hills: 30,
-  valleys: 8,
-  plains: 10,
+  mountains: 4,
+  hills: 8,
+  valleys: 3,
+  plains: 2,
   cliffs: 0,
-  lakes: 8,
-  riversMaxCount: 5,
-  cavesMaxCount: 20,
-  waterfallsMaxCount: 3,
-  biomes: { forest: true, desert: false, grassland: true, snow: false, volcanic: false },
+  lakes: 2,
+  riversMaxCount: 2,
+  cavesMaxCount: 6,
+  waterfallsMaxCount: 2,
+  biomes: clampBiomes(
+    { forest: true, desert: true, grassland: true, snow: true, volcanic: true },
+    WORLDGEN_RADIUS_DEFAULT,
+  ),
+  replaceWorld: false,
 }
 
 const DEFAULT_SCATTER: ScatterRulesState = {
@@ -290,6 +306,25 @@ function countedFeature(count: number): { enabled: boolean; maxCount: number } {
   return { enabled: maxCount > 0, maxCount }
 }
 
+function clampPanelToSize(panel: PanelState, size: number): PanelState {
+  const next = Math.min(WORLDGEN_SIZE_MAX, Math.max(WORLDGEN_SIZE_MIN, size))
+  const nextCaps = featureCaps(sizeToRadius(next))
+  return {
+    ...panel,
+    size: next,
+    mountains: Math.min(panel.mountains, nextCaps.mountains),
+    hills: Math.min(panel.hills, nextCaps.hills),
+    valleys: Math.min(panel.valleys, nextCaps.valleys),
+    plains: Math.min(panel.plains, nextCaps.plains),
+    cliffs: Math.min(panel.cliffs, nextCaps.cliffs),
+    lakes: Math.min(panel.lakes, nextCaps.lakes),
+    riversMaxCount: Math.min(panel.riversMaxCount, nextCaps.riversMaxCount),
+    cavesMaxCount: Math.min(panel.cavesMaxCount, nextCaps.cavesMaxCount),
+    waterfallsMaxCount: Math.min(panel.waterfallsMaxCount, nextCaps.waterfallsMaxCount),
+    biomes: clampBiomes(panel.biomes, sizeToRadius(next)),
+  }
+}
+
 export function WorldGenModalBody() {
   const { t } = useTraslate()
   const [panel, setPanel] = useState<PanelState>(() => ({ ...DEFAULT_PANEL, seed: randomSeed() }))
@@ -397,59 +432,39 @@ export function WorldGenModalBody() {
   /** JSON camelCase de `WorldGenConfig` del crate worldgen. */
   const buildConfigJson = (): string => {
     const p = panel
+    const radius = sizeToRadius(p.size)
+    const sizes = featureSizes(radius)
     return JSON.stringify({
       seed: p.seed,
-      bounds: { width: p.width, length: p.length, height: p.height },
+      bounds: { width: p.size, length: p.size, height: heightForRadius(radius) },
       resolution: { voxelSize: p.voxelSize, lodEnabled: true },
       mountains: {
         ...countedFeature(p.mountains),
-        minSize: 60,
-        maxSize: 180,
-        minSeparation: 120,
-        maxHeight: 90,
-        sharpness: 3,
+        ...sizes.mountains,
       },
       hills: {
         ...countedFeature(p.hills),
-        minSize: 40,
-        maxSize: 120,
-        minSeparation: 80,
-        maxHeight: 24,
+        ...sizes.hills,
       },
       valleys: {
         ...countedFeature(p.valleys),
-        minSize: 80,
-        maxSize: 200,
-        minSeparation: 150,
-        maxDepth: 30,
+        ...sizes.valleys,
       },
       plains: {
         ...countedFeature(p.plains),
-        minSize: 100,
-        maxSize: 260,
-        minSeparation: 120,
-        maxRoughness: 1.5,
+        ...sizes.plains,
       },
       cliffs: {
         ...countedFeature(p.cliffs),
-        minSize: 30,
-        maxSize: 120,
-        minSeparation: 100,
-        dropHeight: 18,
+        ...sizes.cliffs,
       },
       lakes: {
         ...countedFeature(p.lakes),
-        minSize: 20,
-        maxSize: 90,
-        minSeparation: 100,
-        maxDepth: 12,
+        ...sizes.lakes,
       },
       rivers: {
         ...countedFeature(p.riversMaxCount),
-        lengthMin: 150,
-        lengthMax: 600,
-        width: 4,
-        depth: 3,
+        ...sizes.rivers,
       },
       caves: {
         ...countedFeature(p.cavesMaxCount),
@@ -470,7 +485,7 @@ export function WorldGenModalBody() {
   const onGenerate = async () => {
     if (!(await resolvePlugin())) return
     send({ cmd: 'world_gen_set_config', config_json: buildConfigJson() })
-    send({ cmd: 'world_gen_start' })
+    send({ cmd: 'world_gen_start', replace_world: panel.replaceWorld })
     finishHandled.current = false
     pendingScatter.current = 0
     setDistributing(false)
@@ -554,7 +569,15 @@ export function WorldGenModalBody() {
     }
   }
 
-  const maxSizeTitle = t('Max size (W × L × H, m)')
+  const inputsLocked = generation !== null || distributing
+  const radius = sizeToRadius(panel.size)
+  const caps = featureCaps(radius)
+  const biomeSlots = maxBiomeSlots(radius)
+  const enabledBiomeCount = BIOME_PRIORITY.reduce(
+    (count, id) => count + Number(panel.biomes[id]),
+    0,
+  )
+  const sizeTitle = t('World size (m)')
   let generateLabel = t('Generate world and distribute blueprints')
   if (distributing) {
     generateLabel = t('Distributing blueprints…')
@@ -572,6 +595,11 @@ export function WorldGenModalBody() {
         </div>
       )}
 
+      <fieldset
+        disabled={inputsLocked}
+        className="border-0 p-0 m-0"
+        style={{ minInlineSize: 0, pointerEvents: inputsLocked ? 'none' : undefined }}
+      >
       {/* Terreno */}
       <fieldset className="border rounded p-2">
         <legend className="fs-5 fw-semibold px-1 mb-1 float-none w-auto mx-auto d-block text-center text-uppercase">{t('Terrain configuration')}</legend>
@@ -579,7 +607,7 @@ export function WorldGenModalBody() {
           <div className="col-6">
             <fieldset className="border rounded p-2 h-100">
               <legend className="fs-5 fw-semibold px-1 mb-2 float-none w-auto">{t('Size settings')}</legend>
-            <div className="d-grid gap-2" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+            <div className="d-grid gap-2">
               <div className="min-w-0">
                 <label className="form-label m-0" htmlFor="worldgen-seed">{t('Seed')}</label>
                 <div className="input-group input-group-sm">
@@ -602,28 +630,26 @@ export function WorldGenModalBody() {
                   </button>
                 </div>
               </div>
-              <StackedNumber
-                id="worldgen-width"
-                label={t('Width')}
-                title={maxSizeTitle}
-                value={panel.width}
-                onChange={(width) => setPanel({ ...panel, width })}
-              />
-              <StackedNumber
-                id="worldgen-length"
-                label={t('Length')}
-                title={maxSizeTitle}
-                value={panel.length}
-                onChange={(length) => setPanel({ ...panel, length })}
-              />
-              <StackedNumber
-                id="worldgen-height"
-                label={t('Height')}
-                title={maxSizeTitle}
-                value={panel.height}
-                onChange={(height) => setPanel({ ...panel, height })}
-              />
-              <div className="min-w-0" style={{ gridColumn: '1 / -1' }}>
+              <div className="min-w-0">
+                <div className="d-flex justify-content-between align-items-baseline">
+                  <label className="form-label m-0" htmlFor="worldgen-size">{t('Size')}</label>
+                  <span className="text-secondary">{panel.size}</span>
+                </div>
+                <input
+                  id="worldgen-size"
+                  type="range"
+                  className="form-range"
+                  title={sizeTitle}
+                  min={WORLDGEN_SIZE_MIN}
+                  max={WORLDGEN_SIZE_MAX}
+                  step={8}
+                  value={panel.size}
+                  onChange={(e) =>
+                    setPanel(clampPanelToSize(panel, Number(e.target.value) || WORLDGEN_SIZE_MIN))
+                  }
+                />
+              </div>
+              <div className="min-w-0">
                 <div className="d-flex justify-content-between align-items-baseline">
                   <label className="form-label m-0" htmlFor="worldgen-voxel">{t('Voxel size (m)')}</label>
                   <span className="text-secondary">{panel.voxelSize}</span>
@@ -664,8 +690,11 @@ export function WorldGenModalBody() {
                   id={`worldgen-count-${key}`}
                   label={t(label)}
                   min={0}
+                  max={caps[key]}
                   value={panel[key]}
-                  onChange={(count) => setPanel({ ...panel, [key]: Math.max(0, count) })}
+                  onChange={(count) =>
+                    setPanel({ ...panel, [key]: Math.max(0, Math.min(caps[key], count)) })
+                  }
                 />
               ))}
             </div>
@@ -675,23 +704,31 @@ export function WorldGenModalBody() {
 
         <div className="mt-3 ps-3 pb-3">
           <span className="fw-semibold fs-5">{t('Biomes')}</span>
+          <div className="text-secondary small mt-1">
+            {t('This size fits up to {n} biomes').replace('{n}', String(biomeSlots))}
+          </div>
           <div className="d-flex flex-wrap gap-4 mt-2">
-            {(['grassland', 'forest', 'desert', 'snow', 'volcanic'] as const).map((biome) => (
-              <div className="form-check form-switch m-0" key={biome} style={{ fontSize: '1.2rem' }}>
-                <input
-                  className="form-check-input"
-                  type="checkbox"
-                  checked={panel.biomes[biome]}
-                  onChange={(e) =>
-                    setPanel({ ...panel, biomes: { ...panel.biomes, [biome]: e.target.checked } })
-                  }
-                  id={`worldgen-biome-${biome}`}
-                />
-                <label className="form-check-label mb-0" htmlFor={`worldgen-biome-${biome}`}>
-                  {t(biome)}
-                </label>
-              </div>
-            ))}
+            {BIOME_PRIORITY.map((biome) => {
+              const atCap = !panel.biomes[biome] && enabledBiomeCount >= biomeSlots
+              return (
+                <div className="form-check form-switch m-0" key={biome} style={{ fontSize: '1.2rem' }}>
+                  <input
+                    className="form-check-input"
+                    type="checkbox"
+                    checked={panel.biomes[biome]}
+                    disabled={atCap}
+                    onChange={(e) => {
+                      const next = { ...panel.biomes, [biome]: e.target.checked }
+                      setPanel({ ...panel, biomes: clampBiomes(next, radius) })
+                    }}
+                    id={`worldgen-biome-${biome}`}
+                  />
+                  <label className="form-check-label mb-0" htmlFor={`worldgen-biome-${biome}`}>
+                    {t(biome)}
+                  </label>
+                </div>
+              )
+            })}
           </div>
         </div>
       </fieldset>
@@ -745,24 +782,26 @@ export function WorldGenModalBody() {
                       <Accordion.Header>
                         <span className="d-flex w-100 align-items-center justify-content-between pe-2">
                           <span className="text-truncate">{modelName}</span>
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            className="btn btn-sm btn-outline-danger ms-2"
-                            aria-label={t('Remove model')}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              removeScatterModel(entry.id)
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key !== 'Enter' && event.key !== ' ') return
-                              event.preventDefault()
-                              event.stopPropagation()
-                              removeScatterModel(entry.id)
-                            }}
-                          >
-                            <Trash3 size={12} aria-hidden />
-                          </span>
+                          <AppTooltip content={t('Remove model')} place="top">
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="btn btn-sm btn-outline-danger ms-2"
+                              aria-label={t('Remove model')}
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                removeScatterModel(entry.id)
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return
+                                event.preventDefault()
+                                event.stopPropagation()
+                                removeScatterModel(entry.id)
+                              }}
+                            >
+                              <Trash3 size={12} aria-hidden />
+                            </span>
+                          </AppTooltip>
                         </span>
                       </Accordion.Header>
                       <Accordion.Body>
@@ -783,6 +822,20 @@ export function WorldGenModalBody() {
 
       {status && <div className="text-secondary small">{status}</div>}
 
+      <div className="form-check mt-2">
+        <input
+          className="form-check-input"
+          type="checkbox"
+          id="worldgen-replace-world"
+          checked={panel.replaceWorld}
+          onChange={(event) => setPanel({ ...panel, replaceWorld: event.target.checked })}
+        />
+        <label className="form-check-label" htmlFor="worldgen-replace-world">
+          {t('Replace current world')}
+        </label>
+      </div>
+      </fieldset>
+
       <div className="d-flex gap-2 mt-2">
         <button
           type="button"
@@ -801,7 +854,7 @@ export function WorldGenModalBody() {
           <StopFill size={14} className="me-1" aria-hidden />
           {t('Stop')}
         </button>
-        <button type="button" className="btn btn-outline-danger btn-sm" onClick={onReset}>
+        <button type="button" className="btn btn-outline-danger btn-sm" onClick={onReset} disabled={inputsLocked}>
           <Trash3 size={14} className="me-1" aria-hidden />
           {t('Clear')}
         </button>

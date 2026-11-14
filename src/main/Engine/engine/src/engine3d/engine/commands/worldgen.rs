@@ -16,8 +16,8 @@ impl State {
                 self.worldgen_set_config(config_json);
                 None
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::WorldGenStart) => {
-                self.worldgen_start();
+            EngineCommand::Only3d(EngineCommand3dOnly::WorldGenStart { replace_world }) => {
+                self.worldgen_start(replace_world);
                 None
             }
             EngineCommand::Only3d(EngineCommand3dOnly::WorldGenStop) => {

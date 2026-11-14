@@ -110,6 +110,13 @@ impl State {
 
     /// Aplica `colision` tras spawn/carga o cambio de modelo según categoría y tipo de mesh.
     pub(crate) fn reconcile_entity_physics_with_mesh(&mut self, id: EntityId) {
+        if self
+            .world
+            .get::<crate::engine3d::ecs::NameComponent>(id)
+            .is_some_and(|name| name.name == "TerrainChunk")
+        {
+            return;
+        }
         if self.is_plane_wall_entity(id) {
             if self.collider_entities.contains(&id)
                 && self.entity_colision.get(&id).copied().unwrap_or(true)
@@ -207,6 +214,12 @@ impl State {
             && let Some((center, half)) = self.play_character_world_pick_aabb()
         {
             return (center, half);
+        }
+        if let Some(aabb) = self.world.get::<crate::engine3d::ecs::MeshLocalAabb>(id) {
+            let bounds = Some((aabb.min.to_array(), aabb.max.to_array()));
+            let half = physics_half_extents_for_model(transform.scale.abs().to_array(), bounds);
+            let center = physics_body_world_center(transform, bounds, "", half);
+            return (GlamVec3::from_array(center), GlamVec3::from_array(half));
         }
         let model_path = self.entity_asset_path_for_bounds(id).unwrap_or_default();
         let bounds = self.resolve_entity_visual_local_bounds(id);

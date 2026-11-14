@@ -8,7 +8,6 @@ pub(super) fn camera_body(
     play_view: Option<PlayView>,
     ready: bool,
     locale: Locale,
-    hint: &str,
     actions: &mut Vec<LeftAction>,
 ) {
     if context.is_3d() {
@@ -16,7 +15,15 @@ pub(super) fn camera_body(
             ui,
             crate::editor::i18n::tr(locale, "Tipo de cámara", "Camera type"),
         );
-        widgets::select_placeholder(ui, context.game_style.as_str(), hint);
+        widgets::select_placeholder(
+            ui,
+            context.game_style.as_str(),
+            crate::editor::i18n::tr(
+                locale,
+                "Modo de cámara del proyecto (solo lectura)",
+                "Project camera mode (read-only)",
+            ),
+        );
         ui.add_space(4.0);
 
         if context.game_style != GameStyle::FirstPerson {

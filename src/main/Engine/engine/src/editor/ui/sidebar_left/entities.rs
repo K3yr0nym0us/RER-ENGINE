@@ -6,7 +6,6 @@ pub(super) fn entities_body(
     assets: &AssetLists,
     context: ProjectContext,
     locale: Locale,
-    hint: &str,
     actions: &mut Vec<LeftAction>,
 ) {
     let mut kinds = vec![
@@ -46,7 +45,7 @@ pub(super) fn entities_body(
 
     for (kind, icon, title, color) in kinds {
         entity_section(
-            ui, state, kind, icon, title, color, assets, context, locale, hint, actions,
+            ui, state, kind, icon, title, color, assets, context, locale, actions,
         );
     }
 }
@@ -61,7 +60,6 @@ pub(super) fn entity_section(
     assets: &AssetLists,
     context: ProjectContext,
     locale: Locale,
-    hint: &str,
     actions: &mut Vec<LeftAction>,
 ) {
     let selected = if context.is_3d() {
@@ -108,7 +106,7 @@ pub(super) fn entity_section(
             width,
             icons::PLUS,
             create_label(kind, context, locale),
-            hint,
+            create_tooltip(kind, context, locale),
             color,
         ) && let Some(asset) = selected.clone()
         {
@@ -164,5 +162,27 @@ pub(super) fn create_label(
                 crate::editor::i18n::tr(locale, "Añadir proyectil", "Add projectile")
             }
         }
+    }
+}
+
+fn create_tooltip(kind: EntityKind, context: ProjectContext, locale: Locale) -> &'static str {
+    if context.is_3d() {
+        return crate::editor::i18n::tr(
+            locale,
+            "Crea la entidad en la escena con el modelo seleccionado",
+            "Spawn the entity in the scene using the selected model",
+        );
+    }
+    match kind {
+        EntityKind::Projectile => crate::editor::i18n::tr(
+            locale,
+            "Crea el proyectil con el sprite seleccionado",
+            "Create the projectile from the selected sprite",
+        ),
+        _ => crate::editor::i18n::tr(
+            locale,
+            "Crea la entidad con el sprite seleccionado",
+            "Create the entity from the selected sprite",
+        ),
     }
 }

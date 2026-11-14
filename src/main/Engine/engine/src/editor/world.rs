@@ -363,7 +363,10 @@ impl WorldSettings {
             }
             "set_world_radius" => {
                 if let Some(value) = number(command, "radius") {
-                    let radius = (value as f32).clamp(5.0, 500.0);
+                    let radius = (value as f32).clamp(
+                        crate::engine3d::MIN_WORLD_RADIUS_3D,
+                        crate::engine3d::MAX_WORLD_RADIUS_3D,
+                    );
                     self.world_radius = radius;
                     self.world_width = radius * 2.0;
                     self.world_height = radius * 2.0;
@@ -642,6 +645,13 @@ mod tests {
         world.apply_command(&json!({ "cmd": "set_world_radius", "radius": 10.0 }));
         assert_eq!(world.world_radius, 10.0);
         assert_eq!(world.world_width, 20.0);
+
+        world.apply_command(&json!({ "cmd": "set_world_radius", "radius": 5000.0 }));
+        assert_eq!(world.world_radius, crate::engine3d::MAX_WORLD_RADIUS_3D);
+        assert_eq!(
+            world.world_width,
+            crate::engine3d::MAX_WORLD_RADIUS_3D * 2.0
+        );
 
         world.apply_command(&json!({ "cmd": "set_directional_light", "ambient": 0.2 }));
         assert_eq!(world.light_ambient, 0.2);

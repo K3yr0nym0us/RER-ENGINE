@@ -34,8 +34,12 @@ pub fn domain_seed(world_seed: u32, salt: u32) -> i32 {
 pub const SALT_TERRAIN: u32 = 0;
 /// Dominio del detalle de alta frecuencia del terreno.
 pub const SALT_DETAIL: u32 = 1_000;
-/// Dominio del mapa de biomas.
+/// Dominio del mapa de biomas (temperatura).
 pub const SALT_BIOME: u32 = 2_000;
+/// Dominio de humedad (Whittaker, independiente de la temperatura).
+pub const SALT_MOISTURE: u32 = 2_100;
+/// Dominio de hotspots volcánicos.
+pub const SALT_VOLCANIC: u32 = 2_200;
 /// Dominio de la máscara de montañas.
 pub const SALT_MOUNTAIN: u32 = 3_000;
 /// Dominio de máscara de acantilados/terrazas.

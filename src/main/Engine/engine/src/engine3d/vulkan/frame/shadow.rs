@@ -65,7 +65,7 @@ impl FrameRenderer {
         }
         self.draw_indexed(
             slot,
-            input.static_batches.iter().map(|batch| {
+            input.shadow_static_batches.iter().map(|batch| {
                 (
                     batch.vertex,
                     batch.index,

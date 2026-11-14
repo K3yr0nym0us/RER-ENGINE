@@ -202,6 +202,10 @@ pub fn create_unit_quad_xy(gpu: &SharedGpu) -> Mesh {
 #[allow(dead_code)]
 pub const RENDER_KIND_HUD_OVERLAY: f32 = 3.0;
 
+/// Terreno generado. El fragmento mezcla hierba, tierra, arcilla, arena, piedra
+/// y nieve a partir de la capa base guardada en `tex_layer_pad.w`.
+pub const RENDER_KIND_TERRAIN: f32 = 4.0;
+
 // ---------------------------------------------------------------------------
 /// Data uploaded per draw instance to the GPU.
 ///

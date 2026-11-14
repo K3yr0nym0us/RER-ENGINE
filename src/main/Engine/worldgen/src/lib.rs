@@ -24,6 +24,7 @@ pub mod mesher;
 pub mod noise;
 pub mod planner;
 pub mod plugin_ffi;
+pub mod scale;
 pub mod scatter;
 pub mod seed;
 pub mod splat;

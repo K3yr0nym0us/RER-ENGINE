@@ -169,12 +169,19 @@ impl State {
             light_color: self.scene_light_color(),
             light_view_proj: self.build_light_view_proj(),
             light_params,
-            jitter: [jitter_x, jitter_y, probe_weight, 0.0],
+            jitter: [
+                jitter_x,
+                jitter_y,
+                probe_weight,
+                self.shadow_world_texel_m(),
+            ],
             depth_plane: [
                 self.camera.near,
                 self.camera.far,
                 if reflections { 1.0 } else { 0.0 },
-                0.0,
+                // La capa de Grass va en el uniforme: `tex_layer_pad.w` también es el IOR
+                // y, si queda en 0, el shader lee el checker del editor.
+                self.worldgen.material_base.unwrap_or(0) as f32,
             ],
             shadow_bias: self.scene_shadow_bias(),
         };
@@ -305,6 +312,21 @@ impl State {
         }
 
         let mut static_batches: Vec<MeshBatch> = Vec::new();
+        let shadow_scene_batches = filter_shadow_cast_batches(self, &opaque_batches);
+        let mut shadow_static_batches: Vec<MeshBatch> = Vec::new();
+        for b in &shadow_scene_batches {
+            let Some(mesh) = self.meshes.get(b.mesh_idx) else {
+                continue;
+            };
+            let instances_bytes = bytemuck::cast_slice(&b.instances);
+            shadow_static_batches.push(MeshBatch {
+                vertex: &mesh.vertex_buffer,
+                index: &mesh.index_buffer,
+                index_count: mesh.index_count,
+                instances: instances_bytes,
+                instance_count: b.instances.len() as u32,
+            });
+        }
         for b in &opaque_batches {
             let Some(mesh) = self.meshes.get(b.mesh_idx) else {
                 continue;
@@ -744,6 +766,7 @@ impl State {
             raytracing,
             probe_captures: &probe_captures,
             static_batches: &static_batches,
+            shadow_static_batches: &shadow_static_batches,
             static_transparent_batches: &static_transparent_batches,
             skinned_batches: &skinned_batches,
             skinned_transparent_batches: &skinned_transparent_batches,

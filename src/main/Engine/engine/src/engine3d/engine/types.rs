@@ -124,6 +124,7 @@ pub(crate) struct SceneUniforms {
     /// xy = jitter subpíxel de TAA; z = peso del IBL de sondas; w sin uso.
     pub(crate) jitter: [f32; 4],
     /// x = near, y = far; z = 1 cuando SSR/reflejos activos (forward IBL cede especular).
+    /// w = capa GPU de Grass (0 = sin fotos de terreno).
     pub(crate) depth_plane: [f32; 4],
     /// x = bias_min, y = bias_max, z = depth_const, w = depth_slope.
     pub(crate) shadow_bias: [f32; 4],

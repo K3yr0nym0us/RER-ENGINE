@@ -5,7 +5,8 @@ use crate::engine3d::gizmo::{GizmoBuffer, GizmoVertex};
 
 pub(crate) const DEFAULT_WORLD_RADIUS_3D: f32 = 50.0;
 pub(crate) const MIN_WORLD_RADIUS_3D: f32 = 5.0;
-pub(crate) const MAX_WORLD_RADIUS_3D: f32 = 500.0;
+/// Radio máximo de la esfera (diámetro 2000 m).
+pub(crate) const MAX_WORLD_RADIUS_3D: f32 = 1000.0;
 const WORLD_BOUNDS_COLOR: [f32; 4] = [1.0, 0.35, 0.35, 0.55];
 
 /// Cielo interior esférico (también referencia para IBL/SSR procedural).
@@ -245,6 +246,7 @@ impl State {
         self.world_bounds_3d = WorldBounds3D::new(radius);
         self.sync_world_bounds_3d_runtime();
         self.sync_ground_plane_to_world_bounds();
+        self.keep_sun_inside_sky();
     }
 
     pub(crate) fn set_world_bounds_3d_size(&mut self, width: f32, height: f32, depth: Option<f32>) {

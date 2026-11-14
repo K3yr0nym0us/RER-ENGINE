@@ -68,6 +68,15 @@ pub struct MeshComponent {
 #[derive(Debug, Clone, Default)]
 pub struct NonSelectable;
 
+/// AABB local de una malla que no pasa por la caché de modelos (chunks de terreno).
+/// El culling y el picking usan esta caja; sin ella el motor asume un cubo de 1 m
+/// en el origen del transform y descarta la malla entera.
+#[derive(Debug, Clone, Copy)]
+pub struct MeshLocalAabb {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
 /// Cámara orbital del editor 3D (entidad separada del jugador FP).
 #[derive(Debug, Clone)]
 pub struct EditorCamera {

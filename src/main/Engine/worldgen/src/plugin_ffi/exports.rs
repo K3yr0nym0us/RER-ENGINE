@@ -68,8 +68,10 @@ pub unsafe extern "C" fn wg_world_create(
         // # Seguridad: buffer de solo lectura de `config_len` bytes según el contrato.
         let json = unsafe { std::slice::from_raw_parts(config_json, config_len) };
         let json = std::str::from_utf8(json).map_err(|err| err.to_string())?;
-        let config = serde_json::from_str::<WorldGenConfig>(json).map_err(|err| err.to_string())?;
+        let mut config =
+            serde_json::from_str::<WorldGenConfig>(json).map_err(|err| err.to_string())?;
         config.validate().map_err(|err| err.to_string())?;
+        crate::scale::fit_config_to_world(&mut config);
         let biomes = BiomeMap::new(&config);
         let field = DensityField::new(&config);
         let world = WgWorld {
