@@ -897,14 +897,14 @@ impl super::super::engine::State {
         Ok(())
     }
 
-    /// Sube Grass, Dirt, Clay, Sand, Stone y Snow a 1024 con mips, en ese orden.
+    /// Sube Grass, Dirt, Clay, Sand, Stone, Snow y Mud a 1024 con mips, en ese orden.
     /// El 4K se descarta al empaquetar: de lejos el GPU usa un mip pequeño.
     fn ensure_terrain_materials(&mut self) {
         if self.worldgen.material_base.is_some() {
             return;
         }
-        let Some(dir) = terrain_material_dir() else {
-            log::warn!("[worldgen] no están las texturas de terreno en assets/terrain");
+        let Some(dir) = terrain_material_dir(self.worldgen.library_path.as_deref()) else {
+            log::warn!("[worldgen] no están las texturas de terreno junto al plugin");
             return;
         };
         // Capa 0 = checker del editor. Grass es la primera foto: si queda al lado,
@@ -912,7 +912,7 @@ impl super::super::engine::State {
         if !self.pack_terrain_isolation_layer() {
             return;
         }
-        let mut layers = [0u32; 6];
+        let mut layers = [0u32; 7];
         for (index, name) in TERRAIN_MATERIAL_FILES.iter().enumerate() {
             let path = dir.join(name);
             let Ok(image) = image::open(&path) else {
@@ -1181,19 +1181,33 @@ fn chunk_vertex_aabb(vertices: &[crate::engine3d::mesh::Vertex]) -> (Vec3, Vec3)
     (min, max)
 }
 
-const TERRAIN_MATERIAL_FILES: [&str; 6] = [
+const TERRAIN_MATERIAL_FILES: [&str; 7] = [
     "Grass.jpg",
     "Dirt.jpg",
     "Clay.jpg",
     "Sand.jpg",
     "Stone.jpg",
     "Snow.jpg",
+    "Mud.jpg",
 ];
 
-/// Carpeta `assets/terrain` del crate del engine (Grass, Dirt, Clay, Sand, Stone, Snow).
-fn terrain_material_dir() -> Option<std::path::PathBuf> {
-    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("assets/terrain");
-    dir.join(TERRAIN_MATERIAL_FILES[0]).is_file().then_some(dir)
+/// Fotos de suelo del plugin: `terrain/` al lado de la DLL, o el checkout
+/// `worldgen/assets/terrain` en desarrollo.
+fn terrain_material_dir(library_path: Option<&str>) -> Option<std::path::PathBuf> {
+    let mut dirs = Vec::new();
+    if let Some(parent) = library_path.and_then(|path| std::path::Path::new(path).parent()) {
+        dirs.push(parent.join("terrain"));
+    }
+    if let Ok(env_dll) = std::env::var("RER_WORLDGEN_DLL")
+        && let Some(parent) = std::path::Path::new(&env_dll).parent()
+    {
+        dirs.push(parent.join("terrain"));
+    }
+    dirs.push(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../worldgen/assets/terrain"),
+    );
+    dirs.into_iter()
+        .find(|dir| dir.join(TERRAIN_MATERIAL_FILES[0]).is_file())
 }
 
 #[cfg(test)]
@@ -1203,7 +1217,7 @@ mod terrain_material_tests {
     #[test]
     fn terrain_photos_are_on_disk_with_grass_first() {
         assert_eq!(TERRAIN_MATERIAL_FILES[0], "Grass.jpg");
-        let dir = terrain_material_dir().expect("assets/terrain/Grass.jpg");
+        let dir = terrain_material_dir(None).expect("worldgen/assets/terrain/Grass.jpg");
         for name in TERRAIN_MATERIAL_FILES {
             assert!(
                 dir.join(name).is_file(),
@@ -1215,8 +1229,8 @@ mod terrain_material_tests {
 
     #[test]
     fn grass_jpeg_decodes_green_not_a_checker() {
-        let path = terrain_material_dir()
-            .expect("assets/terrain")
+        let path = terrain_material_dir(None)
+            .expect("worldgen/assets/terrain")
             .join("Grass.jpg");
         let image = image::open(&path).expect("Grass.jpg").to_rgba8();
         let (width, height) = image.dimensions();

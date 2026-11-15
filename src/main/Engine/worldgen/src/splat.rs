@@ -4,17 +4,19 @@
 //! - **Splat RGBA8** (R=hierba, G=roca, B=arena, A=nieve): pesos por texel que
 //!   el shader de terreno mezcla con Grass, Stone, Sand y Snow.
 //!   Tierra y arcilla salen de la hierba según la pendiente y parches.
+//!   El vaso de un lago y el cauce de un río dejan el resto (`1 - RGBAsuma`)
+//!   para `Mud.jpg`. El recorrido de una cueva pinta `Stone.jpg` (canal G).
 //! - **Albedo de preview** (RGBA): color plano sintetizado de los pesos con la
 //!   paleta, para que el engine lo suba hoy como capa de textura del chunk y el
 //!   terreno se vea por biomas sin esperar el shader de splat.
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 
 use crate::biomes::{Biome, BiomeMap};
 use crate::chunks::CHUNK_SIZE;
 use crate::field::spatial::SiteIndex;
 use crate::field::{DensityField, smoothstep};
-use crate::planner::FeatureKind;
+use crate::planner::{CaveSystem, FeatureKind, RiverPath};
 
 /// Resolución del splat por chunk (texels por lado, lod 0).
 pub const SPLAT_DIM: u32 = 64;
@@ -41,6 +43,14 @@ impl SplatWeights {
     pub const fn to_rgba(self) -> [u8; 4] {
         [self.grass, self.rock, self.sand, self.snow]
     }
+
+    /// Lodo del vaso del lago o del cauce: el resto que no ocupan hierba/roca/arena/nieve.
+    #[inline]
+    #[must_use]
+    pub const fn mud(self) -> u8 {
+        let used = self.grass as u16 + self.rock as u16 + self.sand as u16 + self.snow as u16;
+        255u16.saturating_sub(used) as u8
+    }
 }
 
 /// Paleta de albedo de preview por material (RGB lineal 0..255).
@@ -48,12 +58,15 @@ const GRASS_RGB: [f32; 3] = [78.0, 132.0, 62.0];
 const ROCK_RGB: [f32; 3] = [108.0, 102.0, 96.0];
 const SAND_RGB: [f32; 3] = [196.0, 174.0, 116.0];
 const SNOW_RGB: [f32; 3] = [236.0, 240.0, 244.0];
+const MUD_RGB: [f32; 3] = [28.0, 22.0, 16.0];
 
-/// Contexto de splat: mapa de biomas + sitios (para orillas de lagos).
+/// Contexto de splat: mapa de biomas + sitios (lagos) y ríos (cauces de lodo).
 pub struct SplatContext<'a> {
     field: &'a DensityField,
     biomes: &'a BiomeMap,
     sites: &'a SiteIndex,
+    rivers: &'a [RiverPath],
+    caves: &'a [CaveSystem],
     /// Altura del mundo (para líneas de nieve/roca por altitud).
     world_max_y: f32,
     /// Tamaño de voxel del mundo (ancho real de chunk = CHUNK_SIZE * voxel).
@@ -74,6 +87,8 @@ impl<'a> SplatContext<'a> {
             field,
             biomes,
             sites: field.sites(),
+            rivers: field.plan().rivers.as_slice(),
+            caves: field.plan().caves.as_slice(),
             world_max_y,
             voxel_size,
         }
@@ -115,33 +130,45 @@ impl<'a> SplatContext<'a> {
             snow = snow.max(snow_alt);
         }
 
-        // Arena: desierto; playas cerca del nivel del agua en lagos cercanos.
+        // Arena: solo desierto (y un poco de volcánico). Las orillas de lago y
+        // río mezclan lodo del vaso/cauce con el suelo de alrededor.
         let volcanic = biome[Biome::Volcanic.index()];
         let mut sand = biome[Biome::Desert.index()] + volcanic * 0.25;
+        let mut mud = 0.0f32;
         for site in self.sites.query(x, z) {
             if site.kind == FeatureKind::Lake {
-                let d = (site.pos - Vec2::new(x, z)).length();
-                // Orilla: banda 1.5 m junto al borde del vaso.
-                let shore = smoothstep(site.radius + 1.5, site.radius - 1.5, d);
-                sand = sand.max(shore);
+                let t = site.norm_dist(x, z);
+                mud = mud.max(1.0 - smoothstep(0.76, 1.14, t));
             }
         }
+        mud = mud.max(river_bed_mud(self.rivers, x, z));
+        let cave = cave_stone(self.caves, x, z);
         // Volcánico: roca oscura (roca + algo de arena, ya sumada arriba).
-        rock = rock.max(volcanic * 0.75);
+        rock = rock.max(volcanic * 0.75).max(cave);
         // Sobre la línea de nieve la nieve cubre la roca; solo resbala en
         // paredes casi verticales. Las cimas de los mundos pequeños pasan de
         // 24°, y con el umbral de la roca quedaban sin nieve.
         snow *= 1.0 - smoothstep(48.0, 64.0, slope_deg) * 0.85;
-        rock *= 1.0 - snow * 0.8;
+        if cave < 0.5 {
+            rock *= 1.0 - snow * 0.8;
+        }
+        snow *= 1.0 - cave;
         sand *= 1.0 - rock;
+        // El recorrido de cueva es piedra (`Stone.jpg`), no lodo.
+        mud *= 1.0 - cave;
 
+        let keep = (1.0 - mud).max(0.0);
         let mut grass = (1.0 - rock - snow - sand).max(0.0);
-        // Normalizar a 255.
-        let total = rock + snow + sand + grass;
-        if total <= 0.0 {
+        rock *= keep;
+        snow *= keep;
+        sand *= keep;
+        grass *= keep;
+        let covered = rock + snow + sand + grass;
+        if covered <= 0.0 && mud <= 0.0 {
             grass = 1.0;
         }
-        let to_u8 = |v: f32| (v * 255.0 / total.max(1.0)).round().clamp(0.0, 255.0) as u8;
+        let scale = if covered > 1.0 { 1.0 / covered } else { 1.0 };
+        let to_u8 = |v: f32| (v * scale * 255.0).round().clamp(0.0, 255.0) as u8;
         SplatWeights {
             grass: to_u8(grass),
             rock: to_u8(rock),
@@ -155,9 +182,14 @@ impl<'a> SplatContext<'a> {
     pub fn albedo_from_weights(w: SplatWeights) -> [u8; 3] {
         let f = |v: u8| v as f32 / 255.0;
         let (wg, wr, ws, wn) = (f(w.grass), f(w.rock), f(w.sand), f(w.snow));
+        let wm = f(w.mud());
         let mut rgb = [0.0f32; 3];
         for i in 0..3 {
-            rgb[i] = wg * GRASS_RGB[i] + wr * ROCK_RGB[i] + ws * SAND_RGB[i] + wn * SNOW_RGB[i];
+            rgb[i] = wg * GRASS_RGB[i]
+                + wr * ROCK_RGB[i]
+                + ws * SAND_RGB[i]
+                + wn * SNOW_RGB[i]
+                + wm * MUD_RGB[i];
         }
         [
             rgb[0].round() as u8,
@@ -202,4 +234,69 @@ pub fn chunk_splat(
         }
     }
     (splat, albedo, dim)
+}
+
+fn cave_stone(caves: &[CaveSystem], x: f32, z: f32) -> f32 {
+    let point = Vec2::new(x, z);
+    let mut stone = 0.0f32;
+    for cave in caves {
+        for segment in &cave.segments {
+            let dist = segment_xz_distance(point, segment.a, segment.b);
+            let reach = segment.radius.max(1.2) + 0.8;
+            stone = stone.max(1.0 - smoothstep(reach * 0.45, reach, dist));
+        }
+        for room in &cave.rooms {
+            let dist = (point - Vec2::new(room.center.x, room.center.z)).length();
+            let reach = room.radius.max(1.5) + 0.6;
+            stone = stone.max(1.0 - smoothstep(reach * 0.4, reach, dist));
+        }
+    }
+    stone
+}
+
+fn segment_xz_distance(point: Vec2, a: Vec3, b: Vec3) -> f32 {
+    let a2 = Vec2::new(a.x, a.z);
+    let b2 = Vec2::new(b.x, b.z);
+    let ab = b2 - a2;
+    let len2 = ab.length_squared();
+    let t = if len2 <= f32::EPSILON {
+        0.0
+    } else {
+        ((point - a2).dot(ab) / len2).clamp(0.0, 1.0)
+    };
+    (a2 + ab * t - point).length()
+}
+
+fn river_bed_mud(rivers: &[RiverPath], x: f32, z: f32) -> f32 {
+    let point = Vec2::new(x, z);
+    let mut mud = 0.0f32;
+    for river in rivers {
+        let half = river.width.max(1.0);
+        let dist = polyline_distance(&river.points, point);
+        mud = mud.max(1.0 - smoothstep(half * 0.28, half * 1.85, dist));
+    }
+    mud
+}
+
+fn polyline_distance(points: &[(Vec2, f32)], point: Vec2) -> f32 {
+    if points.is_empty() {
+        return f32::INFINITY;
+    }
+    if points.len() == 1 {
+        return (points[0].0 - point).length();
+    }
+    let mut best = f32::MAX;
+    for pair in points.windows(2) {
+        let a = pair[0].0;
+        let b = pair[1].0;
+        let ab = b - a;
+        let len2 = ab.length_squared();
+        let t = if len2 <= f32::EPSILON {
+            0.0
+        } else {
+            ((point - a).dot(ab) / len2).clamp(0.0, 1.0)
+        };
+        best = best.min((a + ab * t - point).length());
+    }
+    best
 }

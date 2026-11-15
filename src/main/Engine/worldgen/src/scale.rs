@@ -79,10 +79,17 @@ pub fn snow_line_meters(config: &WorldGenConfig) -> f32 {
     plains + relief * 0.97
 }
 
-/// Altura de montaña que cabe bajo el techo del volumen.
+/// Desnivel de la rampa cardinal (metros de lado a lado).
+#[must_use]
+pub fn land_grade_amplitude(radius: f32) -> f32 {
+    (radius.max(32.0) * 0.16).clamp(28.0, 64.0)
+}
+
+/// Altura de montaña **sobre el terreno local** (la rampa ya ocupó `grade` metros).
 #[must_use]
 pub fn mountain_relief(config: &WorldGenConfig) -> f32 {
-    let cap = (config.bounds.height - plains_height() - 12.0).max(8.0);
+    let grade = land_grade_amplitude(world_radius(&config.bounds));
+    let cap = (config.bounds.height - plains_height() - grade - 12.0).max(8.0);
     config.mountains.max_height.max(8.0).min(cap)
 }
 
@@ -97,15 +104,43 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
         .height
         .clamp(MIN_WORLDGEN_HEIGHT, MAX_WORLDGEN_HEIGHT);
 
-    fit_feature(&mut config.mountains.base, radius, 0.10, 0.22, 0.62);
+    fit_feature(&mut config.hills.base, radius, 0.04, 0.09, 0.24);
+    config.hills.max_height = config
+        .hills
+        .max_height
+        .clamp(6.0, (radius * 0.04).clamp(8.0, 16.0));
+
+    let grade = land_grade_amplitude(radius);
+    let mountain_want = config
+        .mountains
+        .max_height
+        .max(8.0)
+        .max(config.hills.max_height * 3.0);
+    let need = plains_height() + grade + mountain_want + 18.0;
+    config.bounds.height = config
+        .bounds
+        .height
+        .max(need)
+        .clamp(MIN_WORLDGEN_HEIGHT, MAX_WORLDGEN_HEIGHT);
+
+    fit_feature(&mut config.mountains.base, radius, 0.16, 0.32, 0.58);
+    let hill_span = config.hills.base.max_size.max(1.0);
+    let want_span = (hill_span * 3.0).min(radius * 0.45);
+    config.mountains.base.max_size = config.mountains.base.max_size.max(want_span);
+    config.mountains.base.min_size = (config.hills.base.min_size * 3.0)
+        .min(config.mountains.base.max_size * 0.75)
+        .max(10.0);
+    config.mountains.max_height = config
+        .mountains
+        .max_height
+        .max(config.hills.max_height * 3.0);
     config.mountains.max_height = mountain_relief(config);
     config.mountains.sharpness = config.mountains.sharpness.clamp(0.8, 1.4);
-
-    fit_feature(&mut config.hills.base, radius, 0.08, 0.22, 0.28);
     fit_feature(&mut config.valleys.base, radius, 0.12, 0.30, 0.36);
     fit_feature(&mut config.plains.base, radius, 0.16, 0.40, 0.32);
     fit_feature(&mut config.cliffs.base, radius, 0.08, 0.22, 0.30);
-    fit_feature(&mut config.lakes.base, radius, 0.07, 0.20, 0.38);
+    // sep > 2*max_frac: si no, dos lagos grandes se tocan o se solapan.
+    fit_feature(&mut config.lakes.base, radius, 0.07, 0.18, 0.58);
 
     let river_span = (radius * 1.5).max(40.0);
     config.rivers.length_max = config.rivers.length_max.min(river_span).max(40.0);
@@ -233,6 +268,29 @@ mod tests {
         assert!(config.biomes.snow);
         assert!(config.biomes.desert);
         assert!(config.biomes.volcanic);
+    }
+
+    #[test]
+    fn mountains_are_at_least_three_times_the_hills() {
+        for side in [256.0, 512.0, 1000.0] {
+            let mut config = WorldGenConfig::default();
+            config.bounds.width = side;
+            config.bounds.length = side;
+            config.bounds.height = 128.0;
+            fit_config_to_world(&mut config);
+            assert!(
+                config.mountains.base.max_size + 0.5 >= config.hills.base.max_size * 3.0,
+                "radio montaña {} vs colina {} (lado {side})",
+                config.mountains.base.max_size,
+                config.hills.base.max_size
+            );
+            assert!(
+                config.mountains.max_height + 0.5 >= config.hills.max_height * 3.0,
+                "altura montaña {} vs colina {} (lado {side})",
+                config.mountains.max_height,
+                config.hills.max_height
+            );
+        }
     }
 
     #[test]

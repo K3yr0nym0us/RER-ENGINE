@@ -146,6 +146,7 @@ vec3 terrain_materials(vec3 n) {
     vec3 sand = terrain_layer(tuv, base + 3.0, vec3(0.77, 0.68, 0.45));
     vec3 stone = terrain_layer(tuv, base + 4.0, vec3(0.48, 0.46, 0.44));
     vec3 snow = terrain_layer(tuv, base + 5.0, vec3(0.90, 0.92, 0.94));
+    vec3 mud = terrain_layer(tuv, base + 6.0, vec3(0.10, 0.08, 0.06));
 
     float slope = clamp(1.0 - n.y, 0.0, 1.0);
     float dirt_k = smoothstep(0.12, 0.38, slope);
@@ -153,8 +154,10 @@ vec3 terrain_materials(vec3 n) {
     float clay_n = value_noise(clay_p) * 0.65 + value_noise(clay_p * 2.7 + 17.0) * 0.35;
     float clay_k = (1.0 - dirt_k) * smoothstep(0.60, 0.78, clay_n);
     vec3 ground = mix(mix(grass, clay, clay_k), dirt, dirt_k);
-    float sum = max(w.r + w.g + w.b + w.a, 0.001);
-    vec3 rgb = (ground * w.r + stone * w.g + sand * w.b + snow * w.a) / sum;
+    float covered = w.r + w.g + w.b + w.a;
+    float mud_w = max(1.0 - covered, 0.0);
+    float sum = max(covered + mud_w, 0.001);
+    vec3 rgb = (ground * w.r + stone * w.g + sand * w.b + snow * w.a + mud * mud_w) / sum;
     return rgb;
 }
 

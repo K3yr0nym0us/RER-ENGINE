@@ -191,11 +191,11 @@ impl Default for MountainsConfig {
             base: FeatureConfig {
                 enabled: true,
                 max_count: 6,
-                min_size: 40.0,
-                max_size: 90.0,
-                min_separation: 80.0,
+                min_size: 70.0,
+                max_size: 160.0,
+                min_separation: 140.0,
             },
-            max_height: 56.0,
+            max_height: 72.0,
             sharpness: 1.2,
         }
     }
@@ -217,11 +217,11 @@ impl Default for HillsConfig {
             base: FeatureConfig {
                 enabled: true,
                 max_count: 10,
-                min_size: 20.0,
-                max_size: 50.0,
+                min_size: 14.0,
+                max_size: 32.0,
                 min_separation: 50.0,
             },
-            max_height: 16.0,
+            max_height: 12.0,
         }
     }
 }
@@ -320,9 +320,9 @@ impl Default for LakesConfig {
                 max_count: 3,
                 min_size: 16.0,
                 max_size: 40.0,
-                min_separation: 70.0,
+                min_separation: 140.0,
             },
-            max_depth: 10.0,
+            max_depth: 14.0,
         }
     }
 }
@@ -352,8 +352,8 @@ impl Default for RiversConfig {
             max_count: 2,
             length_min: 60.0,
             length_max: 180.0,
-            width: 4.0,
-            depth: 3.0,
+            width: 5.5,
+            depth: 1.6,
         }
     }
 }

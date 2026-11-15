@@ -13,9 +13,9 @@ use crate::planner::{CaveSystem, FeatureKind, FeaturePlan, RiverPath, Site};
 
 /// Tamaño de celda para sitios de features (metros).
 const SITE_CELL: i32 = 16;
-/// Margen (metros) del AABB de un sitio: la orilla de arena de los lagos se
-/// lee hasta radio + 1.5 m; sin él se corta en el borde de la celda.
-const SITE_QUERY_PAD: f32 = 2.0;
+/// Margen (metros) del AABB de un sitio: la orilla (lodo + suelo) se lee un
+/// poco más allá del vaso; sin él se corta en el borde de la celda.
+const SITE_QUERY_PAD: f32 = 6.0;
 /// Tamaño de celda para shapes de carving (metros).
 const CARVE_CELL: i32 = 8;
 /// Cota mínima del lecho de un río (metros). El volumen empieza en y = 0.
@@ -41,7 +41,7 @@ impl SiteIndex {
             insert_aabb(
                 &mut index.buckets,
                 site.pos,
-                site.radius.max(1.0) + SITE_QUERY_PAD,
+                site.footprint_reach().max(1.0) + SITE_QUERY_PAD,
                 i as u32,
                 SITE_CELL,
             );
@@ -173,7 +173,7 @@ impl CarveIndex {
                     }
                     let factor = if *entrance {
                         // Sección elíptica (aplastada verticalmente) en la boca.
-                        let dy = (y - segment_point_y(p, *a, *b)) * 2.4;
+                        let dy = (y - segment_point_y(p, *a, *b)) * 1.25;
                         horizontal_segment_distance(p, *a, *b).hypot(dy)
                     } else {
                         d
@@ -191,7 +191,7 @@ impl CarveIndex {
                     // referencia): garantiza que el túnel excave a cualquier
                     // profundidad y no solo cerca de la superficie.
                     let strength =
-                        tunnel_factor * gate * (2.0 + depth_below_surface + radius * 2.5) * rough;
+                        tunnel_factor * gate * (3.5 + depth_below_surface + radius * 2.5) * rough;
                     if strength > carve {
                         carve = strength;
                     }
@@ -221,7 +221,11 @@ impl CarveIndex {
                     if d >= *width {
                         continue;
                     }
-                    let profile = (1.0 - d / width).max(0.0).sqrt();
+                    // Hermite: pendiente 0 en el centro y en la orilla. El
+                    // perfil √ dejaba un acantilado en el banco incluso con
+                    // voxel pequeño.
+                    let u = (d / width).clamp(0.0, 1.0);
+                    let profile = 1.0 - smoothstep(0.0, 1.0, u);
                     // Solo talla cerca de la superficie del propio cauce.
                     let gate = 1.0 - smoothstep(surface_y - 0.5, surface_y + 0.6, y);
                     // El lecho no llega a y = 0: un río sobre un lago ya

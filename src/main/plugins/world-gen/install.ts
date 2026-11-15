@@ -1,7 +1,7 @@
 //! Instalación del plugin `world-gen` (DLL nativa de generación de mundos).
 //!
 //! Flujo: descarga del ZIP desde GitHub Releases (`downloadFile`), verificación
-//! opcional de SHA-256, extracción de `rer_worldgen.dll` a
+//! opcional de SHA-256, extracción de `rer_worldgen.dll` y `terrain/*.jpg` a
 //! `userData/plugins/world-gen/` y escritura del record en `plugins/state.json`.
 //! La lógica de pago se engancha aquí: validar la licencia **antes** de descargar.
 
@@ -15,6 +15,7 @@ import { cancelActiveDownload, DownloadCancelledError, downloadFile, resetDownlo
 import { getPluginCatalogEntry } from '../pluginCatalog'
 import { broadcastPluginsProgress, resetProgressBroadcastThrottle } from '../pluginProgressBroadcast'
 import { getPluginDir, readPluginsState, writePluginsState } from '../pluginState'
+import { terrainZipRelPath } from './terrainZip'
 
 const WORLDGEN_PLUGIN_ID: PluginId = 'world-gen'
 
@@ -160,9 +161,30 @@ function extractArtifactZip(zipPath: string, destDir: string, artifact: PluginAr
     throw new Error(`${artifact.archiveInnerPath} was not found inside the artifact archive`)
   }
   const dest = path.join(destDir, artifact.executableName)
-  const data = inner.getData()
-  fs.writeFileSync(dest, data)
+  fs.writeFileSync(dest, inner.getData())
+  extractTerrainPhotos(zip, destDir)
   return dest
+}
+
+function extractTerrainPhotos(zip: AdmZip, destDir: string): void {
+  const photos: { rel: string; data: Buffer }[] = []
+  for (const entry of zip.getEntries()) {
+    if (entry.isDirectory) {
+      continue
+    }
+    const rel = terrainZipRelPath(entry.entryName)
+    if (!rel) {
+      continue
+    }
+    photos.push({ rel, data: entry.getData() })
+  }
+  if (photos.length === 0) {
+    return
+  }
+  fs.mkdirSync(path.join(destDir, 'terrain'), { recursive: true })
+  for (const photo of photos) {
+    fs.writeFileSync(path.join(destDir, photo.rel), photo.data)
+  }
 }
 
 function sha256File(filePath: string): string {

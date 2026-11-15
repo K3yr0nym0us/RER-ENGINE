@@ -9,14 +9,14 @@
 use glam::{Vec2, Vec3};
 
 use crate::config::WorldGenConfig;
-use crate::field::HeightField;
+use crate::field::{HeightField, LandGrade};
 use crate::scale::{SITE_EDGE_MARGIN, fit_config_to_world};
 use crate::seed::{Rng, SALT_CAVES, SALT_PLANNER, SALT_RIVERS, domain_seed};
 
 /// Clases de feature localizable con sitio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureKind {
-    /// Montaña (crestas ridged sobre el sitio).
+    /// Montaña (máscara irregular; masa + crestas como en la referencia Godot).
     Mountain,
     /// Colina (amplitud FBM local).
     Hill,
@@ -42,6 +42,59 @@ pub struct Site {
     /// Valor principal: altura (montaña/colina), profundidad (valle/lago) o
     /// salto de terraza (acantilado).
     pub value: f32,
+    /// Perfil de montaña: `0` = meseta, `1` = cresta afilada. Otros sitios 0.5.
+    pub ridge: f32,
+}
+
+impl Site {
+    /// Alcance XZ del sitio con elipse y costa irregular (AABB / índice).
+    #[inline]
+    #[must_use]
+    pub fn footprint_reach(&self) -> f32 {
+        self.radius * 1.55
+    }
+
+    /// Distancia normalizada al borde (`1` = orilla). Elipse + armónicos: no
+    /// es un círculo. La referencia Godot tampoco usa discos para montañas
+    /// (máscara de ruido); aquí se deforma el cupo del planificador.
+    #[must_use]
+    pub fn norm_dist(&self, x: f32, z: f32) -> f32 {
+        let dx = x - self.pos.x;
+        let dz = z - self.pos.y;
+        let mut rng = footprint_rng(self);
+        let yaw = rng.range_f32(0.0, std::f32::consts::TAU);
+        let (s, c) = yaw.sin_cos();
+        let aspect = rng.range_f32(0.52, 0.82);
+        let rx = dx * c + dz * s;
+        let rz = -dx * s + dz * c;
+        let lx = rx;
+        let lz = rz / aspect;
+        let ang = lz.atan2(lx);
+        let a1 = rng.range_f32(0.16, 0.34);
+        let p1 = rng.range_f32(0.0, std::f32::consts::TAU);
+        let a2 = rng.range_f32(0.08, 0.20);
+        let p2 = rng.range_f32(0.0, std::f32::consts::TAU);
+        let a3 = rng.range_f32(0.04, 0.12);
+        let p3 = rng.range_f32(0.0, std::f32::consts::TAU);
+        let shore = (1.0
+            + a1 * (2.0 * ang + p1).sin()
+            + a2 * (3.0 * ang + p2).sin()
+            + a3 * (5.0 * ang + p3).sin())
+        .clamp(0.55, 1.55);
+        let radius = self.radius * shore;
+        if radius <= 1.0e-4 {
+            return f32::INFINITY;
+        }
+        lx.hypot(lz) / radius
+    }
+}
+
+fn footprint_rng(site: &Site) -> Rng {
+    Rng::from_u64(
+        (site.pos.x.to_bits() as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+            ^ (site.pos.y.to_bits() as u64).wrapping_mul(0xbf58_476d_1ce4_e5b9)
+            ^ (site.radius.to_bits() as u64),
+    )
 }
 
 /// Segmento de túnel de cueva (cápsula 3D `a → b`).
@@ -133,17 +186,21 @@ impl FeaturePlan {
         let config = &fitted;
         let mut rng = Rng::new(domain_seed(config.seed, SALT_PLANNER));
         let extent = Vec2::new(config.bounds.width, config.bounds.length);
+        let grade = base.land_grade();
         let mut plan = Self::default();
 
-        let mountains =
-            place_spread_sites(&config.mountains.base, &mut rng, extent, |rng, r, pos| {
-                Site {
-                    kind: FeatureKind::Mountain,
-                    pos,
-                    radius: r,
-                    value: config.mountains.max_height * rng.range_f32(0.6, 1.0),
-                }
-            });
+        let mountains = place_spread_sites(
+            &config.mountains.base,
+            &mut rng,
+            |rng, r, pos| Site {
+                kind: FeatureKind::Mountain,
+                pos,
+                radius: r,
+                value: config.mountains.max_height * rng.range_f32(0.6, 1.0),
+                ridge: rng.range_f32(0.0, 1.0),
+            },
+            |rng, index, sectors| rng_pos_along_half(rng, extent, grade, true, index, sectors),
+        );
         plan.sites.extend(mountains);
 
         let hills = place_sites(
@@ -157,6 +214,7 @@ impl FeaturePlan {
                 pos: rng_pos(rng, extent),
                 radius: r,
                 value: config.hills.max_height * rng.range_f32(0.5, 1.0),
+                ridge: 0.5,
             },
         );
         plan.sites.extend(hills);
@@ -171,6 +229,7 @@ impl FeaturePlan {
                 pos: rng_pos(rng, extent),
                 radius: r,
                 value: config.valleys.max_depth * rng.range_f32(0.6, 1.0),
+                ridge: 0.5,
             },
         );
         plan.sites.extend(valleys);
@@ -185,6 +244,7 @@ impl FeaturePlan {
                 pos: rng_pos(rng, extent),
                 radius: r,
                 value: config.plains.max_roughness,
+                ridge: 0.5,
             },
         );
         plan.sites.extend(plains);
@@ -199,6 +259,7 @@ impl FeaturePlan {
                 pos: rng_pos(rng, extent),
                 radius: r,
                 value: config.cliffs.drop_height,
+                ridge: 0.5,
             },
         );
         plan.sites.extend(cliffs);
@@ -217,12 +278,15 @@ impl FeaturePlan {
         // A partir de aquí, TODO lo que se ancla a la superficie usa la altura
         // **con plan** (sitios ya colocados): si un valle rebaja el terreno,
         // bocas de cueva, cauces y niveles de agua quedan pegados a él.
-        let terrain_height = crate::field::plan_height_fn(plan.sites.clone(), base);
+        let height_base = base.with_ceiling(config.bounds.height);
+        let terrain_height = crate::field::plan_height_fn(plan.sites.clone(), &height_base);
 
         // Lagos DESPUÉS de fijar la función de altura: su nivel de agua se
         // calcula con la superficie **sin el propio vaso** (el lago llena la
         // cuenca hasta el nivel del terreno original). Se añaden al final del
         // canonical order (sin re-sort) para no alterar la suma en float.
+        let lake_sectors = config.lakes.base.max_count.max(1);
+        let mut lake_slot = 0u32;
         let lake_sites = place_sites(
             &config.lakes.base,
             &mut rng,
@@ -235,11 +299,16 @@ impl FeaturePlan {
                 FeatureKind::Hill => d >= site.radius,
                 _ => true,
             },
-            |rng, r| Site {
-                kind: FeatureKind::Lake,
-                pos: rng_pos(rng, extent),
-                radius: r,
-                value: config.lakes.max_depth * rng.range_f32(0.5, 1.0),
+            |rng, r| {
+                let pos = rng_pos_along_half(rng, extent, grade, false, lake_slot, lake_sectors);
+                lake_slot = lake_slot.wrapping_add(1);
+                Site {
+                    kind: FeatureKind::Lake,
+                    pos,
+                    radius: r,
+                    value: config.lakes.max_depth * rng.range_f32(0.78, 1.0),
+                    ridge: 0.5,
+                }
             },
         );
         for site in &lake_sites {
@@ -256,11 +325,22 @@ impl FeaturePlan {
         }
         plan.sites.extend(lake_sites);
 
-        // Ríos: random-walk descendente sobre la superficie con plan.
+        // Ríos: nacen en montañas o en el borde del disco y bajan.
         if config.rivers.enabled {
             let mut river_rng = Rng::new(domain_seed(config.seed, SALT_RIVERS));
-            for _ in 0..config.rivers.max_count {
-                let river = walk_river(config, &terrain_height, &mut river_rng, &plan.lakes);
+            let attempts = config.rivers.max_count.saturating_mul(16).max(16);
+            for _ in 0..attempts {
+                if plan.rivers.len() as u32 >= config.rivers.max_count {
+                    break;
+                }
+                let river = walk_river(
+                    config,
+                    &terrain_height,
+                    &mut river_rng,
+                    &plan.lakes,
+                    &plan.sites,
+                    grade,
+                );
                 if river.points.len() >= 8 {
                     plan.waterfalls.extend(river.waterfalls.iter().copied());
                     plan.rivers.push(river);
@@ -271,10 +351,20 @@ impl FeaturePlan {
         // Cuevas: túneles-gusano con entrada en superficie (F4).
         if config.caves.enabled {
             let mut cave_rng = Rng::new(domain_seed(config.seed, SALT_CAVES));
-            for _ in 0..config.caves.max_count {
-                let Some(system) = walk_cave(config, &terrain_height, &mut cave_rng, &plan.lakes)
-                else {
-                    // Una boca sobre el piso no cancela el resto de cuevas.
+            let attempts = config.caves.max_count.saturating_mul(8).max(8);
+            for _ in 0..attempts {
+                if plan.caves.len() as u32 >= config.caves.max_count {
+                    break;
+                }
+                let Some(system) = walk_cave(
+                    config,
+                    &terrain_height,
+                    &mut cave_rng,
+                    &plan.lakes,
+                    &plan.sites,
+                    &plan.caves,
+                    grade,
+                ) else {
                     continue;
                 };
                 plan.caves.push(system);
@@ -285,15 +375,16 @@ impl FeaturePlan {
     }
 }
 
-/// Coloca sitios repartidos por sectores del disco (las montañas no se apilan).
-fn place_spread_sites<F>(
+/// Coloca sitios repartidos (las montañas no se apilan).
+fn place_spread_sites<F, P>(
     config: &crate::config::FeatureConfig,
     rng: &mut Rng,
-    extent: Vec2,
     make: F,
+    sample_pos: P,
 ) -> Vec<Site>
 where
     F: Fn(&mut Rng, f32, Vec2) -> Site,
+    P: Fn(&mut Rng, u32, u32) -> Vec2,
 {
     let mut placed: Vec<Site> = Vec::new();
     if !config.enabled || config.max_count == 0 {
@@ -306,7 +397,7 @@ where
         }
         for _ in 0..ATTEMPTS_PER_SITE {
             let radius = rng.range_f32(config.min_size, config.max_size);
-            let pos = rng_pos_sector(rng, extent, index, sectors);
+            let pos = sample_pos(rng, index, sectors);
             let candidate = make(rng, radius, pos);
             let min_same = config.min_separation.max((radius + radius) * 0.85);
             let ok_same = placed.iter().all(|s| {
@@ -329,11 +420,11 @@ fn place_sites<F, G>(
     rng: &mut Rng,
     existing: &[Site],
     cross_ok: F,
-    make: G,
+    mut make: G,
 ) -> Vec<Site>
 where
     F: Fn(&Site, &Site, f32) -> bool,
-    G: Fn(&mut Rng, f32) -> Site,
+    G: FnMut(&mut Rng, f32) -> Site,
 {
     let mut placed: Vec<Site> = Vec::new();
     if !config.enabled || config.max_count == 0 {
@@ -366,6 +457,11 @@ fn dist(a: Vec2, b: Vec2) -> f32 {
     (a - b).length()
 }
 
+#[inline]
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
 /// Posición aleatoria en el disco jugable (no en las esquinas que se recortan).
 fn rng_pos(rng: &mut Rng, extent: Vec2) -> Vec2 {
     let center = extent * 0.5;
@@ -376,15 +472,38 @@ fn rng_pos(rng: &mut Rng, extent: Vec2) -> Vec2 {
     center + Vec2::from_angle(angle) * dist
 }
 
-fn rng_pos_sector(rng: &mut Rng, extent: Vec2, index: u32, sectors: u32) -> Vec2 {
+fn rng_pos_half(rng: &mut Rng, extent: Vec2, grade: LandGrade, high: bool) -> Vec2 {
+    for _ in 0..16 {
+        let pos = rng_pos(rng, extent);
+        if grade.is_high_half(pos) == high {
+            return pos;
+        }
+    }
+    grade.mirror_to_half(rng_pos(rng, extent), high)
+}
+
+fn rng_pos_along_half(
+    rng: &mut Rng,
+    extent: Vec2,
+    grade: LandGrade,
+    high: bool,
+    index: u32,
+    sectors: u32,
+) -> Vec2 {
     let center = extent * 0.5;
     let radius = world_radius_from_extent(extent);
     let usable = (radius - SITE_EDGE_MARGIN).max(radius * 0.2);
-    let slices = sectors.max(1) as f32;
-    let slice = std::f32::consts::TAU / slices;
-    let angle = index as f32 * slice + rng.range_f32(0.18, 0.82) * slice;
-    let dist = usable * rng.range_f32(0.30, 0.88).sqrt();
-    center + Vec2::from_angle(angle) * dist
+    let mid = if high {
+        grade.high_heading()
+    } else {
+        grade.high_heading() + std::f32::consts::PI
+    };
+    let sectors = sectors.max(1);
+    let slice = std::f32::consts::PI / sectors as f32;
+    let slot = (index % sectors) as f32;
+    let angle = mid - std::f32::consts::FRAC_PI_2 + (slot + rng.range_f32(0.12, 0.88)) * slice;
+    let dist = usable * rng.range_f32(0.28, 0.90).sqrt();
+    grade.mirror_to_half(center + Vec2::from_angle(angle) * dist, high)
 }
 
 fn world_radius_from_extent(extent: Vec2) -> f32 {
@@ -397,15 +516,15 @@ fn inside_playable_disk(pos: Vec2, extent: Vec2) -> bool {
     (pos - center).length() <= radius
 }
 
-/// Random-walk descendente para un río sobre la heightfield base.
-///
-/// Sigue el gradiente de máxima pendiente con inercia y jitter; registra la
-/// polilínea con alturas y detecta cascadas (saltos > `min_drop`).
+/// Río que nace en una montaña o en el borde alto del disco, baja y **siempre**
+/// desemboca en un lago o en el borde del mapa.
 fn walk_river(
     config: &WorldGenConfig,
     height_at: &dyn Fn(f32, f32) -> f32,
     rng: &mut Rng,
     lakes: &[LakeInfo],
+    sites: &[Site],
+    grade: LandGrade,
 ) -> RiverPath {
     let extent = Vec2::new(config.bounds.width, config.bounds.length);
     let mut river = RiverPath {
@@ -413,65 +532,69 @@ fn walk_river(
         depth: config.rivers.depth,
         ..RiverPath::default()
     };
-    let mut pos = rng_pos(rng, extent);
-    let mut best_h = height_at(pos.x, pos.y);
-    for _ in 0..12 {
-        let candidate = rng_pos(rng, extent);
-        if lakes
-            .iter()
-            .any(|l| dist(l.pos, candidate) <= l.radius * 1.2)
-        {
-            continue;
-        }
-        let h = height_at(candidate.x, candidate.y);
-        if h > best_h {
-            pos = candidate;
-            best_h = h;
-        }
-    }
+    let Some(mut pos) = pick_river_source(rng, extent, height_at, lakes, sites, grade) else {
+        return river;
+    };
 
-    let mut dir = Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU));
+    let grade_down = grade.low_dir();
+    let mut dir = (grade_down + Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU)) * 0.18)
+        .normalize_or_zero();
     let mut height = height_at(pos.x, pos.y);
     river.points.push((pos, height));
 
     let max_length = config.rivers.length_max;
     let mut traveled = 0.0f32;
-    let step_min = 8.0;
-    let step_max = 14.0;
+    let step_min = 4.5;
+    let step_max = 7.5;
 
     while traveled < max_length {
-        // Gradiente numérico de la altura (2 muestras ortogonales).
-        let eps = 4.0;
+        if in_lake(pos, lakes, sites) && river.points.len() >= 2 {
+            break;
+        }
+        if rim_clearance(pos, extent) <= 8.0 && river.points.len() >= 8 && grade.is_low_half(pos) {
+            break;
+        }
+        let eps = 3.0;
         let gx = height_at(pos.x + eps, pos.y) - height_at(pos.x - eps, pos.y);
         let gz = height_at(pos.x, pos.y + eps) - height_at(pos.x, pos.y - eps);
         let downhill = Vec2::new(-gx, -gz);
+        let mouth = mouth_dir(pos, extent, lakes, height_at, grade);
+        let mut target = grade_down;
         if downhill.length_squared() > f32::EPSILON {
-            // Mezcla inercia + descenso + jitter.
-            let target = downhill.normalize();
-            dir = (dir * 0.55 + target * 0.45 + dir * rng.gaussian(0.18)).normalize_or_zero();
-        } else {
-            dir = (dir + dir * rng.gaussian(0.3)).normalize_or_zero();
+            target = (grade_down * 0.62 + downhill.normalize() * 0.38).normalize_or_zero();
         }
+        let mouth_w = 0.22 + 0.5 * (traveled / max_length.max(1.0)).clamp(0.0, 1.0);
+        if mouth.length_squared() > 0.0 {
+            target = (target * (1.0 - mouth_w) + mouth * mouth_w).normalize_or_zero();
+        }
+        let tangent = Vec2::new(-target.y, target.x);
+        dir = (dir * 0.16 + target * 0.84 + tangent * rng.gaussian(0.12)).normalize_or_zero();
 
         let step = rng.range_f32(step_min, step_max);
         let next = pos + dir * step;
         if !inside_playable_disk(next, extent) {
+            let rim = clamp_to_rim(next, extent);
+            river.points.push((rim, height_at(rim.x, rim.y)));
             break;
         }
-        // Dentro de un lago: el río desemboca y termina.
-        if lakes.iter().any(|l| dist(l.pos, next) < l.radius * 0.8) {
+        if in_lake(next, lakes, sites) {
             river.points.push((next, height_at(next.x, next.y)));
             break;
         }
 
         let next_height = height_at(next.x, next.y);
+        if next_height > height + 0.85 {
+            dir = if downhill.length_squared() > f32::EPSILON {
+                (grade_down * 0.7 + downhill.normalize() * 0.3).normalize_or_zero()
+            } else {
+                grade_down
+            };
+            traveled += step * 0.2;
+            continue;
+        }
         let drop = height - next_height;
         if drop > config.waterfalls.min_drop {
             river.waterfalls.push(next);
-        }
-        // Si el terreno sube de forma persistente, el río muere (cuencas cerradas).
-        if drop < -step * 0.5 {
-            break;
         }
 
         pos = next;
@@ -480,85 +603,364 @@ fn walk_river(
         river.points.push((pos, height));
     }
 
-    // Longitud mínima: descarta ríos demasiado cortos.
-    if traveled < config.rivers.length_min {
+    if !finish_river_to_mouth(
+        &mut river,
+        height_at,
+        extent,
+        lakes,
+        sites,
+        config.rivers.length_max * 0.9,
+        grade,
+    ) {
         river.points.clear();
+        river.waterfalls.clear();
+        return river;
+    }
+    let Some(&(end, end_h)) = river.points.last() else {
+        return river;
+    };
+    let start = river.points[0].0;
+    let start_h = river.points[0].1;
+    let along_drop = grade.along(start) - grade.along(end);
+    let ended_in_lake = in_lake(end, lakes, sites);
+    let went_downslope = along_drop >= 0.04 || (ended_in_lake && along_drop >= -0.02);
+    if !river_reaches_mouth(end, extent, lakes, sites) || end_h > start_h + 0.5 || !went_downslope {
+        river.points.clear();
+        river.waterfalls.clear();
     }
     river
 }
 
+fn in_lake(pos: Vec2, lakes: &[LakeInfo], sites: &[Site]) -> bool {
+    lakes
+        .iter()
+        .any(|lake| dist(lake.pos, pos) < lake.radius * 0.82)
+        || sites
+            .iter()
+            .filter(|site| site.kind == FeatureKind::Lake)
+            .any(|site| site.norm_dist(pos.x, pos.y) < 0.92)
+}
+
+fn rim_clearance(pos: Vec2, extent: Vec2) -> f32 {
+    let center = extent * 0.5;
+    let radius = (world_radius_from_extent(extent) - SITE_EDGE_MARGIN).max(1.0);
+    radius - (pos - center).length()
+}
+
+fn river_reaches_mouth(pos: Vec2, extent: Vec2, lakes: &[LakeInfo], sites: &[Site]) -> bool {
+    in_lake(pos, lakes, sites) || rim_clearance(pos, extent) <= 8.0
+}
+
+fn clamp_to_rim(pos: Vec2, extent: Vec2) -> Vec2 {
+    let center = extent * 0.5;
+    let radius = (world_radius_from_extent(extent) - SITE_EDGE_MARGIN).max(1.0);
+    let offset = pos - center;
+    if offset.length_squared() <= f32::EPSILON {
+        return center + Vec2::X * radius;
+    }
+    center + offset.normalize() * radius
+}
+
+fn mouth_dir(
+    pos: Vec2,
+    extent: Vec2,
+    lakes: &[LakeInfo],
+    height_at: &dyn Fn(f32, f32) -> f32,
+    grade: LandGrade,
+) -> Vec2 {
+    let here = height_at(pos.x, pos.y);
+    let here_along = grade.along(pos);
+    let rim = clamp_to_rim(pos + grade.low_dir() * 96.0, extent);
+    let mut best = rim - pos;
+    let mut best_score = best.length()
+        + (height_at(rim.x, rim.y) - here).max(0.0) * 8.0
+        + (grade.along(rim) - here_along).max(0.0) * 240.0;
+    for lake in lakes {
+        let to_lake = lake.pos - pos;
+        let d = (to_lake.length() - lake.radius * 0.7).max(0.0);
+        let climb = (lake.water_level - here).max(0.0);
+        let uphill = (grade.along(lake.pos) - here_along).max(0.0);
+        let score = d + climb * 8.0 + uphill * 280.0;
+        if score < best_score {
+            best_score = score;
+            best = to_lake;
+        }
+    }
+    best.normalize_or_zero()
+}
+
+fn finish_river_to_mouth(
+    river: &mut RiverPath,
+    height_at: &dyn Fn(f32, f32) -> f32,
+    extent: Vec2,
+    lakes: &[LakeInfo],
+    sites: &[Site],
+    extra: f32,
+    grade: LandGrade,
+) -> bool {
+    let Some(&(mut pos, _)) = river.points.last() else {
+        return false;
+    };
+    if river_reaches_mouth(pos, extent, lakes, sites) && river.points.len() >= 8 {
+        return true;
+    }
+    let mut height = height_at(pos.x, pos.y);
+    let mut traveled = 0.0;
+    let step = 6.0;
+    while traveled < extra.max(24.0) {
+        let eps = 3.0;
+        let gx = height_at(pos.x + eps, pos.y) - height_at(pos.x - eps, pos.y);
+        let gz = height_at(pos.x, pos.y + eps) - height_at(pos.x, pos.y - eps);
+        let downhill = Vec2::new(-gx, -gz);
+        let mouth = mouth_dir(pos, extent, lakes, height_at, grade);
+        let grade_down = grade.low_dir();
+        let mut dir = if downhill.length_squared() > f32::EPSILON {
+            (grade_down * 0.55 + downhill.normalize() * 0.45).normalize_or_zero()
+        } else {
+            grade_down
+        };
+        if mouth.length_squared() > 0.0 {
+            dir = (dir * 0.32 + mouth * 0.68).normalize_or_zero();
+        }
+        if dir.length_squared() <= f32::EPSILON {
+            break;
+        }
+        let next = pos + dir * step;
+        let next_height = if !inside_playable_disk(next, extent) {
+            let rim = clamp_to_rim(next, extent);
+            let h = height_at(rim.x, rim.y);
+            if h > height + 2.8 {
+                break;
+            }
+            river.points.push((rim, h));
+            return river.points.len() >= 8;
+        } else {
+            height_at(next.x, next.y)
+        };
+        if next_height > height + 2.8 {
+            let along_mouth = pos + mouth * step;
+            let mouth_h = height_at(along_mouth.x, along_mouth.y);
+            if mouth.length_squared() > 0.0 && mouth_h <= height + 2.8 {
+                pos = along_mouth;
+                height = mouth_h;
+                traveled += step;
+                river.points.push((pos, height));
+            } else {
+                break;
+            }
+        } else if in_lake(next, lakes, sites) {
+            river.points.push((next, next_height));
+            return river.points.len() >= 8;
+        } else {
+            pos = next;
+            height = next_height;
+            traveled += step;
+            river.points.push((pos, height));
+        }
+        if river_reaches_mouth(pos, extent, lakes, sites) {
+            return river.points.len() >= 8;
+        }
+    }
+    river_reaches_mouth(pos, extent, lakes, sites) && river.points.len() >= 8
+}
+
+/// Fuente: ladera de una montaña (drenaje) o el borde alto del disco.
+fn pick_river_source(
+    rng: &mut Rng,
+    extent: Vec2,
+    height_at: &dyn Fn(f32, f32) -> f32,
+    lakes: &[LakeInfo],
+    sites: &[Site],
+    grade: LandGrade,
+) -> Option<Vec2> {
+    let mountains: Vec<&Site> = sites
+        .iter()
+        .filter(|s| s.kind == FeatureKind::Mountain)
+        .collect();
+    let in_lake = |p: Vec2| lakes.iter().any(|l| dist(l.pos, p) <= l.radius * 1.1);
+    let floor = source_height_floor(lakes);
+
+    if !mountains.is_empty() && rng.chance(0.82) {
+        let idx = rng.range_i32(0, mountains.len() as i32 - 1) as usize;
+        let mountain = mountains[idx];
+        let mut best = None;
+        let mut best_h = f32::MAX;
+        for k in 0..12 {
+            let ang = (k as f32 + rng.next_f32()) * (std::f32::consts::TAU / 12.0);
+            let p = mountain.pos
+                + Vec2::from_angle(ang) * (mountain.radius * rng.range_f32(0.48, 0.78));
+            if !inside_playable_disk(p, extent) || in_lake(p) || !grade.is_high_half(p) {
+                continue;
+            }
+            let h = height_at(p.x, p.y);
+            if h < floor {
+                continue;
+            }
+            if h < best_h {
+                best_h = h;
+                best = Some(p);
+            }
+        }
+        if best.is_some() {
+            return best;
+        }
+    }
+
+    let center = extent * 0.5;
+    let playable = (world_radius_from_extent(extent) - SITE_EDGE_MARGIN).max(8.0);
+    let rim = (playable - 16.0).max(8.0);
+    let mut best = None;
+    let mut best_h = f32::MIN;
+    for _ in 0..24 {
+        let p = center + Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU)) * rim;
+        if in_lake(p) || !grade.is_high_half(p) {
+            continue;
+        }
+        let h = height_at(p.x, p.y);
+        if h < floor {
+            continue;
+        }
+        if h > best_h {
+            best_h = h;
+            best = Some(p);
+        }
+    }
+    if best.is_some() {
+        return best;
+    }
+    let fallback = center + grade.high_dir() * rim;
+    (!in_lake(fallback)).then_some(fallback)
+}
+
+fn source_height_floor(lakes: &[LakeInfo]) -> f32 {
+    if lakes.is_empty() {
+        return crate::config::plains_height() + 2.0;
+    }
+    lakes
+        .iter()
+        .map(|lake| lake.water_level)
+        .fold(f32::MAX, f32::min)
+        + 4.0
+}
+
 /// Genera un sistema de cuevas: túnel con entrada en superficie + rooms (F4).
 ///
-/// Replica el enfoque validado de la referencia: descenso suave hasta la
-/// profundidad objetivo, radio variable con onda + jitter, primeros tramos más
-/// anchos como embudo de entrada y rooms por probabilidad a partir del tramo 8.
+/// La boca nace en una zona alta. El descenso copia la referencia Godot
+/// (`primitive-voxels-godot`): lerp suave hacia el piso (no un pozo), los
+/// primeros 7 tramos se tallan como entrada y el radio crece hacia el interior.
+/// Se corta antes de asomar por la ladera opuesta.
 fn walk_cave(
     config: &WorldGenConfig,
     height_at: &dyn Fn(f32, f32) -> f32,
     rng: &mut Rng,
     lakes: &[LakeInfo],
+    sites: &[Site],
+    existing: &[CaveSystem],
+    grade: LandGrade,
 ) -> Option<CaveSystem> {
     let caves = &config.caves;
     let extent = Vec2::new(config.bounds.width, config.bounds.length);
 
-    // Boca en superficie, lejos de lagos.
-    let mut pos = rng_pos(rng, extent);
-    for _ in 0..8 {
-        if lakes.iter().all(|l| dist(l.pos, pos) > l.radius * 1.1) {
-            break;
-        }
-        pos = rng_pos(rng, extent);
-    }
-    let surface = height_at(pos.x, pos.y);
-    // La boca necesita un poco de suelo sobre el piso. Las llanuras están a unos
-    // metros, así que el umbral no puede ser una altura fija grande.
-    if surface <= crate::config::TERRAIN_FLOOR + 1.0 {
+    let (mut pos, picked_host) = pick_cave_mouth(rng, extent, height_at, lakes, sites, grade)?;
+    if !cave_mouth_clear(pos, existing) {
         return None;
+    }
+    let mouth_xz = pos;
+    let mouth_surface = height_at(pos.x, pos.y);
+    if mouth_surface <= crate::config::plains_height() + 6.0 {
+        return None;
+    }
+
+    let host = picked_host.or_else(|| nearest_high_mass(pos, sites));
+    let mut dir = cave_inward_dir(pos, host, height_at, rng);
+    if dir.length_squared() < 1e-6 {
+        dir = Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU));
     }
 
     let target_depth = rng.range_f32(caves.depth_min, caves.depth_max);
     let base_radius = caves.radius;
+    let floor_y = crate::config::TERRAIN_FLOOR + base_radius + 0.8;
+    let cave_floor_y = (mouth_surface - target_depth).max(floor_y);
     let mut system = CaveSystem {
         target_depth,
         ..CaveSystem::default()
     };
 
-    let mut dir = Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU));
-    let mut prev = Vec3::new(pos.x, surface - 0.3, pos.y);
+    let mut prev = Vec3::new(pos.x, mouth_surface - 0.3, pos.y);
+    let mut y = prev.y;
     let mut segments = 0u32;
-    let total = caves.segments.max(2);
+    let total = caves.segments.max(8);
 
     while segments < total {
-        let progress = segments as f32 / (total - 1) as f32;
-        // Descenso suave: smoothstep(0..0.65) hasta la profundidad objetivo.
-        let descend = smoothstep01((progress / 0.65).min(1.0)) * target_depth;
-        let next_y = (surface - descend) + rng.gaussian(0.5);
-
-        // Dirección con jitter (±0.25 rad aprox).
-        dir = (dir + Vec2::from_angle(rng.gaussian(0.25))).normalize_or_zero();
+        let opening = segments < 7;
+        let progress = segments as f32 / (total - 1).max(1) as f32;
         let step = rng.range_f32(5.0, 8.5);
+        dir = steer_cave_dir(dir, pos, host, rng, step);
         let next_xz = pos + dir * step;
-        let next = Vec3::new(next_xz.x, next_y, next_xz.y);
-
-        // Radio variable: onda sinusoidal + jitter; tramos de entrada más anchos.
-        let wave = (segments as f32 * 0.7).sin() * 0.3;
-        let mut radius = base_radius * (1.0 + wave + rng.gaussian(0.12));
-        if segments < 5 {
-            radius += 1.4;
-        } else if segments.is_multiple_of(7) {
-            radius += 0.8;
+        if !inside_playable_disk(next_xz, extent) {
+            break;
         }
-        radius = radius.clamp(base_radius * 0.6, base_radius * 1.5);
+        if lakes
+            .iter()
+            .any(|lake| dist(lake.pos, next_xz) <= lake.radius * 1.05)
+        {
+            break;
+        }
+        if segments >= 3 && dist(next_xz, mouth_xz) < 18.0 {
+            break;
+        }
+        if let Some(site) = host {
+            let mouth_out = dist(mouth_xz, site.pos);
+            let next_out = dist(next_xz, site.pos);
+            if segments >= 4 && next_out > mouth_out + 1.5 {
+                break;
+            }
+        }
 
+        let local_h = height_at(next_xz.x, next_xz.y);
+        if local_h < crate::config::plains_height() + 2.0 && segments >= 6 {
+            break;
+        }
+
+        let radius = cave_segment_radius(base_radius, segments, total, rng);
+        let ceiling = if opening {
+            local_h - 0.4
+        } else {
+            local_h - radius - 1.8
+        };
+        let desired_y = lerp(
+            mouth_surface - 0.3,
+            cave_floor_y,
+            crate::field::smoothstep(0.0, 0.65, progress),
+        )
+        .min(ceiling);
+        let pull = if segments < 2 {
+            0.12
+        } else if opening {
+            0.55
+        } else {
+            0.32
+        };
+        let hillside_drop = ceiling < y - 0.5;
+        let max_pitch = if hillside_drop { 0.45 } else { 0.26 };
+        let mut next_y = lerp(y, desired_y, pull).clamp(y - step * max_pitch, y);
+        next_y = next_y.max(cave_floor_y);
+        if next_y < floor_y {
+            break;
+        }
+        if segments >= 3 && next_y > ceiling + 0.6 {
+            break;
+        }
+
+        let next = Vec3::new(next_xz.x, next_y, next_xz.y);
         system.segments.push(TunnelSegment {
             a: prev,
             b: next,
             radius,
-            entrance: segments < 7,
+            entrance: opening,
         });
 
-        // Rooms a partir del tramo 8.
-        if segments >= 8 && rng.chance(caves.room_chance) {
+        if segments >= 8 && rng.chance(caves.room_chance) && local_h - next_y >= 8.0 {
             system.rooms.push(CaveRoom {
                 center: next + Vec3::new(0.0, -0.5, 0.0),
                 radius: rng.range_f32(2.5, 4.5),
@@ -566,16 +968,150 @@ fn walk_cave(
         }
 
         pos = next_xz;
+        y = next_y;
         prev = next;
         segments += 1;
     }
 
+    if system.segments.len() < 5 {
+        return None;
+    }
     Some(system)
 }
 
-/// smoothstep(0, 1, t).
-#[inline]
-fn smoothstep01(t: f32) -> f32 {
-    let t = t.clamp(0.0, 1.0);
-    t * t * (3.0 - 2.0 * t)
+/// Boca en ladera de montaña, colina o acantilado; si no hay, el punto más alto.
+fn pick_cave_mouth(
+    rng: &mut Rng,
+    extent: Vec2,
+    height_at: &dyn Fn(f32, f32) -> f32,
+    lakes: &[LakeInfo],
+    sites: &[Site],
+    grade: LandGrade,
+) -> Option<(Vec2, Option<Site>)> {
+    let floor = crate::config::plains_height() + 6.0;
+    let in_lake = |p: Vec2| {
+        lakes
+            .iter()
+            .any(|lake| dist(lake.pos, p) <= lake.radius * 1.1)
+    };
+    let high: Vec<&Site> = sites
+        .iter()
+        .filter(|site| {
+            matches!(
+                site.kind,
+                FeatureKind::Mountain | FeatureKind::Hill | FeatureKind::Cliff
+            ) && grade.is_high_half(site.pos)
+        })
+        .collect();
+
+    if !high.is_empty() {
+        for _ in 0..10 {
+            let idx = rng.range_i32(0, high.len() as i32 - 1) as usize;
+            let site = high[idx];
+            let p = site.pos
+                + Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU))
+                    * (site.radius * rng.range_f32(0.55, 0.92));
+            if !inside_playable_disk(p, extent) || in_lake(p) || !grade.is_high_half(p) {
+                continue;
+            }
+            if height_at(p.x, p.y) >= floor {
+                return Some((p, Some(*site)));
+            }
+        }
+    }
+
+    let mut best = None;
+    let mut best_h = f32::MIN;
+    for _ in 0..18 {
+        let p = rng_pos_half(rng, extent, grade, true);
+        if in_lake(p) {
+            continue;
+        }
+        let h = height_at(p.x, p.y);
+        if h > best_h {
+            best_h = h;
+            best = Some(p);
+        }
+    }
+    best.filter(|&p| best_h >= floor && grade.is_high_half(p))
+        .map(|p| (p, nearest_high_mass(p, sites)))
+}
+
+fn nearest_high_mass(pos: Vec2, sites: &[Site]) -> Option<Site> {
+    sites
+        .iter()
+        .filter(|site| {
+            matches!(
+                site.kind,
+                FeatureKind::Mountain | FeatureKind::Hill | FeatureKind::Cliff
+            )
+        })
+        .min_by(|a, b| dist(a.pos, pos).total_cmp(&dist(b.pos, pos)))
+        .copied()
+        .filter(|site| dist(site.pos, pos) <= site.radius * 1.3)
+}
+
+fn cave_inward_dir(
+    pos: Vec2,
+    host: Option<Site>,
+    height_at: &dyn Fn(f32, f32) -> f32,
+    rng: &mut Rng,
+) -> Vec2 {
+    if let Some(site) = host {
+        let inward = site.pos - pos;
+        if inward.length_squared() > 4.0 {
+            return inward.normalize_or_zero();
+        }
+    }
+    let e = 3.5;
+    let gx = height_at(pos.x + e, pos.y) - height_at(pos.x - e, pos.y);
+    let gz = height_at(pos.x, pos.y + e) - height_at(pos.x, pos.y - e);
+    let uphill = Vec2::new(gx, gz).normalize_or_zero();
+    if uphill.length_squared() > 1e-6 {
+        uphill
+    } else {
+        Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU))
+    }
+}
+
+fn cave_mouth_clear(pos: Vec2, existing: &[CaveSystem]) -> bool {
+    existing.iter().all(|system| {
+        let mouth = Vec2::new(system.segments[0].a.x, system.segments[0].a.z);
+        dist(mouth, pos) >= 40.0
+    })
+}
+
+fn steer_cave_dir(dir: Vec2, pos: Vec2, host: Option<Site>, rng: &mut Rng, step: f32) -> Vec2 {
+    let jitter = Vec2::from_angle(rng.gaussian(0.22));
+    let mut heading = (dir + jitter * 0.35).normalize_or_zero();
+    let Some(site) = host else {
+        return heading;
+    };
+    let to_core = site.pos - pos;
+    let dist_core = to_core.length();
+    let inward = to_core / dist_core.max(1e-4);
+    if dist_core < site.radius * 0.22 {
+        let tangent = Vec2::new(-inward.y, inward.x);
+        return (heading * 0.25 + tangent * 0.75).normalize_or_zero();
+    }
+    heading = (heading * 0.5 + inward * 0.5).normalize_or_zero();
+    let next = pos + heading * step;
+    if dist(next, site.pos) > site.radius * 0.9 && dist(next, site.pos) > dist_core {
+        return inward;
+    }
+    heading
+}
+
+/// Radio del tramo: boca transitable y ensancha hacia el interior (no al revés).
+fn cave_segment_radius(base: f32, index: u32, total: u32, rng: &mut Rng) -> f32 {
+    let progress = index as f32 / total.max(1) as f32;
+    let mouth = (base * 1.5).max(4.6);
+    let inner = (base * 2.5).max(mouth + 2.4);
+    let wave = (progress * std::f32::consts::TAU * 2.0).sin() * 0.45;
+    let mut radius = mouth + (inner - mouth) * crate::field::smoothstep(0.05, 0.8, progress) + wave;
+    radius += rng.gaussian(0.18).clamp(-0.35, 0.75);
+    if index > 8 && index.is_multiple_of(7) {
+        radius += rng.range_f32(0.6, 1.4);
+    }
+    radius.clamp(mouth * 0.92, inner * 1.15)
 }

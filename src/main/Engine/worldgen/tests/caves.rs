@@ -5,6 +5,32 @@ use rer_worldgen::config::*;
 use rer_worldgen::field::DensityField;
 use rer_worldgen::planner::FeaturePlan;
 
+fn near_entrance_corridor(system: &rer_worldgen::planner::CaveSystem, x: f32, z: f32) -> bool {
+    system.segments.iter().any(|segment| {
+        if !segment.entrance {
+            return false;
+        }
+        let abx = segment.b.x - segment.a.x;
+        let abz = segment.b.z - segment.a.z;
+        let len2 = abx * abx + abz * abz;
+        let t = if len2 <= f32::EPSILON {
+            0.0
+        } else {
+            ((x - segment.a.x) * abx + (z - segment.a.z) * abz) / len2
+        }
+        .clamp(0.0, 1.0);
+        let dx = x - (segment.a.x + abx * t);
+        let dz = z - (segment.a.z + abz * t);
+        (dx * dx + dz * dz).sqrt() < segment.radius + 2.5
+    })
+}
+
+fn near_any_entrance(caves: &[rer_worldgen::planner::CaveSystem], x: f32, z: f32) -> bool {
+    caves
+        .iter()
+        .any(|system| near_entrance_corridor(system, x, z))
+}
+
 fn cave_config() -> WorldGenConfig {
     let mut config = WorldGenConfig {
         seed: 1234,
@@ -13,7 +39,8 @@ fn cave_config() -> WorldGenConfig {
     config.bounds.width = 512.0;
     config.bounds.length = 512.0;
     config.bounds.height = 128.0;
-    config.mountains.base.enabled = false;
+    config.mountains.base.enabled = true;
+    config.mountains.base.max_count = 4;
     config.hills.base.enabled = false;
     config.cliffs.base.enabled = true;
     config.cliffs.base.max_count = 6;
@@ -42,14 +69,24 @@ fn tunnel_interior_is_air_at_depth() {
 
     for system in &plan.caves {
         // Punto medio de un tramo profundo (no de entrada).
-        let segment = &system.segments[system.segments.len() / 2];
+        let segment = system.segments.last().expect("túnel con tramos");
         let mid = segment.a.lerp(segment.b, 0.5);
         let surface = field.height_at(mid.x, mid.z);
         let depth = surface - mid.y;
+        if segment.entrance {
+            continue;
+        }
         assert!(
-            depth > config.caves.depth_min * 0.4,
-            "tramo insuficientemente profundo"
+            depth > segment.radius + 0.4,
+            "el tramo final debe quedar bajo tierra ({depth} m, radio {})",
+            segment.radius
         );
+        if system.segments.len() >= 10 {
+            assert!(
+                depth > config.caves.depth_min * 0.4,
+                "tramo insuficientemente profundo ({depth} m)"
+            );
+        }
         let d = field.density_at(mid.x, mid.y, mid.z);
         assert!(
             d < 0.0,
@@ -89,8 +126,11 @@ fn deep_tunnels_do_not_perforate_surface() {
     for system in &plan.caves {
         // Tramos no-entrada: la superficie directamente encima debe seguir sólida
         // (el gate de profundidad impide perforaciones espurias).
-        for segment in system.segments.iter().skip(8) {
+        for segment in system.segments.iter().skip(8).filter(|s| !s.entrance) {
             let mid = segment.a.lerp(segment.b, 0.5);
+            if near_any_entrance(&plan.caves, mid.x, mid.z) {
+                continue;
+            }
             let surface = field.height_at(mid.x, mid.z);
             let depth = surface - mid.y;
             if depth < config.caves.depth_min * 0.6 {
@@ -159,6 +199,159 @@ fn caves_respect_max_count_and_depth() {
         );
     }
     assert!(entrances > 0);
+}
+
+#[test]
+fn caves_descend_into_the_mass() {
+    let config = cave_config();
+    let field = DensityField::new(&config);
+    let plan = FeaturePlan::generate(&config, field.base_heightfield());
+    assert!(
+        !plan.caves.is_empty(),
+        "el mundo de prueba debe generar cuevas"
+    );
+    let high: Vec<_> = plan
+        .sites
+        .iter()
+        .filter(|site| {
+            matches!(
+                site.kind,
+                rer_worldgen::planner::FeatureKind::Mountain
+                    | rer_worldgen::planner::FeatureKind::Hill
+                    | rer_worldgen::planner::FeatureKind::Cliff
+            )
+        })
+        .collect();
+    for system in &plan.caves {
+        for segment in &system.segments {
+            assert!(
+                segment.b.y <= segment.a.y + 0.2,
+                "la cueva no puede subir ({:?} -> {:?})",
+                segment.a,
+                segment.b
+            );
+        }
+        for segment in system.segments.iter().skip(8) {
+            let mid = segment.a.lerp(segment.b, 0.5);
+            if near_any_entrance(&plan.caves, mid.x, mid.z) {
+                continue;
+            }
+            let surface = field.height_at(mid.x, mid.z);
+            let cover = surface - mid.y;
+            assert!(
+                cover >= config.caves.radius + 0.6,
+                "el túnel debe quedar bajo tierra ({cover} m de cobertura)"
+            );
+            let d = field.density_at(mid.x, surface - 0.4, mid.z);
+            assert!(
+                d > 0.0,
+                "la cueva no debe asomar por la ladera (densidad {d})"
+            );
+        }
+        let mouth = glam::Vec2::new(system.segments[0].a.x, system.segments[0].a.z);
+        let end = system.segments.last().unwrap().b;
+        let end_xz = glam::Vec2::new(end.x, end.z);
+        if let Some(host) = high
+            .iter()
+            .find(|site| (mouth - site.pos).length() <= site.radius * 1.2)
+        {
+            let mouth_out = (mouth - host.pos).length();
+            let end_out = (end_xz - host.pos).length();
+            assert!(
+                end_out <= host.radius * 1.05 || end_out <= mouth_out + 4.0,
+                "la cueva no debe salir por el otro lado de la masa (end {end_out} mouth {mouth_out} r {})",
+                host.radius
+            );
+        }
+    }
+}
+
+#[test]
+fn caves_stay_open_along_the_path() {
+    let config = cave_config();
+    let field = DensityField::new(&config);
+    let plan = FeaturePlan::generate(&config, field.base_heightfield());
+    assert!(
+        !plan.caves.is_empty(),
+        "el mundo de prueba debe generar cuevas"
+    );
+    for system in &plan.caves {
+        for (index, segment) in system.segments.iter().enumerate() {
+            let mid = segment.a.lerp(segment.b, 0.5);
+            let d = field.density_at(mid.x, mid.y, mid.z);
+            assert!(
+                d < 0.0,
+                "el tramo {index} debe quedar hueco (densidad {d}, y={})",
+                mid.y
+            );
+        }
+    }
+}
+
+#[test]
+fn caves_slope_gently_and_widen() {
+    let config = cave_config();
+    let field = DensityField::new(&config);
+    let plan = FeaturePlan::generate(&config, field.base_heightfield());
+    assert!(
+        !plan.caves.is_empty(),
+        "el mundo de prueba debe generar cuevas"
+    );
+    for system in &plan.caves {
+        let first_r = system.segments[0].radius;
+        let last_r = system.segments.last().expect("túnel con tramos").radius;
+        assert!(
+            last_r + 0.05 >= first_r,
+            "el túnel debe ensancharse hacia dentro ({first_r} → {last_r})"
+        );
+        for segment in &system.segments {
+            let dx = segment.b.x - segment.a.x;
+            let dz = segment.b.z - segment.a.z;
+            let horiz = (dx * dx + dz * dz).sqrt();
+            let drop = (segment.a.y - segment.b.y).max(0.0);
+            if horiz > 0.5 {
+                assert!(
+                    drop / horiz <= 0.55,
+                    "pendiente demasiado fuerte ({drop} m en {horiz} m)"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn caves_start_on_high_ground() {
+    let config = cave_config();
+    let field = DensityField::new(&config);
+    let plan = FeaturePlan::generate(&config, field.base_heightfield());
+    assert!(
+        !plan.caves.is_empty(),
+        "el mundo de prueba debe generar cuevas"
+    );
+    let floor = rer_worldgen::config::plains_height() + 6.0;
+    let high: Vec<_> = plan
+        .sites
+        .iter()
+        .filter(|site| {
+            matches!(
+                site.kind,
+                rer_worldgen::planner::FeatureKind::Mountain
+                    | rer_worldgen::planner::FeatureKind::Hill
+                    | rer_worldgen::planner::FeatureKind::Cliff
+            )
+        })
+        .collect();
+    for system in &plan.caves {
+        let mouth = system.segments[0].a;
+        let surface = field.height_at(mouth.x, mouth.z);
+        let on_high_site = high.iter().any(|site| {
+            (glam::Vec2::new(mouth.x, mouth.z) - site.pos).length() <= site.radius * 1.15
+        });
+        assert!(
+            surface >= floor || on_high_site,
+            "la boca debe nacer en zona alta ({surface} m, piso {floor})"
+        );
+    }
 }
 
 #[test]

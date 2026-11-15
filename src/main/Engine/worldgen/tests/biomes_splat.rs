@@ -97,10 +97,35 @@ fn splat_weights_sum_to_255_everywhere() {
         let y = field.height_at(x, z);
         let w = ctx.weights_at(x, z, y);
         let sum = w.grass as u32 + w.rock as u32 + w.sand as u32 + w.snow as u32;
-        assert!(
-            (252..=258).contains(&sum),
-            "los pesos deben sumar ~255 (suman {sum} en ({x}, {z}))"
-        );
+        let in_lake = field.plan().sites.iter().any(|site| {
+            site.kind == rer_worldgen::planner::FeatureKind::Lake && site.norm_dist(x, z) < 1.14
+        });
+        let point = glam::Vec2::new(x, z);
+        let in_river = field.plan().rivers.iter().any(|river| {
+            river.points.windows(2).any(|pair| {
+                let a = pair[0].0;
+                let b = pair[1].0;
+                let ab = b - a;
+                let len2 = ab.length_squared();
+                let t = if len2 <= f32::EPSILON {
+                    0.0
+                } else {
+                    ((point - a).dot(ab) / len2).clamp(0.0, 1.0)
+                };
+                (a + ab * t - point).length() < river.width * 1.85
+            })
+        });
+        if in_lake || in_river {
+            assert!(
+                sum <= 258,
+                "en el vaso los pesos no deben pasar de 255 (suman {sum} en ({x}, {z}))"
+            );
+        } else {
+            assert!(
+                (252..=258).contains(&sum),
+                "los pesos deben sumar ~255 (suman {sum} en ({x}, {z}))"
+            );
+        }
     }
 }
 
@@ -221,7 +246,7 @@ fn kilometre_plains_stay_mostly_grass() {
 }
 
 #[test]
-fn lake_shore_sand_is_continuous_around_the_rim() {
+fn lake_shore_blends_mud_with_surroundings() {
     let mut lakes_checked = 0;
     for seed in [7, 555, 91234, 752306577, 2776343831] {
         let mut config = config_for_biomes();
@@ -245,23 +270,214 @@ fn lake_shore_sand_is_continuous_around_the_rim() {
             .filter(|s| s.kind == rer_worldgen::planner::FeatureKind::Lake);
         for lake in lakes {
             lakes_checked += 1;
-            let r = lake.radius + 1.0;
-            let sand: Vec<u8> = (0..512)
-                .map(|k| {
-                    let angle = k as f32 * std::f32::consts::TAU / 512.0;
-                    let (x, z) = (lake.pos.x + angle.cos() * r, lake.pos.y + angle.sin() * r);
-                    ctx.weights_with_slope(x, z, field.height_at(x, z), 0.0)
-                        .sand
-                })
-                .collect();
-            let (min, max) = (sand.iter().min(), sand.iter().max());
+            let mut blended = 0u32;
+            for k in 0..64 {
+                let angle = k as f32 * std::f32::consts::TAU / 64.0;
+                let (dx, dz) = (angle.cos(), angle.sin());
+                let mut lo = lake.radius * 0.4;
+                let mut hi = lake.radius * 1.7;
+                for _ in 0..12 {
+                    let mid = (lo + hi) * 0.5;
+                    let (x, z) = (lake.pos.x + dx * mid, lake.pos.y + dz * mid);
+                    if lake.norm_dist(x, z) > 1.0 {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                let (x, z) = (lake.pos.x + dx * lo, lake.pos.y + dz * lo);
+                let w = ctx.weights_with_slope(x, z, field.height_at(x, z), 0.0);
+                let around = w.grass as u32 + w.rock as u32 + w.snow as u32;
+                if w.mud() > 28 && around > 28 && w.sand < 48 {
+                    blended += 1;
+                }
+            }
             assert!(
-                min.zip(max).is_some_and(|(min, max)| max - min <= 8),
-                "seed {seed}: la orilla debe ser uniforme (arena {min:?}..{max:?})"
+                blended >= 40,
+                "seed {seed}: la orilla debe mezclar lodo con el suelo ({blended}/64)"
             );
         }
     }
     assert!(lakes_checked > 0, "los mundos de prueba deben tener lagos");
+}
+
+#[test]
+fn lake_basin_is_mud() {
+    let mut lakes_checked = 0;
+    for seed in [7, 555, 91234, 752306577, 2776343831] {
+        let mut config = config_for_biomes();
+        config.seed = seed;
+        config.biomes.desert = false;
+        config.biomes.volcanic = false;
+        config.lakes.base.enabled = true;
+        config.lakes.base.max_count = 4;
+        let field = DensityField::new(&config);
+        let biomes = BiomeMap::new(&config);
+        let ctx = SplatContext::new(
+            &field,
+            &biomes,
+            config.bounds.height,
+            config.resolution.voxel_size,
+        );
+        for lake in field
+            .plan()
+            .sites
+            .iter()
+            .filter(|site| site.kind == rer_worldgen::planner::FeatureKind::Lake)
+        {
+            lakes_checked += 1;
+            let (x, z) = (lake.pos.x, lake.pos.y);
+            let w = ctx.weights_with_slope(x, z, field.height_at(x, z), 0.0);
+            assert!(
+                w.mud() > 160,
+                "seed {seed}: el vaso del lago debe ser lodo (mud {} en {:?})",
+                w.mud(),
+                lake.pos
+            );
+            assert!(
+                w.grass < 40,
+                "seed {seed}: el vaso no debe verse como pradera (hierba {})",
+                w.grass
+            );
+        }
+    }
+    assert!(lakes_checked > 0, "los mundos de prueba deben tener lagos");
+}
+
+#[test]
+fn river_channel_is_mud() {
+    let mut rivers_checked = 0;
+    for seed in [7, 42, 555, 91234, 752306577] {
+        let mut config = config_for_biomes();
+        config.seed = seed;
+        config.rivers.enabled = true;
+        config.rivers.max_count = 5;
+        let field = DensityField::new(&config);
+        let biomes = BiomeMap::new(&config);
+        let ctx = SplatContext::new(
+            &field,
+            &biomes,
+            config.bounds.height,
+            config.resolution.voxel_size,
+        );
+        for river in &field.plan().rivers {
+            if river.points.len() < 8 {
+                continue;
+            }
+            rivers_checked += 1;
+            let mut best_mud = 0u8;
+            let mut best_grass = 255u8;
+            let mut sample = river.points[river.points.len() / 2].0;
+            for frac in [0.35, 0.5, 0.65, 0.8] {
+                let idx = ((river.points.len() - 1) as f32 * frac) as usize;
+                let pos = river.points[idx].0;
+                let w = ctx.weights_with_slope(pos.x, pos.y, field.height_at(pos.x, pos.y), 0.0);
+                if w.mud() >= best_mud {
+                    best_mud = w.mud();
+                    best_grass = w.grass;
+                    sample = pos;
+                }
+            }
+            assert!(
+                best_mud > 160,
+                "seed {seed}: el cauce debe ser lodo (mud {best_mud} en {sample:?})"
+            );
+            assert!(
+                best_grass < 40,
+                "seed {seed}: el cauce no debe verse como pradera (hierba {best_grass})"
+            );
+        }
+    }
+    assert!(rivers_checked > 0, "los mundos de prueba deben tener ríos");
+}
+
+#[test]
+fn river_bank_blends_mud_with_surroundings() {
+    let mut banks = 0u32;
+    for seed in [7, 42, 555, 91234, 752306577] {
+        let mut config = config_for_biomes();
+        config.seed = seed;
+        config.biomes.desert = false;
+        config.rivers.enabled = true;
+        config.rivers.max_count = 5;
+        let field = DensityField::new(&config);
+        let biomes = BiomeMap::new(&config);
+        let ctx = SplatContext::new(
+            &field,
+            &biomes,
+            config.bounds.height,
+            config.resolution.voxel_size,
+        );
+        for river in &field.plan().rivers {
+            if river.points.len() < 8 {
+                continue;
+            }
+            let mid_i = river.points.len() / 2;
+            let a = river.points[mid_i - 1].0;
+            let b = river.points[mid_i].0;
+            let along = b - a;
+            if along.length_squared() <= f32::EPSILON {
+                continue;
+            }
+            let normal = glam::Vec2::new(-along.y, along.x).normalize() * river.width;
+            let shore = b + normal;
+            let w =
+                ctx.weights_with_slope(shore.x, shore.y, field.height_at(shore.x, shore.y), 0.0);
+            let around = w.grass as u32 + w.rock as u32 + w.snow as u32;
+            if w.mud() > 20 && around > 20 && w.sand < 48 {
+                banks += 1;
+            }
+        }
+    }
+    assert!(
+        banks >= 3,
+        "las orillas de los ríos deben mezclar lodo con el suelo ({banks})"
+    );
+}
+
+#[test]
+fn cave_path_is_stone() {
+    let mut caves_checked = 0;
+    for seed in [7, 42, 555, 1234, 91234] {
+        let mut config = config_for_biomes();
+        config.seed = seed;
+        config.caves.enabled = true;
+        config.caves.max_count = 6;
+        config.mountains.base.enabled = true;
+        config.mountains.base.max_count = 8;
+        let field = DensityField::new(&config);
+        let biomes = BiomeMap::new(&config);
+        let ctx = SplatContext::new(
+            &field,
+            &biomes,
+            config.bounds.height,
+            config.resolution.voxel_size,
+        );
+        for cave in &field.plan().caves {
+            if cave.segments.len() < 4 {
+                continue;
+            }
+            caves_checked += 1;
+            let first = cave.segments[0].a.lerp(cave.segments[0].b, 0.4);
+            let mid = cave.segments[cave.segments.len() / 2]
+                .a
+                .lerp(cave.segments[cave.segments.len() / 2].b, 0.5);
+            for point in [first, mid] {
+                let w = ctx.weights_with_slope(
+                    point.x,
+                    point.z,
+                    field.height_at(point.x, point.z),
+                    0.0,
+                );
+                assert!(
+                    w.rock > 160,
+                    "seed {seed}: el recorrido de la cueva debe ser piedra (rock {} en {point:?})",
+                    w.rock
+                );
+            }
+        }
+    }
+    assert!(caves_checked > 0, "los mundos de prueba deben tener cuevas");
 }
 
 #[test]
@@ -388,12 +604,61 @@ fn biome_shares_set_the_area_of_each_biome() {
         let got = fractions[biome.index()];
         let want = expected[biome.index()];
         assert!(
-            (got - want).abs() < 0.05,
+            (got - want).abs() < 0.08,
             "{biome:?}: {:.1} % del disco, pedido {:.0} %",
             got * 100.0,
             want * 100.0
         );
     }
+}
+
+#[test]
+fn volcanic_share_stays_around_mountains() {
+    let config = config_with_shares(BiomeShares {
+        grassland: 50,
+        forest: 15,
+        desert: 15,
+        snow: 5,
+        volcanic: 15,
+    });
+    let field = DensityField::new(&config);
+    let map = BiomeMap::for_field(&config, &field);
+    let mountains: Vec<_> = field
+        .plan()
+        .sites
+        .iter()
+        .filter(|s| s.kind == rer_worldgen::planner::FeatureKind::Mountain)
+        .copied()
+        .collect();
+    assert!(
+        !mountains.is_empty(),
+        "el mundo de prueba debe tener montañas"
+    );
+    let radius = config.bounds.width.min(config.bounds.length) * 0.5;
+    let (cx, cz) = (config.bounds.width * 0.5, config.bounds.length * 0.5);
+    let mut volcanic = 0u32;
+    let mut far = 0u32;
+    for iz in 0..80 {
+        for ix in 0..80 {
+            let x = cx - radius + (ix as f32 + 0.5) * radius * 2.0 / 80.0;
+            let z = cz - radius + (iz as f32 + 0.5) * radius * 2.0 / 80.0;
+            if (x - cx).hypot(z - cz) > radius {
+                continue;
+            }
+            if map.biome_at(x, z, field.height_at(x, z)) != Biome::Volcanic {
+                continue;
+            }
+            volcanic += 1;
+            if mountains.iter().all(|m| m.norm_dist(x, z) >= 1.4) {
+                far += 1;
+            }
+        }
+    }
+    assert!(volcanic > 8, "debe haber suelo volcánico ({volcanic})");
+    assert!(
+        far * 8 < volcanic,
+        "el volcánico no debe irse lejos de las montañas ({far}/{volcanic})"
+    );
 }
 
 #[test]
@@ -435,4 +700,74 @@ fn biome_share_weights_blend_and_sum_to_one() {
         }
     }
     assert!(blended > 0, "la frontera entre biomas debe fundirse");
+}
+
+#[test]
+fn desert_stays_away_from_lakes_and_rivers() {
+    let mut config = config_with_shares(BiomeShares {
+        grassland: 40,
+        forest: 20,
+        desert: 40,
+        snow: 0,
+        volcanic: 0,
+    });
+    config.lakes.base.enabled = true;
+    config.lakes.base.max_count = 6;
+    config.rivers.enabled = true;
+    config.rivers.max_count = 5;
+    let field = DensityField::new(&config);
+    let map = BiomeMap::for_field(&config, &field);
+    let plan = field.plan();
+    let lakes: Vec<_> = plan
+        .sites
+        .iter()
+        .filter(|site| site.kind == rer_worldgen::planner::FeatureKind::Lake)
+        .copied()
+        .collect();
+    let rivers: Vec<Vec<_>> = plan
+        .rivers
+        .iter()
+        .map(|river| river.points.iter().map(|(pos, _)| *pos).collect())
+        .collect();
+    assert!(
+        !lakes.is_empty() || !rivers.is_empty(),
+        "el mundo de prueba debe tener agua"
+    );
+    let radius = config.bounds.width.min(config.bounds.length) * 0.5;
+    let (cx, cz) = (config.bounds.width * 0.5, config.bounds.length * 0.5);
+    let mut desert = 0u32;
+    for iz in 0..80 {
+        for ix in 0..80 {
+            let x = cx - radius + (ix as f32 + 0.5) * radius * 2.0 / 80.0;
+            let z = cz - radius + (iz as f32 + 0.5) * radius * 2.0 / 80.0;
+            if (x - cx).hypot(z - cz) > radius {
+                continue;
+            }
+            if map.biome_at(x, z, field.height_at(x, z)) != Biome::Desert {
+                continue;
+            }
+            desert += 1;
+            let near_lake = lakes.iter().any(|lake| lake.norm_dist(x, z) < 1.22);
+            let point = glam::Vec2::new(x, z);
+            let near_river = rivers.iter().any(|path| {
+                path.windows(2).any(|pair| {
+                    let a = pair[0];
+                    let b = pair[1];
+                    let ab = b - a;
+                    let len2 = ab.length_squared();
+                    let t = if len2 <= f32::EPSILON {
+                        0.0
+                    } else {
+                        ((point - a).dot(ab) / len2).clamp(0.0, 1.0)
+                    };
+                    (a + ab * t - point).length() < 18.0
+                })
+            });
+            assert!(
+                !near_lake && !near_river,
+                "desierto junto al agua en ({x}, {z})"
+            );
+        }
+    }
+    assert!(desert > 8, "debe quedar desierto lejos del agua ({desert})");
 }

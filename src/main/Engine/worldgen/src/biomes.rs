@@ -10,9 +10,12 @@
 //! reparte por cuantiles entre los biomas de suelo; la nieve ocupa su fracción
 //! en las cotas más altas del relieve.
 
+use glam::Vec2;
+
 use crate::config::plains_height;
 use crate::field::smoothstep;
 use crate::noise::{FractalType, Noise};
+use crate::planner::{FeatureKind, Site};
 use crate::scale::{snow_line_meters, world_radius};
 use crate::seed::domain_seed;
 
@@ -60,20 +63,15 @@ impl Biome {
     ];
 }
 
-/// Orden de las bandas de suelo por porcentaje (cálido → frío). La nieve no es
-/// una banda: ocupa las cotas más altas.
-const SHARE_BAND_ORDER: [Biome; 4] = [
-    Biome::Volcanic,
-    Biome::Desert,
-    Biome::Grassland,
-    Biome::Forest,
-];
+/// Orden de las bandas de suelo por porcentaje. Nieve y volcánico no son
+/// bandas 2D: nieve en cumbres, volcánico alrededor de montañas.
+const SHARE_BAND_ORDER: [Biome; 3] = [Biome::Desert, Biome::Grassland, Biome::Forest];
 /// Muestras por eje para medir el cuantil de altura de la nieve en el disco.
 const SHARE_SAMPLES: u32 = 96;
 /// Amplitud (celdas de rejilla) del desplazamiento que curva las fronteras.
-const SHARE_WARP_CELLS: f32 = 1.5;
+const SHARE_WARP_CELLS: f32 = 3.6;
 /// Frecuencia del desplazamiento relativa al campo de regiones.
-const SHARE_WARP_SCALE: f32 = 6.1;
+const SHARE_WARP_SCALE: f32 = 3.8;
 /// Media anchura de la transición vertical de la nieve (metros).
 const SNOW_BLEND_M: f32 = 1.0;
 /// La nieve nunca baja de esta altura sobre las llanuras (metros).
@@ -83,6 +81,10 @@ const SNOW_MIN_RISE_M: f32 = 32.0;
 const SNOW_PEAK_SPAN: f32 = 0.97;
 /// Solo las muestras más altas del disco pueden ser nieve (0.98 = percentil 98).
 const SNOW_HEIGHT_QUANTILE: f32 = 0.98;
+/// El desierto no pisa el vaso del lago (`norm_dist` 1 = orilla).
+const DESERT_LAKE_PAD: f32 = 1.22;
+/// Distancia mínima del desierto al eje de un río (metros).
+const DESERT_RIVER_M: f32 = 18.0;
 
 /// Reparto por porcentajes: regiones de suelo y cota de nieve.
 #[derive(Debug, Clone)]
@@ -94,6 +96,10 @@ struct ShareBands {
     /// Altura desde la que hay nieve. [`BiomeMap::for_field`] la ajusta al
     /// relieve real; sin terreno vale la línea de nieve.
     snow_y: f32,
+    /// Fracción pedida para el volcánico (anillo alrededor de montañas).
+    volcanic_fraction: f32,
+    /// Umbral de `norm_dist` de montaña: por debajo hay volcánico.
+    volcanic_t: f32,
 }
 
 /// Mapa de biomas del mundo.
@@ -108,6 +114,9 @@ pub struct BiomeMap {
     snow_line: f32,
     plains_y: f32,
     shares: Option<ShareBands>,
+    mountains: Vec<Site>,
+    lakes: Vec<Site>,
+    rivers: Vec<Vec<Vec2>>,
     radius: f32,
     center: (f32, f32),
 }
@@ -134,11 +143,9 @@ impl BiomeMap {
             volcanic: Noise::new(domain_seed(config.seed, crate::seed::SALT_VOLCANIC))
                 .frequency((cycles * 1.8) / diameter)
                 .fractal(FractalType::Ridged, 2, 0.5, 0.0),
-            // Pocos ciclos y dos octavas suaves: regiones amplias y continuas,
-            // sin islotes de un bioma dentro de otro.
             regions: Noise::new(domain_seed(config.seed, crate::seed::SALT_BIOME_REGIONS))
-                .frequency((1.3 + radius / 400.0).clamp(1.3, 3.2) / diameter)
-                .fractal(FractalType::Fbm, 2, 0.3, 0.0),
+                .frequency((1.9 + radius / 320.0).clamp(1.9, 4.2) / diameter)
+                .fractal(FractalType::Fbm, 3, 0.42, 0.0),
             enabled: [
                 biomes.grassland,
                 biomes.forest,
@@ -149,6 +156,9 @@ impl BiomeMap {
             snow_line: snow_line_meters(config),
             plains_y: plains_height(),
             shares: None,
+            mountains: Vec::new(),
+            lakes: Vec::new(),
+            rivers: Vec::new(),
             radius: world_radius(&config.bounds),
             center: (config.bounds.width * 0.5, config.bounds.length * 0.5),
         };
@@ -166,7 +176,28 @@ impl BiomeMap {
         field: &crate::field::DensityField,
     ) -> Self {
         let mut map = Self::new(config);
+        map.mountains = field
+            .plan()
+            .sites
+            .iter()
+            .copied()
+            .filter(|site| site.kind == FeatureKind::Mountain)
+            .collect();
+        map.lakes = field
+            .plan()
+            .sites
+            .iter()
+            .copied()
+            .filter(|site| site.kind == FeatureKind::Lake)
+            .collect();
+        map.rivers = field
+            .plan()
+            .rivers
+            .iter()
+            .map(|river| river.points.iter().map(|(pos, _)| *pos).collect())
+            .collect();
         map.fit_snow_to_terrain(|x, z| field.height_at(x, z));
+        map.fit_volcanic_to_mountains();
         map
     }
 
@@ -201,6 +232,45 @@ impl BiomeMap {
         if let Some(shares) = self.shares.as_mut() {
             shares.snow_y = snow_y;
         }
+    }
+
+    /// El volcánico cubre las faldas de las montañas, no manchas sueltas.
+    fn fit_volcanic_to_mountains(&mut self) {
+        let Some(fraction) = self.shares.as_ref().map(|s| s.volcanic_fraction) else {
+            return;
+        };
+        if fraction <= 0.0 || self.mountains.is_empty() {
+            if let Some(shares) = self.shares.as_mut() {
+                shares.volcanic_t = 0.0;
+            }
+            return;
+        }
+        let mut distances = self.disk_samples(|x, z| self.mountain_norm(x, z));
+        if distances.is_empty() {
+            return;
+        }
+        distances.sort_by(|a, b| a.total_cmp(b));
+        let idx = ((distances.len() - 1) as f32 * fraction.clamp(0.02, 0.9)).floor() as usize;
+        let volcanic_t = distances[idx].max(0.4);
+        if let Some(shares) = self.shares.as_mut() {
+            shares.volcanic_t = volcanic_t;
+        }
+    }
+
+    fn mountain_norm(&self, x: f32, z: f32) -> f32 {
+        self.mountains
+            .iter()
+            .map(|site| site.norm_dist(x, z))
+            .fold(f32::MAX, f32::min)
+    }
+
+    fn share_volcanic(&self, shares: &ShareBands, x: f32, z: f32) -> f32 {
+        if shares.volcanic_fraction <= 0.0 || shares.volcanic_t <= 0.0 || self.mountains.is_empty()
+        {
+            return 0.0;
+        }
+        let t = self.mountain_norm(x, z);
+        1.0 - smoothstep(shares.volcanic_t * 0.68, shares.volcanic_t, t)
     }
 
     /// Valores de `f` en una rejilla regular dentro del disco del mundo.
@@ -243,7 +313,8 @@ impl BiomeMap {
             .collect();
         let ground_total: f32 = active.iter().map(|(_, value)| value).sum();
         let snow = percent(Biome::Snow);
-        let total = ground_total + snow;
+        let volcanic = percent(Biome::Volcanic);
+        let total = ground_total + snow + volcanic;
         if total <= 0.0 {
             return None;
         }
@@ -259,7 +330,12 @@ impl BiomeMap {
                 for ix in 0..GRID {
                     let x = ox + (ix as f32 + 0.5) * cell;
                     let z = oz + (iz as f32 + 0.5) * cell;
-                    values.push(self.regions.get2(x, z));
+                    // Tres escalas anisotrópicas: un solo FBM suave da
+                    // cuantiles casi circulares (el desierto parecía un disco).
+                    let n1 = self.regions.get2(x, z);
+                    let n2 = self.regions.get2(x * 1.7 + 71.0, z * 0.58 - 43.0);
+                    let n3 = self.regions.get2(x * 0.52 - 19.0, z * 1.45 + 88.0);
+                    values.push(n1 * 0.48 + n2 * 0.32 + n3 * 0.20);
                     inside.push((x - cx).hypot(z - cz) <= self.radius);
                 }
             }
@@ -269,6 +345,8 @@ impl BiomeMap {
             regions,
             snow_fraction: snow / total,
             snow_y: self.snow_line,
+            volcanic_fraction: volcanic / total,
+            volcanic_t: 0.0,
         })
     }
 
@@ -331,17 +409,20 @@ impl BiomeMap {
             return weights;
         };
         let snow = Self::share_snow(shares, y);
+        let volcanic = self.share_volcanic(shares, x, z) * (1.0 - snow);
         weights[Biome::Snow.index()] = snow;
-        let ground = 1.0 - snow;
+        weights[Biome::Volcanic.index()] = volcanic;
+        let ground = (1.0 - snow - volcanic).max(0.0);
         let Some(regions) = shares.regions.as_ref().filter(|_| ground > 0.0) else {
             return weights;
         };
         let region = self.region_weights(regions, x, z);
         for (biome, (slot, value)) in weights.iter_mut().zip(region).enumerate() {
-            if biome != Biome::Snow.index() {
+            if biome != Biome::Snow.index() && biome != Biome::Volcanic.index() {
                 *slot = value * ground;
             }
         }
+        self.keep_desert_away_from_water(&mut weights, x, z);
         weights
     }
 
@@ -355,10 +436,14 @@ impl BiomeMap {
             if Self::share_snow(shares, y) > 0.5 {
                 return Biome::Snow;
             }
+            if self.share_volcanic(shares, x, z) > 0.5 {
+                return Biome::Volcanic;
+            }
             let Some(regions) = &shares.regions else {
                 return Biome::Snow;
             };
-            let weights = self.region_weights(regions, x, z);
+            let mut weights = self.region_weights(regions, x, z);
+            self.keep_desert_away_from_water(&mut weights, x, z);
             return SHARE_BAND_ORDER
                 .into_iter()
                 .max_by(|a, b| weights[a.index()].total_cmp(&weights[b.index()]))
@@ -370,16 +455,26 @@ impl BiomeMap {
         }
 
         let mut temp = (self.temperature.get2(x, z) * 0.5 + 0.5).clamp(0.0, 1.0);
-        // Sesgo húmedo: la pradera/bosque cubren el suelo; el desierto es raro.
         let moist = (self.moisture.get2(x, z) * 0.5 + 0.5 + 0.14).clamp(0.0, 1.0);
         let above = (y - self.plains_y).max(0.0);
         temp = (temp - above / 90.0).clamp(0.0, 1.0);
 
-        let volcanic = (self.volcanic.get2(x, z) * 0.5 + 0.5).clamp(0.0, 1.0);
-        if self.enabled[Biome::Volcanic.index()] && volcanic > 0.92 && temp > 0.70 {
+        if self.enabled[Biome::Volcanic.index()]
+            && !self.mountains.is_empty()
+            && self.mountain_norm(x, z) < 1.05
+        {
             return Biome::Volcanic;
+        } else if self.mountains.is_empty() {
+            let volcanic = (self.volcanic.get2(x, z) * 0.5 + 0.5).clamp(0.0, 1.0);
+            if self.enabled[Biome::Volcanic.index()] && volcanic > 0.92 && temp > 0.70 {
+                return Biome::Volcanic;
+            }
         }
-        if self.enabled[Biome::Desert.index()] && temp > 0.78 && moist < 0.28 {
+        if self.enabled[Biome::Desert.index()]
+            && temp > 0.78
+            && moist < 0.28
+            && !self.near_water(x, z)
+        {
             return Biome::Desert;
         }
         if self.enabled[Biome::Forest.index()] && moist > 0.50 && (0.22..0.82).contains(&temp) {
@@ -398,6 +493,30 @@ impl BiomeMap {
         self.snow_line
     }
 
+    fn near_water(&self, x: f32, z: f32) -> bool {
+        let point = Vec2::new(x, z);
+        self.lakes
+            .iter()
+            .any(|lake| lake.norm_dist(x, z) < DESERT_LAKE_PAD)
+            || self
+                .rivers
+                .iter()
+                .any(|path| polyline_distance(path, point) < DESERT_RIVER_M)
+    }
+
+    fn keep_desert_away_from_water(&self, weights: &mut [f32; 5], x: f32, z: f32) {
+        let desert = weights[Biome::Desert.index()];
+        if desert <= 0.0 || !self.near_water(x, z) {
+            return;
+        }
+        weights[Biome::Desert.index()] = 0.0;
+        if self.enabled[Biome::Grassland.index()] {
+            weights[Biome::Grassland.index()] += desert;
+        } else if self.enabled[Biome::Forest.index()] {
+            weights[Biome::Forest.index()] += desert;
+        }
+    }
+
     fn none_enabled(&self) -> bool {
         self.enabled.iter().all(|on| !*on)
     }
@@ -414,4 +533,27 @@ impl BiomeMap {
             Biome::Grassland
         }
     }
+}
+
+fn polyline_distance(path: &[Vec2], point: Vec2) -> f32 {
+    if path.is_empty() {
+        return f32::INFINITY;
+    }
+    if path.len() == 1 {
+        return (path[0] - point).length();
+    }
+    let mut best = f32::MAX;
+    for pair in path.windows(2) {
+        let a = pair[0];
+        let b = pair[1];
+        let ab = b - a;
+        let len2 = ab.length_squared();
+        let t = if len2 <= f32::EPSILON {
+            0.0
+        } else {
+            ((point - a).dot(ab) / len2).clamp(0.0, 1.0)
+        };
+        best = best.min((a + ab * t - point).length());
+    }
+    best
 }

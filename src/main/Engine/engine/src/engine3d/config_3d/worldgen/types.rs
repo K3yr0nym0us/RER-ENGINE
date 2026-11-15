@@ -173,8 +173,8 @@ pub(crate) struct WorldgenState {
     pub splat_atlas: SplatAtlas,
     /// Tile de splat por entidad de chunk (para el instance buffer).
     pub entity_splat_tile: HashMap<crate::engine3d::ecs::EntityId, u32>,
-    /// Capa GPU de `Grass.jpg`. Las cinco siguientes, en orden, son Dirt, Clay,
-    /// Sand, Stone y Snow.
+    /// Capa GPU de `Grass.jpg` del plugin. Las seis siguientes, en orden, son
+    /// Dirt, Clay, Sand, Stone, Snow y Mud.
     pub material_base: Option<u32>,
     /// Capa de textura de fallback (checker) mientras no haya texturas.
     pub fallback_tex_idx: Option<usize>,

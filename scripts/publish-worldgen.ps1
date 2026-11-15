@@ -33,11 +33,15 @@ if (-not (Test-Path $dllPath)) { throw "No se encontró la DLL: $dllPath" }
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 
-# El catálogo espera el binario como `rer_worldgen.dll` dentro del ZIP.
+# El catálogo espera `rer_worldgen.dll` y `terrain/*.jpg` dentro del ZIP.
+$terrainSrc = Join-Path $engineDir "worldgen\assets\terrain"
 $stage = Join-Path $outDir "stage"
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item $dllPath (Join-Path $stage "rer_worldgen.dll")
+$terrainDst = Join-Path $stage "terrain"
+New-Item -ItemType Directory -Force -Path $terrainDst | Out-Null
+Copy-Item (Join-Path $terrainSrc "*.jpg") $terrainDst
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zipPath
 Remove-Item $stage -Recurse -Force
 

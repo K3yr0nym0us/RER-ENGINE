@@ -38,11 +38,16 @@ escala features al radio.
 - **Biomas activos** con **porcentaje del mundo** (`biomes.shares`). Los
   activos suman 100 % y cada uno tiene un mínimo del 10 % (salvo un solo
   bioma al 100 %).
-- **Nieve**: no es una zona en planta. Su porcentaje cubre las **cumbres**
-  (cota alta del relieve, no lomas ni llanuras).
-- **Lagos**: el borde queda fuera del pie de las montañas (radios + margen).
-- Semilla, montañas/colinas/valles/llanuras/acantilados, ríos, cuevas,
-  cascadas, scatter de blueprints.
+- **Nieve**: no es una zona en planta. Su porcentaje cubre las **cumbres**.
+- **Volcánico**: alrededor de las montañas, no manchas sueltas. El desierto
+  usa regiones anisotrópicas (no un disco). Las montañas mezclan mesetas y
+  picos. El suelo base tiene relieve amplio y poco ruido fino.
+- **Lagos / valles / montañas**: huella elíptica con costa irregular.
+  Las montañas copian masa + crestas de `primitive-voxels-godot` (esa
+  referencia no tiene lagos ni ríos).
+- **Ríos**: nacen en ladera de montaña o en el borde alto del disco y
+  bajan (lago o salida del mapa). No se plantan en un punto interior.
+- Semilla, colinas/llanuras/acantilados, cuevas, cascadas, scatter.
 
 Límites de tamaño y biomas: `worldgenLimits.ts` (frontend) y `scale.rs` /
 `config.rs` (Rust).
@@ -59,9 +64,11 @@ compartidas con modelos): las columnas van a un **atlas** (16×16 tiles de
 64 px por página). Si el array GPU se llena, el chunk nuevo usa fallback;
 **no** se pisa el splat de una columna ya en escena.
 
-Fotos de suelo (Grass, Dirt, Clay, Sand, Stone, Snow) en
-`engine/assets/terrain/`. El shader `forward.frag` mezcla esas capas con el
-splat. Capa 0 del array = checker del editor; Grass no puede usarla.
+Fotos de suelo (Grass, Dirt, Clay, Sand, Stone, Snow, Mud) en
+`worldgen/assets/terrain/`. Viajan en el ZIP del plugin (`terrain/` al lado
+de la DLL). El engine solo las sube a GPU; el shader `forward.frag` mezcla
+esas capas con el splat. El vaso de un lago usa `Mud.jpg` (resto de los
+pesos RGBA). Capa 0 del array = checker del editor; Grass no puede usarla.
 
 ## Consumo en el engine
 
@@ -75,11 +82,11 @@ splat. Capa 0 del array = checker del editor; Grass no puede usarla.
    `phase: mesh`.
 3. Recorte al disco del mundo; UVs de splat acotadas a `[0, 1]`.
 
-Instalación de la DLL: `%APPDATA%\rer-engine\plugins\world-gen\rer_worldgen.dll`.
-Tras cambiar el crate, `cargo build --release -p rer-worldgen` y copiar la
-DLL (el editor no debe tenerla cargada). Un cambio de shader/engine pide
-reiniciar `yarn dev`. No reinstalar el plugin desde el catálogo para una
-DLL local.
+Instalación local: `%APPDATA%\rer-engine\plugins\world-gen\` con
+`rer_worldgen.dll` y la carpeta `terrain/`. Tras cambiar el crate,
+`cargo build --release -p rer-worldgen` y copiar DLL + texturas (el editor
+no debe tener la DLL cargada). Un cambio de shader/host GPU pide reiniciar
+`yarn dev`. No reinstalar el plugin desde el catálogo para una DLL local.
 
 Generar el mundo es **CPU** (densidad, mesh, splat). La GPU pinta después.
 Eso es normal.
