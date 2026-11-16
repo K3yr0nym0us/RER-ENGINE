@@ -1,5 +1,7 @@
 # Desarrollo
 dev/
+seeds.txt
+.codegraph/
 
 # Rust
 src/main/Engine/target/
