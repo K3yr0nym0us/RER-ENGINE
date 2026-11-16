@@ -100,6 +100,29 @@ pub(super) fn asset_section(
             actions.push(LeftAction::ImportAsset(kind));
         }
 
+        // Solo modelos 3D: referencia un recurso de otra escena por path,
+        // sin reimportar (docs/yaml/persistence/Save_Proyect_Model.yaml).
+        if kind == AssetKind::Model
+            && widgets::wide_button_click_sized(
+                ui,
+                width,
+                icons::STACK,
+                crate::editor::i18n::tr(
+                    locale,
+                    "Cargar desde otra escena",
+                    "Load from another scene",
+                ),
+                crate::editor::i18n::tr(
+                    locale,
+                    "Referenciar un modelo de otra escena sin reimportarlo",
+                    "Reference a model from another scene without re-importing it",
+                ),
+                crate::editor::theme::OUTLINE_SECONDARY,
+            )
+        {
+            actions.push(LeftAction::OpenLoadFromScene);
+        }
+
         let list = assets.assets(kind);
         if list.is_empty() {
             widgets::tiny(

@@ -66,6 +66,11 @@ pub enum EngineCommand3dOnly {
         path: String,
     },
     GetModelsList,
+    /// «Cargar desde otra escena»: referencia por `model_id` sin reimportar
+    /// (carga GPU desde el `.rerasset` ya empaquetado).
+    WarmSceneModel {
+        model_id: String,
+    },
     SpawnEditorBox {
         name: String,
         position: [f32; 3],

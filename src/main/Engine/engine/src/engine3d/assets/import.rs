@@ -70,6 +70,11 @@ impl State {
         let model_id = generate_model_id(name, &key);
         let rerasset_path = rerasset_path_for_id(&model_id);
 
+        // Recursos por escena: un modelo importado en la sesión pertenece a la
+        // escena activa (docs/yaml/persistence/Save_Proyect_Model.yaml).
+        self.model_scene_ids
+            .insert(model_id.clone(), self.editor_scenes.active_scene_id);
+
         self.imported_model_registry.insert(ImportedModelEntry {
             model_id: model_id.clone(),
             name: name.to_string(),

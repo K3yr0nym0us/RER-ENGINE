@@ -1494,6 +1494,8 @@ export interface EngineContextValue extends EngineState {
 	replaceEntityModel: (entityId: number, modelPath: string) => void
 	removeModelAsset: (path: string) => void
 	getModelsList: () => void
+	/** Carga en GPU un `.rerasset` por escena sin reimportar (Recursos por escena). */
+	warmSceneModel: (modelId: string) => void
 	reportBounds: () => void
 	retryEngine: () => void
 	removeScenario: (id: number) => void

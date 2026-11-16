@@ -504,6 +504,9 @@ pub struct ModelInfo {
     pub asset: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// Escena dueña del recurso (recursos por escena); `None` = biblioteca global.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scene_id: Option<u32>,
 }
 
 /// Categorías válidas de biblioteca (`ModelCategory` en el renderer).

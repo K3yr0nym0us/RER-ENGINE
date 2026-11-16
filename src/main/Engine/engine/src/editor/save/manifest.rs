@@ -91,7 +91,7 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
 
     let is_3d = input.project_type == "3D";
     let resources_models = if is_3d {
-        build_resources_models(engine_scene.get("models"), &merged_models)
+        build_resources_models(engine_scene.get("models"), &merged_models, &scenes, state)
     } else {
         Vec::new()
     };
@@ -552,7 +552,109 @@ fn copy_first(target: &mut Map<String, Value>, key: &str, previous: Option<&Valu
     }
 }
 
-fn build_resources_models(engine_models: Option<&Value>, merged_models: &[Value]) -> Vec<Value> {
+fn imported_model_asset_path(model_id: &str, asset: Option<&str>) -> String {
+    asset
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("imported/models/{model_id}.rerasset"))
+}
+
+/// Ruta relativa de un recurso por escena dentro del `.save`.
+fn scene_model_asset_path(scene_id: u64, model_id: &str) -> String {
+    format!("scene-{scene_id}/assets/{model_id}.rerasset")
+}
+
+/// Uso de cada `model_id` por escena: `entities[].model_id` + `player.model_id`.
+fn collect_scene_model_usage(scenes: &[Value]) -> HashMap<String, Vec<u64>> {
+    let mut usage: HashMap<String, Vec<u64>> = HashMap::new();
+    for scene in scenes {
+        let Some(scene_id) = scene_id(scene) else {
+            continue;
+        };
+        let mut push = |model_id: Option<&str>| {
+            if let Some(id) = model_id.map(str::trim).filter(|id| !id.is_empty()) {
+                let list = usage.entry(id.to_string()).or_default();
+                if !list.contains(&scene_id) {
+                    list.push(scene_id);
+                }
+            }
+        };
+        if let Some(entities) = scene.get("entities").and_then(Value::as_array) {
+            for entity in entities {
+                push(entity.get("model_id").and_then(Value::as_str));
+            }
+        }
+        push(
+            scene
+                .get("player")
+                .and_then(|player| player.get("model_id"))
+                .and_then(Value::as_str),
+        );
+    }
+    usage
+}
+
+/// Las blueprints son plantillas globales: si usan un modelo, vive en la
+/// biblioteca global aunque solo lo referencie una escena.
+fn blueprints_use_model(state: &ProjectState, model_id: &str) -> bool {
+    state.blueprints.iter().any(|bp| {
+        bp.get("model_id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id == model_id)
+    })
+}
+
+/// Decisión de alcance de un modelo: `Some(None)` = global (compartido entre
+/// escenas, usado por blueprint o biblioteca sin uso), `Some(Some(id))` =
+/// recurso exclusivo de la escena `id` en proyecto multi-escena.
+fn model_scene_scope(
+    usage: &HashMap<String, Vec<u64>>,
+    scene_count: usize,
+    state: &ProjectState,
+    model_id: &str,
+) -> Option<Option<u64>> {
+    let owners = usage.get(model_id).map(Vec::as_slice).unwrap_or(&[]);
+    if owners.len() >= 2 || blueprints_use_model(state, model_id) {
+        // Promoción a biblioteca global (recurso compartido entre escenas).
+        return Some(None);
+    }
+    if owners.len() == 1 && scene_count > 1 {
+        return Some(Some(owners[0]));
+    }
+    None
+}
+
+fn make_resource_entry(
+    model_id: &str,
+    name: &Value,
+    model_type: &Value,
+    scene_id: Option<u64>,
+    asset: String,
+) -> Value {
+    let mut entry = Map::new();
+    entry.insert("id".into(), json!(model_id));
+    entry.insert("name".into(), name.clone());
+    entry.insert("type".into(), model_type.clone());
+    entry.insert("asset".into(), Value::String(asset));
+    entry.insert("importer_version".into(), json!(RERASSET_IMPORTER_VERSION));
+    if let Some(scene_id) = scene_id {
+        entry.insert("scene_id".into(), json!(scene_id));
+    }
+    Value::Object(entry)
+}
+
+/// Biblioteca 3D `resources.models[]` con rutas por escena:
+/// - Compartido entre escenas / blueprint / proyecto de una escena → global
+///   (`imported/models/{id}.rerasset`, sin `scene_id`).
+/// - Exclusivo de una escena en proyecto multi-escena → `scene-{id}/assets/{id}.rerasset`
+///   con `scene_id` (carga lazy y liberación al cambiar de escena).
+fn build_resources_models(
+    engine_models: Option<&Value>,
+    merged_models: &[Value],
+    scenes: &[Value],
+    state: &ProjectState,
+) -> Vec<Value> {
+    let scene_count = scenes.len();
+    let usage = collect_scene_model_usage(scenes);
     let mut entries: Vec<(String, Value)> = Vec::new();
 
     for item in engine_models
@@ -574,13 +676,26 @@ fn build_resources_models(engine_models: Option<&Value>, merged_models: &[Value]
         else {
             continue;
         };
-        let entry = json!({
-            "id": model_id,
-            "name": item.get("name").cloned().unwrap_or(json!(model_id)),
-            "type": item.get("category").cloned().unwrap_or(json!("object")),
-            "asset": asset,
-            "importer_version": RERASSET_IMPORTER_VERSION,
-        });
+        let (scene_id, asset) = match model_scene_scope(&usage, scene_count, state, model_id) {
+            Some(None) => (
+                None,
+                // Conserva rutas no por escena (global relativa o absoluta de sesión).
+                if asset.starts_with("scene-") {
+                    imported_model_asset_path(model_id, None)
+                } else {
+                    asset.to_string()
+                },
+            ),
+            Some(Some(scene_id)) => (Some(scene_id), scene_model_asset_path(scene_id, model_id)),
+            None => (None, imported_model_asset_path(model_id, Some(asset))),
+        };
+        let entry = make_resource_entry(
+            model_id,
+            &item.get("name").cloned().unwrap_or(json!(model_id)),
+            &item.get("category").cloned().unwrap_or(json!("object")),
+            scene_id,
+            asset,
+        );
         upsert(&mut entries, model_id.to_string(), entry);
     }
 
@@ -601,29 +716,32 @@ fn build_resources_models(engine_models: Option<&Value>, merged_models: &[Value]
         if entries.iter().any(|(key, _)| key == model_id) {
             continue;
         }
-        let asset = item
+        let provided_asset = item
             .get("asset")
             .and_then(Value::as_str)
-            .filter(|asset| !asset.is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| imported_model_asset_path(model_id, None));
-        let entry = json!({
-            "id": model_id,
-            "name": item.get("name").cloned().unwrap_or(json!(model_id)),
-            "type": item.get("category").cloned().unwrap_or(json!("object")),
-            "asset": asset,
-            "importer_version": RERASSET_IMPORTER_VERSION,
-        });
+            .filter(|asset| !asset.is_empty());
+        let (scene_id, asset) = match model_scene_scope(&usage, scene_count, state, model_id) {
+            Some(None) => (
+                None,
+                provided_asset
+                    .filter(|asset| !asset.starts_with("scene-"))
+                    .map(str::to_string)
+                    .unwrap_or_else(|| imported_model_asset_path(model_id, None)),
+            ),
+            Some(Some(scene_id)) => (Some(scene_id), scene_model_asset_path(scene_id, model_id)),
+            None => (None, imported_model_asset_path(model_id, provided_asset)),
+        };
+        let entry = make_resource_entry(
+            model_id,
+            &item.get("name").cloned().unwrap_or(json!(model_id)),
+            &item.get("category").cloned().unwrap_or(json!("object")),
+            scene_id,
+            asset,
+        );
         upsert(&mut entries, model_id.to_string(), entry);
     }
 
     entries.into_iter().map(|(_, value)| value).collect()
-}
-
-fn imported_model_asset_path(model_id: &str, asset: Option<&str>) -> String {
-    asset
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("imported/models/{model_id}.rerasset"))
 }
 
 fn attach_model_ids_to_scene(scene: &mut Value, models: &[Value]) {
@@ -873,6 +991,80 @@ mod tests {
             json!("imported/models/model_hero.rerasset")
         );
         assert_eq!(models[0]["importer_version"], json!(2));
+    }
+
+    #[test]
+    fn resources_route_models_per_scene_and_promote_shared() {
+        // Multi-escena: `model_hero` compartido (→ global), `model_tree`
+        // exclusivo de la escena 2 (→ per-scene), `model_npc` usado por
+        // blueprint (→ global aunque solo lo referencie la escena 1).
+        let scenes = vec![
+            json!({
+                "id": 1,
+                "entities": [
+                    { "model_id": "model_hero" },
+                    { "model_id": "model_npc" }
+                ],
+                "player": null
+            }),
+            json!({
+                "id": 2,
+                "entities": [
+                    { "model_id": "model_hero" },
+                    { "model_id": "model_tree" }
+                ],
+                "player": { "model_id": "model_tree" }
+            }),
+        ];
+        let engine_models = json!([
+            { "model_id": "model_hero", "asset": "imported/models/model_hero.rerasset" },
+            { "model_id": "model_tree", "asset": "imported/models/model_tree.rerasset" },
+            { "model_id": "model_npc", "asset": "imported/models/model_npc.rerasset" },
+        ]);
+        let mut project_state = state();
+        project_state.blueprints = vec![json!({ "model_id": "model_npc" })];
+
+        let models = build_resources_models(Some(&engine_models), &[], &scenes, &project_state);
+
+        let find = |id: &str| {
+            models
+                .iter()
+                .find(|entry| entry["id"] == json!(id))
+                .unwrap_or_else(|| panic!("falta el recurso {id}"))
+                .clone()
+        };
+
+        let hero = find("model_hero");
+        assert_eq!(hero["asset"], json!("imported/models/model_hero.rerasset"));
+        assert!(hero.get("scene_id").is_none());
+
+        let tree = find("model_tree");
+        assert_eq!(tree["asset"], json!("scene-2/assets/model_tree.rerasset"));
+        assert_eq!(tree["scene_id"], json!(2));
+
+        let npc = find("model_npc");
+        assert_eq!(npc["asset"], json!("imported/models/model_npc.rerasset"));
+        assert!(npc.get("scene_id").is_none());
+    }
+
+    #[test]
+    fn resources_keep_single_scene_project_global() {
+        // Proyecto de una sola escena: todo global (compatible con saves antiguos).
+        let scenes = vec![json!({
+            "id": 1,
+            "entities": [{ "model_id": "model_hero" }],
+            "player": null
+        })];
+        let engine_models = json!([
+            { "model_id": "model_hero", "asset": "imported/models/model_hero.rerasset" },
+        ]);
+        let models = build_resources_models(Some(&engine_models), &[], &scenes, &state());
+        assert_eq!(models.len(), 1);
+        assert_eq!(
+            models[0]["asset"],
+            json!("imported/models/model_hero.rerasset")
+        );
+        assert!(models[0].get("scene_id").is_none());
     }
 
     #[test]

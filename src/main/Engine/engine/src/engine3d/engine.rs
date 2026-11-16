@@ -282,6 +282,8 @@ pub struct State {
         std::collections::HashMap<String, std::collections::HashMap<u32, u32>>,
     /// Mallas estáticas en GPU indexadas por ruta (precarga al registrar recurso).
     pub(crate) static_model_cache: crate::engine3d::config_3d::static_model_cache::StaticModelCache,
+    /// Recursos por escena: `model_id` → escena dueña. Ausente = biblioteca global.
+    pub(crate) model_scene_ids: HashMap<String, u32>,
     /// Plugin de generación procedural de terreno (`rer_worldgen_plugin.dll`).
     pub(crate) worldgen: crate::engine3d::config_3d::worldgen::StateWorldgenState,
     pub(crate) model_preload_rx: crate::engine3d::config_3d::static_model_cache::ModelPreloadRx,

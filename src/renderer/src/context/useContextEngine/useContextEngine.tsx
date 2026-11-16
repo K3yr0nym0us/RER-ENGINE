@@ -212,6 +212,7 @@ export function EngineProvider({
 		replaceEntityModel: actions.replaceEntityModel,
 		removeModelAsset: actions.removeModelAsset,
 		getModelsList: actions.getModelsList,
+		warmSceneModel: actions.warmSceneModel,
 		reportBounds,
 		retryEngine: actions.retryEngine,
 		removeScenario: actions.removeScenario,

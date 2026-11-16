@@ -988,6 +988,8 @@ export interface ModelInfo {
   asset?: string
   /** importing | ready | failed */
   state?: string
+  /** Escena propietaria del recurso (recurso por escena). `undefined` = biblioteca global. */
+  scene_id?: number
 }
 
 export interface ResourceModelEntry {
@@ -996,6 +998,8 @@ export interface ResourceModelEntry {
   type: ModelCategory
   asset: string
   importer_version: number
+  /** Escena propietaria (recurso por escena). `undefined` = biblioteca global. */
+  scene_id?: number
 }
 
 export interface SoundInfo {

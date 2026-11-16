@@ -73,6 +73,10 @@ pub(crate) struct SavedResourceModel {
     pub(crate) model_type: String,
     pub(crate) asset: String,
     pub(crate) importer_version: u16,
+    /// Escena dueña del recurso (`scene-{id}/assets/…`); `None` = biblioteca
+    /// global (`imported/models/…`). Ver `docs/yaml/persistence/Save_Proyect_Model.yaml`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) scene_id: Option<u32>,
 }
 
 #[allow(non_snake_case)]

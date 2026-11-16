@@ -116,6 +116,8 @@ enum LeftAction {
     /// Activa/desactiva la pantalla HUD que se muestra en play.
     SetActiveUiScreen(Option<String>),
     ImportAsset(AssetKind),
+    /// Resources → modelos: modal «Cargar desde otra escena» (referencia por path).
+    OpenLoadFromScene,
     OpenRemoveAsset {
         kind: AssetKind,
         path: String,
@@ -446,6 +448,13 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             );
         }
         LeftAction::ImportAsset(kind) => import_asset(app, kind),
+        LeftAction::OpenLoadFromScene => {
+            crate::editor::bridge::request_legacy_window("load_from_scene", json!({}));
+            app.push_log(
+                "[Recursos] Abriendo «Cargar desde otra escena»…".to_string(),
+                false,
+            );
+        }
         LeftAction::OpenRemoveAsset { kind, path, name } => {
             crate::editor::bridge::request_legacy_window(
                 "remove_asset",

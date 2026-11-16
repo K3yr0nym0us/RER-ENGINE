@@ -169,11 +169,18 @@ pub fn resolve_rerasset_on_disk(extract_dir: &Path, model_id: &str) -> PathBuf {
 }
 
 /// Resuelve `resources.models[].asset` (relativo al extract dir) a path en disco.
+/// Acepta rutas globales (`imported/models/{id}.rerasset`) y por escena
+/// (`scene-{id}/assets/{id}.rerasset`); ver `Save_Proyect_Model.yaml`.
 pub fn resolve_manifest_asset_path(asset: &str, extract_dir: &Path, model_id: &str) -> PathBuf {
     let normalized = normalize_source_key(asset);
-    if !asset.is_empty() && !Path::new(asset).is_absolute() && normalized.starts_with("imported/") {
+    if !asset.is_empty() && !Path::new(asset).is_absolute() {
         if extract_dir.as_os_str().is_empty() {
-            rerasset_path_for_id(model_id)
+            // Sin extract dir (sesión sin `.save`): los imports nuevos viven en temp.
+            if normalized.starts_with("imported/") {
+                rerasset_path_for_id(model_id)
+            } else {
+                std::env::temp_dir().join(asset.replace('/', std::path::MAIN_SEPARATOR_STR))
+            }
         } else {
             extract_dir.join(asset.replace('/', std::path::MAIN_SEPARATOR_STR))
         }

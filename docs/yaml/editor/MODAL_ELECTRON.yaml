@@ -45,6 +45,7 @@ legacy_window_kinds:
     scene_script: Escenas → script de escena
     scene_visual_script: Escenas → lógica de nodos
     remove_asset: Recursos → confirmar borrado de asset
+    load_from_scene: Recursos (Models 3D) → "Cargar desde otra escena" → `ModalLoadFromScene`
     socket_config: Herramientas → configuración de sockets
     entity_properties: Selección en viewport → propiedades de entidad
     control_bindings: Controles -> modal de bindings; mode keyboard_mouse | gamepad

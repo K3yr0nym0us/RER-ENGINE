@@ -1,5 +1,6 @@
 import type { ModalElectronOpenRequest } from '@shared-types'
 import { ModalElectronGenericBody } from './ModalElectronGenericBody'
+import ModalElectronErrorBoundary from './ModalElectronErrorBoundary'
 
 interface ModalElectronBodyProps {
 	payload: ModalElectronOpenRequest
@@ -7,5 +8,9 @@ interface ModalElectronBodyProps {
 }
 
 export function ModalElectronBody({ payload, onClose }: ModalElectronBodyProps) {
-	return <ModalElectronGenericBody payload={payload} onClose={onClose} />
+	return (
+		<ModalElectronErrorBoundary key={payload.handlerId}>
+			<ModalElectronGenericBody payload={payload} onClose={onClose} />
+		</ModalElectronErrorBoundary>
+	)
 }

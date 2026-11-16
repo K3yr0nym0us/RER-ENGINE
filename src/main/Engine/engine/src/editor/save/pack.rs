@@ -231,6 +231,16 @@ fn rerasset_candidate(extract_dir: Option<&Path>, id: &str, rel: &str) -> Option
         if candidate.is_file() {
             return Some(candidate);
         }
+        // Fallback: saves antiguos guardaban los modelos solo en la biblioteca
+        // global (`imported/models/<id>.rerasset`), incluso si el manifiesto
+        // nuevo los enruta por escena (`scene-{id}/assets/…`).
+        let global_candidate = extract_dir
+            .join("imported")
+            .join("models")
+            .join(format!("{id}.rerasset"));
+        if global_candidate.is_file() {
+            return Some(global_candidate);
+        }
     }
     let temp_candidate = std::env::temp_dir()
         .join("rer-engine-imported")
@@ -368,5 +378,24 @@ mod tests {
         walk_strings(&mut value, &mut |text| seen.push(text.clone()));
         seen.sort();
         assert_eq!(seen, vec!["x", "y"]);
+    }
+
+    #[test]
+    fn rerasset_candidate_falls_back_to_global_library() {
+        let dir = std::env::temp_dir().join(format!("rer-pack-test-{}", std::process::id()));
+        fs::create_dir_all(dir.join("imported").join("models")).unwrap();
+        let global = dir
+            .join("imported")
+            .join("models")
+            .join("model_old.rerasset");
+        fs::write(&global, b"rerasset").unwrap();
+
+        // El manifiesto enruta por escena, pero el .save viejo solo tiene la
+        // biblioteca global: el fallback la encuentra.
+        let candidate =
+            rerasset_candidate(Some(&dir), "model_old", "scene-2/assets/model_old.rerasset");
+        assert_eq!(candidate, Some(global));
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

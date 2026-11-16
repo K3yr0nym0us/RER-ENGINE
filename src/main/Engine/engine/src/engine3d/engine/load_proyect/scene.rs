@@ -47,6 +47,27 @@ pub(crate) fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
     *step = Instant::now();
 }
 
+/// Libera las cachés GPU/CPU de un recurso por escena al salir de su escena
+/// (`docs/yaml/persistence/Save_Proyect_Model.yaml` — carga lazy por escena).
+/// El registro conserva `rerasset_path`; al volver a necesitarse,
+/// `ensure_static_model_cached` lo recarga desde el `.rerasset` en disco.
+pub(crate) fn free_scene_model_gpu(state: &mut State, model_id: &str) {
+    use crate::engine3d::config_3d::static_model_cache::play_character_cache_key;
+
+    let freed_static = state.static_model_cache.remove(model_id).is_some();
+    let freed_asset = state.model_assets.remove(model_id).is_some();
+    let freed_play = state
+        .model_assets
+        .remove(&play_character_cache_key(model_id))
+        .is_some();
+    state.rerasset_material_tex.remove(model_id);
+    if freed_static || freed_asset || freed_play {
+        log::info!(
+            "[load-pack] liberado modelo de escena {model_id} (static={freed_static}, asset={freed_asset}, play={freed_play})"
+        );
+    }
+}
+
 pub(crate) fn load_project_asset_stores(state: &mut State, project: &ProjectSaveData) {
     for sound in &project.sounds {
         state.handle_command(EngineCommand::Common(EngineCommandCommon::LoadSound {
@@ -365,30 +386,52 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
     if let Some(resources) = &project.resources {
         let extract_dir = std::env::var("RER_PROJECT_EXTRACT_DIR").unwrap_or_default();
         let extract_path = std::path::Path::new(extract_dir.as_str());
+        // Recursos por escena: liberar GPU de modelos de otras escenas antes de
+        // registrar los de la escena activa (docs Save_Proyect_Model.yaml).
         for res in &resources.models {
+            if res.scene_id.is_some_and(|sid| sid != view.sceneId) {
+                free_scene_model_gpu(state, &res.id);
+            }
+        }
+        for res in &resources.models {
+            let is_scene_scoped = res.scene_id.is_some();
+            let belongs_to_active = res.scene_id.is_none_or(|sid| sid == view.sceneId);
             let asset_disk = resolve_manifest_asset_path(&res.asset, extract_path, &res.id);
             if !asset_disk.is_file() {
-                log::error!(
-                    "[load] .rerasset no encontrado: {} (model_id={})",
-                    asset_disk.display(),
-                    res.id
+                let message = format!(
+                    "Modelo importado faltante en .save: {} ({})",
+                    res.name,
+                    asset_disk.display()
                 );
-                send_event(&EngineEvent::Error {
-                    message: format!(
-                        "Modelo importado faltante en .save: {} ({})",
-                        res.name,
+                if belongs_to_active {
+                    log::error!(
+                        "[load] .rerasset no encontrado: {} (model_id={})",
+                        asset_disk.display(),
+                        res.id
+                    );
+                    send_event(&EngineEvent::Error { message });
+                } else {
+                    log::warn!(
+                        "[load] .rerasset de escena {} no encontrado (model_id={}): {}",
+                        res.scene_id.unwrap_or_default(),
+                        res.id,
                         asset_disk.display()
-                    ),
-                });
+                    );
+                }
                 continue;
             }
             log::info!(
-                "[load-pack] GPU «{}» desde {}",
+                "[load-pack] registro «{}» desde {} (scope: {})",
                 res.name,
-                asset_disk.display()
+                asset_disk.display(),
+                if is_scene_scoped { "escena" } else { "global" }
             );
             let source_path = source_path_for_imported_model(project, &res.id, extract_path);
-            state.cache_rerasset_material_tex_map(&res.id, &asset_disk);
+            // Carga lazy: el mapa material→textura (lectura de disco) solo para
+            // la biblioteca global + recursos de la escena activa.
+            if belongs_to_active {
+                state.cache_rerasset_material_tex_map(&res.id, &asset_disk);
+            }
             state
                 .imported_model_registry
                 .insert(crate::engine3d::assets::ImportedModelEntry {
@@ -407,6 +450,14 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
             state
                 .imported_model_registry
                 .link_imported_model_aliases(&res.id, &source_path);
+            match res.scene_id {
+                Some(scene_id) => {
+                    state.model_scene_ids.insert(res.id.clone(), scene_id);
+                }
+                None => {
+                    state.model_scene_ids.remove(&res.id);
+                }
+            }
             let asset_rel = relative_rerasset_manifest_path(&res.id);
             let key = if is_imported_model_id(&source_path) {
                 source_path.clone()

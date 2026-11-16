@@ -35,33 +35,10 @@ impl State {
                 }
             }
             EngineCommand::Only3d(EngineCommand3dOnly::GetModelsList) => {
-                let models: Vec<crate::engine3d::ipc::ModelInfo> = self
-                    .model_store
-                    .iter()
-                    .map(|(path, entry)| {
-                        let state = entry.model_id.as_ref().and_then(|id| {
-                            self.imported_model_registry.get(id).map(|e| {
-                                match e.state {
-                                    rer_engine_core::assets::AssetState::Importing => "importing",
-                                    rer_engine_core::assets::AssetState::Ready => "ready",
-                                    rer_engine_core::assets::AssetState::Failed => "failed",
-                                }
-                                .to_string()
-                            })
-                        });
-                        crate::engine3d::ipc::ModelInfo {
-                            path: path.clone(),
-                            name: entry.name.clone(),
-                            category: entry.category.clone(),
-                            model_id: entry.model_id.clone(),
-                            asset: entry.rerasset_path.clone(),
-                            state,
-                        }
-                    })
-                    .collect();
-                let count = models.len();
-                send_event(&EngineEvent::ModelsList { models });
-                log::info!("[model] lista enviada: {} modelos", count);
+                self.send_models_list();
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::WarmSceneModel { model_id }) => {
+                self.warm_scene_model(&model_id);
             }
             EngineCommand::Common(EngineCommandCommon::ReloadAsset { path }) => {
                 log::info!("[IPC] ReloadAsset: {}", path);
@@ -292,5 +269,75 @@ impl State {
             other => return Some(other),
         }
         None
+    }
+
+    /// Lista de biblioteca de modelos para el editor/renderer, con el alcance
+    /// por escena de cada recurso (`docs/yaml/persistence/Save_Proyect_Model.yaml`).
+    pub(crate) fn send_models_list(&mut self) {
+        let models: Vec<crate::engine3d::ipc::ModelInfo> = self
+            .model_store
+            .iter()
+            .map(|(path, entry)| {
+                let state = entry.model_id.as_ref().and_then(|id| {
+                    self.imported_model_registry.get(id).map(|e| {
+                        match e.state {
+                            rer_engine_core::assets::AssetState::Importing => "importing",
+                            rer_engine_core::assets::AssetState::Ready => "ready",
+                            rer_engine_core::assets::AssetState::Failed => "failed",
+                        }
+                        .to_string()
+                    })
+                });
+                let scene_id = entry
+                    .model_id
+                    .as_ref()
+                    .and_then(|id| self.model_scene_ids.get(id).copied());
+                crate::engine3d::ipc::ModelInfo {
+                    path: path.clone(),
+                    name: entry.name.clone(),
+                    category: entry.category.clone(),
+                    model_id: entry.model_id.clone(),
+                    asset: entry.rerasset_path.clone(),
+                    state,
+                    scene_id,
+                }
+            })
+            .collect();
+        let count = models.len();
+        send_event(&EngineEvent::ModelsList { models });
+        log::info!("[model] lista enviada: {} modelos", count);
+    }
+
+    /// «Cargar desde otra escena»: referencia por `model_id` sin reimportar.
+    /// Valida el `.rerasset` registrado y encola la carga GPU desde disco
+    /// (sin re-bake ni reimportación del GLB fuente).
+    pub(crate) fn warm_scene_model(&mut self, model_id: &str) {
+        let Some(entry) = self.imported_model_registry.get(model_id).cloned() else {
+            let message = format!("Modelo no registrado en recursos: {model_id}");
+            log::warn!("[model] {message}");
+            send_event(&EngineEvent::Error { message });
+            return;
+        };
+        let is_character = entry.category.as_deref() == Some("character");
+        if !entry.rerasset_path.is_file() {
+            let message = format!(
+                "Archivo .rerasset no encontrado: {}",
+                entry.rerasset_path.display()
+            );
+            log::error!("[model] {message}");
+            send_event(&EngineEvent::Error { message });
+            return;
+        }
+        log::info!(
+            "[model] referencia desde otra escena: {model_id} → {}",
+            entry.rerasset_path.display()
+        );
+        self.enqueue_gpu_from_rerasset(
+            &entry.model_id,
+            &entry.rerasset_path,
+            &entry.name,
+            is_character,
+        );
+        self.send_models_list();
     }
 }

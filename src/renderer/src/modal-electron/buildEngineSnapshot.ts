@@ -28,6 +28,7 @@ export function buildEngineSnapshot(
 					.sprites as ModalElectronOpenRequest['sprites'],
 			}
 		case 'CreateEntityFromModelModalBody':
+		case 'ModalLoadFromScene':
 			return {
 				models: serializeModalProps({ models: engine.models })
 					.models as ModalElectronOpenRequest['models'],

@@ -213,6 +213,7 @@ save_flow:
       pack_layout:
         "assets/": "sprites, fondos genéricos, frames de animación (v1: también modelos 3D fuente)"
         imported/models/: .rerasset (manifest v2)
+        scene-{id}/assets/: .rerasset por escena (manifest v2, recursos exclusivos)
         source/models/: GLB/GLTF espejo fuente (solo dev al guardar)
         sounds/: audio
         fonts/: fuentes
@@ -243,9 +244,34 @@ manifest_layers:
       backgroundPath y entity.model/path referencian ítems de bibliotecas globales.
       sprites[] en escena = precarga/referencias de esa escena, no duplica la biblioteca.
       player del manifest es el jugador play character (cámara `first-person` en gameStyle); entidades category=player en entities[] se ignoran en carga 3D.
-  future_per_scene_resources:
-    status: pendiente
-    description: recursos por escena + carga lazy al cambiar escena activa
+  per_scene_resources:
+    status: implementado
+    description: |
+      Recursos 3D con alcance por escena + carga lazy al abrir/cambiar escena.
+      Los recursos viven SIEMPRE en resources.models[] (integridad del .save);
+      el enrutado en disco depende del uso del modelo.
+    routing: |
+      Uso detectado de entities[].model_id + player.model_id por escena:
+      - Usado por >=2 escenas → GLOBAL: imported/models/{id}.rerasset (sin scene_id).
+      - Usado por blueprint → GLOBAL aunque solo lo referencie una escena.
+      - Exclusivo de 1 escena en proyecto multi-escena → scene-{id}/assets/{id}.rerasset
+        con campo scene_id (entero).
+      - Proyecto de una sola escena → todo global (compatible con saves antiguos).
+      - Repack de .save viejo: fallback a imported/models/{id}.rerasset en pack.rs.
+    lazy_load: |
+      Al abrir/cambiar de escena (load_proyect/scene.rs) solo se escanean en disco
+      los .rerasset globales + los de la escena activa; los caches GPU
+      (static_model_cache, model_assets, rerasset_material_tex) de otras escenas
+      se liberan y se recargan on demand (warm_scene_model).
+    promotion: |
+      Al guardar, si un recurso por escena pasa a compartirse (>=2 escenas o
+      blueprint), el manifest lo promueve a global con ruta imported/models/.
+    ui: |
+      Botón "+ Cargar desde otra escena" (Resources → Models, 3D) en el sidebar
+      egui → modal React (load_from_scene) que lista los recursos por escena del
+      .save y los carga sin reimportar (comando warm_scene_model { model_id }).
+      Los imports de sesión se asignan a la escena activa
+      (state.model_scene_ids); aparecen en el modal tras guardar.
 
 # ---------------------------------------------------------------------------
 # Cargar .save
