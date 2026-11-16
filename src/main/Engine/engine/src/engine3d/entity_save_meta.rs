@@ -13,9 +13,27 @@ const ENTITY_MARKERS: &[&str] = &[
     "[ReflectionProbe]",
     "[MatVal]",
     "[MatValLabel]",
+    "[MatComparison]",
     "[Colisionador]",
     "[ExecutionArea]",
 ];
+
+/// Elementos DEMO/plantilla que elimina «Limpiar escena»: cajas de prueba
+/// (muros/cubos), esfera de física, sondas de reflexión y las pruebas de
+/// materiales (esferas `[MatVal]` y escena `[MatComparison]` con alfombras y letreros).
+pub(crate) const DEMO_ENTITY_MARKERS: &[&str] = &[
+    "[EditorBox]",
+    "[Ball]",
+    "[ReflectionProbe]",
+    "[MatVal]",
+    "[MatValLabel]",
+    "[MatComparison]",
+];
+
+/// `true` si la entidad es contenido DEMO de la escena (se puede limpiar).
+pub(crate) fn is_demo_entity_path(path: &str) -> bool {
+    entity_path_marker(path).is_some_and(|marker| DEMO_ENTITY_MARKERS.contains(&marker))
+}
 
 /// `.glb` / `.gltf` / `.fbx` en disco (no marcadores `[Player]`).
 pub(crate) fn is_model_3d_asset_path(path: &str) -> bool {
@@ -249,5 +267,31 @@ impl State {
 
     pub(crate) fn entity_display_name(&self, id: EntityId) -> Option<String> {
         self.world.get::<NameComponent>(id).map(|c| c.name.clone())
+    }
+}
+
+#[cfg(test)]
+mod demo_marker_tests {
+    use super::*;
+
+    #[test]
+    fn demo_markers_cover_scene_test_content() {
+        for marker in [
+            "[EditorBox]",
+            "[Ball]",
+            "[ReflectionProbe]",
+            "[MatVal]",
+            "[MatValLabel]",
+            "[MatComparison]",
+        ] {
+            assert!(is_demo_entity_path(marker), "falta {marker}");
+        }
+
+        // Infraestructura y contenido del usuario no son DEMO.
+        assert!(!is_demo_entity_path("[Ground]"));
+        assert!(!is_demo_entity_path("[Player]"));
+        assert!(!is_demo_entity_path("[Sun]"));
+        assert!(!is_demo_entity_path("[Colisionador]"));
+        assert!(!is_demo_entity_path("model_hero"));
     }
 }

@@ -7,11 +7,27 @@ pub(super) fn workspace_3d(
     locale: Locale,
     actions: &mut Vec<WorldAction>,
 ) {
-    widgets::label_value(
-        ui,
-        crate::editor::i18n::tr(locale, "Radio de esfera (u)", "Sphere radius (u)"),
-        &format!("{:.1} u", world.world_radius),
-    );
+    // Cabecera: etiqueta a la izquierda y el input numérico a la derecha (sustituye
+    // a los números indicadores). Debajo va el range.
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(crate::editor::i18n::tr(
+                locale,
+                "Radio de esfera (u)",
+                "Sphere radius (u)",
+            ))
+            .size(11.5)
+            .color(crate::editor::theme::TEXT_MUTED),
+        );
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if widgets::number_input(ui, 78.0, &mut radius.text)
+                && let Some(value) = radius.parsed()
+            {
+                actions.push(WorldAction::SetRadius(value));
+            }
+        });
+    });
+    ui.add_space(2.0);
 
     let mut value = world.world_radius;
     if widgets::range_slider(
@@ -22,18 +38,6 @@ pub(super) fn workspace_3d(
         1.0,
         crate::editor::theme::CONTROL_BLUE,
     ) {
-        actions.push(WorldAction::SetRadius(value));
-    }
-    ui.add_space(2.0);
-
-    ui.label(
-        RichText::new(crate::editor::i18n::tr(locale, "Radio (u)", "Radius (u)"))
-            .size(11.5)
-            .color(crate::editor::theme::TEXT_MUTED),
-    );
-    let width = ui.available_width();
-    let committed = widgets::number_input(ui, width, &mut radius.text);
-    if committed && let Some(value) = radius.parsed() {
         actions.push(WorldAction::SetRadius(value));
     }
 }

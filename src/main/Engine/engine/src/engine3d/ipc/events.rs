@@ -668,11 +668,16 @@ pub enum EngineEvent {
         id: u32,
         name: String,
         scenes: Vec<EditorSceneListItem>,
+        /// Elementos DEMO (`[EditorBox]`) presentes en la escena activa.
+        #[serde(default)]
+        demo_entities: u32,
     },
     /// Cambio de escena permitido.
     EditorSceneSwitched {
         active_scene_id: u32,
         scenes: Vec<EditorSceneListItem>,
+        #[serde(default)]
+        demo_entities: u32,
     },
     /// Cambio bloqueado (escena activa modificada vs baseline).
     EditorSceneSwitchBlocked {
@@ -684,8 +689,13 @@ pub enum EngineEvent {
     EditorScenesUpdated {
         active_scene_id: u32,
         scenes: Vec<EditorSceneListItem>,
-        /// `project_load` | `boot` | `scene_deleted` | `project_saved` | `sync`
+        /// `project_load` | `boot` | `scene_deleted` | `project_saved` | `sync` |
+        /// `clear_demo` | `undo_state`
         update_reason: String,
+        /// Elementos DEMO (`[EditorBox]`) de la escena activa: el editor muestra
+        /// «Limpiar escena» solo mientras queden.
+        #[serde(default)]
+        demo_entities: u32,
     },
 }
 

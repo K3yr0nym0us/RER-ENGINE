@@ -85,6 +85,10 @@ pub fn apply(ctx: &egui::Context) {
         // Animación de despliegue de los acordeones (Bootstrap ~0.35 s; 0.20 s
         // se siente ágil sin ser instantánea).
         style.animation_time = 0.20;
+        // Tooltips instantáneos: sin espera ni exigir que el ratón esté quieto.
+        style.interaction.show_tooltips_only_when_still = false;
+        style.interaction.tooltip_delay = 0.0;
+        style.interaction.tooltip_grace_time = 0.0;
 
         // Tamaños base alineados con el CSS del renderer (html: 14 px).
         style

@@ -58,6 +58,8 @@ impl State {
                 scale,
             }) => {
                 self.spawn_editor_box(&name, position, scale);
+                // Cambia el contador de elementos DEMO (botón «Limpiar escena»).
+                self.emit_scene_demo_count();
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SpawnSun {
                 name,
@@ -404,6 +406,11 @@ impl State {
                     id,
                     kind: removed_kind.to_string(),
                 });
+                // Cambia el contador de elementos DEMO (botón «Limpiar escena»).
+                self.emit_scene_demo_count();
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::ClearSceneContent) => {
+                self.clear_scene_content();
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetEntityColision { id, colision }) => {
                 self.entity_colision.insert(id, colision);
@@ -617,5 +624,34 @@ impl State {
             other => return Some(other),
         }
         None
+    }
+}
+
+impl State {
+    /// «Limpiar escena»: elimina los elementos DEMO de la plantilla (muros y
+    /// cubos `[EditorBox]`, esfera de física `[Ball]`, sondas `[ReflectionProbe]`,
+    /// pruebas `[MatVal]` y la escena `[MatComparison]` con sus alfombras/letreros).
+    /// Conserva suelo, sol, jugador y cámaras. Cada entidad pasa por el borrado
+    /// normal (eventos, meta, física) y deja undo.
+    pub(crate) fn clear_scene_content(&mut self) {
+        let demo_ids: Vec<u32> = self
+            .save_registry
+            .meta
+            .iter()
+            .filter(|(_, meta)| crate::engine3d::entity_save_meta::is_demo_entity_path(&meta.path))
+            .map(|(id, _)| *id)
+            .collect();
+        let mut removed = 0usize;
+        for id in demo_ids {
+            self.push_remove_entity_undo(id);
+            self.cmd_entities(EngineCommand::Common(EngineCommandCommon::RemoveEntity {
+                id,
+            }));
+            removed += 1;
+        }
+        self.emit_scene_demo_count();
+        log::info!(
+            "[editor] elementos DEMO eliminados: {removed} (suelo, sol, jugador y cámaras conservados)"
+        );
     }
 }

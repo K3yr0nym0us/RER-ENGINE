@@ -72,7 +72,27 @@ impl State {
             active_scene_id: self.editor_scenes.active_scene_id,
             scenes: self.editor_scene_list_items(),
             update_reason: update_reason.to_string(),
+            demo_entities: self.demo_editor_entity_count(),
         });
+    }
+
+    /// Refresca el contador de elementos DEMO (botón «Limpiar escena») sin
+    /// tocar la lista cuando el proyecto no usa escenas de editor.
+    pub(crate) fn emit_scene_demo_count(&self) {
+        if self.editor_scenes.records.is_empty() {
+            return;
+        }
+        self.emit_editor_scenes_updated("scene_content");
+    }
+
+    /// Elementos DEMO de la escena activa (cajas, esfera de física, pruebas de
+    /// reflejos/materiales). El editor muestra «Limpiar escena» mientras queden.
+    pub(crate) fn demo_editor_entity_count(&self) -> u32 {
+        self.save_registry
+            .meta
+            .values()
+            .filter(|meta| crate::engine3d::entity_save_meta::is_demo_entity_path(&meta.path))
+            .count() as u32
     }
 
     /// Refresca `dirty` de la escena activa en el renderer (pila undo del mundo).
@@ -191,6 +211,7 @@ impl State {
             id,
             name: scene_name,
             scenes: self.editor_scene_list_items(),
+            demo_entities: self.demo_editor_entity_count(),
         });
     }
 
@@ -308,7 +329,10 @@ impl State {
                 send_event(&EngineEvent::EditorSceneSwitched {
                     active_scene_id: target_id,
                     scenes: self.editor_scene_list_items(),
+                    demo_entities: self.demo_editor_entity_count(),
                 });
+                // Los selectores filtran por escena: refrescar `available_in_scene`.
+                self.send_models_list();
             }
             Err(err) => log::error!("[editor_scenes] switch apply: {err}"),
         }

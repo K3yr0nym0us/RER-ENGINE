@@ -17,6 +17,15 @@ window:
   focus_on_ready: |
     Al crear la ventana nativa se llama a focus_window(); main oculta la ventana
     React en `editor_ready`.
+  tooltips:
+    delay: 0 s
+    when_still: false
+    file: src/main/Engine/engine/src/editor/theme.rs
+    note: |
+      `theme::apply` fija `style.interaction.tooltip_delay = 0`,
+      `tooltip_grace_time = 0` y `show_tooltips_only_when_still = false`:
+      los tooltips nativos aparecen al instante, sin esperar a que el ratón se
+      detenga.
   react_host:
     hidden: true
     note: |
@@ -70,6 +79,26 @@ sidebar_native:
     - Escenas, Camara, Recursos, Crear entidad, Interfaz de usuario, Herramientas, Controles
   direct_commands:
     world_background: load_background / clear_background (dropdown 2D)
+  asset_lists:
+    file: src/main/Engine/engine/src/editor/ui/sidebar_left/resources.rs
+    rows: |
+      Cada recurso (modelos, sprites, sonidos, fuentes, imágenes HUD, fondos) se
+      pinta en un `egui::Frame` con borde `theme::BORDER`, radio 4 y margen 8×6,
+      el mismo patrón que `screen_row` en Interfaz de usuario, para separar las
+      filas visualmente.
+    globalize: |
+      En Recursos → Modelos, los modelos de la escena activa muestran un icono
+      globo junto a la papelera (tooltip «Globalizar modelo») que envía
+      `globalize_model` y los convierte en recursos globales (todas las escenas).
+    scene_filter: |
+      Recursos → Modelos y el combo «Crear entidad» solo listan modelos globales o
+      de la escena activa (`AssetEntry::is_visible_in_scene`). Los de otras escenas
+      quedan ocultos hasta globalizarlos desde «Cargar desde otra escena».
+    delete_sync: |
+      Al confirmar el borrado en la modal, el motor reemite `models_list` y el
+      editor empareja `model_asset_removed` por `path` o `model_id`: la fila
+      desaparece de Recursos y del combo «Crear entidad» aunque esté listada con
+      la ruta fuente del GLB/FBX y el evento llegue con la clave canónica.
   legacy_bridges:
     controls: control_bindings -> ControlBindingsModalBody
     plugins: plugins -> PluginsModalBody
@@ -96,6 +125,62 @@ sidebar_native:
         El motor emite `category` en `model_asset_importing/imported/preload_started`
         para que también aparezca con spinner en el selector «Reemplazar modelo»
         del modal de propiedades; se habilita al llegar `model_asset_loaded`.
+    globalize_model:
+      file: src/main/Engine/engine/src/editor/ui/globalize_model_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Recursos → Modelos → icono globo (solo modelos de la escena activa): el
+        sidebar guarda un `GlobalizeModelDraft` en
+        `SidebarLeftState::globalize_model` y no envía nada al motor todavía.
+      confirm: |
+        La modal explica que el modelo deja de pertenecer a esta escena y pasa a
+        la biblioteca global (aparecerá en la categoría correspondiente de todas
+        las escenas). Confirmar envía `globalize_model { path }`; cancelar o Esc
+        descartan el borrador sin tocar la biblioteca.
+    load_from_scene:
+      file: src/main/Engine/engine/src/editor/ui/load_from_scene_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Recursos → Modelos → «Cargar desde otra escena» (3D): abre
+        `SidebarLeftState::load_from_scene_open`.
+      behavior: |
+        Lista SOLO modelos de otras escenas (agrupados por nombre de escena).
+        Al pulsar uno se cierra la lista y se abre `globalize_model` con el
+        borrador del modelo: misma confirmación y mismo comando que el botón
+        globo. No se duplica el recurso por escena ni se reimporta.
+    switch_scene:
+      file: src/main/Engine/engine/src/editor/ui/switch_scene_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Escenas → icono de cargar en una escena no activa: el sidebar guarda
+        `SceneSwitchDraft { id, name }` en `SidebarLeftState::pending_scene_switch`
+        y no envía nada al motor todavía.
+      confirm: |
+        La modal avisa de que se conserva el estado de la escena actual.
+        Confirmar llama a `begin_switch` + `switch_editor_scene { scene_id }`;
+        cancelar o Esc no cambian de escena.
+    clear_scene:
+      file: src/main/Engine/engine/src/editor/ui/clear_scene_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Escenas (arriba de la lista) → botón «Limpiar escena»
+        (`LeftAction::ClearScene` → `SidebarLeftState::pending_clear_scene`).
+        Solo se muestra mientras la escena activa tenga elementos DEMO:
+        `SceneList::demo_entities > 0` (contador que envía el motor en
+        `editor_scenes_updated/created/switched`).
+      confirm: |
+        Envía `clear_scene_content`: elimina los elementos DEMO —
+        `[EditorBox]` (muros/cubos), `[Ball]` (esfera de física),
+        `[ReflectionProbe]` (sondas), `[MatVal]`/`[MatValLabel]` y
+        `[MatComparison]` (esferas, alfombras y letreros de prueba de
+        materiales) — y conserva suelo, sol, jugador y cámaras. Cada entidad deja
+        undo (Ctrl+Z). Al terminar el motor reemite `editor_scenes_updated` con
+        `demo_entities = 0` y el botón desaparece.
+  right_sidebar_workspace:
+    file: src/main/Engine/engine/src/editor/ui/sidebar_right/workspace.rs
+    layout: |
+      Radio de la esfera 3D: input numérico arriba a la derecha (sustituye a los
+      números indicadores) y el range debajo.
 
 key_files:
   editor_host: src/main/Engine/engine/src/editor/host.rs

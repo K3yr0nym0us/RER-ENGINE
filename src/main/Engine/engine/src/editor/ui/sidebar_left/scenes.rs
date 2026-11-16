@@ -59,6 +59,25 @@ pub(super) fn scenes_body(
         return;
     }
 
+    if scenes.demo_entities > 0 {
+        let clear_width = ui.available_width();
+        if widgets::wide_button_click_sized(
+            ui,
+            clear_width,
+            icons::BROOM,
+            crate::editor::i18n::tr(locale, "Limpiar escena", "Clear scene"),
+            crate::editor::i18n::tr(
+                locale,
+                "Elimina los elementos DEMO; conserva suelo, jugador y cámaras",
+                "Removes DEMO elements; keeps ground, player and cameras",
+            ),
+            crate::editor::theme::DANGER,
+        ) {
+            actions.push(LeftAction::ClearScene);
+        }
+        ui.add_space(4.0);
+    }
+
     let create_width = ui.available_width();
     if !scenes.loading
         && widgets::wide_button_click_sized(

@@ -15,6 +15,9 @@ pub struct SceneList {
     pub active_scene_id: u64,
     pub loading: bool,
     pub switching_to: Option<u64>,
+    /// Elementos DEMO (`[EditorBox]`) de la escena activa: el sidebar muestra
+    /// «Limpiar escena» solo mientras queden.
+    pub demo_entities: u32,
 }
 
 impl SceneList {
@@ -36,6 +39,7 @@ impl SceneList {
             "stopped" => {
                 self.scenes.clear();
                 self.active_scene_id = 0;
+                self.demo_entities = 0;
                 self.loading = false;
                 self.switching_to = None;
             }
@@ -46,6 +50,9 @@ impl SceneList {
     fn apply_snapshot(&mut self, event: &Value) {
         if let Some(active) = event.get("active_scene_id").and_then(Value::as_u64) {
             self.active_scene_id = active;
+        }
+        if let Some(demo) = event.get("demo_entities").and_then(Value::as_u64) {
+            self.demo_entities = u32::try_from(demo).unwrap_or(u32::MAX);
         }
         if let Some(list) = event.get("scenes").and_then(Value::as_array) {
             self.scenes = list.iter().filter_map(scene_from_value).collect();
