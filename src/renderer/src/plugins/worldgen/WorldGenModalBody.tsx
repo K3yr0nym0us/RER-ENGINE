@@ -366,11 +366,19 @@ export function WorldGenModalBody() {
     }
     if (event.event === 'world_gen_progress') {
       const phase = event.phase === 'scan' ? 'scan' : 'mesh'
-      setGeneration({
-        completed: Number(event.completed ?? 0),
-        total: Number(event.total ?? 0),
-        phase,
-      })
+      const completed = Number(event.completed ?? 0)
+      const total = Number(event.total ?? 0)
+      setGeneration({ completed, total, phase })
+      // Red de seguridad: si se pierde `world_gen_completed`, la cola de malla
+      // ya terminó cuando completed alcanza el total. Se limpia el spinner
+      // siempre, aunque el flag de cierre ya estuviera marcado.
+      if (phase === 'mesh' && total > 0 && completed >= total) {
+        setGeneration(null)
+        if (!finishHandled.current) {
+          finishHandled.current = true
+          distributeRef.current()
+        }
+      }
       return
     }
     if (event.event === 'world_gen_error') {
@@ -382,6 +390,9 @@ export function WorldGenModalBody() {
       return
     }
     if (event.event === 'world_gen_completed' || (event.event === 'world_gen_status' && String(event.state ?? '') === 'complete')) {
+      // Limpiar siempre el spinner: aunque el cierre ya se hubiera marcado,
+      // la modal debe reflejar que la generación terminó.
+      setGeneration(null)
       if (finishHandled.current) return
       finishHandled.current = true
       distributeRef.current()
@@ -504,13 +515,15 @@ export function WorldGenModalBody() {
 
   const onGenerate = async () => {
     if (!(await resolvePlugin())) return
-    send({ cmd: 'world_gen_set_config', config_json: buildConfigJson() })
-    send({ cmd: 'world_gen_start', replace_world: panel.replaceWorld })
+    // Limpiar el estado ANTES de enviar: si el motor responde con un error en
+    // el mismo tick, no debe quedar un spinner sin futuros eventos.
     finishHandled.current = false
     pendingScatter.current = 0
     setDistributing(false)
     setStatus('')
     setGeneration({ completed: 0, total: 0, phase: 'scan' })
+    send({ cmd: 'world_gen_set_config', config_json: buildConfigJson() })
+    send({ cmd: 'world_gen_start', replace_world: panel.replaceWorld })
   }
 
   const onStop = () => {
@@ -657,7 +670,7 @@ export function WorldGenModalBody() {
               </div>
               <div className="min-w-0">
                 <div className="d-flex justify-content-between align-items-baseline">
-                  <label className="form-label m-0" htmlFor="worldgen-size">{t('Size')}</label>
+                  <label className="form-label m-0" htmlFor="worldgen-size">{t('World size (m)')}</label>
                   <span className="text-secondary">{panel.size}</span>
                 </div>
                 <input

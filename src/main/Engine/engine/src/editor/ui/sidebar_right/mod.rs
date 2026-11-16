@@ -26,6 +26,10 @@ pub struct SidebarRightState {
     width: NumberDraft,
     height: NumberDraft,
     radius: NumberDraft,
+    north: NumberDraft,
+    south: NumberDraft,
+    east: NumberDraft,
+    west: NumberDraft,
     grid_cell: NumberDraft,
     fps_selection: u32,
     fps_dirty: bool,
@@ -48,7 +52,13 @@ enum WorldAction {
         width: f32,
         height: f32,
     },
-    SetRadius(f32),
+    /// Caras del mundo (m): norte (-Z), sur (+Z), este (+X), oeste (-X).
+    SetBounds {
+        north: f32,
+        south: f32,
+        east: f32,
+        west: f32,
+    },
     SetGridVisible(bool),
     SetGridCellSize(f32),
     SetGravity(f32),
@@ -167,6 +177,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         width,
                         height,
                         radius,
+                        north,
+                        south,
+                        east,
+                        west,
                         grid_cell,
                         fps_selection,
                         fps_dirty,
@@ -176,6 +190,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                     width.sync(world.world_width);
                     height.sync(world.world_height);
                     radius.sync(world.world_radius);
+                    north.sync(world.north);
+                    south.sync(world.south);
+                    east.sync(world.east);
+                    west.sync(world.west);
                     grid_cell.sync(world.grid_cell_size);
                     if !*fps_dirty {
                         *fps_selection = world.target_fps;
@@ -190,7 +208,16 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         enabled,
                         |ui| {
                             if context.is_3d() {
-                                workspace_3d(ui, radius, world, locale, &mut actions);
+                                workspace_3d(
+                                    ui,
+                                    north,
+                                    south,
+                                    east,
+                                    west,
+                                    world,
+                                    locale,
+                                    &mut actions,
+                                );
                             } else {
                                 workspace_2d(ui, width, height, locale, &mut actions);
                             }
@@ -371,16 +398,21 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
                 "height": height,
             }));
         }
-        WorldAction::SetRadius(radius) => {
-            let radius = radius.clamp(
-                crate::engine3d::MIN_WORLD_RADIUS_3D,
-                crate::engine3d::MAX_WORLD_RADIUS_3D,
-            );
-            app.world.world_radius = radius;
-            app.world.world_width = radius * 2.0;
-            app.world.world_height = radius * 2.0;
-            app.world.world_depth = radius * 2.0;
-            app.send_engine(json!({ "cmd": "set_world_radius", "radius": radius }));
+        WorldAction::SetBounds {
+            north,
+            south,
+            east,
+            west,
+        } => {
+            app.world.set_faces(north, south, east, west);
+            app.send_engine(json!({
+                "cmd": "set_world_bounds",
+                "north": app.world.north,
+                "south": app.world.south,
+                "east": app.world.east,
+                "west": app.world.west,
+                "height": app.world.world_height,
+            }));
         }
         WorldAction::SetGridVisible(visible) => {
             app.world.grid_visible = visible;

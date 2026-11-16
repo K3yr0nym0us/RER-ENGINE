@@ -179,8 +179,20 @@ sidebar_native:
   right_sidebar_workspace:
     file: src/main/Engine/engine/src/editor/ui/sidebar_right/workspace.rs
     layout: |
-      Radio de la esfera 3D: input numérico arriba a la derecha (sustituye a los
-      números indicadores) y el range debajo.
+      Mundo 3D rectangular (cuadrado por defecto) con la disposición de una rosa
+      de los vientos: input Norte arriba y centrado, Oeste a la izquierda, Este a
+      la derecha, Sur abajo y centrado, y una cruz en el centro que une las cuatro
+      caras. Cada input es la extensión de esa cara en metros (N/S sobre Z; O/E
+      sobre X). Cambiar una cara solo mueve esa cara: la opuesta queda fija y el
+      mundo se descentra (`worldCenterX/Z` en el .save). Debajo se muestra el
+      tamaño total W × D. Con el plugin worldgen instalado y un mundo ya
+      generado, el terreno se actualiza solo: crece en la franja nueva,
+      desaparece en la zona que se encoge y se regenera entero si el mundo
+      supera el área generada con margen.
+    bounds: |
+      Límites de cada cara: 5–1000 m (`MIN/MAX_WORLD_FACE_3D`); altura del cielo
+      10–2000 m. El motor reconstruye suelo cuadrado, cielo en caja, wireframe y
+      colliders al cambiar cualquier cara (`set_world_bounds`).
 
 key_files:
   editor_host: src/main/Engine/engine/src/editor/host.rs
