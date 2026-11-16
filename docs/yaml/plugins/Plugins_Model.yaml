@@ -22,7 +22,7 @@ catalog:
     manifest_code: src/main/plugins/pluginCatalog.ts
     system_requirements:
       - Windows x64
-      - Microsoft Visual C++ 2015–2022 Redistributable (x64); bundled installer auto-run on plugin install if missing
+      - Microsoft Visual C++ 2015–2022 Redistributable (x64); requisito del runtime Rust del motor, no se instala desde el plugin
   - id: world-gen
     name: World Generator
     version: "1.0.0"

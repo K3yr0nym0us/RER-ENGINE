@@ -100,45 +100,7 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
     }
 }
 
-const ENTITY_PICK_DOUBLE_CLICK_MAX_MS: u128 = 450;
-const ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX: f32 = 8.0;
-
-#[derive(Clone, Copy)]
-struct EntityPickClickState {
-    time: std::time::Instant,
-    x: f32,
-    y: f32,
-    entity_id: u32,
-}
-
-fn register_entity_pick_double_click(
-    last: &mut Option<EntityPickClickState>,
-    x: f32,
-    y: f32,
-    hit_entity: Option<u32>,
-) -> Option<u32> {
-    let now = std::time::Instant::now();
-    if let (Some(prev), Some(entity_id)) = (*last, hit_entity)
-        && now.duration_since(prev.time).as_millis() <= ENTITY_PICK_DOUBLE_CLICK_MAX_MS
-    {
-        let dist = ((x - prev.x).powi(2) + (y - prev.y).powi(2)).sqrt();
-        if dist <= ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX && entity_id == prev.entity_id {
-            *last = None;
-            return Some(entity_id);
-        }
-    }
-    if let Some(entity_id) = hit_entity {
-        *last = Some(EntityPickClickState {
-            time: now,
-            x,
-            y,
-            entity_id,
-        });
-    } else {
-        *last = None;
-    }
-    None
-}
+const ENTITY_CLICK_DRAG_THRESHOLD_PX: f32 = 5.0;
 
 // ---------------------------------------------------------------------------
 // Estructura principal de la aplicación winit
@@ -151,7 +113,9 @@ pub(crate) struct App {
     last_cursor: Option<(f32, f32)>,
     // Picking con click izquierdo
     left_click_pos: Option<(f32, f32)>, // posición al presionar
-    last_entity_pick_click: Option<EntityPickClickState>,
+    /// Press derecho durante edición: si se suelta sin arrastrar (no panea),
+    /// abre la modal de propiedades de la entidad bajo el cursor.
+    right_click_pos: Option<(f32, f32)>,
     // Drag de gizmo
     gizmo_drag_axis: Option<usize>, // eje activo (0=X,1=Y)
     gizmo_drag_start: Option<Vec<crate::engine2d::engine::types::EntityTransformSnapshot>>,
@@ -310,7 +274,7 @@ impl App {
             mouse_middle: false,
             last_cursor: None,
             left_click_pos: None,
-            last_entity_pick_click: None,
+            right_click_pos: None,
             gizmo_drag_axis: None,
             gizmo_drag_start: None,
             ctrl_held: false,
@@ -445,6 +409,9 @@ impl App {
                         state.dispatch_on_keep_key_up("keyboard_mouse", control_key);
                     }
                 }
+                // Un click derecho (sin arrastre) conserva `last_cursor` para que
+                // el siguiente click en el mismo punto también abra propiedades.
+                let mut keep_cursor_after_click = false;
                 match button {
                     MouseButton::Left => {
                         if state.is_preview_playing() {
@@ -570,7 +537,9 @@ impl App {
                                 {
                                     let dx = (cur.0 - start.0).abs();
                                     let dy = (cur.1 - start.1).abs();
-                                    if dx < 5.0 && dy < 5.0 {
+                                    if dx < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                        && dy < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                    {
                                         // Consultar el estado real del Ctrl al momento del click.
                                         // Usar query_ctrl_held_os() (GetAsyncKeyState) como fuente
                                         // autoritativa del OS, sin releer state.ctrl_held que podría
@@ -580,20 +549,7 @@ impl App {
                                         if state.pivot_edit_mode.is_some() {
                                             state.handle_pivot_click_2d(cur.0, cur.1);
                                         } else if !state.handle_tool_click_2d(cur.0, cur.1) {
-                                            let hit_entity = state.entity_at_pixel_2d(cur.0, cur.1);
-                                            let properties_entity =
-                                                register_entity_pick_double_click(
-                                                    &mut self.last_entity_pick_click,
-                                                    cur.0,
-                                                    cur.1,
-                                                    hit_entity,
-                                                );
                                             state.pick_entity_2d(cur.0, cur.1);
-                                            if let Some(id) = properties_entity {
-                                                crate::engine2d::ipc::send_event(
-                                                    &EngineEvent::EntityPropertiesOpen { id },
-                                                );
-                                            }
                                         }
                                     }
                                 }
@@ -602,6 +558,12 @@ impl App {
                         }
                     }
                     MouseButton::Right => {
+                        if pressed {
+                            // Solo en edición (en play el RMB es control del juego):
+                            // armamos un posible click derecho para abrir propiedades.
+                            let arm = !state.is_preview_playing() && !state.player_ui_edit_active;
+                            self.right_click_pos = if arm { self.last_cursor } else { None };
+                        }
                         self.mouse_right = pressed;
                         // Fin de pan: notificar posición actual de la cámara 2D
                         if !pressed && let Some(cam2d) = &state.camera_2d {
@@ -611,13 +573,36 @@ impl App {
                                 half_h: cam2d.half_h,
                             });
                         }
+                        // Click derecho sin arrastre sobre una entidad → seleccionar y
+                        // abrir su modal de propiedades.
+                        if !pressed && !state.is_preview_playing() && !state.player_ui_edit_active {
+                            keep_cursor_after_click = self.right_click_pos.is_some();
+                            if let (Some(start), Some(cur)) =
+                                (self.right_click_pos.take(), self.last_cursor)
+                            {
+                                let dx = (cur.0 - start.0).abs();
+                                let dy = (cur.1 - start.1).abs();
+                                if dx < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                    && dy < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                    && let Some(id) = state.entity_at_pixel_2d(cur.0, cur.1)
+                                {
+                                    state.pick_entity_2d(cur.0, cur.1);
+                                    crate::engine2d::ipc::send_event(
+                                        &EngineEvent::EntityPropertiesOpen { id },
+                                    );
+                                }
+                            }
+                        }
                     }
                     MouseButton::Middle => {
                         self.mouse_middle = pressed;
                     }
                     _ => {}
                 }
-                if !pressed && matches!(button, MouseButton::Right | MouseButton::Middle) {
+                if !pressed
+                    && matches!(button, MouseButton::Right | MouseButton::Middle)
+                    && !keep_cursor_after_click
+                {
                     self.last_cursor = None;
                 }
             }
@@ -654,6 +639,13 @@ impl App {
                 if let Some((lx, ly)) = self.last_cursor {
                     let dx = cur.0 - lx;
                     let dy = cur.1 - ly;
+                    // Si el RMB se movió, fue pan y no un click derecho.
+                    if let Some((sx, sy)) = self.right_click_pos
+                        && ((cur.0 - sx).abs() >= ENTITY_CLICK_DRAG_THRESHOLD_PX
+                            || (cur.1 - sy).abs() >= ENTITY_CLICK_DRAG_THRESHOLD_PX)
+                    {
+                        self.right_click_pos = None;
+                    }
                     if !state.is_preview_playing() {
                         if let Some(axis) = self.gizmo_drag_axis {
                             // Drag de gizmo: mover entidad en el plano 2D.
@@ -841,7 +833,7 @@ pub fn run() {
         mouse_middle: false,
         last_cursor: None,
         left_click_pos: None,
-        last_entity_pick_click: None,
+        right_click_pos: None,
         gizmo_drag_axis: None,
         gizmo_drag_start: None,
         ctrl_held: false,

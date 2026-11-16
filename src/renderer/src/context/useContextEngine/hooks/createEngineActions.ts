@@ -148,7 +148,7 @@ export function createEngineActions({
 
 	const isModelPreloadReady = (path: string): boolean => {
 		const entry = refs.modelsRef.current.find((m) => m.path === path);
-		return entry != null && entry.loading !== true;
+		return entry != null && entry.loading !== true && entry.state !== 'importing';
 	};
 
 	const removeModelAsset = (path: string) => {

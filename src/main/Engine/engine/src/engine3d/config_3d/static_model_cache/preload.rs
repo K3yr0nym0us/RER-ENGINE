@@ -337,10 +337,15 @@ impl State {
         } else {
             self.imported_model_registry.model_id_for_path(&path)
         };
+        let category = model_id
+            .as_ref()
+            .and_then(|id| self.imported_model_registry.get(id))
+            .and_then(|entry| entry.category.clone());
         send_event(&EngineEvent::ModelAssetLoaded {
             path: path.clone(),
             name,
             model_id,
+            category,
         });
         // GPU upload progress log suppressed
         if pending.warm_play_character {
@@ -394,10 +399,15 @@ impl State {
             } else {
                 self.imported_model_registry.model_id_for_path(&path)
             };
+            let category = model_id
+                .as_ref()
+                .and_then(|id| self.imported_model_registry.get(id))
+                .and_then(|entry| entry.category.clone());
             send_event(&EngineEvent::ModelAssetLoaded {
                 path: path.clone(),
                 name: self.model_store_display_name(&path),
                 model_id,
+                category,
             });
             self.flush_pending_load_models_for_path(&path);
             self.flush_pending_entity_model_replaces_for_path(&path);

@@ -9,7 +9,7 @@
 #   - docs/yaml/gameplay/Blueprints_Model_2D.yaml / _3D.yaml (quick build)
 
 version: 1
-updated: 2026-11-11
+updated: 2026-11-16
 
 window:
   single_window: true
@@ -76,6 +76,26 @@ sidebar_native:
     user_guide: user_guide -> UserGuide
     ui: ui_create_screen / ui_edit_screen / ui_delete_screen / ui_set_active_screen
     quick_build: quick_build (open | toggle)
+  native_modals:
+    model_import:
+      file: src/main/Engine/engine/src/editor/ui/model_import_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Recursos → Modelos → importar: el diálogo de archivos guarda un
+        `ModelImportDraft` en `SidebarLeftState::model_import`; la modal pide
+        nombre + categoría y solo entonces envía `load_model_asset` con
+        `category`.
+      categories: [character, environment, object, weapon, projectile]
+      note: |
+        Sin categoría el motor registra el modelo con `category: None` y no
+        aparece en selectores filtrados (p. ej. «cambiar modelo» de un
+        personaje). Reimportar un modelo existente actualiza su categoría.
+      loading: |
+        Mientras el modelo carga (bake + subida a GPU), la fila de Recursos →
+        Modelos muestra un spinner y el botón de quitar queda deshabilitado.
+        El motor emite `category` en `model_asset_importing/imported/preload_started`
+        para que también aparezca con spinner en el selector «Reemplazar modelo»
+        del modal de propiedades; se habilita al llegar `model_asset_loaded`.
 
 key_files:
   editor_host: src/main/Engine/engine/src/editor/host.rs

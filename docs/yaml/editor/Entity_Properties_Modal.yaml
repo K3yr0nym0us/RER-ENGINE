@@ -9,13 +9,26 @@
 #   - docs/yaml/engine/Engine_Context.yaml
 
 version: 1
-updated: 2026-11-09
+updated: 2026-11-16
 
 principle: |
   Igual que Blueprint y Player UI: ventana hija sin EngineProvider.
   El editor principal serializa EntityPropertiesState; el modal delega
   acciones al padre vía entityPropertiesAction IPC; el padre ejecuta
   engine:cmd y empuja parches de estado al modal.
+
+open_triggers:
+  viewport_right_click:
+    where: host nativo Rust del motor (engine3d/host.rs y engine2d/host.rs)
+    behavior: |
+      Click derecho sobre una entidad, sin arrastrar: el motor hace picking,
+      la selecciona y emite `entity_properties_open`; React/native editor abre
+      el modal de propiedades.
+    edit_only: |
+      Solo en modo edición. En play el botón derecho es control del juego y no
+      se arma el click. Arrastrar con RMB sigue orbitando (3D) o paneando (2D);
+      si el cursor supera el umbral de 5 px deja de contar como click.
+    removed: doble click izquierdo (antes abría el modal)
 
 flow: |
   Editor (con EngineProvider)              Ventana modal
@@ -77,6 +90,11 @@ nested_modals:
   description: |
     El modal de propiedades puede abrir otros modales Electron desde la sesión
     del editor padre (tiene acceso a openModal y getEngine).
+  model_picker_loading: |
+    «Reemplazar modelo» lista también los modelos que todavía se están cargando:
+    reciben `category` en `model_asset_importing/imported/preload_started`, se
+    muestran con spinner y su botón queda deshabilitado hasta `model_asset_loaded`.
+    El modal se actualiza en vivo por `patchModalElectron` al cambiar engine.models.
   examples:
     - CreateEntityFromModelModalBody (reemplazar modelo 3D)
     - CreateEntityFromSpriteModalBody (2D)

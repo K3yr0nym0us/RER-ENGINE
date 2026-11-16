@@ -103,46 +103,7 @@ fn map_gamepad_control_key(button: GamepadButton) -> Option<&'static str> {
     }
 }
 
-const ENTITY_PICK_DOUBLE_CLICK_MAX_MS: u128 = 450;
-const ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX: f32 = 8.0;
 const ENTITY_CLICK_DRAG_THRESHOLD_PX: f32 = 5.0;
-
-#[derive(Clone, Copy)]
-struct EntityPickClickState {
-    time: std::time::Instant,
-    x: f32,
-    y: f32,
-    entity_id: u32,
-}
-
-fn register_entity_pick_double_click(
-    last: &mut Option<EntityPickClickState>,
-    x: f32,
-    y: f32,
-    hit_entity: Option<u32>,
-) -> Option<u32> {
-    let now = std::time::Instant::now();
-    if let (Some(prev), Some(entity_id)) = (*last, hit_entity)
-        && now.duration_since(prev.time).as_millis() <= ENTITY_PICK_DOUBLE_CLICK_MAX_MS
-    {
-        let dist = ((x - prev.x).powi(2) + (y - prev.y).powi(2)).sqrt();
-        if dist <= ENTITY_PICK_DOUBLE_CLICK_MAX_DIST_PX && entity_id == prev.entity_id {
-            *last = None;
-            return Some(entity_id);
-        }
-    }
-    if let Some(entity_id) = hit_entity {
-        *last = Some(EntityPickClickState {
-            time: now,
-            x,
-            y,
-            entity_id,
-        });
-    } else {
-        *last = None;
-    }
-    None
-}
 
 // ---------------------------------------------------------------------------
 // Arrastre de entidades en el viewport (gizmo o libre en plano de vista)
@@ -452,13 +413,15 @@ pub struct App {
     last_cursor: Option<(f32, f32)>,
     // Picking con click izquierdo
     left_click_pos: Option<(f32, f32)>, // posición al presionar
+    /// Press derecho durante edición: si se suelta sin arrastrar (no orbita),
+    /// abre la modal de propiedades de la entidad bajo el cursor.
+    right_click_pos: Option<(f32, f32)>,
     /// Press izquierdo durante edición UI (para click vs drag).
     player_ui_left_press: Option<(f32, f32)>,
     // Drag de entidad / gizmo
     entity_drag: Option<EntityDragMode>,
     entity_drag_start: Option<Vec<crate::engine3d::engine::types::EntityTransformSnapshot>>,
     entity_grab: Option<EntityGrabMode>,
-    last_entity_pick_click: Option<EntityPickClickState>,
     // Teclas modificadoras
     ctrl_held: bool,  // Ctrl izquierdo o derecho presionado
     shift_held: bool, // Shift izquierdo o derecho presionado
@@ -489,7 +452,7 @@ impl App {
             entity_drag: None,
             entity_drag_start: None,
             entity_grab: None,
-            last_entity_pick_click: None,
+            right_click_pos: None,
             ctrl_held: false,
             shift_held: false,
             keyboard_mouse_pressed: HashSet::new(),
@@ -596,6 +559,7 @@ impl App {
         self.mouse_right = false;
         self.editor_keys.clear();
         self.left_click_pos = None;
+        self.right_click_pos = None;
         clear_entity_drag_fields(&mut self.entity_drag, &mut self.entity_drag_start, state);
         cancel_entity_grab(&mut self.entity_grab, state);
         self.keyboard_mouse_pressed.clear();
@@ -901,6 +865,9 @@ impl App {
                             state.dispatch_on_keep_key_up("keyboard_mouse", control_key);
                         }
                     }
+                    // Un click derecho (sin arrastre) conserva `last_cursor` para que
+                    // el siguiente click en el mismo punto también abra propiedades.
+                    let mut keep_cursor_after_click = false;
                     match button {
                         MouseButton::Left => {
                             if state.is_preview_playing() {
@@ -1005,21 +972,7 @@ impl App {
                                                 self.ctrl_held || query_ctrl_held_os();
                                             state.ctrl_held = ctrl_active;
                                             if !state.handle_tool_click_3d(cur.0, cur.1) {
-                                                let hit_entity =
-                                                    state.entity_at_pixel(cur.0, cur.1);
-                                                let properties_entity =
-                                                    register_entity_pick_double_click(
-                                                        &mut self.last_entity_pick_click,
-                                                        cur.0,
-                                                        cur.1,
-                                                        hit_entity,
-                                                    );
                                                 state.pick_entity(cur.0, cur.1);
-                                                if let Some(id) = properties_entity {
-                                                    crate::engine3d::ipc::send_event(
-                                                        &EngineEvent::EntityPropertiesOpen { id },
-                                                    );
-                                                }
                                             }
                                         }
                                     }
@@ -1029,10 +982,40 @@ impl App {
                         }
                         MouseButton::Right => {
                             // RMB + arrastre = mirar alrededor en el viewport de edición.
+                            if pressed {
+                                // Solo en edición (en play el RMB es control del juego):
+                                // armamos un posible click derecho para abrir propiedades.
+                                let arm = !state.is_preview_playing()
+                                    && !state.player_ui_edit_active
+                                    && self.entity_grab.is_none();
+                                self.right_click_pos = if arm { self.last_cursor } else { None };
+                            }
                             self.mouse_right = pressed;
-                            if !pressed && !state.is_preview_playing() && self.entity_grab.is_some()
-                            {
-                                cancel_entity_grab(&mut self.entity_grab, state);
+                            if !pressed {
+                                if !state.is_preview_playing() && self.entity_grab.is_some() {
+                                    cancel_entity_grab(&mut self.entity_grab, state);
+                                    self.right_click_pos = None;
+                                }
+                                // Click derecho sin arrastre sobre una entidad → seleccionar
+                                // y abrir su modal de propiedades.
+                                if !state.is_preview_playing() && !state.player_ui_edit_active {
+                                    keep_cursor_after_click = self.right_click_pos.is_some();
+                                    if let (Some(start), Some(cur)) =
+                                        (self.right_click_pos.take(), self.last_cursor)
+                                    {
+                                        let dx = (cur.0 - start.0).abs();
+                                        let dy = (cur.1 - start.1).abs();
+                                        if dx < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                            && dy < ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                            && let Some(id) = state.entity_at_pixel(cur.0, cur.1)
+                                        {
+                                            state.pick_entity(cur.0, cur.1);
+                                            crate::engine3d::ipc::send_event(
+                                                &EngineEvent::EntityPropertiesOpen { id },
+                                            );
+                                        }
+                                    }
+                                }
                             }
                         }
                         MouseButton::Middle => {
@@ -1040,7 +1023,10 @@ impl App {
                         }
                         _ => {}
                     }
-                    if !pressed && matches!(button, MouseButton::Middle | MouseButton::Right) {
+                    if !pressed
+                        && matches!(button, MouseButton::Middle | MouseButton::Right)
+                        && !keep_cursor_after_click
+                    {
                         // Sin esto, el siguiente arrastre hereda el delta del punto donde se soltó.
                         self.last_cursor = None;
                     }
@@ -1086,6 +1072,13 @@ impl App {
                     if let Some((lx, ly)) = self.last_cursor {
                         let dx = cur.0 - lx;
                         let dy = cur.1 - ly;
+                        // Si el RMB se movió, fue órbita y no un click derecho.
+                        if let Some((sx, sy)) = self.right_click_pos
+                            && ((cur.0 - sx).abs() >= ENTITY_CLICK_DRAG_THRESHOLD_PX
+                                || (cur.1 - sy).abs() >= ENTITY_CLICK_DRAG_THRESHOLD_PX)
+                        {
+                            self.right_click_pos = None;
+                        }
                         if let Some(press) = self.left_click_pos {
                             try_promote_left_click_to_entity_drag(
                                 &mut self.entity_drag,
@@ -1591,7 +1584,7 @@ rer_engine_core::vulkan=info";
         entity_drag: None,
         entity_drag_start: None,
         entity_grab: None,
-        last_entity_pick_click: None,
+        right_click_pos: None,
         ctrl_held: false,
         shift_held: false,
         keyboard_mouse_pressed: HashSet::new(),

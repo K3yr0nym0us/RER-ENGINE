@@ -133,8 +133,10 @@ pub(super) fn asset_section(
         }
 
         for asset in list {
+            let loading = asset.state.as_deref() == Some("importing");
             ui.horizontal(|ui| {
-                let name_width = (ui.available_width() - 24.0).max(0.0);
+                let trailing = if loading { 42.0 } else { 24.0 };
+                let name_width = (ui.available_width() - trailing).max(0.0);
                 ui.add_sized(
                     [name_width, 16.0],
                     egui::Label::new(
@@ -144,7 +146,29 @@ pub(super) fn asset_section(
                     )
                     .truncate(),
                 );
-                if widgets::icon_action(
+                if loading {
+                    let _ = ui.add(egui::Spinner::new().size(14.0)).on_hover_text(
+                        crate::editor::i18n::tr(
+                            locale,
+                            "Cargando modelo… espera antes de usarlo",
+                            "Loading model… wait before using it",
+                        ),
+                    );
+                    // Botón deshabilitado: el recurso todavía no está listo.
+                    ui.add_enabled_ui(false, |ui| {
+                        let _ = widgets::icon_action(
+                            ui,
+                            icons::TRASH,
+                            18.0,
+                            crate::editor::theme::DANGER,
+                            crate::editor::i18n::tr(
+                                locale,
+                                "Espera a que el modelo termine de cargar",
+                                "Wait until the model finishes loading",
+                            ),
+                        );
+                    });
+                } else if widgets::icon_action(
                     ui,
                     icons::TRASH,
                     18.0,

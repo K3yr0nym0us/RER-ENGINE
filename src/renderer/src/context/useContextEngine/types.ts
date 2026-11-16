@@ -559,6 +559,9 @@ export type EngineAction =
 		payload: {
 			path: string;
 			name: string;
+			/** true mientras el modelo sigue cargando (p. ej. bake listo pero GPU pendiente). */
+			loading?: boolean;
+			category?: ModelCategory;
 			model_id?: string;
 			asset?: string;
 			state?: string;
@@ -1040,15 +1043,16 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			const models = prevState.models.map((m) => {
 				if (!synced && m.loading && m.name === name) {
 					synced = true;
-					matchedCategory = m.category;
+					matchedCategory = payloadCategory ?? m.category;
 					if (m.path !== path) {
 						prevState.loadedModelsInfo.delete(m.path);
 					}
 					return {
+						...m,
 						path,
 						name,
 						loading: true,
-						...(m.category ? { category: m.category } : {}),
+						...(matchedCategory ? { category: matchedCategory } : {}),
 					};
 				}
 				return m;
@@ -1063,25 +1067,31 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
 		MARK_MODEL_READY: (prevState, nextAction) => {
-			const { path, name, model_id, asset, state } = nextAction.payload;
+			const { path, name, loading, category: payloadCategory, model_id, asset, state } = nextAction.payload;
 			const prevInfo = prevState.loadedModelsInfo.get(path);
-			const models = prevState.models.map((m) =>
-				m.path === path || (m.loading && m.name === name)
-					? {
-						path,
-						name,
-						loading: false,
-						...(m.category ? { category: m.category } : {}),
-						...(model_id ?? m.model_id ? { model_id: model_id ?? m.model_id } : {}),
-						...(asset ?? m.asset ? { asset: asset ?? m.asset } : {}),
-						state: state ?? 'ready',
-					}
-					: m,
-			);
+			const models = prevState.models.map((m) => {
+				if (m.path !== path && !(m.loading && m.name === name)) return m;
+				const category = m.category ?? payloadCategory ?? prevInfo?.category;
+				const nextModelId = model_id ?? m.model_id;
+				const nextAsset = asset ?? m.asset;
+				return {
+					path,
+					name,
+					loading: loading === true,
+					...(category ? { category } : {}),
+					...(nextModelId ? { model_id: nextModelId } : {}),
+					...(nextAsset ? { asset: nextAsset } : {}),
+					state: state ?? m.state ?? 'ready',
+				};
+			});
+			const updated = models.find((m) => m.path === path);
+			const category = updated?.category ?? payloadCategory ?? prevInfo?.category;
 			const nextMap = new Map(prevState.loadedModelsInfo);
 			nextMap.set(path, {
 				name,
-				...(prevInfo?.category ? { category: prevInfo.category } : {}),
+				...(category ? { category } : {}),
+				...(updated?.model_id ? { model_id: updated.model_id } : {}),
+				...(updated?.asset ? { asset: updated.asset } : {}),
 			});
 			return { ...prevState, models, loadedModelsInfo: nextMap };
 		},
@@ -1108,7 +1118,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					(x) => x.path === m.path || (x.loading && x.name === m.name),
 				);
 				const category = m.category ?? fromState?.category;
-				const loading = fromState?.loading;
+				const loading =
+					fromState?.loading ?? (m.state === 'importing' ? true : undefined);
 				return {
 					...m,
 					...(category ? { category } : {}),

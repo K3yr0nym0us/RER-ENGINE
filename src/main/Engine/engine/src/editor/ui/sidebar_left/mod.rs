@@ -56,6 +56,18 @@ pub struct SidebarLeftState {
     selected_model: Option<String>,
     pub(crate) active_tool: Option<&'static str>,
     pub(crate) active_ui_screen: Option<String>,
+    /// Importación de modelo pendiente: la modal nativa pide categoría (y nombre).
+    pub(crate) model_import: Option<ModelImportDraft>,
+}
+
+/// Borrador de importación de modelo 3D: la modal nativa (egui) elige la
+/// categoría antes de registrar el `.rerasset` en el motor.
+pub(crate) struct ModelImportDraft {
+    pub path: String,
+    pub name: String,
+    /// `character | environment | object | weapon | projectile`
+    /// (`normalize_model_library_category` en el motor).
+    pub category: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -507,6 +519,19 @@ fn import_asset(app: &mut EditorApp, kind: AssetKind) {
         .and_then(|stem| stem.to_str())
         .unwrap_or("recurso")
         .to_string();
+
+    // Los modelos deben quedar categorizados: la modal nativa pide la categoría
+    // antes de enviar `load_model_asset` (si no, no aparecen en los selectores
+    // filtrados por categoría, p. ej. «cambiar modelo» de un personaje).
+    if kind == AssetKind::Model {
+        app.left_sidebar.model_import = Some(ModelImportDraft {
+            path: path_text,
+            name,
+            category: "object",
+        });
+        return;
+    }
+
     app.send_engine(json!({
         "cmd": kind.load_command(),
         "path": path_text,

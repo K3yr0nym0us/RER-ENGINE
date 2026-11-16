@@ -22,7 +22,7 @@ function EntityLoadingTooltip() {
 /** Fila de selector de modelo con spinner de precarga reactivo al contexto del motor. */
 export function ModelPickerEntry({ model, onSelect }: Props) {
   const { t } = useTraslate();
-  const isLoading = model.loading === true;
+  const isLoading = model.loading === true || model.state === 'importing';
   const loadingLabel = `${t('Entity is still loading,')} ${t('please wait a moment before using it.')}`;
 
   const button = (

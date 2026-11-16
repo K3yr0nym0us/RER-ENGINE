@@ -91,7 +91,7 @@ impl State {
             key.clone(),
             crate::engine3d::ipc::ModelStoreEntry {
                 name: name.to_string(),
-                category,
+                category: category.clone(),
                 model_id: Some(model_id.clone()),
                 rerasset_path: None,
             },
@@ -101,6 +101,7 @@ impl State {
             model_id: model_id.clone(),
             path: key.clone(),
             name: name.to_string(),
+            category: category.clone(),
         });
 
         if self.model_preload_inflight.contains(&model_id) {
@@ -171,6 +172,12 @@ impl State {
         name: &str,
         is_character: bool,
     ) {
+        // El renderer necesita la categoría también mientras el modelo sigue
+        // cargando, para listarlo en los selectores filtrados.
+        let category = self
+            .imported_model_registry
+            .get(model_id)
+            .and_then(|entry| entry.category.clone());
         if self.static_model_cache.contains_key(model_id) {
             if is_character {
                 let _ = self.ensure_play_character_model_cached(model_id);
@@ -180,6 +187,7 @@ impl State {
                 path: model_id.to_string(),
                 name: name.to_string(),
                 model_id: Some(model_id.to_string()),
+                category,
             });
             return;
         }
@@ -188,6 +196,7 @@ impl State {
                 path: model_id.to_string(),
                 name: name.to_string(),
                 model_id: Some(model_id.to_string()),
+                category: category.clone(),
             });
             return;
         }
@@ -212,6 +221,7 @@ impl State {
             path: model_id.to_string(),
             name: name.to_string(),
             model_id: Some(model_id.to_string()),
+            category,
         });
 
         self.enqueue_model_preload_for_gpu(ModelPreloadCpuResult {
@@ -239,6 +249,10 @@ impl State {
             path: source_key.to_string(),
             name: name.to_string(),
             asset: asset_rel,
+            category: self
+                .imported_model_registry
+                .get(model_id)
+                .and_then(|entry| entry.category.clone()),
         });
     }
 }

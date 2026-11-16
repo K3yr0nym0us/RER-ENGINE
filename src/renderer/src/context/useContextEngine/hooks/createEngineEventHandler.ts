@@ -1711,8 +1711,15 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'model_asset_preload_started') {
-			const model = event as unknown as { path: string; name: string };
-			dispatch({ type: 'SYNC_MODEL_PRELOAD', payload: { path: model.path, name: model.name } });
+			const model = event as unknown as {
+				path: string
+				name: string
+				category?: import('@shared-types').ModelCategory
+			};
+			dispatch({
+				type: 'SYNC_MODEL_PRELOAD',
+				payload: { path: model.path, name: model.name, ...(model.category ? { category: model.category } : {}) },
+			});
 		}
 
 		if (event.event === 'model_asset_load_failed') {
@@ -1735,7 +1742,12 @@ export function createEngineEventHandler({
 		}
 
 		if (event.event === 'model_asset_importing') {
-			const model = event as unknown as { path: string; name: string; model_id: string };
+			const model = event as unknown as {
+				path: string
+				name: string
+				model_id: string
+				category?: import('@shared-types').ModelCategory
+			};
 			dispatch({
 				type: 'ADD_MODEL_INFO',
 				payload: {
@@ -1743,6 +1755,7 @@ export function createEngineEventHandler({
 					name: model.name,
 					loading: true,
 					model_id: model.model_id,
+					...(model.category ? { category: model.category } : {}),
 					state: 'importing',
 				},
 			});
@@ -1754,14 +1767,19 @@ export function createEngineEventHandler({
 				name: string
 				model_id: string
 				asset: string
+				category?: import('@shared-types').ModelCategory
 			};
+			// El bake terminó, pero la GPU todavía puede estar subiendo el modelo:
+			// mantener `loading` hasta `model_asset_loaded`.
 			dispatch({
 				type: 'MARK_MODEL_READY',
 				payload: {
 					path: model.path,
 					name: model.name,
+					loading: true,
 					model_id: model.model_id,
 					asset: model.asset,
+					...(model.category ? { category: model.category } : {}),
 					state: 'importing',
 				},
 			});
@@ -1772,6 +1790,7 @@ export function createEngineEventHandler({
 				path: string
 				name: string
 				model_id?: string
+				category?: import('@shared-types').ModelCategory
 			};
 			dispatch({
 				type: 'MARK_MODEL_READY',
@@ -1779,6 +1798,7 @@ export function createEngineEventHandler({
 					path: model.path,
 					name: model.name,
 					...(model.model_id ? { model_id: model.model_id } : {}),
+					...(model.category ? { category: model.category } : {}),
 					state: 'ready',
 				},
 			});

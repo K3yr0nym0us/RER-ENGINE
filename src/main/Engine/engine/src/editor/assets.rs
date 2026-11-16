@@ -12,6 +12,9 @@ pub struct AssetEntry {
     pub model_id: Option<String>,
     pub asset: Option<String>,
     pub category: Option<String>,
+    /// Estado de carga (`importing` mientras el modelo aún no está listo).
+    /// `None` para recursos que no exponen estado (sprites, sonidos, etc.).
+    pub state: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -55,10 +58,21 @@ impl AssetLists {
             "font_loaded" => upsert(&mut self.fonts, entry_from_event(event)),
             "hud_image_loaded" => upsert(&mut self.hud_images, entry_from_event(event)),
             "background_asset_loaded" => upsert(&mut self.backgrounds, entry_from_event(event)),
-            "model_asset_importing" => upsert(&mut self.models, entry_from_event(event)),
-            "model_asset_imported" => upsert(&mut self.models, entry_from_event(event)),
-            "model_asset_loaded" => upsert(&mut self.models, entry_from_event(event)),
-            "model_asset_load_failed" => upsert(&mut self.models, entry_from_event(event)),
+            "model_asset_importing" => {
+                upsert_state(&mut self.models, entry_from_event(event), Some("importing"))
+            }
+            "model_asset_imported" => {
+                upsert_state(&mut self.models, entry_from_event(event), Some("importing"))
+            }
+            "model_asset_preload_started" => {
+                upsert_state(&mut self.models, entry_from_event(event), Some("importing"))
+            }
+            "model_asset_loaded" => {
+                upsert_state(&mut self.models, entry_from_event(event), Some("ready"))
+            }
+            "model_asset_load_failed" => {
+                upsert_state(&mut self.models, entry_from_event(event), Some("failed"))
+            }
             "sprite_removed" => remove_path(&mut self.sprites, event),
             "sound_removed" => remove_path(&mut self.sounds, event),
             "font_removed" => remove_path(&mut self.fonts, event),
@@ -150,6 +164,7 @@ fn entry_from_event(event: &Value) -> AssetEntry {
         model_id: None,
         asset: None,
         category: None,
+        state: None,
     })
 }
 
@@ -175,14 +190,29 @@ fn entry_from_value(value: &Value) -> Option<AssetEntry> {
             .get("category")
             .and_then(Value::as_str)
             .map(str::to_string),
+        state: value
+            .get("state")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
 fn upsert(list: &mut Vec<AssetEntry>, entry: AssetEntry) {
+    upsert_state(list, entry, None);
+}
+
+/// Inserta o actualiza un recurso. Los eventos de modelo alternan entre el
+/// path fuente (`model_asset_importing/imported`) y el `model_id`
+/// (`model_asset_loaded/preload_started`): se emparejan también por `model_id`
+/// para no duplicar filas ni dejar el spinner encendido.
+fn upsert_state(list: &mut Vec<AssetEntry>, entry: AssetEntry, state: Option<&str>) {
     if entry.path.is_empty() {
         return;
     }
-    if let Some(existing) = list.iter_mut().find(|item| item.path == entry.path) {
+    let existing = list.iter_mut().find(|item| {
+        item.path == entry.path || (entry.model_id.is_some() && item.model_id == entry.model_id)
+    });
+    if let Some(existing) = existing {
         if !entry.name.is_empty() {
             existing.name = entry.name;
         }
@@ -195,7 +225,17 @@ fn upsert(list: &mut Vec<AssetEntry>, entry: AssetEntry) {
         if entry.category.is_some() {
             existing.category = entry.category;
         }
+        if entry.state.is_some() {
+            existing.state = entry.state;
+        }
+        if let Some(state) = state {
+            existing.state = Some(state.to_string());
+        }
     } else {
+        let mut entry = entry;
+        if let Some(state) = state {
+            entry.state = Some(state.to_string());
+        }
         list.push(entry);
     }
 }
@@ -210,6 +250,43 @@ fn remove_path(list: &mut Vec<AssetEntry>, event: &Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tracks_model_loading_until_loaded() {
+        let mut assets = AssetLists::default();
+        assets.apply_event(&json!({
+            "event": "model_asset_importing",
+            "model_id": "model_hero",
+            "name": "Hero",
+            "path": "C:/models/hero.glb",
+            "category": "character"
+        }));
+        assert_eq!(assets.models[0].state.as_deref(), Some("importing"));
+        assert_eq!(assets.models[0].category.as_deref(), Some("character"));
+
+        assets.apply_event(&json!({
+            "event": "model_asset_imported",
+            "model_id": "model_hero",
+            "name": "Hero",
+            "path": "C:/models/hero.glb",
+            "asset": "imported/models/model_hero.rerasset",
+            "category": "character"
+        }));
+        assert_eq!(assets.models[0].state.as_deref(), Some("importing"));
+
+        // El evento de GPU llega con el `model_id` como path: no debe duplicar
+        // la fila ni dejar el spinner encendido.
+        assets.apply_event(&json!({
+            "event": "model_asset_loaded",
+            "path": "model_hero",
+            "name": "Hero",
+            "model_id": "model_hero"
+        }));
+        assert_eq!(assets.models.len(), 1);
+        assert_eq!(assets.models[0].path, "C:/models/hero.glb");
+        assert_eq!(assets.models[0].state.as_deref(), Some("ready"));
+        assert_eq!(assets.models[0].category.as_deref(), Some("character"));
+    }
 
     #[test]
     fn reads_sprite_list_and_updates() {

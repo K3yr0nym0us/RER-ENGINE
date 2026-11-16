@@ -231,6 +231,10 @@ pub enum EngineEvent {
         model_id: String,
         path: String,
         name: String,
+        /// Categoría de biblioteca para que el renderer pueda listar el modelo
+        /// en los selectores filtrados mientras todavía se está cargando.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        category: Option<String>,
     },
     /// Bake `.rerasset` completado (aún puede estar subiendo a GPU).
     ModelAssetImported {
@@ -238,6 +242,8 @@ pub enum EngineEvent {
         path: String,
         name: String,
         asset: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        category: Option<String>,
     },
     /// Modelo 3D registrado en el almacén de recursos (GPU listo).
     ModelAssetLoaded {
@@ -245,6 +251,8 @@ pub enum EngineEvent {
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         model_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        category: Option<String>,
     },
     /// Precarga de modelo 3D iniciada (parseo en segundo plano).
     ModelAssetPreloadStarted {
@@ -252,6 +260,8 @@ pub enum EngineEvent {
         name: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         model_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        category: Option<String>,
     },
     /// Falló la carga/precarga de un modelo en Recursos (libera `loading` en el renderer).
     ModelAssetLoadFailed {
