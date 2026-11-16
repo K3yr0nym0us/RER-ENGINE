@@ -108,11 +108,31 @@ pub fn snow_line_meters(config: &WorldGenConfig) -> f32 {
     plains + relief * 0.97
 }
 
-/// Desnivel de la rampa cardinal (metros de lado a lado). Rebajado a ~3° para
-/// que el mundo no parezca una ladera gigante, incluso en mundos pequeños.
+/// Amplitud de la rampa actual (mínimo). Es la que deja los mundos pequeños
+/// suaves, sin una ladera base exagerada.
+#[must_use]
+fn current_grade_amplitude(radius: f32) -> f32 {
+    (radius * 0.12).clamp(4.0, 56.0)
+}
+
+/// Amplitud anterior (máximo). Tenía mucha altura base; se reserva para los
+/// mundos grandes, donde el desnivel absoluto debe notarse más.
+#[must_use]
+fn previous_grade_amplitude(radius: f32) -> f32 {
+    (radius * 0.16).clamp(28.0, 64.0)
+}
+
+/// Desnivel de la rampa cardinal (metros de lado a lado), calculado por tamaño:
+/// los mundos pequeños se acercan al mínimo actual y los grandes al máximo
+/// anterior. Así el desnivel crece con el mundo en vez de ser fijo.
 #[must_use]
 pub fn land_grade_amplitude(radius: f32) -> f32 {
-    (radius * 0.12).clamp(4.0, 56.0)
+    let radius = radius.max(MIN_WORLDGEN_RADIUS);
+    let t = ((radius - MIN_WORLDGEN_RADIUS) / (MAX_WORLDGEN_RADIUS - MIN_WORLDGEN_RADIUS))
+        .clamp(0.0, 1.0);
+    let low = current_grade_amplitude(radius);
+    let high = previous_grade_amplitude(radius);
+    low + (high - low) * t
 }
 
 /// Altura de montaña **sobre el terreno local** (la rampa ya ocupó `grade` metros).
@@ -425,6 +445,26 @@ mod tests {
                 land_grade_amplitude(radius),
                 side
             );
+        }
+    }
+
+    #[test]
+    fn el_desnivel_crece_con_el_tamano_del_mundo() {
+        let small = land_grade_amplitude(MIN_WORLDGEN_RADIUS);
+        let medium = land_grade_amplitude(128.0);
+        let big = land_grade_amplitude(MAX_WORLDGEN_RADIUS);
+        assert!((small - 4.0).abs() < 0.1, "mínimo {small}");
+        assert!(medium > small, "medio {medium} debe superar {small}");
+        assert!((big - 64.0).abs() < 0.1, "máximo {big}");
+
+        let mut previous = 0.0;
+        for radius in [32.0, 64.0, 128.0, 256.0, 400.0, 500.0, 800.0, 1000.0] {
+            let current = land_grade_amplitude(radius);
+            assert!(
+                current >= previous - 1.0e-3,
+                "el desnivel bajó de {previous} a {current} en radio {radius}"
+            );
+            previous = current;
         }
     }
 }

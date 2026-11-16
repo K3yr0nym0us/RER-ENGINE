@@ -44,6 +44,10 @@ defecto); `fit_config_to_world` escala features al área generada.
 - **Volcánico**: alrededor de las montañas, no manchas sueltas. El desierto
   usa regiones anisotrópicas (no un disco). Las montañas mezclan mesetas y
   picos. El suelo base tiene relieve amplio y poco ruido fino.
+- **Inclinación**: la rampa cardinal escala con el tamaño del mundo. Los
+  mundos pequeños usan el mínimo suave actual; los grandes se acercan al máximo
+  anterior (más desnivel absoluto). El cálculo está en
+  `scale::land_grade_amplitude`.
 - **Lagos / valles / montañas**: huella elíptica con costa irregular.
   Las montañas copian masa + crestas de `primitive-voxels-godot` (esa
   referencia no tiene lagos ni ríos).

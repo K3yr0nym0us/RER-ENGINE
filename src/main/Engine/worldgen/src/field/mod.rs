@@ -47,8 +47,9 @@ pub struct LandGrade {
 }
 
 impl LandGrade {
-    /// Deriva eje, sentido y amplitud del seed. Pendiente suave (~3° de lado a
-    /// lado), nunca un acantilado.
+    /// Deriva eje, sentido y amplitud del seed. Pendiente suave; el desnivel
+    /// absoluto crece con el tamaño del mundo (mínimo en mundos pequeños,
+    /// máximo en los grandes).
     #[must_use]
     pub fn from_config(config: &WorldGenConfig) -> Self {
         let bits = mix_u32(config.seed ^ 0x51ed_5106);
