@@ -61,12 +61,31 @@ Usamos **SonarLint** en el editor (Cursor / VS Code), **no** SonarCloud ni scann
 
 No hace falta Connected Mode, organización ni secretos de SonarCloud. No versionamos `.vscode/` para esto.
 
+## Rust (motor + plugins)
+
+Los binarios del motor se compilan con features **restrictivas**: `rer_engine_3d`
+(`engine3d`), `rer_engine_2d` (`engine2d`) y `rer_engine_editor` (`editor`, que
+arrastra ambos motores). Por eso `--all-features` **no** basta: oculta errores de
+`#[cfg(feature = "editor")]` que solo aparecen al compilar un motor aislado.
+
+| Comando | Cobertura |
+|---------|-----------|
+| `yarn rust:test:engine3d` | fmt + clippy/test/build de `engine3d` + clippy/test/build del editor (motor 3D y editor) |
+| `yarn rust:test:engine2d` | fmt + clippy/test/build de `engine2d` + clippy/test/build del editor (motor 2D y editor) |
+| `yarn rust:test:worldgen` | fmt + clippy/test/build del plugin `rer-worldgen` |
+| `yarn rust:test:all` | las tres suites completas |
+| `yarn quality:rust` | quality Rust general (`--all-features`, audit) + `rust:test:all` |
+
+Runner: `scripts/run-rust-suite.mjs`. Cada suite termina con
+`cargo build` del binario real, así se detectan imports/constantes detrás de
+features que no compilan en el binario de producción.
+
 ## CI
 
 `.github/workflows/quality.yml` (`windows-latest`):
 
 - Frontend: `yarn lint`, `yarn typecheck`, `yarn test:coverage`
-- Rust: fmt, check, clippy (`-D warnings`), test, audit
+- Rust: fmt, check, clippy (`-D warnings`), test, audit + suites por feature (`engine3d`, `engine2d`, `worldgen`)
 
 ## Qué se analiza / qué no
 

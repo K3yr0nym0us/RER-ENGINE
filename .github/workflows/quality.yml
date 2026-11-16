@@ -71,6 +71,12 @@ jobs:
       - name: cargo test
         run: cargo test --manifest-path src/main/Engine/Cargo.toml --workspace --all-features
 
+      # Los binarios se compilan con features restrictivas (engine3d, engine2d,
+      # editor). `--all-features` no detecta errores de cfg(feature) en los
+      # binarios aislados, así que se validan las tres combinaciones reales.
+      - name: Feature suites (3D / 2D / worldgen)
+        run: node ./scripts/run-rust-suite.mjs all
+
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
 

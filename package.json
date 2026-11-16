@@ -30,9 +30,13 @@
     "rust:check": "cargo check --manifest-path src/main/Engine/Cargo.toml --workspace --all-targets",
     "rust:clippy": "cargo clippy --manifest-path src/main/Engine/Cargo.toml --workspace --all-targets --all-features -- -D warnings",
     "rust:test": "cargo test --manifest-path src/main/Engine/Cargo.toml --workspace --all-features",
+    "rust:test:engine3d": "node ./scripts/run-rust-suite.mjs engine3d",
+    "rust:test:engine2d": "node ./scripts/run-rust-suite.mjs engine2d",
+    "rust:test:worldgen": "node ./scripts/run-rust-suite.mjs worldgen",
+    "rust:test:all": "node ./scripts/run-rust-suite.mjs all",
     "rust:audit": "cargo audit --file src/main/Engine/Cargo.lock",
     "quality:frontend": "yarn lint && yarn typecheck && yarn test:coverage",
-    "quality:rust": "node ./scripts/run-rust-quality.mjs",
+    "quality:rust": "node ./scripts/run-rust-quality.mjs && node ./scripts/run-rust-suite.mjs all",
     "quality": "yarn quality:frontend && yarn quality:rust"
   },
   "devDependencies": {

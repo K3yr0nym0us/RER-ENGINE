@@ -11,6 +11,17 @@ const VALID_CONFIG: &str = r#"{
     "resolution": { "voxelSize": 2.0, "lodEnabled": false }
 }"#;
 
+/// `wg_world_create` guarda el fallo en un error **global** de la DLL. Los
+/// tests de este archivo corren en paralelo, así que los que escriben o leen
+/// ese error se serializan para que el mensaje no se pise.
+static GLOBAL_ERROR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn lock_global_error() -> std::sync::MutexGuard<'static, ()> {
+    GLOBAL_ERROR_LOCK
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+}
+
 #[test]
 fn abi_version_is_stable() {
     assert_eq!(wg_abi_version(), 2);
@@ -25,6 +36,7 @@ fn create_with_valid_config_returns_handle() {
 
 #[test]
 fn create_with_invalid_json_returns_null_and_global_error() {
+    let _guard = lock_global_error();
     let json = b"{ no es json }";
     let handle = unsafe { wg_world_create(json.as_ptr(), json.len()) };
     assert!(handle.is_null());
@@ -41,6 +53,7 @@ fn create_with_invalid_json_returns_null_and_global_error() {
 
 #[test]
 fn create_with_out_of_bounds_rejects_config() {
+    let _guard = lock_global_error();
     let config = r#"{ "bounds": { "width": 1.0, "length": 256.0, "height": 96.0 } }"#;
     let handle = unsafe { wg_world_create(config.as_ptr(), config.len()) };
     assert!(handle.is_null(), "un width=1 debe rechazar la config");
@@ -48,6 +61,7 @@ fn create_with_out_of_bounds_rejects_config() {
 
 #[test]
 fn null_arguments_return_error_codes() {
+    let _guard = lock_global_error();
     let handle = unsafe { wg_world_create(std::ptr::null(), 10) };
     assert!(handle.is_null());
     let mut out = WgMeshBuffers::empty();
