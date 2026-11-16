@@ -31,17 +31,23 @@ impl State {
     }
 
     /// Bounds locales de la malla visible (estática, skinned o caché del jugador).
+    ///
+    /// Se llama desde rutas por frame (picking, culling, gizmo), así que para el
+    /// jugador usa `play_character_mesh_extents`, que cachea los bounds de la
+    /// variante `::play_character` al instalar el mesh. Resolverlos con
+    /// `play_character_visual_local_bounds` recalcula el AABB skinned (O(vértices))
+    /// en cada llamada y hunde los FPS.
     pub(crate) fn resolve_entity_visual_local_bounds(
         &self,
         id: EntityId,
     ) -> Option<([f32; 3], [f32; 3])> {
-        if let Some(bounds) = self.entity_model_local_bounds(id) {
-            return Some(bounds);
-        }
         if self.play_character_entity == Some(id)
             && let Some(ext) = self.play_character_mesh_extents
         {
             return Some((ext.local_min, ext.local_max));
+        }
+        if let Some(bounds) = self.entity_model_local_bounds(id) {
+            return Some(bounds);
         }
         None
     }

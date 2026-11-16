@@ -669,9 +669,9 @@ fn load_gltf(
     }
 
     if let Some(extent) = normalize_to_extent {
-        for p in prims.iter_mut() {
-            normalize_vertices_centered_height(&mut p.vertices, extent);
-        }
+        // Un solo factor y pivote para todo el modelo: normalizar cada primitiva
+        // por separado deformaba personajes con varias mallas/skins.
+        normalize_prims_centered_height(&mut prims, extent);
     }
 
     let mut meshes = Vec::with_capacity(prims.len());
@@ -736,10 +736,10 @@ pub(crate) fn load_gltf_cpu_from_file(
     }
 
     if let Some(extent) = normalize_to_extent {
-        for p in prims.iter_mut() {
-            normalize_vertices_height_feet_pivot(&mut p.vertices, extent);
-            recenter_vertices_to_local_feet(&mut p.vertices);
-        }
+        // Un solo factor y pivote para todo el modelo: normalizar cada parte por
+        // separado (altura 1.7 y recentrado propios) deforma personajes con
+        // varias mallas/skins — el skinning las coloca con escalas distintas.
+        normalize_prims_height_feet_pivot(&mut prims, extent);
     }
 
     Ok(prims
@@ -784,6 +784,78 @@ fn apply_quat_to_vertices(vertices: &mut [Vertex], q: glam::Quat) {
     }
 }
 
+/// Factor y desplazamiento para normalizar un grupo de mallas por altura Y,
+/// con los pies en Y=0 y el centro X/Z en el origen.
+fn uniform_height_feet_pivot(min: [f32; 3], max: [f32; 3], target_height: f32) -> (f32, [f32; 3]) {
+    let height = (max[1] - min[1]).max(1e-5);
+    let scale = (target_height / height).clamp(0.001, 50.0);
+    let offset = [-(min[0] + max[0]) * 0.5, -min[1], -(min[2] + max[2]) * 0.5];
+    (scale, offset)
+}
+
+/// Factor y desplazamiento centrando los tres ejes (mismo pivot que el cubo placeholder).
+fn uniform_height_centered(min: [f32; 3], max: [f32; 3], target_height: f32) -> (f32, [f32; 3]) {
+    let height = (max[1] - min[1]).max(1e-5);
+    let scale = (target_height / height).clamp(0.001, 50.0);
+    let offset = [
+        -(min[0] + max[0]) * 0.5,
+        -(min[1] + max[1]) * 0.5,
+        -(min[2] + max[2]) * 0.5,
+    ];
+    (scale, offset)
+}
+
+/// Bounds del conjunto de mallas como si fuera un solo modelo.
+fn prims_group_bounds(prims: &[GltfRawPrim]) -> Option<([f32; 3], [f32; 3])> {
+    let mut min = [f32::MAX; 3];
+    let mut max = [f32::MIN; 3];
+    let mut any = false;
+    for part in prims {
+        if part.vertices.is_empty() {
+            continue;
+        }
+        let (part_min, part_max) = vertex_bounds(&part.vertices);
+        for i in 0..3 {
+            min[i] = min[i].min(part_min[i]);
+            max[i] = max[i].max(part_max[i]);
+        }
+        any = true;
+    }
+    any.then_some((min, max))
+}
+
+fn apply_uniform_transform(vertices: &mut [Vertex], scale: f32, offset: [f32; 3]) {
+    let offset = glam::Vec3::from_array(offset);
+    for v in vertices.iter_mut() {
+        let p = glam::Vec3::from_array(v.position) + offset;
+        v.position = (p * scale).to_array();
+    }
+}
+
+/// Normaliza todas las mallas con el MISMO factor y pivote (altura global, pies
+/// en Y=0, centro X/Z global). Necesario para personajes con varias mallas/skins:
+/// escalar cada parte a 1.7 m por su cuenta las deja desproporcionadas entre sí.
+fn normalize_prims_height_feet_pivot(prims: &mut [GltfRawPrim], target_height: f32) {
+    let Some((min, max)) = prims_group_bounds(prims) else {
+        return;
+    };
+    let (scale, offset) = uniform_height_feet_pivot(min, max, target_height);
+    for part in prims.iter_mut() {
+        apply_uniform_transform(&mut part.vertices, scale, offset);
+    }
+}
+
+/// Igual que [`normalize_prims_height_feet_pivot`] pero centrada en los tres ejes.
+fn normalize_prims_centered_height(prims: &mut [GltfRawPrim], target_height: f32) {
+    let Some((min, max)) = prims_group_bounds(prims) else {
+        return;
+    };
+    let (scale, offset) = uniform_height_centered(min, max, target_height);
+    for part in prims.iter_mut() {
+        apply_uniform_transform(&mut part.vertices, scale, offset);
+    }
+}
+
 /// Escala por altura Y y deja los pies en Y=0; centra solo en X/Z (colocación en suelo).
 pub(crate) fn normalize_vertices_height_feet_pivot(vertices: &mut [Vertex], target_height: f32) {
     if vertices.is_empty() {
@@ -823,30 +895,6 @@ pub(crate) fn recenter_vertices_to_local_feet(vertices: &mut [Vertex]) {
     for v in vertices.iter_mut() {
         let p = glam::Vec3::from_array(v.position) - shift;
         v.position = p.to_array();
-    }
-}
-
-fn normalize_vertices_centered_height(vertices: &mut [Vertex], target_height: f32) {
-    if vertices.is_empty() {
-        return;
-    }
-    let mut min = [f32::MAX; 3];
-    let mut max = [f32::MIN; 3];
-    for v in vertices.iter() {
-        for i in 0..3 {
-            min[i] = min[i].min(v.position[i]);
-            max[i] = max[i].max(v.position[i]);
-        }
-    }
-    let height = (max[1] - min[1]).max(1e-5);
-    let scale = (target_height / height).clamp(0.001, 50.0);
-    let cx = (min[0] + max[0]) * 0.5;
-    let cy = (min[1] + max[1]) * 0.5;
-    let cz = (min[2] + max[2]) * 0.5;
-    for v in vertices.iter_mut() {
-        v.position[0] = (v.position[0] - cx) * scale;
-        v.position[1] = (v.position[1] - cy) * scale;
-        v.position[2] = (v.position[2] - cz) * scale;
     }
 }
 
@@ -957,4 +1005,36 @@ pub(crate) fn create_ground_disk(
     }
 
     upload(gpu, &vertices, &indices, "ground-disk", Some(&rt_indices))
+}
+
+#[cfg(test)]
+mod uniform_normalize_tests {
+    use super::*;
+
+    #[test]
+    fn group_normalization_shares_factor_between_parts() {
+        // Personaje con dos mallas de alturas distintas: el cuerpo mide 3.4 y el
+        // arma 1.7. Antes cada parte se normalizaba a 1.7 por separado; ahora el
+        // grupo comparte factor y pivote, así que las proporciones se mantienen.
+        let (scale, offset) = uniform_height_feet_pivot([0.0, 0.0, 0.0], [4.0, 3.4, 2.0], 1.7);
+        assert!((scale - 0.5).abs() < 1e-6, "scale = {scale}");
+        assert!((offset[0] + 2.0).abs() < 1e-6, "centro X");
+        assert!((offset[2] + 1.0).abs() < 1e-6, "centro Z");
+        assert!(offset[1].abs() < 1e-6, "pies en Y=0");
+
+        // El techo acaba en la altura objetivo y la mitad del cuerpo en 0.85.
+        let top = (3.4 + offset[1]) * scale;
+        let mid = (1.7 + offset[1]) * scale;
+        assert!((top - 1.7).abs() < 1e-6);
+        assert!((mid - 0.85).abs() < 1e-6);
+    }
+
+    #[test]
+    fn centered_normalization_centers_all_axes() {
+        let (scale, offset) = uniform_height_centered([0.0, 0.0, 0.0], [2.0, 2.0, 2.0], 1.7);
+        let center = [1.0f32, 1.0, 1.0];
+        for (value, shift) in center.iter().zip(offset.iter()) {
+            assert!(((value + shift) * scale).abs() < 1e-6);
+        }
+    }
 }

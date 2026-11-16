@@ -83,6 +83,47 @@ player_glb_orientation:
     Validar con varios GLB Mixamo reales en cámara play character (~1.7 m, de pie,
     sin regresión skinning). Pendiente: registrado aquí, no en un checklist aparte.
 
+player_model_normalize:
+  applies_to: Modelo del jugador (variante `::play_character` y escala del transform)
+  uniform_scale: |
+    `sync_play_character_scale_to_body_height` aplica una escala uniforme
+    (`PLAY_CHARACTER_BODY_HEIGHT / altura local`) en X/Y/Z. Fijar X/Z a un valor
+    constante solo normalizaba la altura y deformaba los modelos con unidades o
+    proporciones distintas (p. ej. personajes exportados en centímetros).
+  multi_mesh: |
+    `mesh_3d::load_gltf*` normaliza TODAS las mallas con el mismo factor y pivote
+    (altura global, pies en Y=0, centro X/Z global). Normalizar cada primitiva por
+    separado rompe personajes con varias mallas/skins (Body, Torso, Hair, Gun…):
+    cada parte se escala y recentra distinto y el skinning las deforma.
+    Los `.rerasset` ya horneados conservan la variante antigua; reimportar el
+    modelo regenera `::play_character`.
+  files:
+    - src/main/Engine/engine/src/engine3d/config_3d/play_character.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/mesh_3d.rs
+
+player_pick_aabb:
+  applies_to: Jugador con modelo asignado (replace_entity_model o carga de .save)
+  motor: resolve_entity_visual_local_bounds → play_character_mesh_extents
+  invariant: |
+    El AABB de picking, el gizmo y el foco de cámara del jugador usan los bounds de
+    la variante `::play_character` (normalizada a PLAY_CHARACTER_BODY_HEIGHT), nunca
+    los de la biblioteca base. Los bounds base están en las unidades del GLB/FBX
+    original; al combinarlos con la escala ya ajustada al jugador la caja queda
+    desplazada y el cursor deja de detectar el cuerpo visible.
+  cached: |
+    Esos bounds se cachean en `play_character_mesh_extents` al instalar el mesh.
+    No resolverlos con `play_character_visual_local_bounds` en rutas por frame:
+    recalcula el AABB skinned recorriendo todos los vértices y el picking/culling
+    lo llama varias veces por frame (CPU alta, FPS bajos).
+  files:
+    - src/main/Engine/engine/src/engine3d/config_3d/model_ops.rs
+    - src/main/Engine/engine/src/engine3d/config_3d/play_character.rs
+  qa_manual: |
+    Reemplazar el modelo del jugador y comprobar que el click derecho lo selecciona
+    en todo el cuerpo (cabeza, torso, piernas), que el foco de cámara queda en el
+    centro del modelo y que los FPS no caen tras el cambio. Entidades no-jugador
+    dibujan la malla base, así que su AABB ya coincide con la caché de la biblioteca.
+
 editor_flow_3d:
   new_project: editor directo sin GameStyleSelector; gameStyle = modo de cámara en manifest
   camera_accordion: set_play_character_view; poses autoritativas en motor (no TS para save)

@@ -299,7 +299,10 @@ impl State {
         self.play_character_entity.is_some()
     }
 
-    /// Escala Y y extents desde bounds visuales para que el mesh mida 1.7 m en mundo.
+    /// Escala uniforme desde bounds visuales para que la malla mida
+    /// `PLAY_CHARACTER_BODY_HEIGHT` en mundo. Debe ser uniforme en X/Y/Z: fijar
+    /// X/Z a un valor constante (p. ej. el diámetro de la cápsula) solo ajustaba
+    /// la altura y deformaba los modelos con proporciones o unidades distintas.
     pub(crate) fn sync_play_character_scale_to_body_height(
         &mut self,
         id: EntityId,
@@ -311,10 +314,9 @@ impl State {
         let ext = PlayCharacterMeshExtents::from_local_bounds(min, max);
         self.play_character_mesh_extents = Some(ext);
         let h = ext.height().max(0.01);
-        let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
-        let scale_y = PLAY_CHARACTER_BODY_HEIGHT / h;
+        let scale = PLAY_CHARACTER_BODY_HEIGHT / h;
         if let Some(t) = self.world.get_mut::<Transform>(id) {
-            t.scale = glam::Vec3::new(w, scale_y, w);
+            t.scale = glam::Vec3::splat(scale);
         }
     }
 
@@ -337,6 +339,10 @@ impl State {
     }
 
     /// AABB local de la malla que se dibuja (skinned si hay animación, si no caché `::play_character`).
+    ///
+    /// Coste O(vértices) cuando hay `model_assets` (recalcula el bind pose skinned
+    /// en cada llamada). No usar en rutas por frame (picking/culling/gizmo): esas
+    /// rutas leen `play_character_mesh_extents`, cacheado al instalar el mesh.
     pub(crate) fn play_character_visual_local_bounds(
         &self,
         model_path: &str,
