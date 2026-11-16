@@ -23,6 +23,11 @@ pub struct SaveWorldSnapshot {
     pub world_width: f32,
     pub world_height: f32,
     pub world_depth: f32,
+    /// Centro XZ de la huella (mundo rectangular descentrado al crecer una cara).
+    #[serde(default)]
+    pub world_center_x: f32,
+    #[serde(default)]
+    pub world_center_z: f32,
     pub grid_visible: bool,
     pub grid_cell_size: f32,
     pub gravity: f32,
@@ -670,6 +675,11 @@ pub struct ProjectLoaded3dWorld {
     pub worldDepth: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worldRadius: Option<f32>,
+    /// Centro XZ de la huella (mundo rectangular) por defecto 0.
+    #[serde(default)]
+    pub worldCenterX: f32,
+    #[serde(default)]
+    pub worldCenterZ: f32,
     pub gridVisible: bool,
     pub gridCellSize: f32,
     #[serde(skip_serializing_if = "Option::is_none")]

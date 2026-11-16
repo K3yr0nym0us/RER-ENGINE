@@ -73,6 +73,15 @@ pub enum EngineCommand3dOnly {
     },
     /// «Limpiar escena»: elimina el contenido por defecto conservando jugador y cámaras.
     ClearSceneContent,
+    /// Caras del mundo (m): norte (-Z), sur (+Z), este (+X), oeste (-X).
+    SetWorldBounds {
+        north: f32,
+        south: f32,
+        east: f32,
+        west: f32,
+        #[serde(default)]
+        height: Option<f32>,
+    },
     SpawnEditorBox {
         name: String,
         position: [f32; 3],

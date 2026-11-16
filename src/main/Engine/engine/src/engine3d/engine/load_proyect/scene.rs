@@ -280,12 +280,18 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
     let shadow_darkness = view.world.shadowDarkness.unwrap_or(DEFAULT_SHADOW_DARKNESS);
 
     let depth = view.world.worldDepth.unwrap_or(50.0);
-    let radius = view
-        .world
-        .worldRadius
-        .unwrap_or_else(|| view.world.worldWidth.min(view.world.worldHeight).min(depth) * 0.5);
-    state.handle_command(EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius {
-        radius,
+    let width = view.world.worldWidth.max(1.0);
+    let center_x = view.world.worldCenterX;
+    let center_z = view.world.worldCenterZ;
+    // Cargar un proyecto reemplaza el mundo: no disparar el crecimiento
+    // automático del plugin antes de restaurar su sección `worldGen3d`.
+    state.worldgen.generated = false;
+    state.handle_command(EngineCommand::Only3d(EngineCommand3dOnly::SetWorldBounds {
+        north: (depth * 0.5 - center_z).max(1.0),
+        south: (depth * 0.5 + center_z).max(1.0),
+        east: (width * 0.5 + center_x).max(1.0),
+        west: (width * 0.5 - center_x).max(1.0),
+        height: Some(view.world.worldHeight),
     }));
     state.handle_command(EngineCommand::Common(EngineCommandCommon::SetGridVisible {
         visible: view.world.gridVisible,

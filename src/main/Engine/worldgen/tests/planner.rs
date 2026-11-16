@@ -507,18 +507,22 @@ fn rivers_end_in_a_lake_or_at_the_map_edge() {
 }
 
 #[test]
-fn sites_stay_inside_the_world_disk() {
+fn sites_stay_inside_the_world_rectangle() {
     let config = config_with_all_features();
     let base = rer_worldgen::field::HeightField::new(&config);
     let plan = FeaturePlan::generate(&config, &base);
-    let radius = config.bounds.radius();
-    let center = Vec2::new(config.bounds.width * 0.5, config.bounds.length * 0.5);
+    let width = config.bounds.width;
+    let length = config.bounds.length;
+    let margin = 24.0_f32.min(width * 0.25).min(length * 0.25) - 0.01;
     for site in &plan.sites {
-        let d = (site.pos - center).length();
         assert!(
-            d <= radius - 8.0,
-            "sitio {:?} a {d} m del centro (radio {radius})",
-            site.kind
+            site.pos.x >= margin
+                && site.pos.x <= width - margin
+                && site.pos.y >= margin
+                && site.pos.y <= length - margin,
+            "sitio {:?} fuera del rectángulo: {:?} ({width}×{length})",
+            site.kind,
+            site.pos
         );
     }
 }

@@ -207,9 +207,10 @@ impl State {
         let b = self.world_bounds_3d;
         let cell = self.grid_config.cell_size;
         self.meshes
-            .push(crate::engine3d::config_3d::mesh_3d::create_ground_disk(
+            .push(crate::engine3d::config_3d::mesh_3d::create_ground_plane(
                 &self.vulkan,
-                b.radius,
+                b.width(),
+                b.depth(),
                 cell,
             ));
         let tex_idx = self.pack_scene_checker_texture();
@@ -275,7 +276,7 @@ impl State {
         self.sync_ground_plane_to_world_bounds();
     }
 
-    /// Escala el mesh del suelo (40×40 local) al cuadro de límites del accordion World.
+    /// Escala el mesh del suelo (40×40 local) a las caras del mundo.
     pub(crate) fn sync_ground_plane_to_world_bounds(&mut self) {
         let Some(id) = self.ground_entity_id() else {
             return;
@@ -292,13 +293,14 @@ impl State {
             );
         }
         let b = self.world_bounds_3d;
-        let diameter = b.diameter();
-        let s = (diameter / GROUND_PLANE_MESH_EXTENT).max(0.01);
+        let s_x = (b.width() / GROUND_PLANE_MESH_EXTENT).max(0.01);
+        let s_z = (b.depth() / GROUND_PLANE_MESH_EXTENT).max(0.01);
+        let center = b.center();
         if let Some(t) = self.world.get_mut::<Transform>(id) {
-            t.position.x = 0.0;
-            t.position.z = 0.0;
+            t.position.x = center.x;
+            t.position.z = center.z;
             t.position.y = 0.0;
-            t.scale = glam::Vec3::new(s, 0.02, s);
+            t.scale = glam::Vec3::new(s_x, 0.02, s_z);
         }
         self.refresh_ground_checker_uv();
     }
@@ -317,8 +319,12 @@ impl State {
         };
         let b = self.world_bounds_3d;
         let cell = self.grid_config.cell_size;
-        self.meshes[mesh_idx] =
-            crate::engine3d::config_3d::mesh_3d::create_ground_disk(&self.vulkan, b.radius, cell);
+        self.meshes[mesh_idx] = crate::engine3d::config_3d::mesh_3d::create_ground_plane(
+            &self.vulkan,
+            b.width(),
+            b.depth(),
+            cell,
+        );
     }
 
     /// Plantilla 3D por defecto (proyecto nuevo): suelo checker y cámara play character a ras de editor.

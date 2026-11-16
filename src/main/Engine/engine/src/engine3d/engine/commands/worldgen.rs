@@ -17,7 +17,7 @@ impl State {
                 None
             }
             EngineCommand::Only3d(EngineCommand3dOnly::WorldGenStart { replace_world }) => {
-                self.worldgen_start(replace_world);
+                self.worldgen_start(replace_world, true);
                 None
             }
             EngineCommand::Only3d(EngineCommand3dOnly::WorldGenStop) => {

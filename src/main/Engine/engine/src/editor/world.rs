@@ -186,6 +186,14 @@ pub struct WorldSettings {
     pub world_height: f32,
     pub world_depth: f32,
     pub world_radius: f32,
+    /// Centro XZ de la huella (el mundo puede crecer por una cara sin recentrarse).
+    pub world_center_x: f32,
+    pub world_center_z: f32,
+    /// Extensión de cada cara desde el origen (m).
+    pub north: f32,
+    pub south: f32,
+    pub east: f32,
+    pub west: f32,
     pub grid_visible: bool,
     pub grid_cell_size: f32,
     pub gravity: f32,
@@ -225,6 +233,12 @@ impl Default for WorldSettings {
             world_height: 50.0,
             world_depth: 100.0,
             world_radius: 50.0,
+            world_center_x: 0.0,
+            world_center_z: 0.0,
+            north: 50.0,
+            south: 50.0,
+            east: 50.0,
+            west: 50.0,
             grid_visible: true,
             grid_cell_size: 1.0,
             gravity: 15.0,
@@ -254,6 +268,61 @@ impl Default for WorldSettings {
 }
 
 impl WorldSettings {
+    /// Recalcula las caras desde ancho/largo/centro (carga de `.save`).
+    pub fn sync_faces_from_box(&mut self) {
+        let min_face = crate::engine3d::MIN_WORLD_FACE_3D;
+        let max_face = crate::engine3d::MAX_WORLD_FACE_3D;
+        let half_w = (self.world_width * 0.5).max(min_face);
+        let half_d = (self.world_depth * 0.5).max(min_face);
+        self.north = (half_d - self.world_center_z).clamp(min_face, max_face);
+        self.south = (half_d + self.world_center_z).clamp(min_face, max_face);
+        self.east = (half_w + self.world_center_x).clamp(min_face, max_face);
+        self.west = (half_w - self.world_center_x).clamp(min_face, max_face);
+        self.refresh_box_from_faces();
+    }
+
+    /// Fija las cuatro caras (la opuesta no se mueve) y deriva ancho/largo/centro.
+    pub fn set_faces(&mut self, north: f32, south: f32, east: f32, west: f32) {
+        let min_face = crate::engine3d::MIN_WORLD_FACE_3D;
+        let max_face = crate::engine3d::MAX_WORLD_FACE_3D;
+        self.north = north.clamp(min_face, max_face);
+        self.south = south.clamp(min_face, max_face);
+        self.east = east.clamp(min_face, max_face);
+        self.west = west.clamp(min_face, max_face);
+        self.refresh_box_from_faces();
+    }
+
+    fn refresh_box_from_faces(&mut self) {
+        self.world_width = self.east + self.west;
+        self.world_depth = self.north + self.south;
+        self.world_center_x = (self.east - self.west) * 0.5;
+        self.world_center_z = (self.south - self.north) * 0.5;
+        self.world_radius = self.world_width.max(self.world_depth) * 0.5;
+    }
+
+    /// Lee `world` del evento `project_loaded_3d` (claves camelCase).
+    pub fn apply_loaded_world(&mut self, world: &Value) {
+        if let Some(value) = number(world, "worldWidth") {
+            self.world_width = value as f32;
+        }
+        if let Some(value) = number(world, "worldHeight") {
+            self.world_height = value as f32;
+        }
+        if let Some(value) = number(world, "worldDepth") {
+            self.world_depth = value as f32;
+        }
+        if let Some(value) = number(world, "worldRadius") {
+            self.world_radius = value as f32;
+        }
+        if let Some(value) = number(world, "worldCenterX") {
+            self.world_center_x = value as f32;
+        }
+        if let Some(value) = number(world, "worldCenterZ") {
+            self.world_center_z = value as f32;
+        }
+        self.sync_faces_from_box();
+    }
+
     /// Lee `scene.world` del snapshot del motor.
     pub fn apply_snapshot(&mut self, scene: &Value) {
         let Some(world) = scene.get("world") else {
@@ -272,6 +341,13 @@ impl WorldSettings {
         if let Some(value) = number(world, "world_radius") {
             self.world_radius = value as f32;
         }
+        if let Some(value) = number(world, "world_center_x") {
+            self.world_center_x = value as f32;
+        }
+        if let Some(value) = number(world, "world_center_z") {
+            self.world_center_z = value as f32;
+        }
+        self.sync_faces_from_box();
         if let Some(value) = boolean(world, "grid_visible") {
             self.grid_visible = value;
         }
@@ -350,6 +426,20 @@ impl WorldSettings {
     pub fn apply_command(&mut self, command: &Value) {
         let name = command.get("cmd").and_then(Value::as_str).unwrap_or("");
         match name {
+            "set_world_bounds" => {
+                if let Some(north) = number(command, "north").map(|value| value as f32) {
+                    let south = number(command, "south")
+                        .map(|value| value as f32)
+                        .unwrap_or(self.south);
+                    let east = number(command, "east")
+                        .map(|value| value as f32)
+                        .unwrap_or(self.east);
+                    let west = number(command, "west")
+                        .map(|value| value as f32)
+                        .unwrap_or(self.west);
+                    self.set_faces(north, south, east, west);
+                }
+            }
             "set_world_size" => {
                 if let Some(value) = number(command, "width") {
                     self.world_width = value as f32;
@@ -360,6 +450,9 @@ impl WorldSettings {
                 if let Some(value) = number(command, "depth") {
                     self.world_depth = value as f32;
                 }
+                self.world_center_x = 0.0;
+                self.world_center_z = 0.0;
+                self.sync_faces_from_box();
             }
             "set_world_radius" => {
                 if let Some(value) = number(command, "radius") {
@@ -371,6 +464,9 @@ impl WorldSettings {
                     self.world_width = radius * 2.0;
                     self.world_height = radius * 2.0;
                     self.world_depth = radius * 2.0;
+                    self.world_center_x = 0.0;
+                    self.world_center_z = 0.0;
+                    self.sync_faces_from_box();
                 }
             }
             "set_grid_visible" => {

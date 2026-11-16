@@ -10,7 +10,7 @@ use glam::{Vec2, Vec3};
 
 use crate::config::WorldGenConfig;
 use crate::field::{HeightField, LandGrade};
-use crate::scale::{SITE_EDGE_MARGIN, fit_config_to_world};
+use crate::scale::{SITE_EDGE_MARGIN, fit_config_to_world, generation_density};
 use crate::seed::{Rng, SALT_CAVES, SALT_PLANNER, SALT_RIVERS, domain_seed};
 
 /// Clases de feature localizable con sitio.
@@ -187,10 +187,12 @@ impl FeaturePlan {
         let mut rng = Rng::new(domain_seed(config.seed, SALT_PLANNER));
         let extent = Vec2::new(config.bounds.width, config.bounds.length);
         let grade = base.land_grade();
+        let density = generation_density(&config.bounds);
         let mut plan = Self::default();
 
         let mountains = place_spread_sites(
             &config.mountains.base,
+            density,
             &mut rng,
             |rng, r, pos| Site {
                 kind: FeatureKind::Mountain,
@@ -205,6 +207,7 @@ impl FeaturePlan {
 
         let hills = place_sites(
             &config.hills.base,
+            density,
             &mut rng,
             &plan.sites,
             // Las colinas evitan solapar montañas (por distancia).
@@ -221,6 +224,7 @@ impl FeaturePlan {
 
         let valleys = place_sites(
             &config.valleys.base,
+            density,
             &mut rng,
             &plan.sites,
             |_, _, _| true,
@@ -236,6 +240,7 @@ impl FeaturePlan {
 
         let plains = place_sites(
             &config.plains.base,
+            density,
             &mut rng,
             &plan.sites,
             |_, _, _| true,
@@ -251,6 +256,7 @@ impl FeaturePlan {
 
         let cliffs = place_sites(
             &config.cliffs.base,
+            density,
             &mut rng,
             &plan.sites,
             |_, _, _| true,
@@ -285,10 +291,11 @@ impl FeaturePlan {
         // calcula con la superficie **sin el propio vaso** (el lago llena la
         // cuenca hasta el nivel del terreno original). Se añaden al final del
         // canonical order (sin re-sort) para no alterar la suma en float.
-        let lake_sectors = config.lakes.base.max_count.max(1);
+        let lake_sectors = budget_sites(config.lakes.base.max_count, density).max(1);
         let mut lake_slot = 0u32;
         let lake_sites = place_sites(
             &config.lakes.base,
+            density,
             &mut rng,
             &plan.sites,
             // Los lagos evitan montañas y colinas (cuencas en terreno bajo/medio).
@@ -328,9 +335,10 @@ impl FeaturePlan {
         // Ríos: nacen en montañas o en el borde del disco y bajan.
         if config.rivers.enabled {
             let mut river_rng = Rng::new(domain_seed(config.seed, SALT_RIVERS));
-            let attempts = config.rivers.max_count.saturating_mul(16).max(16);
+            let max_rivers = budget_sites(config.rivers.max_count, density);
+            let attempts = max_rivers.saturating_mul(16).max(16);
             for _ in 0..attempts {
-                if plan.rivers.len() as u32 >= config.rivers.max_count {
+                if plan.rivers.len() as u32 >= max_rivers {
                     break;
                 }
                 let river = walk_river(
@@ -351,9 +359,10 @@ impl FeaturePlan {
         // Cuevas: túneles-gusano con entrada en superficie (F4).
         if config.caves.enabled {
             let mut cave_rng = Rng::new(domain_seed(config.seed, SALT_CAVES));
-            let attempts = config.caves.max_count.saturating_mul(8).max(8);
+            let max_caves = budget_sites(config.caves.max_count, density);
+            let attempts = max_caves.saturating_mul(8).max(8);
             for _ in 0..attempts {
-                if plan.caves.len() as u32 >= config.caves.max_count {
+                if plan.caves.len() as u32 >= max_caves {
                     break;
                 }
                 let Some(system) = walk_cave(
@@ -378,6 +387,7 @@ impl FeaturePlan {
 /// Coloca sitios repartidos (las montañas no se apilan).
 fn place_spread_sites<F, P>(
     config: &crate::config::FeatureConfig,
+    density: f32,
     rng: &mut Rng,
     make: F,
     sample_pos: P,
@@ -390,9 +400,10 @@ where
     if !config.enabled || config.max_count == 0 {
         return placed;
     }
-    let sectors = config.max_count.max(1);
+    let max_count = budget_sites(config.max_count, density);
+    let sectors = max_count.max(1);
     for index in 0..sectors {
-        if placed.len() as u32 >= config.max_count {
+        if placed.len() as u32 >= max_count {
             break;
         }
         for _ in 0..ATTEMPTS_PER_SITE {
@@ -412,11 +423,22 @@ where
     placed
 }
 
+/// Presupuesto de sitios para el área generada: conserva la densidad del mundo
+/// visible aunque el plan cubra un rectángulo mayor.
+#[inline]
+fn budget_sites(max_count: u32, density: f32) -> u32 {
+    if max_count == 0 {
+        return 0;
+    }
+    ((max_count as f32) * density).round().max(1.0) as u32
+}
+
 /// Coloca sitios de una clase respetando `max_count` (límite duro), tamaños y
 /// separación mínima entre ellos y con los sitios existentes filtrados por
 /// `cross_ok`. Dart-throwing con rechazo: nunca excede el máximo.
 fn place_sites<F, G>(
     config: &crate::config::FeatureConfig,
+    density: f32,
     rng: &mut Rng,
     existing: &[Site],
     cross_ok: F,
@@ -430,9 +452,10 @@ where
     if !config.enabled || config.max_count == 0 {
         return placed;
     }
-    let attempts = config.max_count.saturating_mul(ATTEMPTS_PER_SITE);
+    let max_count = budget_sites(config.max_count, density);
+    let attempts = max_count.saturating_mul(ATTEMPTS_PER_SITE);
     for _ in 0..attempts {
-        if placed.len() as u32 >= config.max_count {
+        if placed.len() as u32 >= max_count {
             break;
         }
         let radius = rng.range_f32(config.min_size, config.max_size);
@@ -462,14 +485,20 @@ fn lerp(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
-/// Posición aleatoria en el disco jugable (no en las esquinas que se recortan).
+/// Margen interior del rectángulo jugable (m).
+fn site_margin(extent: Vec2) -> f32 {
+    SITE_EDGE_MARGIN.min(extent.x * 0.25).min(extent.y * 0.25)
+}
+
+/// Posición aleatoria dentro del rectángulo jugable (sin margen de borde).
 fn rng_pos(rng: &mut Rng, extent: Vec2) -> Vec2 {
-    let center = extent * 0.5;
-    let radius = world_radius_from_extent(extent);
-    let usable = (radius - SITE_EDGE_MARGIN).max(radius * 0.2);
-    let angle = rng.range_f32(0.0, std::f32::consts::TAU);
-    let dist = usable * rng.range_f32(0.0, 1.0).sqrt();
-    center + Vec2::from_angle(angle) * dist
+    let margin = site_margin(extent);
+    let min = Vec2::splat(margin);
+    let max = extent - Vec2::splat(margin);
+    Vec2::new(
+        rng.range_f32(min.x, max.x.max(min.x)),
+        rng.range_f32(min.y, max.y.max(min.y)),
+    )
 }
 
 fn rng_pos_half(rng: &mut Rng, extent: Vec2, grade: LandGrade, high: bool) -> Vec2 {
@@ -490,30 +519,49 @@ fn rng_pos_along_half(
     index: u32,
     sectors: u32,
 ) -> Vec2 {
-    let center = extent * 0.5;
-    let radius = world_radius_from_extent(extent);
-    let usable = (radius - SITE_EDGE_MARGIN).max(radius * 0.2);
-    let mid = if high {
-        grade.high_heading()
-    } else {
-        grade.high_heading() + std::f32::consts::PI
-    };
+    // Reparte por franjas perpendiculares al eje de la rampa y coloca cada sitio
+    // en la mitad (alta o baja) solicitada, dentro del rectángulo.
+    let dir = grade.high_dir();
+    let grade_along_x = dir.x.abs() > dir.y.abs();
     let sectors = sectors.max(1);
-    let slice = std::f32::consts::PI / sectors as f32;
-    let slot = (index % sectors) as f32;
-    let angle = mid - std::f32::consts::FRAC_PI_2 + (slot + rng.range_f32(0.12, 0.88)) * slice;
-    let dist = usable * rng.range_f32(0.28, 0.90).sqrt();
-    grade.mirror_to_half(center + Vec2::from_angle(angle) * dist, high)
+    let slot = index % sectors;
+    let margin = site_margin(extent);
+    let (along_len, perp_len) = if grade_along_x {
+        (extent.x, extent.y)
+    } else {
+        (extent.y, extent.x)
+    };
+    let perp_span = (perp_len - 2.0 * margin).max(0.01);
+    let t = (slot as f32 + rng.range_f32(0.15, 0.85)) / sectors as f32;
+    let perp_pos = margin + t.clamp(0.0, 1.0) * perp_span;
+
+    let positive_high = if grade_along_x {
+        dir.x > 0.0
+    } else {
+        dir.y > 0.0
+    };
+    let (lo, hi) = if high == positive_high {
+        (along_len * 0.5, along_len - margin)
+    } else {
+        (margin, along_len * 0.5)
+    };
+    let along_pos = rng.range_f32(lo.min(hi).max(margin), hi.max(lo).max(margin));
+
+    if grade_along_x {
+        Vec2::new(along_pos, perp_pos)
+    } else {
+        Vec2::new(perp_pos, along_pos)
+    }
 }
 
 fn world_radius_from_extent(extent: Vec2) -> f32 {
     extent.x.min(extent.y) * 0.5
 }
 
+/// Dentro del rectángulo jugable (con margen de borde).
 fn inside_playable_disk(pos: Vec2, extent: Vec2) -> bool {
-    let center = extent * 0.5;
-    let radius = (world_radius_from_extent(extent) - SITE_EDGE_MARGIN).max(1.0);
-    (pos - center).length() <= radius
+    let margin = site_margin(extent);
+    pos.x >= margin && pos.x <= extent.x - margin && pos.y >= margin && pos.y <= extent.y - margin
 }
 
 /// Río que nace en una montaña o en el borde alto del disco, baja y **siempre**
@@ -642,9 +690,12 @@ fn in_lake(pos: Vec2, lakes: &[LakeInfo], sites: &[Site]) -> bool {
 }
 
 fn rim_clearance(pos: Vec2, extent: Vec2) -> f32 {
-    let center = extent * 0.5;
-    let radius = (world_radius_from_extent(extent) - SITE_EDGE_MARGIN).max(1.0);
-    radius - (pos - center).length()
+    let margin = site_margin(extent);
+    (pos.x - margin)
+        .min(extent.x - margin - pos.x)
+        .min(pos.y - margin)
+        .min(extent.y - margin - pos.y)
+        .max(0.0)
 }
 
 fn river_reaches_mouth(pos: Vec2, extent: Vec2, lakes: &[LakeInfo], sites: &[Site]) -> bool {
@@ -652,13 +703,11 @@ fn river_reaches_mouth(pos: Vec2, extent: Vec2, lakes: &[LakeInfo], sites: &[Sit
 }
 
 fn clamp_to_rim(pos: Vec2, extent: Vec2) -> Vec2 {
-    let center = extent * 0.5;
-    let radius = (world_radius_from_extent(extent) - SITE_EDGE_MARGIN).max(1.0);
-    let offset = pos - center;
-    if offset.length_squared() <= f32::EPSILON {
-        return center + Vec2::X * radius;
-    }
-    center + offset.normalize() * radius
+    let margin = site_margin(extent);
+    Vec2::new(
+        pos.x.clamp(margin, (extent.x - margin).max(margin)),
+        pos.y.clamp(margin, (extent.y - margin).max(margin)),
+    )
 }
 
 fn mouth_dir(

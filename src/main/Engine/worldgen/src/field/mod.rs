@@ -42,16 +42,27 @@ pub struct LandGrade {
     amplitude: f32,
     width: f32,
     length: f32,
+    /// Esquina mínima del mundo visible dentro del área generada.
+    offset: Vec2,
 }
 
 impl LandGrade {
-    /// Deriva eje, sentido y amplitud del seed. Visible desde el aire, no un
-    /// acantilado: ~4–7° de lado a lado, siempre hacia arriba desde el borde bajo
-    /// para no aplastar esa mitad contra el piso del volumen.
+    /// Deriva eje, sentido y amplitud del seed. Pendiente suave (~3° de lado a
+    /// lado), nunca un acantilado.
     #[must_use]
     pub fn from_config(config: &WorldGenConfig) -> Self {
         let bits = mix_u32(config.seed ^ 0x51ed_5106);
         let radius = world_radius(&config.bounds).max(32.0);
+        let width = if config.bounds.visible_width > 0.0 {
+            config.bounds.visible_width
+        } else {
+            config.bounds.width
+        };
+        let length = if config.bounds.visible_length > 0.0 {
+            config.bounds.visible_length
+        } else {
+            config.bounds.length
+        };
         Self {
             axis: if bits & 1 == 0 {
                 LandAxis::X
@@ -60,17 +71,21 @@ impl LandGrade {
             },
             high_positive: (bits >> 1) & 1 == 1,
             amplitude: land_grade_amplitude(radius),
-            width: config.bounds.width,
-            length: config.bounds.length,
+            width,
+            length,
+            offset: Vec2::new(
+                config.bounds.visible_offset_x,
+                config.bounds.visible_offset_z,
+            ),
         }
     }
 
-    /// `0` en el borde bajo, `1` en el borde alto.
+    /// `0` en el borde bajo, `1` en el borde alto (relativo al mundo visible).
     #[must_use]
     pub fn along(self, pos: Vec2) -> f32 {
         let (value, span) = match self.axis {
-            LandAxis::X => (pos.x, self.width),
-            LandAxis::Z => (pos.y, self.length),
+            LandAxis::X => (pos.x - self.offset.x, self.width),
+            LandAxis::Z => (pos.y - self.offset.y, self.length),
         };
         let t = if span > 1.0 {
             (value / span).clamp(0.0, 1.0)
@@ -141,7 +156,7 @@ impl LandGrade {
     }
 
     fn center(self) -> Vec2 {
-        Vec2::new(self.width, self.length) * 0.5
+        self.offset + Vec2::new(self.width, self.length) * 0.5
     }
 
     fn probe_reach(self) -> f32 {
@@ -155,8 +170,8 @@ impl LandGrade {
             return pos;
         }
         match self.axis {
-            LandAxis::X => pos.x = self.width - pos.x,
-            LandAxis::Z => pos.y = self.length - pos.y,
+            LandAxis::X => pos.x = self.offset.x * 2.0 + self.width - pos.x,
+            LandAxis::Z => pos.y = self.offset.y * 2.0 + self.length - pos.y,
         }
         pos
     }

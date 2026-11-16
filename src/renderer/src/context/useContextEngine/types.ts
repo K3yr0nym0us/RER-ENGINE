@@ -198,8 +198,11 @@ export interface WorldConfig {
 	worldWidth: number
 	worldHeight: number
 	worldDepth: number
-	/** 3D: radio de la esfera de límites del mundo. */
+	/** 3D: radio equivalente (mayor semieje) del mundo rectangular. */
 	worldRadius: number
+	/** Centro XZ de la huella (mundo que crece por una cara sin recentrarse). */
+	worldCenterX: number
+	worldCenterZ: number
 	gridVisible: boolean
 	gridCellSize: number
 	gravity: number
@@ -232,6 +235,8 @@ export const DEFAULT_WORLD_CONFIG: WorldConfig = {
 	worldHeight: 50,
 	worldDepth: 100,
 	worldRadius: 50,
+	worldCenterX: 0,
+	worldCenterZ: 0,
 	gridVisible: true,
 	gridCellSize: 1,
 	gravity: DEFAULT_GRAVITY_MAGNITUDE,
@@ -1199,6 +1204,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 							p.world.worldHeight,
 							p.world.worldDepth ?? prevState.worldConfig.worldDepth,
 						) * 0.5,
+					worldCenterX: p.world.worldCenterX ?? 0,
+					worldCenterZ: p.world.worldCenterZ ?? 0,
 					gridVisible: p.world.gridVisible,
 					gridCellSize: p.world.gridCellSize,
 					gravity: p.world.gravity ?? DEFAULT_GRAVITY_MAGNITUDE,
@@ -1254,6 +1261,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 							p.world.worldHeight,
 							p.world.worldDepth ?? prevState.worldConfig.worldDepth,
 						) * 0.5,
+					worldCenterX: p.world.worldCenterX ?? 0,
+					worldCenterZ: p.world.worldCenterZ ?? 0,
 					gridVisible: p.world.gridVisible,
 					gridCellSize: p.world.gridCellSize,
 					gravity: p.world.gravity ?? DEFAULT_GRAVITY_MAGNITUDE,

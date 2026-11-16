@@ -8,8 +8,28 @@ impl State {
                 height,
                 depth,
             }) => {
+                let old_bounds = self.world_bounds_3d;
                 self.set_world_bounds_3d_size(width, height, depth);
                 self.clamp_play_character_camera_to_bounds();
+                self.worldgen_world_bounds_changed(old_bounds);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetWorldBounds {
+                north,
+                south,
+                east,
+                west,
+                height,
+            }) => {
+                if let Some(height) = height {
+                    self.world_bounds_3d.height = height.clamp(
+                        crate::engine3d::MIN_WORLD_HEIGHT_3D,
+                        crate::engine3d::MAX_WORLD_HEIGHT_3D,
+                    );
+                }
+                let old_bounds = self.world_bounds_3d;
+                self.set_world_bounds_3d_faces(north, south, east, west);
+                self.clamp_play_character_camera_to_bounds();
+                self.worldgen_world_bounds_changed(old_bounds);
             }
             EngineCommand::Common(EngineCommandCommon::SetGravity { gravity }) => {
                 let magnitude = gravity.abs();

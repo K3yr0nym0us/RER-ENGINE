@@ -93,10 +93,14 @@ pub(crate) struct ScanCursor {
     pub cx: i32,
     /// Próxima columna Z.
     pub cz: i32,
-    /// Columnas X del mundo (exclusivo).
-    pub chunks_x: i32,
-    /// Columnas Z del mundo (exclusivo).
-    pub chunks_z: i32,
+    /// Primera columna X del barrido (inclusive).
+    pub cx_min: i32,
+    /// Columna X final del barrido (exclusiva).
+    pub cx_max: i32,
+    /// Primera columna Z del barrido (inclusive).
+    pub cz_min: i32,
+    /// Columna Z final del barrido (exclusiva).
+    pub cz_max: i32,
     /// Capa Y máxima inclusive.
     pub max_y: i32,
     /// Tamaño de chunk en metros.
@@ -105,6 +109,59 @@ pub(crate) struct ScanCursor {
     pub camera: [f32; 3],
     /// Chunks con contenido hallados hasta ahora.
     pub collected: Vec<PendingChunk>,
+    /// Columnas XZ explícitas (recorte o crecimiento); `None` = barrido
+    /// rectangular `cx_min..cx_max × cz_min..cz_max`.
+    pub columns: Option<Vec<(i32, i32)>>,
+    /// Siguiente columna de `columns` a barrer.
+    pub column_index: usize,
+}
+
+/// Rectángulo que cubre el mundo en la DLL. Puede ser mayor que los límites
+/// visibles (`WorldBounds3D`) para crecer sin regenerar todo el terreno.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GenerationArea {
+    /// Esquina mínima X en coordenadas de mundo.
+    pub min_x: f32,
+    /// Esquina mínima Z en coordenadas de mundo.
+    pub min_z: f32,
+    /// Ancho generado (m).
+    pub width: f32,
+    /// Largo generado (m).
+    pub depth: f32,
+}
+
+impl GenerationArea {
+    pub(crate) fn max_x(&self) -> f32 {
+        self.min_x + self.width
+    }
+
+    pub(crate) fn max_z(&self) -> f32 {
+        self.min_z + self.depth
+    }
+
+    /// `true` si los límites visibles caben dentro del área generada.
+    pub(crate) fn contains(&self, bounds: &crate::engine3d::config_3d::WorldBounds3D) -> bool {
+        const EPS: f32 = 0.01;
+        bounds.min_x() >= self.min_x - EPS
+            && bounds.max_x() <= self.max_x() + EPS
+            && bounds.min_z() >= self.min_z - EPS
+            && bounds.max_z() <= self.max_z() + EPS
+    }
+}
+
+/// Rango inclusivo de columnas de chunk que se solapan con un rectángulo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChunkColumns {
+    pub cx_min: i32,
+    pub cx_max: i32,
+    pub cz_min: i32,
+    pub cz_max: i32,
+}
+
+impl ChunkColumns {
+    pub(crate) fn contains(self, cx: i32, cz: i32) -> bool {
+        cx >= self.cx_min && cx <= self.cx_max && cz >= self.cz_min && cz <= self.cz_max
+    }
 }
 
 /// Estados de alto nivel del plugin visibles por el editor.
@@ -182,9 +239,14 @@ pub(crate) struct WorldgenState {
     pub placements: Vec<WorldgenPlacement>,
     /// Reglas de scatter aplicadas por blueprint (persistencia F8).
     pub scatter_rules: Vec<(String, String)>,
-    /// Traslación de la geometría de la DLL: centra la huella y apoya el suelo
-    /// del terreno en y = 0. Se fija en `worldgen_start`.
+    /// Traslación de la geometría de la DLL: esquina mínima del área generada.
+    /// Se fija en `world_gen_start` y no cambia al mover las caras.
     pub scene_offset: glam::Vec3,
+    /// Rectángulo de la DLL (mundo + margen de crecimiento).
+    pub generation: Option<GenerationArea>,
+    /// Ya se generó terreno al menos una vez (activa el seguimiento automático
+    /// de los límites del mundo).
+    pub generated: bool,
     /// Si es true, al completar la cola se quita el suelo checker.
     pub replace_ground: bool,
 }
@@ -212,6 +274,8 @@ impl Default for WorldgenState {
             placements: Vec::new(),
             scatter_rules: Vec::new(),
             scene_offset: glam::Vec3::ZERO,
+            generation: None,
+            generated: false,
             replace_ground: false,
         }
     }

@@ -956,57 +956,6 @@ pub(crate) fn create_ground_plane(
     upload(gpu, &vertices, &indices, "ground-plane", Some(&rt_indices))
 }
 
-/// Disco en XZ (radio local = `GROUND_PLANE_MESH_EXTENT / 2`); escalar uniforme al radio del mundo.
-pub(crate) fn create_ground_disk(
-    gpu: &crate::engine3d::vulkan::SharedGpu,
-    world_radius: f32,
-    cell_size: f32,
-) -> Mesh {
-    const SEGMENTS: u32 = 96;
-    let local_radius = GROUND_PLANE_MESH_EXTENT * 0.5;
-    let cell = cell_size.max(0.05);
-    let tiles = GROUND_CHECKER_TILES_PER_UV;
-    let diameter = world_radius.max(0.1) * 2.0;
-    let size = GROUND_PLANE_MESH_EXTENT;
-
-    let uv_at = |px: f32, pz: f32| -> [f32; 2] {
-        let u = (px + local_radius) / size * diameter / cell / tiles;
-        let v = (pz + local_radius) / size * diameter / cell / tiles;
-        [u, v]
-    };
-
-    let mut vertices: Vec<Vertex> = Vec::with_capacity((SEGMENTS + 2) as usize);
-    let mut indices: Vec<u32> = Vec::new();
-    let mut rt_indices: Vec<u32> = Vec::new();
-
-    vertices.push(Vertex {
-        position: [0.0, 0.0, 0.0],
-        normal: [0.0, 1.0, 0.0],
-        uv: uv_at(0.0, 0.0),
-    });
-
-    for i in 0..=SEGMENTS {
-        let a = (i as f32 / SEGMENTS as f32) * std::f32::consts::TAU;
-        let px = a.cos() * local_radius;
-        let pz = a.sin() * local_radius;
-        vertices.push(Vertex {
-            position: [px, 0.0, pz],
-            normal: [0.0, 1.0, 0.0],
-            uv: uv_at(px, pz),
-        });
-    }
-
-    for i in 0..SEGMENTS {
-        let i0 = 1 + i;
-        let i1 = 1 + i + 1;
-        indices.extend_from_slice(&[0, i0, i1]);
-        indices.extend_from_slice(&[0, i1, i0]);
-        rt_indices.extend_from_slice(&[0, i0, i1]);
-    }
-
-    upload(gpu, &vertices, &indices, "ground-disk", Some(&rt_indices))
-}
-
 #[cfg(test)]
 mod uniform_normalize_tests {
     use super::*;

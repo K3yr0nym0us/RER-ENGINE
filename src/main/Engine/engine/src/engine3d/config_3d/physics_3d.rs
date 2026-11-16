@@ -513,11 +513,15 @@ impl PhysicsWorld {
         let handles = std::mem::take(&mut self.world_bounds_colliders);
         self.clear_collider_handles(handles);
 
-        let floor_radius = bounds.radius.max(0.5);
+        let center = bounds.center();
 
-        let floor = ColliderBuilder::cylinder(FLOOR_THICKNESS, floor_radius)
-            .translation(Vector::new(0.0, -FLOOR_THICKNESS, 0.0))
-            .build();
+        let floor = ColliderBuilder::cuboid(
+            (bounds.width() * 0.5).max(0.5),
+            FLOOR_THICKNESS,
+            (bounds.depth() * 0.5).max(0.5),
+        )
+        .translation(Vector::new(center.x, -FLOOR_THICKNESS, center.z))
+        .build();
         self.world_bounds_colliders
             .push(self.colliders.insert(floor));
     }

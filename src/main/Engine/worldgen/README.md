@@ -25,16 +25,18 @@ Contrato: **todo es función pura de `(seed, config)`**. Sin estado global, sin
 relojes, sin entropía externa. Chunks vecinos comparten puntos de grid ⇒ las
 costuras coinciden por construcción.
 
-Densidad **positiva = sólido**. El mundo es un disco; `fit_config_to_world`
-escala features al radio.
+Densidad **positiva = sólido**. El mundo es un **rectángulo** (cuadrado por
+defecto); `fit_config_to_world` escala features al área generada.
 
 ## Configuración (modal del editor)
 
 `src/renderer/src/plugins/worldgen/WorldGenModalBody.tsx` arma el JSON.
 
-- **Tamaño** del disco (m) y **voxel size** (m): el voxel es la celda de
-  Marching Cubes. Más pequeño = más detalle y **muchas más columnas** (el
-  chunk sigue siendo 32 celdas).
+- **Tamaño** del mundo visible (m) y **voxel size** (m): el voxel es la celda de
+  Marching Cubes. Más pequeño = más detalle y **muchas más columnas** (el chunk
+  sigue siendo 32 celdas). El plugin genera un rectángulo mayor (100 % de margen
+  por lado) para crecer por una cara sin regenerar; el grade, los rasgos y su
+  densidad se escalan al mundo visible (`visibleWidth/visibleLength`).
 - **Biomas activos** con **porcentaje del mundo** (`biomes.shares`). Los
   activos suman 100 % y cada uno tiene un mínimo del 10 % (salvo un solo
   bioma al 100 %).
@@ -45,7 +47,7 @@ escala features al radio.
 - **Lagos / valles / montañas**: huella elíptica con costa irregular.
   Las montañas copian masa + crestas de `primitive-voxels-godot` (esa
   referencia no tiene lagos ni ríos).
-- **Ríos**: nacen en ladera de montaña o en el borde alto del disco y
+- **Ríos**: nacen en ladera de montaña o en el borde alto del mundo y
   bajan (lago o salida del mapa). No se plantan en un punto interior.
 - Semilla, colinas/llanuras/acantilados, cuevas, cascadas, scatter.
 
@@ -55,7 +57,7 @@ Límites de tamaño y biomas: `worldgenLimits.ts` (frontend) y `scale.rs` /
 ## Biomas y splat
 
 Con porcentajes, un campo de **regiones grandes** (`biomes/regions.rs`) se
-reparte por cuantiles entre biomas de suelo. Trozo aislado &lt; 4 % del disco
+reparte por cuantiles entre biomas de suelo. Trozo aislado &lt; 4 % del mundo
 se funde con el vecino; cada bioma conserva su región mayor.
 
 Splat por columna XZ (64×64, lod 0): R=hierba, G=roca, B=arena, A=nieve.
@@ -80,7 +82,17 @@ pesos RGBA). Capa 0 del array = checker del editor; Grass no puede usarla.
    terreno.
 2. Cola de chunks: 2 mallas/frame (`CHUNKS_PER_FRAME`), progreso
    `phase: mesh`.
-3. Recorte al disco del mundo; UVs de splat acotadas a `[0, 1]`.
+3. Recorte rectangular a los límites visibles; UVs de splat acotadas a
+   `[0, 1]`.
+4. **Seguimiento automático**: si el plugin ya generó el mundo y se mueve una
+   cara, el engine reacciona solo:
+   - dentro del margen generado, meshea únicamente las columnas nuevas y
+     re-meshea los chunks que tocan el borde movido;
+   - al encoger, elimina los chunks y el scatter que quedan fuera;
+   - si el mundo supera el área generada, regenera todo con un área nueva.
+
+   Esta ruta vive en `config_3d/worldgen` y solo se activa con la DLL cargada
+   y un mundo ya generado: el motor 3D normal no genera ni recorta terreno.
 
 Instalación local: `%APPDATA%\rer-engine\plugins\world-gen\` con
 `rer_worldgen.dll` y la carpeta `terrain/`. Tras cambiar el crate,

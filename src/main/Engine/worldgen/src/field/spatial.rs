@@ -183,7 +183,9 @@ impl CarveIndex {
                     }
                     let tunnel_factor = (1.0 - factor / radius).powf(0.65);
                     let gate = if *entrance {
-                        smoothstep(-0.2, 2.4, depth_below_surface)
+                        // La boca debe perforar la superficie: el embudo abre
+                        // desde justo por encima del terreno.
+                        smoothstep(-1.0, 2.0, depth_below_surface)
                     } else {
                         smoothstep(2.5, 6.5, depth_below_surface)
                     };

@@ -363,8 +363,11 @@ export interface SavedWorldConfig {
   worldWidth:   number
   worldHeight:  number
   worldDepth?:  number
-  /** 3D: radio de la esfera de límites. */
+  /** 3D: radio equivalente (mayor semieje) del mundo rectangular. */
   worldRadius?: number
+  /** Centro XZ de la huella; permite crecer una cara sin recentrar. */
+  worldCenterX?: number
+  worldCenterZ?: number
   gridVisible:  boolean
   gridCellSize: number
   gravity?:     number

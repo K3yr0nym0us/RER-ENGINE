@@ -218,10 +218,15 @@ impl EditorApp {
                     .and_then(Value::as_str)
                     .map(str::to_string);
             }
-            "editor_scene_switched"
-            | "project_loaded_3d"
-            | "project_loaded_2d"
-            | "project_load_3d_complete" => {
+            "project_loaded_3d" => {
+                if let Some(world) = event.get("world") {
+                    self.world.apply_loaded_world(world);
+                }
+                self.selected_entity = None;
+                self.play_view = None;
+                self.pending_properties = None;
+            }
+            "editor_scene_switched" | "project_loaded_2d" | "project_load_3d_complete" => {
                 self.selected_entity = None;
                 self.play_view = None;
                 self.pending_properties = None;

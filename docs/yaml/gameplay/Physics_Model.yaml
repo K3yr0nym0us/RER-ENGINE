@@ -207,7 +207,7 @@ persistence:
     collider_points: en entidades kind collider / execution_area
   world:
     gravity: number
-    size_fields: "worldWidth / worldHeight / worldDepth (3D)"
+    size_fields: "worldWidth / worldHeight / worldDepth (3D) + worldCenterX / worldCenterZ (mundo rectangular descentrado)"
   blueprint:
     fields: [colision, physics_enabled, physics_type]
 

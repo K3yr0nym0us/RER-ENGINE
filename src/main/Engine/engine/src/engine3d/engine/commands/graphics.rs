@@ -79,8 +79,10 @@ impl State {
                 }
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius { radius }) => {
+                let old_bounds = self.world_bounds_3d;
                 self.set_world_bounds_3d_radius(radius);
                 self.clamp_play_character_camera_to_bounds();
+                self.worldgen_world_bounds_changed(old_bounds);
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetTaa {
                 enabled,

@@ -43,10 +43,12 @@ impl State {
 
         SaveSceneSnapshotPayload {
             world: SaveWorldSnapshot {
-                world_radius: self.world_bounds_3d.radius,
-                world_width: self.world_bounds_3d.diameter(),
-                world_height: self.world_bounds_3d.diameter(),
-                world_depth: self.world_bounds_3d.diameter(),
+                world_radius: self.world_bounds_3d.radius(),
+                world_width: self.world_bounds_3d.width(),
+                world_height: self.world_bounds_3d.height,
+                world_depth: self.world_bounds_3d.depth(),
+                world_center_x: self.world_bounds_3d.center().x,
+                world_center_z: self.world_bounds_3d.center().z,
                 grid_visible: self.grid_config.visible,
                 grid_cell_size: self.grid_config.cell_size,
                 gravity: self.physics.gravity_magnitude(),

@@ -58,7 +58,7 @@ impl InProcessEngine {
         }
     }
 
-    /// Radio de la esfera 3D tras un comando que pueda haberlo cambiado.
+    /// Radio del mundo 3D tras un comando que pueda haberlo cambiado.
     pub(crate) fn world_radius(&self) -> Option<f32> {
         match self {
             Self::Three(app) => app.world_radius(),
@@ -397,15 +397,12 @@ impl EditorWindow {
         if let Some(engine) = self.engine.as_mut() {
             engine.handle_command(command);
         }
-        // Generar mundo redimensiona la esfera; el panel lee este valor.
+        // Generar mundo fija el tamaño del mundo al del plugin; el panel lee
+        // las caras nuevas del motor.
         if command.get("cmd").and_then(Value::as_str) == Some("world_gen_start")
             && let Some(radius) = self.engine.as_ref().and_then(InProcessEngine::world_radius)
         {
-            self.app.world.world_radius = radius;
-            let diameter = radius * 2.0;
-            self.app.world.world_width = diameter;
-            self.app.world.world_height = diameter;
-            self.app.world.world_depth = diameter;
+            self.app.world.set_faces(radius, radius, radius, radius);
         }
     }
 

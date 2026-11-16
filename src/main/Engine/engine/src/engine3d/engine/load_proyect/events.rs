@@ -69,6 +69,8 @@ pub(crate) fn send_project_loaded_3d(
             let d = view.world.worldDepth.unwrap_or(50.0);
             Some(view.world.worldWidth.min(view.world.worldHeight).min(d) * 0.5)
         }),
+        worldCenterX: view.world.worldCenterX,
+        worldCenterZ: view.world.worldCenterZ,
         gridVisible: view.world.gridVisible,
         gridCellSize: view.world.gridCellSize,
         gravity: view.world.gravity,

@@ -35,6 +35,19 @@ pub struct WorldBounds {
     pub length: f32,
     /// Altura máxima del mundo en el eje Y (metros).
     pub height: f32,
+    /// Ancho visible (0 = usar `width`). El área generada puede ser mayor para
+    /// crecer por una cara sin regenerar; el grade y los rasgos se escalan a
+    /// este tamaño.
+    #[serde(default)]
+    pub visible_width: f32,
+    /// Largo visible (0 = usar `length`).
+    #[serde(default)]
+    pub visible_length: f32,
+    /// Esquina mínima del mundo visible dentro del área generada (m).
+    #[serde(default)]
+    pub visible_offset_x: f32,
+    #[serde(default)]
+    pub visible_offset_z: f32,
 }
 
 impl Default for WorldBounds {
@@ -43,6 +56,10 @@ impl Default for WorldBounds {
             width: 256.0,
             length: 256.0,
             height: 72.0,
+            visible_width: 0.0,
+            visible_length: 0.0,
+            visible_offset_x: 0.0,
+            visible_offset_z: 0.0,
         }
     }
 }
@@ -82,6 +99,17 @@ impl WorldBounds {
                 field: "bounds.height".to_string(),
                 reason: format!("debe estar entre {MIN_HEIGHT} y {MAX_HEIGHT} metros"),
             });
+        }
+        for (name, value) in [
+            ("visibleWidth", self.visible_width),
+            ("visibleLength", self.visible_length),
+        ] {
+            if value > 0.0 && (!value.is_finite() || !(1.0..=MAX_DIM).contains(&value)) {
+                return Err(ConfigError::InvalidField {
+                    field: format!("bounds.{name}"),
+                    reason: format!("debe ser 0 (usar el área) o estar entre 1 y {MAX_DIM}"),
+                });
+            }
         }
         Ok(())
     }
@@ -717,6 +745,7 @@ mod tests {
             width: 200.0,
             length: 100.0,
             height: 80.0,
+            ..WorldBounds::default()
         };
         let offset = bounds.scene_offset();
         assert_eq!(offset.x, -100.0);

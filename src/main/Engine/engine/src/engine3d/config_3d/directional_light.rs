@@ -48,7 +48,7 @@ const SUN_ORBIT_INSIDE_FRACTION: f32 = 0.92;
 impl State {
     /// Distancia del icono: dentro de la esfera, cerca del cielo.
     pub(crate) fn sun_orbit_distance(&self) -> f32 {
-        let radius = self.world_bounds_3d.radius;
+        let radius = self.world_bounds_3d.radius();
         let desired = (radius * SUN_ORBIT_RADIUS_FRACTION).max(SUN_DISTANCE);
         desired.min(radius * SUN_ORBIT_INSIDE_FRACTION)
     }
@@ -107,7 +107,7 @@ impl State {
         log::info!(
             "[luz] sol a {:.1} m del centro (radio {:.1}, dentro de la esfera)",
             target,
-            self.world_bounds_3d.radius
+            self.world_bounds_3d.radius()
         );
     }
 
@@ -202,12 +202,12 @@ impl State {
 
     /// Semi-lado de la ortho de la luz (misma fórmula que `build_light_view_proj`).
     pub(crate) fn light_shadow_extent_m(&self) -> f32 {
-        shadow_ortho_extent_m(self.world_bounds_3d.radius)
+        shadow_ortho_extent_m(self.world_bounds_3d.radius())
     }
 
     /// Metros por texel del mapa de sombras. El shader del terreno usa esto de bias.
     pub(crate) fn shadow_world_texel_m(&self) -> f32 {
-        shadow_world_texel_from(self.world_bounds_3d.radius, self.active_shadow_map_size())
+        shadow_world_texel_from(self.world_bounds_3d.radius(), self.active_shadow_map_size())
     }
 
     /// Proyección ortográfica de la luz que cubre los bounds del mundo.

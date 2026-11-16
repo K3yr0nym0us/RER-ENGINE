@@ -93,6 +93,10 @@ pub(crate) struct SavedWorldConfig {
     #[serde(default)]
     pub(crate) worldRadius: Option<f32>,
     #[serde(default)]
+    pub(crate) worldCenterX: f32,
+    #[serde(default)]
+    pub(crate) worldCenterZ: f32,
+    #[serde(default)]
     pub(crate) gridVisible: bool,
     pub(crate) gridCellSize: f32,
     #[serde(default)]

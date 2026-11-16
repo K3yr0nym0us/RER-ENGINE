@@ -22,12 +22,13 @@ use std::time::{Duration, Instant};
 use glam::Vec3;
 use serde::Deserialize;
 
-use crate::engine3d::config_3d::worldgen::abi::{Status, WgMeshBuffers};
+use crate::engine3d::config_3d::WorldBounds3D;
+use crate::engine3d::config_3d::worldgen::abi::{CHUNK_SIZE, Status, WgMeshBuffers};
 use crate::engine3d::config_3d::worldgen::loader::WorldgenLibrary;
 use crate::engine3d::config_3d::worldgen::types::{
-    ChunkKey, PendingChunk, SCAN_BUDGET_MS, SCAN_COLUMNS_PER_FRAME, SPLAT_ATLAS_TILE_PX,
-    SPLAT_ATLAS_TILES, ScanCursor, SplatAtlas, WgWorldHandle, WorldgenChunk, WorldgenPlacement,
-    WorldgenStatus,
+    ChunkColumns, ChunkKey, GenerationArea, PendingChunk, SCAN_BUDGET_MS, SCAN_COLUMNS_PER_FRAME,
+    SPLAT_ATLAS_TILE_PX, SPLAT_ATLAS_TILES, ScanCursor, SplatAtlas, WgWorldHandle, WorldgenChunk,
+    WorldgenPlacement, WorldgenStatus,
 };
 use crate::engine3d::ecs::{MeshComponent, MeshLocalAabb, NonSelectable, SurfacePbr, Transform};
 use crate::engine3d::ipc::{EngineEvent, send_event};
@@ -44,7 +45,11 @@ struct WgConfigLite {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WgBoundsLite {
+    /// El engine sustituye ancho/largo por el área generada; se conservan para
+    /// documentar el contrato JSON y para los tests.
+    #[allow(dead_code)]
     width: f32,
+    #[allow(dead_code)]
     length: f32,
     height: f32,
 }
@@ -75,6 +80,8 @@ impl super::super::engine::State {
         self.worldgen.library = None;
         self.worldgen.pending.clear();
         self.worldgen.scan = None;
+        self.worldgen.generation = None;
+        self.worldgen.generated = false;
         self.worldgen.library_path = Some(path.clone());
         let result = WorldgenLibrary::load(std::path::Path::new(&path));
         match result {
@@ -100,6 +107,10 @@ impl super::super::engine::State {
     /// `world_gen_set_config`: aplica la config (JSON camelCase de `WorldGenConfig`)
     /// creando el handle del mundo en la DLL.
     pub(crate) fn worldgen_set_config(&mut self, config_json: String) {
+        // Nueva configuración: el área generada y el terreno anterior dejan de
+        // ser válidos hasta el próximo `world_gen_start`.
+        self.worldgen.generation = None;
+        self.worldgen.generated = false;
         self.worldgen.config_json = Some(config_json.clone());
         if self.worldgen.library.is_none() {
             // La config se aplicará cuando llegue la ruta del plugin.
@@ -109,60 +120,282 @@ impl super::super::engine::State {
         self.worldgen_apply_config(&config_json);
     }
 
-    /// `world_gen_start`: arranca el barrido de columnas (Y-layer pruning vía
-    /// `wg_chunk_status`). El barrido y el orden de la cola avanzan en
-    /// `worldgen_tick`, no en este comando.
-    pub(crate) fn worldgen_start(&mut self, replace_ground: bool) {
+    /// `world_gen_start`: genera el mundo desde cero con la config actual.
+    ///
+    /// El área que entrega el plugin es mayor que los límites visibles (margen
+    /// de crecimiento); solo se meshean las columnas que solapan el mundo. Al
+    /// mover una cara dentro del área, `worldgen_retrim` añade o recorta solo
+    /// lo afectado.
+    pub(crate) fn worldgen_start(&mut self, replace_ground: bool, resize_world: bool) {
         if self.worldgen.library.is_none() {
             send_event(&EngineEvent::WorldGenError {
                 message: "world_gen_start sin plugin cargado".to_string(),
             });
             return;
         }
-        if self.worldgen.world.is_none() {
+
+        let Some(config_json) = self.worldgen.config_json.clone() else {
             send_event(&EngineEvent::WorldGenError {
                 message: "world_gen_start sin config aplicada".to_string(),
             });
             return;
-        }
-
-        let Some(config) = self
-            .worldgen
-            .config_json
-            .as_deref()
-            .and_then(|json| serde_json::from_str::<WgConfigLite>(json).ok())
-        else {
+        };
+        let Some(config) = serde_json::from_str::<WgConfigLite>(&config_json).ok() else {
             send_event(&EngineEvent::WorldGenError {
                 message: "world_gen_start: config ilegible".to_string(),
             });
             return;
         };
 
-        // El disco del mundo pasa a ser el círculo inscrito en la huella real
-        // (rejilla de chunks, no el ancho nominal). El suelo más bajo queda en y = 0.
+        // Generar desde el modal fija el mundo al tamaño pedido (el plugin es
+        // la fuente del tamaño al crear el mundo). En restauraciones o
+        // crecimientos automáticos se conservan las caras actuales.
+        if resize_world && self.worldgen.world.is_some() {
+            self.set_world_bounds_3d_faces(
+                config.bounds.length * 0.5,
+                config.bounds.length * 0.5,
+                config.bounds.width * 0.5,
+                config.bounds.width * 0.5,
+            );
+            self.clamp_play_character_camera_to_bounds();
+        }
+
+        // El mundo conserva sus caras: el plugin cubre un rectángulo con margen
+        // y el terreno se apoya en y = 0 desde la esquina de ese rectángulo.
+        let area = generation_area(&self.world_bounds_3d);
         self.worldgen.replace_ground = replace_ground;
         self.ensure_terrain_materials();
-        let (extent_x, extent_z) = generated_footprint(&config);
-        self.worldgen.scene_offset = scene_offset(extent_x, extent_z);
-        self.fit_world_to_generator(extent_x, extent_z, &config.bounds);
+        self.worldgen.generation = Some(area);
+        self.worldgen.scene_offset = scene_offset(area.min_x, area.min_z);
 
-        let (chunks_x, chunks_z, max_y) = chunk_grid(&config);
-        let cell = crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE as f32
-            * config.resolution.voxel_size;
+        let config_json = config_with_bounds(&config_json, &area, &self.world_bounds_3d);
+        self.worldgen.config_json = Some(config_json.clone());
+        self.worldgen_apply_config(&config_json);
+        if self.worldgen.world.is_none() {
+            return;
+        }
+        self.worldgen.generated = true;
+
+        let voxel = config.resolution.voxel_size.max(0.001);
+        let cell = CHUNK_SIZE as f32 * voxel;
+        let (chunks_x, chunks_z, max_y) =
+            chunk_grid_size(area.width, area.depth, config.bounds.height, voxel);
+        let Some(columns) =
+            chunk_columns_for_bounds(&self.world_bounds_3d, &area, cell, chunks_x, chunks_z)
+        else {
+            // Mundo sin superficie visible: no hay chunks que generar.
+            self.worldgen.pending.clear();
+            self.worldgen.total_chunks = 0;
+            self.worldgen.completed_chunks = 0;
+            self.worldgen_set_status(WorldgenStatus::Complete);
+            send_event(&EngineEvent::WorldGenStatus {
+                state: self.worldgen.status.as_str().to_string(),
+            });
+            send_event(&EngineEvent::WorldGenCompleted { chunks: 0 });
+            return;
+        };
         let camera_pos = self.camera_world_position();
 
         self.worldgen.pending.clear();
         self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
         self.worldgen.scan = Some(ScanCursor {
-            cx: 0,
-            cz: 0,
-            chunks_x,
-            chunks_z,
+            cx: columns.cx_min,
+            cz: columns.cz_min,
+            cx_min: columns.cx_min,
+            cx_max: columns.cx_max + 1,
+            cz_min: columns.cz_min,
+            cz_max: columns.cz_max + 1,
             max_y,
             cell,
             camera: camera_pos.to_array(),
             collected: Vec::new(),
+            columns: None,
+            column_index: 0,
+        });
+        self.worldgen_set_status(WorldgenStatus::Generating);
+        send_event(&EngineEvent::WorldGenStatus {
+            state: self.worldgen.status.as_str().to_string(),
+        });
+        let total_columns = (columns.cx_max - columns.cx_min + 1).max(0) as u32
+            * (columns.cz_max - columns.cz_min + 1).max(0) as u32;
+        send_event(&EngineEvent::WorldGenProgress {
+            completed: 0,
+            total: total_columns,
+            phase: Some("scan".into()),
+        });
+    }
+
+    /// Reacciona a un cambio de las caras del mundo cuando el plugin ya generó
+    /// terreno: crece solo el área nueva (dentro del margen generado) o recorta
+    /// la zona que quedó fuera. Sin DLL/mundo generado no hace nada: el motor
+    /// normal nunca usa esta ruta.
+    pub(crate) fn worldgen_world_bounds_changed(&mut self, old: WorldBounds3D) {
+        if !self.worldgen.generated
+            || self.worldgen.library.is_none()
+            || self.worldgen.world.is_none()
+        {
+            return;
+        }
+        let new = self.world_bounds_3d;
+        if same_world_xz(&old, &new) {
+            return;
+        }
+        let Some(area) = self.worldgen.generation else {
+            return;
+        };
+        // Una generación interrumpida (o parada a medias) no tiene garantías de
+        // cubrir el mundo: se reconstruye entera. Mientras genera, también se
+        // reinicia para no dejar huecos interiores en la cola cancelada.
+        if self.worldgen.status != WorldgenStatus::Complete {
+            let replace_ground = self.worldgen.replace_ground;
+            self.worldgen_start(replace_ground, false);
+            return;
+        }
+        if !area.contains(&new) {
+            log::info!(
+                "[worldgen] el mundo creció fuera del área generada ({:.0}×{:.0} m): regenerando",
+                area.width,
+                area.depth
+            );
+            self.worldgen_start(false, false);
+            return;
+        }
+        self.worldgen_retrim(old);
+    }
+
+    /// Ajusta el terreno ya generado a los límites nuevos sin reconstruirlo:
+    /// conserva los chunks interiores, re-meshea los que tocan un borde y
+    /// elimina los que quedaron fuera.
+    fn worldgen_retrim(&mut self, old: WorldBounds3D) {
+        let Some(config) = self
+            .worldgen
+            .config_json
+            .as_deref()
+            .and_then(|json| serde_json::from_str::<WgConfigLite>(json).ok())
+        else {
+            return;
+        };
+        let Some(area) = self.worldgen.generation else {
+            return;
+        };
+
+        let voxel = config.resolution.voxel_size.max(0.001);
+        let cell = CHUNK_SIZE as f32 * voxel;
+        let (chunks_x, chunks_z, max_y) =
+            chunk_grid_size(area.width, area.depth, config.bounds.height, voxel);
+        let new = self.world_bounds_3d;
+        let old_columns = chunk_columns_for_bounds(&old, &area, cell, chunks_x, chunks_z);
+        let Some(new_columns) = chunk_columns_for_bounds(&new, &area, cell, chunks_x, chunks_z)
+        else {
+            for key in self.worldgen.spawned.keys().copied().collect::<Vec<_>>() {
+                self.worldgen_remove_spawned_chunk(key);
+            }
+            self.worldgen.pending.clear();
+            self.worldgen.scan = None;
+            self.worldgen.total_chunks = 0;
+            self.worldgen.completed_chunks = 0;
+            self.worldgen.replace_ground = false;
+            self.worldgen_set_status(WorldgenStatus::Complete);
+            send_event(&EngineEvent::WorldGenStatus {
+                state: self.worldgen.status.as_str().to_string(),
+            });
+            send_event(&EngineEvent::WorldGenCompleted { chunks: 0 });
+            return;
+        };
+
+        // 1) Chunks fuera del nuevo rectángulo: se borran con su collider y malla.
+        let outside: Vec<ChunkKey> = self
+            .worldgen
+            .spawned
+            .keys()
+            .filter(|(cx, _, cz)| !new_columns.contains(*cx, *cz))
+            .copied()
+            .collect();
+        for key in outside {
+            self.worldgen_remove_spawned_chunk(key);
+        }
+
+        // 2) Chunks cortados por un borde que se movió: hay que re-meshearlos
+        //    para que el recorte coincida con el rectángulo actual.
+        let mut remesh = std::collections::HashSet::new();
+        for key in self.worldgen.spawned.keys().copied() {
+            if chunk_touches_changed_bounds(key, &old, &new, &area, cell) {
+                remesh.insert(key);
+            }
+        }
+
+        // 3) Columnas nuevas (zona añadida) y columnas del borde movido, donde
+        //    un chunk pudo quedar vacío al recortarse y ahora vuelve a ser
+        //    visible (o al revés).
+        let mut columns = std::collections::HashSet::new();
+        for cz in new_columns.cz_min..=new_columns.cz_max {
+            for cx in new_columns.cx_min..=new_columns.cx_max {
+                let newly_exposed = old_columns.is_none_or(|old| !old.contains(cx, cz));
+                let boundary = column_touches_changed_bounds(cx, cz, &old, &new, &area, cell);
+                if newly_exposed || boundary {
+                    columns.insert((cx, cz));
+                }
+            }
+        }
+
+        // 4) Scatter: las instancias que quedaron fuera del mundo desaparecen.
+        self.worldgen_drop_placements_outside(&new);
+
+        let cell_camera = self.camera_world_position();
+        let mut collected: Vec<PendingChunk> = remesh
+            .into_iter()
+            .map(|key| PendingChunk { key, lod: 0 })
+            .collect();
+        let mut columns: Vec<(i32, i32)> = columns.into_iter().collect();
+        columns.sort_unstable();
+
+        self.worldgen.pending.clear();
+        self.worldgen.replace_ground = false;
+        self.worldgen.total_chunks = 0;
+        self.worldgen.completed_chunks = 0;
+
+        if columns.is_empty() {
+            if collected.is_empty() {
+                self.worldgen_set_status(WorldgenStatus::Complete);
+                send_event(&EngineEvent::WorldGenStatus {
+                    state: self.worldgen.status.as_str().to_string(),
+                });
+                send_event(&EngineEvent::WorldGenCompleted { chunks: 0 });
+                return;
+            }
+            dedupe_pending(&mut collected);
+            let origin = self.worldgen.scene_offset;
+            finalize_pending(&mut collected, cell, cell_camera, origin);
+            self.worldgen.total_chunks = collected.len() as u32;
+            self.worldgen.pending = collected;
+            self.worldgen.scan = None;
+            self.worldgen_set_status(WorldgenStatus::Generating);
+            send_event(&EngineEvent::WorldGenStatus {
+                state: self.worldgen.status.as_str().to_string(),
+            });
+            send_event(&EngineEvent::WorldGenProgress {
+                completed: 0,
+                total: self.worldgen.total_chunks,
+                phase: Some("mesh".into()),
+            });
+            return;
+        }
+
+        let total_columns = columns.len() as u32;
+        self.worldgen.scan = Some(ScanCursor {
+            cx: 0,
+            cz: 0,
+            cx_min: 0,
+            cx_max: 0,
+            cz_min: 0,
+            cz_max: 0,
+            max_y,
+            cell,
+            camera: cell_camera.to_array(),
+            collected,
+            columns: Some(columns),
+            column_index: 0,
         });
         self.worldgen_set_status(WorldgenStatus::Generating);
         send_event(&EngineEvent::WorldGenStatus {
@@ -170,7 +403,7 @@ impl super::super::engine::State {
         });
         send_event(&EngineEvent::WorldGenProgress {
             completed: 0,
-            total: (chunks_x * chunks_z) as u32,
+            total: total_columns,
             phase: Some("scan".into()),
         });
     }
@@ -202,6 +435,8 @@ impl super::super::engine::State {
         self.worldgen_stop();
         self.worldgen_despawn_scene();
         self.worldgen_release_world();
+        self.worldgen.generation = None;
+        self.worldgen.generated = false;
     }
 
     /// `world_gen_unload`: suelta escena, handle y DLL para poder borrar el
@@ -212,6 +447,8 @@ impl super::super::engine::State {
         self.worldgen_release_world();
         self.worldgen.library = None;
         self.worldgen.library_path = None;
+        self.worldgen.generation = None;
+        self.worldgen.generated = false;
         self.worldgen_set_status(WorldgenStatus::MissingLibrary);
         send_event(&EngineEvent::WorldGenStatus {
             state: self.worldgen.status.as_str().to_string(),
@@ -328,6 +565,11 @@ impl super::super::engine::State {
                 placement.position[1] + origin.y,
                 placement.position[2] + origin.z,
             ];
+            // El plugin genera un área con margen: el scatter solo existe dentro
+            // del mundo visible.
+            if !self.world_bounds_3d.contains_xz(position[0], position[2]) {
+                continue;
+            }
             let entity_id = self.spawn_cached_model_part_at(
                 part.mesh_idx,
                 part.tex_idx,
@@ -357,9 +599,19 @@ impl super::super::engine::State {
                 entity_id,
             });
         }
+        let placed = placements
+            .iter()
+            .filter(|placement| {
+                let origin = self.worldgen.scene_offset;
+                self.world_bounds_3d.contains_xz(
+                    placement.position[0] + origin.x,
+                    placement.position[2] + origin.z,
+                )
+            })
+            .count();
         send_event(&EngineEvent::WorldGenScatterDone {
             blueprint_id,
-            count: placements.len() as u32,
+            count: placed as u32,
         });
     }
 
@@ -474,7 +726,7 @@ impl super::super::engine::State {
         // 4) Generación del terreno: automática si el plugin está cargado.
         // Restaurar no quita el suelo: ese check solo viaja con Generar mundo.
         if self.worldgen.library.is_some() && self.worldgen.world.is_some() {
-            self.worldgen_start(false);
+            self.worldgen_start(false, false);
         }
         send_event(&EngineEvent::WorldGenStatus {
             state: self.worldgen.status.as_str().to_string(),
@@ -497,6 +749,15 @@ impl super::super::engine::State {
             let Some(pending) = self.worldgen.pending.pop() else {
                 let replace_ground = self.worldgen.replace_ground;
                 self.worldgen.replace_ground = false;
+                // Progreso final antes de completar: la modal puede cerrar el
+                // spinner aunque se pierda el evento `world_gen_completed`.
+                if self.worldgen.total_chunks > 0 {
+                    send_event(&EngineEvent::WorldGenProgress {
+                        completed: self.worldgen.completed_chunks,
+                        total: self.worldgen.total_chunks,
+                        phase: Some("mesh".into()),
+                    });
+                }
                 self.worldgen_set_status(WorldgenStatus::Complete);
                 if replace_ground {
                     self.remove_default_ground();
@@ -541,17 +802,37 @@ impl super::super::engine::State {
     fn worldgen_despawn_scene(&mut self) {
         let keys: Vec<ChunkKey> = self.worldgen.spawned.keys().copied().collect();
         for key in keys {
-            if let Some(chunk) = self.worldgen.spawned.remove(&key) {
-                self.physics.remove_entity_body(chunk.entity_id);
-                self.entity_colision.remove(&chunk.entity_id);
-                self.worldgen.entity_splat_tile.remove(&chunk.entity_id);
-                self.worldgen_retire_mesh(chunk.mesh_idx);
-                self.world.despawn(chunk.entity_id);
-            }
+            self.worldgen_remove_spawned_chunk(key);
         }
         let placements = std::mem::take(&mut self.worldgen.placements);
         for placement in placements {
             if placement.entity_id != 0 {
+                self.world.despawn(placement.entity_id);
+            }
+        }
+    }
+
+    /// Quita un chunk de la escena: collider, malla y entidad, sin tocar el
+    /// resto de índices de `self.meshes`.
+    fn worldgen_remove_spawned_chunk(&mut self, key: ChunkKey) {
+        let Some(chunk) = self.worldgen.spawned.remove(&key) else {
+            return;
+        };
+        self.physics.remove_entity_body(chunk.entity_id);
+        self.entity_colision.remove(&chunk.entity_id);
+        self.worldgen.entity_splat_tile.remove(&chunk.entity_id);
+        self.worldgen_retire_mesh(chunk.mesh_idx);
+        self.world.despawn(chunk.entity_id);
+    }
+
+    /// Despacha las instancias de scatter fuera del mundo visible (p. ej. tras
+    /// encoger una cara) y deja solo las que siguen dentro.
+    fn worldgen_drop_placements_outside(&mut self, bounds: &WorldBounds3D) {
+        let placements = std::mem::take(&mut self.worldgen.placements);
+        for placement in placements {
+            if bounds.contains_xz(placement.position[0], placement.position[2]) {
+                self.worldgen.placements.push(placement);
+            } else if placement.entity_id != 0 {
                 self.world.despawn(placement.entity_id);
             }
         }
@@ -652,15 +933,7 @@ impl super::super::engine::State {
             let started = Instant::now();
             let budget = Duration::from_millis(SCAN_BUDGET_MS);
             let mut scanned = 0usize;
-            loop {
-                if scan.cz >= scan.chunks_z || scanned >= SCAN_COLUMNS_PER_FRAME {
-                    break;
-                }
-                if scanned > 0 && started.elapsed() >= budget {
-                    break;
-                }
-                let cx = scan.cx;
-                let cz = scan.cz;
+            let scan_column = |scan: &mut ScanCursor, cx: i32, cz: i32| {
                 for cy in 0..=scan.max_y {
                     // # Seguridad: handle válido de esta DLL, hilo del engine.
                     let status = unsafe { (library.chunk_status)(handle.0, cx, cy, cz) };
@@ -670,18 +943,51 @@ impl super::super::engine::State {
                             lod: 0,
                         });
                     } else if status < 0 {
-                        failed = Some(format!("wg_chunk_status({cx}, {cy}, {cz}) inválido"));
-                        break;
+                        return Some(format!("wg_chunk_status({cx}, {cy}, {cz}) inválido"));
                     }
                 }
-                if failed.is_some() {
-                    break;
+                None
+            };
+
+            if scan.columns.is_some() {
+                while let Some(&(cx, cz)) = scan
+                    .columns
+                    .as_ref()
+                    .and_then(|columns| columns.get(scan.column_index))
+                {
+                    if scanned >= SCAN_COLUMNS_PER_FRAME {
+                        break;
+                    }
+                    if scanned > 0 && started.elapsed() >= budget {
+                        break;
+                    }
+                    if let Some(message) = scan_column(&mut scan, cx, cz) {
+                        failed = Some(message);
+                        break;
+                    }
+                    scanned += 1;
+                    scan.column_index += 1;
                 }
-                scanned += 1;
-                scan.cx += 1;
-                if scan.cx >= scan.chunks_x {
-                    scan.cx = 0;
-                    scan.cz += 1;
+            } else {
+                loop {
+                    if scan.cz >= scan.cz_max || scanned >= SCAN_COLUMNS_PER_FRAME {
+                        break;
+                    }
+                    if scanned > 0 && started.elapsed() >= budget {
+                        break;
+                    }
+                    let cx = scan.cx;
+                    let cz = scan.cz;
+                    if let Some(message) = scan_column(&mut scan, cx, cz) {
+                        failed = Some(message);
+                        break;
+                    }
+                    scanned += 1;
+                    scan.cx += 1;
+                    if scan.cx >= scan.cx_max {
+                        scan.cx = scan.cx_min;
+                        scan.cz += 1;
+                    }
                 }
             }
         }
@@ -692,11 +998,17 @@ impl super::super::engine::State {
             send_event(&EngineEvent::WorldGenError { message });
             return;
         }
-        if scan.cz >= scan.chunks_z {
+        let done = match scan.columns.as_ref() {
+            Some(columns) => scan.column_index >= columns.len(),
+            None => scan.cz >= scan.cz_max,
+        };
+        if done {
             let cell = scan.cell;
             let camera = Vec3::from_array(scan.camera);
+            let origin = self.worldgen.scene_offset;
             let mut pending = scan.collected;
-            finalize_pending(&mut pending, cell, camera);
+            dedupe_pending(&mut pending);
+            finalize_pending(&mut pending, cell, camera, origin);
             self.worldgen.total_chunks = pending.len() as u32;
             self.worldgen.completed_chunks = 0;
             self.worldgen.pending = pending;
@@ -708,11 +1020,19 @@ impl super::super::engine::State {
             });
             return;
         }
-        let scanned = (scan.cz * scan.chunks_x + scan.cx) as u32;
-        let columns = (scan.chunks_x * scan.chunks_z) as u32;
+        let (completed, total) = match scan.columns.as_ref() {
+            Some(columns) => (scan.column_index as u32, columns.len() as u32),
+            None => {
+                let width = (scan.cx_max - scan.cx_min).max(0);
+                let height = (scan.cz_max - scan.cz_min).max(0);
+                let scanned =
+                    (scan.cz - scan.cz_min).max(0) * width + (scan.cx - scan.cx_min).max(0);
+                (scanned as u32, (width * height).max(1) as u32)
+            }
+        };
         send_event(&EngineEvent::WorldGenProgress {
-            completed: scanned,
-            total: columns.max(1),
+            completed,
+            total: total.max(1),
             phase: Some("scan".into()),
         });
         self.worldgen.scan = Some(scan);
@@ -755,10 +1075,22 @@ impl super::super::engine::State {
     fn worldgen_spawn_chunk(&mut self, key: ChunkKey, lod: u32) -> Result<(), ()> {
         let (cx, cy, cz) = key;
         let pending_lod = lod;
+        // Reemplazo de un chunk re-mesheado (crecimiento/recorte): se libera la
+        // entidad y malla anteriores antes de pedir la nueva geometría.
+        self.worldgen_remove_spawned_chunk(key);
         let Some(library) = self.worldgen.library.as_ref() else {
+            let message = "worldgen_spawn_chunk: plugin descargado a mitad de la cola".to_string();
+            self.worldgen.last_error = Some(message.clone());
+            self.worldgen_set_status(WorldgenStatus::LibraryError);
+            send_event(&EngineEvent::WorldGenError { message });
             return Err(());
         };
         let Some(handle) = self.worldgen.world.as_ref() else {
+            let message =
+                "worldgen_spawn_chunk: mundo del plugin liberado a mitad de la cola".to_string();
+            self.worldgen.last_error = Some(message.clone());
+            self.worldgen_set_status(WorldgenStatus::LibraryError);
+            send_event(&EngineEvent::WorldGenError { message });
             return Err(());
         };
 
@@ -806,11 +1138,14 @@ impl super::super::engine::State {
         // # Seguridad: buffers entregados por wg_mesh_chunk en esta misma DLL.
         unsafe { (library.free_mesh_buffers)(&buffers) };
 
-        let (mut vertices, indices) = clip_chunk_to_world_disk(
+        let (mut vertices, indices) = clip_chunk_to_world_bounds(
             &vertices,
             &indices,
             self.worldgen.scene_offset,
-            self.world_bounds_3d.radius,
+            self.world_bounds_3d.center().x,
+            self.world_bounds_3d.center().z,
+            self.world_bounds_3d.width() * 0.5,
+            self.world_bounds_3d.depth() * 0.5,
         );
         clamp_chunk_uvs(&mut vertices);
 
@@ -1137,14 +1472,15 @@ fn clamp_chunk_uvs(vertices: &mut [crate::engine3d::mesh::Vertex]) {
 
 /// Ordena por capa alta y cercanía, asigna LOD y deja el vector listo para
 /// `pop` (el primero a generar queda al final).
-fn finalize_pending(pending: &mut [PendingChunk], cell: f32, camera: Vec3) {
+fn finalize_pending(pending: &mut [PendingChunk], cell: f32, camera: Vec3, origin: Vec3) {
     pending.sort_by(|a, b| {
         let score = |c: &PendingChunk| -> (i32, f32) {
-            let chunk_center = Vec3::new(
-                (c.key.0 as f32 + 0.5) * cell,
-                (c.key.1 as f32 + 0.5) * cell,
-                (c.key.2 as f32 + 0.5) * cell,
-            );
+            let chunk_center = origin
+                + Vec3::new(
+                    (c.key.0 as f32 + 0.5) * cell,
+                    (c.key.1 as f32 + 0.5) * cell,
+                    (c.key.2 as f32 + 0.5) * cell,
+                );
             (-c.key.1, chunk_center.distance(camera))
         };
         let (layer_a, dist_a) = score(a);
@@ -1152,11 +1488,12 @@ fn finalize_pending(pending: &mut [PendingChunk], cell: f32, camera: Vec3) {
         layer_a.cmp(&layer_b).then(dist_a.total_cmp(&dist_b))
     });
     for chunk in pending.iter_mut() {
-        let chunk_center = Vec3::new(
-            (chunk.key.0 as f32 + 0.5) * cell,
-            (chunk.key.1 as f32 + 0.5) * cell,
-            (chunk.key.2 as f32 + 0.5) * cell,
-        );
+        let chunk_center = origin
+            + Vec3::new(
+                (chunk.key.0 as f32 + 0.5) * cell,
+                (chunk.key.1 as f32 + 0.5) * cell,
+                (chunk.key.2 as f32 + 0.5) * cell,
+            );
         let d = chunk_center.distance(camera);
         chunk.lod = if d < 120.0 {
             0
@@ -1270,6 +1607,7 @@ const TERRAIN_PLAINS_CLEARANCE: f32 = 6.0;
 
 /// Ancho y largo reales de la rejilla. `chunk_grid` redondea hacia arriba, así
 /// que la huella puede pasar del ancho nominal; el centrado usa esta medida.
+#[cfg(test)]
 fn generated_footprint(config: &WgConfigLite) -> (f32, f32) {
     let (chunks_x, chunks_z, _) = chunk_grid(config);
     let cell = crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE as f32
@@ -1277,49 +1615,169 @@ fn generated_footprint(config: &WgConfigLite) -> (f32, f32) {
     (chunks_x as f32 * cell, chunks_z as f32 * cell)
 }
 
-/// Centra la huella generada en el origen y apoya el suelo más bajo en y = 0.
-fn scene_offset(extent_x: f32, extent_z: f32) -> Vec3 {
-    Vec3::new(
-        -extent_x * 0.5,
-        -(TERRAIN_FLOOR + TERRAIN_PLAINS_CLEARANCE),
-        -extent_z * 0.5,
-    )
+/// Esquina mínima del mundo (XZ) y apoyo del terreno en y = 0.
+fn scene_offset(min_x: f32, min_z: f32) -> Vec3 {
+    Vec3::new(min_x, -(TERRAIN_FLOOR + TERRAIN_PLAINS_CLEARANCE), min_z)
 }
 
-/// Radio del disco que el rectángulo cubre entero. Las esquinas que se salen
-/// las recorta el límite del mundo, así no queda anillo vacío ni terreno fuera.
+/// Radio equivalente del generador (solo para escalas de features/tests).
+#[cfg(test)]
 fn generator_world_radius(extent_x: f32, extent_z: f32) -> f32 {
     extent_x.min(extent_z) * 0.5
 }
 
-impl super::super::engine::State {
-    /// Ajusta el radio configurado al disco cubierto por el generador y escala el suelo.
-    fn fit_world_to_generator(&mut self, extent_x: f32, extent_z: f32, bounds: &WgBoundsLite) {
-        let requested = generator_world_radius(extent_x, extent_z);
-        self.set_world_bounds_3d_radius(requested);
-        let applied = self.world_bounds_3d.radius;
-        log::info!(
-            "[worldgen] radio del mundo ajustado a {applied:.1} u (huella {extent_x:.0}×{extent_z:.0}, generador {:.0}×{:.0}×{:.0})",
-            bounds.width,
-            bounds.length,
-            bounds.height
-        );
-        if (applied - requested).abs() > 0.1 {
-            log::warn!(
-                "[worldgen] el radio pedido ({requested:.1}) supera el máximo y se recortó a {applied:.1}"
-            );
-        }
+/// Rejilla de chunks que cubren los límites del mundo.
+#[cfg(test)]
+fn chunk_grid(config: &WgConfigLite) -> (i32, i32, i32) {
+    chunk_grid_size(
+        config.bounds.width,
+        config.bounds.length,
+        config.bounds.height,
+        config.resolution.voxel_size,
+    )
+}
+
+/// Rejilla de chunks de un rectángulo de generación (ancho × largo).
+fn chunk_grid_size(width: f32, length: f32, height: f32, voxel: f32) -> (i32, i32, i32) {
+    let cell = CHUNK_SIZE as f32 * voxel.max(0.001);
+    let chunks_x = (width / cell).ceil().max(1.0) as i32;
+    let chunks_z = (length / cell).ceil().max(1.0) as i32;
+    let max_y = (height / cell).ceil() as i32;
+    (chunks_x, chunks_z, max_y)
+}
+
+/// Margen de crecimiento alrededor del mundo visible, por lado (100 %). El
+/// área generada puede triplicar el mundo; el grade, los rasgos y su densidad
+/// se escalan al tamaño visible (`visibleWidth/visibleLength`).
+const GENERATION_MARGIN_FRACTION: f32 = 1.0;
+/// Límites del rectángulo que acepta `WorldGenConfig` (`validate`).
+const GENERATION_MIN_SPAN: f32 = 64.0;
+const GENERATION_MAX_SPAN: f32 = 2000.0;
+
+/// Rectángulo que entrega el plugin: el mundo visible más un margen, para que
+/// crecer una cara solo genere la franja nueva.
+fn generation_area(bounds: &WorldBounds3D) -> GenerationArea {
+    let width = (bounds.width() * (1.0 + GENERATION_MARGIN_FRACTION * 2.0))
+        .clamp(GENERATION_MIN_SPAN, GENERATION_MAX_SPAN);
+    let depth = (bounds.depth() * (1.0 + GENERATION_MARGIN_FRACTION * 2.0))
+        .clamp(GENERATION_MIN_SPAN, GENERATION_MAX_SPAN);
+    let center = bounds.center();
+    GenerationArea {
+        min_x: center.x - width * 0.5,
+        min_z: center.z - depth * 0.5,
+        width,
+        depth,
     }
 }
 
-/// Rejilla de chunks que cubren los límites del mundo.
-fn chunk_grid(config: &WgConfigLite) -> (i32, i32, i32) {
-    let cell = crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE as f32
-        * config.resolution.voxel_size.max(0.001);
-    let chunks_x = (config.bounds.width / cell).ceil().max(1.0) as i32;
-    let chunks_z = (config.bounds.length / cell).ceil().max(1.0) as i32;
-    let max_y = (config.bounds.height / cell).ceil() as i32;
-    (chunks_x, chunks_z, max_y)
+/// Copia el JSON de config fijando el área generada y el rectángulo visible
+/// (grade/rasgos) dentro de esa área.
+fn config_with_bounds(config_json: &str, area: &GenerationArea, world: &WorldBounds3D) -> String {
+    let mut value: serde_json::Value =
+        serde_json::from_str(config_json).unwrap_or(serde_json::Value::Null);
+    if let Some(bounds) = value.get_mut("bounds") {
+        bounds["width"] = serde_json::json!(area.width);
+        bounds["length"] = serde_json::json!(area.depth);
+        bounds["visibleWidth"] = serde_json::json!(world.width());
+        bounds["visibleLength"] = serde_json::json!(world.depth());
+        bounds["visibleOffsetX"] = serde_json::json!(world.min_x() - area.min_x);
+        bounds["visibleOffsetZ"] = serde_json::json!(world.min_z() - area.min_z);
+    }
+    if value.is_object() {
+        value.to_string()
+    } else {
+        config_json.to_string()
+    }
+}
+
+fn same_world_xz(a: &WorldBounds3D, b: &WorldBounds3D) -> bool {
+    const EPS: f32 = 1.0e-3;
+    (a.min_x() - b.min_x()).abs() < EPS
+        && (a.max_x() - b.max_x()).abs() < EPS
+        && (a.min_z() - b.min_z()).abs() < EPS
+        && (a.max_z() - b.max_z()).abs() < EPS
+}
+
+/// Columnas de chunk (inclusivas) que se solapan con `bounds` dentro del área
+/// generada. `None` si no hay solape.
+fn chunk_columns_for_bounds(
+    bounds: &WorldBounds3D,
+    area: &GenerationArea,
+    cell: f32,
+    chunks_x: i32,
+    chunks_z: i32,
+) -> Option<ChunkColumns> {
+    if cell <= 0.0 || chunks_x <= 0 || chunks_z <= 0 {
+        return None;
+    }
+    let cx_min = ((bounds.min_x() - area.min_x) / cell).floor() as i32;
+    let cx_max = (((bounds.max_x() - area.min_x) / cell).ceil() as i32) - 1;
+    let cz_min = ((bounds.min_z() - area.min_z) / cell).floor() as i32;
+    let cz_max = (((bounds.max_z() - area.min_z) / cell).ceil() as i32) - 1;
+    if cx_max < 0 || cx_min >= chunks_x || cz_max < 0 || cz_min >= chunks_z {
+        return None;
+    }
+    Some(ChunkColumns {
+        cx_min: cx_min.clamp(0, chunks_x - 1),
+        cx_max: cx_max.clamp(0, chunks_x - 1),
+        cz_min: cz_min.clamp(0, chunks_z - 1),
+        cz_max: cz_max.clamp(0, chunks_z - 1),
+    })
+}
+
+/// `true` si un borde que cambió entre `old` y `new` (solo caras movidas)
+/// corta la celda del chunk. Evita re-meshear los tres lados que no se tocaron.
+fn chunk_touches_changed_bounds(
+    key: ChunkKey,
+    old: &WorldBounds3D,
+    new: &WorldBounds3D,
+    area: &GenerationArea,
+    cell: f32,
+) -> bool {
+    let (min_x, max_x, min_z, max_z) = chunk_world_rect(key.0, key.2, area, cell);
+    const EPS: f32 = 1.0e-3;
+    let cuts = |value: f32| value >= min_x && value <= max_x;
+    let cuts_z = |value: f32| value >= min_z && value <= max_z;
+    let mut changed = false;
+    if (old.min_x() - new.min_x()).abs() > EPS {
+        changed |= cuts(old.min_x()) || cuts(new.min_x());
+    }
+    if (old.max_x() - new.max_x()).abs() > EPS {
+        changed |= cuts(old.max_x()) || cuts(new.max_x());
+    }
+    if (old.min_z() - new.min_z()).abs() > EPS {
+        changed |= cuts_z(old.min_z()) || cuts_z(new.min_z());
+    }
+    if (old.max_z() - new.max_z()).abs() > EPS {
+        changed |= cuts_z(old.max_z()) || cuts_z(new.max_z());
+    }
+    changed
+}
+
+/// `true` si un borde movido corta la columna XZ del chunk.
+fn column_touches_changed_bounds(
+    cx: i32,
+    cz: i32,
+    old: &WorldBounds3D,
+    new: &WorldBounds3D,
+    area: &GenerationArea,
+    cell: f32,
+) -> bool {
+    chunk_touches_changed_bounds((cx, 0, cz), old, new, area, cell)
+}
+
+fn chunk_world_rect(cx: i32, cz: i32, area: &GenerationArea, cell: f32) -> (f32, f32, f32, f32) {
+    (
+        area.min_x + cx as f32 * cell,
+        area.min_x + (cx + 1) as f32 * cell,
+        area.min_z + cz as f32 * cell,
+        area.min_z + (cz + 1) as f32 * cell,
+    )
+}
+
+fn dedupe_pending(pending: &mut Vec<PendingChunk>) {
+    let mut seen = std::collections::HashSet::with_capacity(pending.len());
+    pending.retain(|chunk| seen.insert(chunk.key));
 }
 
 // Reexport interno para que init.rs/engine.rs construyan el campo.
@@ -1327,16 +1785,18 @@ pub(crate) use types::WorldgenState as StateWorldgenState;
 
 /// Recorta al disco del ecuador lo que el cuadrado de chunks deja fuera.
 /// Los chunks interiores no se tocan. Solo el anillo paga el corte.
-fn clip_chunk_to_world_disk(
+fn clip_chunk_to_world_bounds(
     vertices: &[crate::engine3d::mesh::Vertex],
     indices: &[u32],
     offset: Vec3,
-    radius: f32,
+    center_x: f32,
+    center_z: f32,
+    half_x: f32,
+    half_z: f32,
 ) -> (Vec<crate::engine3d::mesh::Vertex>, Vec<u32>) {
-    if vertices.is_empty() || indices.len() < 3 || radius <= 0.0 {
+    if vertices.is_empty() || indices.len() < 3 || half_x <= 0.0 || half_z <= 0.0 {
         return (vertices.to_vec(), indices.to_vec());
     }
-    let r2 = radius * radius;
     let world_xz = |position: [f32; 3]| {
         let x = position[0] + offset.x;
         let z = position[2] + offset.z;
@@ -1344,7 +1804,7 @@ fn clip_chunk_to_world_disk(
     };
     let inside = |position: [f32; 3]| {
         let (x, z) = world_xz(position);
-        x * x + z * z <= r2
+        (x - center_x).abs() <= half_x && (z - center_z).abs() <= half_z
     };
     let mut any_out = false;
     let mut min_x = f32::MAX;
@@ -1364,9 +1824,11 @@ fn clip_chunk_to_world_disk(
     if !any_out {
         return (vertices.to_vec(), indices.to_vec());
     }
-    let closest_x = 0.0_f32.clamp(min_x, max_x);
-    let closest_z = 0.0_f32.clamp(min_z, max_z);
-    if closest_x * closest_x + closest_z * closest_z > r2 {
+    if max_x < center_x - half_x
+        || min_x > center_x + half_x
+        || max_z < center_z - half_z
+        || min_z > center_z + half_z
+    {
         return (Vec::new(), Vec::new());
     }
 
@@ -1405,7 +1867,9 @@ fn clip_chunk_to_world_disk(
                 polygon.push(current);
             }
             if mask[index] != mask[(index + 1) % 3] {
-                polygon.push(edge_on_world_disk(current, next, offset, radius));
+                polygon.push(edge_on_world_bounds(
+                    current, next, offset, center_x, center_z, half_x, half_z,
+                ));
             }
         }
         if polygon.len() < 3 {
@@ -1419,13 +1883,18 @@ fn clip_chunk_to_world_disk(
     (out_vertices, out_indices)
 }
 
-fn edge_on_world_disk(
+fn edge_on_world_bounds(
     a: crate::engine3d::mesh::Vertex,
     b: crate::engine3d::mesh::Vertex,
     offset: Vec3,
-    radius: f32,
+    center_x: f32,
+    center_z: f32,
+    half_x: f32,
+    half_z: f32,
 ) -> crate::engine3d::mesh::Vertex {
-    let t = disk_edge_t(a.position, b.position, offset, radius);
+    let t = rect_edge_t(
+        a.position, b.position, offset, center_x, center_z, half_x, half_z,
+    );
     let mix = |from: f32, to: f32| from + (to - from) * t;
     crate::engine3d::mesh::Vertex {
         position: [
@@ -1445,29 +1914,44 @@ fn edge_on_world_disk(
     }
 }
 
-fn disk_edge_t(a: [f32; 3], b: [f32; 3], offset: Vec3, radius: f32) -> f32 {
+/// `t` de salida del rectángulo centrado en `(center_x, center_z)` (mundo).
+fn rect_edge_t(
+    a: [f32; 3],
+    b: [f32; 3],
+    offset: Vec3,
+    center_x: f32,
+    center_z: f32,
+    half_x: f32,
+    half_z: f32,
+) -> f32 {
     let ax = a[0] + offset.x;
     let az = a[2] + offset.z;
     let bx = b[0] + offset.x;
     let bz = b[2] + offset.z;
     let dx = bx - ax;
     let dz = bz - az;
-    let qa = dx * dx + dz * dz;
-    if qa <= 1.0e-12 {
-        return 0.0;
+    let mut t = 1.0_f32;
+    if dx.abs() > 1e-9 {
+        let tx = if dx > 0.0 {
+            (center_x + half_x - ax) / dx
+        } else {
+            (center_x - half_x - ax) / dx
+        };
+        if tx >= 0.0 && tx < t {
+            t = tx;
+        }
     }
-    let qb = 2.0 * (ax * dx + az * dz);
-    let qc = ax * ax + az * az - radius * radius;
-    let root = (qb * qb - 4.0 * qa * qc).max(0.0).sqrt();
-    let t0 = (-qb - root) / (2.0 * qa);
-    let t1 = (-qb + root) / (2.0 * qa);
-    if (0.0..=1.0).contains(&t0) {
-        t0
-    } else if (0.0..=1.0).contains(&t1) {
-        t1
-    } else {
-        t0.clamp(0.0, 1.0)
+    if dz.abs() > 1e-9 {
+        let tz = if dz > 0.0 {
+            (center_z + half_z - az) / dz
+        } else {
+            (center_z - half_z - az) / dz
+        };
+        if tz >= 0.0 && tz < t {
+            t = tz;
+        }
     }
+    t.clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -1478,7 +1962,7 @@ mod tests {
     use super::abi::Status;
     use super::loader::WorldgenLibrary;
     use super::{
-        WgBoundsLite, WgConfigLite, WgResolutionLite, clip_chunk_to_world_disk,
+        WgBoundsLite, WgConfigLite, WgResolutionLite, clip_chunk_to_world_bounds,
         generator_world_radius,
     };
     use crate::engine3d::mesh::Vertex;
@@ -1492,29 +1976,43 @@ mod tests {
     }
 
     #[test]
-    fn disk_clip_drops_the_corner_and_keeps_the_interior() {
+    fn rect_clip_drops_the_outside_and_keeps_the_interior() {
         let inside = [vert(0.0, 0.0), vert(1.0, 0.0), vert(0.0, 1.0)];
-        let (kept, indices) = clip_chunk_to_world_disk(&inside, &[0, 1, 2], glam::Vec3::ZERO, 10.0);
+        let (kept, indices) =
+            clip_chunk_to_world_bounds(&inside, &[0, 1, 2], glam::Vec3::ZERO, 0.0, 0.0, 10.0, 10.0);
         assert_eq!(kept.len(), 3);
         assert_eq!(indices, vec![0, 1, 2]);
 
         let outside = [vert(20.0, 20.0), vert(21.0, 20.0), vert(20.0, 21.0)];
-        let (cut, cut_idx) = clip_chunk_to_world_disk(&outside, &[0, 1, 2], glam::Vec3::ZERO, 10.0);
+        let (cut, cut_idx) = clip_chunk_to_world_bounds(
+            &outside,
+            &[0, 1, 2],
+            glam::Vec3::ZERO,
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+        );
         assert!(cut.is_empty());
         assert!(cut_idx.is_empty());
 
         let straddling = [vert(0.0, 0.0), vert(20.0, 0.0), vert(0.0, 20.0)];
-        let (ring, ring_idx) =
-            clip_chunk_to_world_disk(&straddling, &[0, 1, 2], glam::Vec3::ZERO, 10.0);
+        let (ring, ring_idx) = clip_chunk_to_world_bounds(
+            &straddling,
+            &[0, 1, 2],
+            glam::Vec3::ZERO,
+            0.0,
+            0.0,
+            10.0,
+            10.0,
+        );
         assert!(ring.len() >= 3);
         assert_eq!(ring_idx.len() % 3, 0);
         for vertex in &ring {
             let x = vertex.position[0];
             let z = vertex.position[2];
-            assert!(
-                x * x + z * z <= 10.0 * 10.0 + 0.05,
-                "{x},{z} fuera del disco"
-            );
+            assert!(x.abs() <= 10.0 + 0.05, "{x} fuera del rectángulo");
+            assert!(z.abs() <= 10.0 + 0.05, "{z} fuera del rectángulo");
         }
     }
 
@@ -1546,9 +2044,8 @@ mod tests {
     }
 
     #[test]
-    fn el_terreno_se_apoya_en_el_suelo_y_queda_centrado() {
-        let (extent_x, extent_z) = super::generated_footprint(&config(200.0, 100.0, 1.0));
-        let offset = super::scene_offset(extent_x, extent_z);
+    fn el_terreno_se_apoya_en_el_suelo_desde_la_esquina_minima() {
+        let offset = super::scene_offset(-112.0, -64.0);
         assert_eq!(offset.x, -112.0);
         assert_eq!(offset.z, -64.0);
         assert!((offset.y + 8.0).abs() < 1.0e-4);
@@ -1584,8 +2081,15 @@ mod tests {
             vertex([40.0, 0.0, 0.0], [1.2, 0.0]),
             vertex([0.0, 0.0, 40.0], [0.0, 1.2]),
         ];
-        let (mut clipped, _) =
-            super::clip_chunk_to_world_disk(&vertices, &[0, 1, 2], glam::Vec3::ZERO, 16.0);
+        let (mut clipped, _) = super::clip_chunk_to_world_bounds(
+            &vertices,
+            &[0, 1, 2],
+            glam::Vec3::ZERO,
+            0.0,
+            0.0,
+            16.0,
+            16.0,
+        );
         super::clamp_chunk_uvs(&mut clipped);
         assert!(!clipped.is_empty());
         for vertex in &clipped {
@@ -1611,6 +2115,192 @@ mod tests {
         let (min, max) = super::chunk_vertex_aabb(&vertices);
         assert_eq!(min, glam::Vec3::new(0.0, 10.0, 4.0));
         assert_eq!(max, glam::Vec3::new(32.0, 40.0, 32.0));
+    }
+
+    #[test]
+    fn el_area_de_generacion_cubre_el_mundo_con_margen() {
+        let bounds =
+            crate::engine3d::config_3d::WorldBounds3D::with_faces(80.0, 40.0, 60.0, 20.0, 100.0);
+        let area = super::generation_area(&bounds);
+        assert!(area.contains(&bounds));
+        assert!(area.width > bounds.width());
+        assert!(area.depth > bounds.depth());
+        let center = bounds.center();
+        assert!((area.min_x - (center.x - area.width * 0.5)).abs() < 1.0e-3);
+        assert!((area.min_z - (center.z - area.depth * 0.5)).abs() < 1.0e-3);
+    }
+
+    #[test]
+    fn el_area_respeta_los_limites_del_generador() {
+        let tiny = crate::engine3d::config_3d::WorldBounds3D::with_faces(5.0, 5.0, 5.0, 5.0, 48.0);
+        let area = super::generation_area(&tiny);
+        assert!(area.width >= 64.0 && area.depth >= 64.0);
+        assert!(area.contains(&tiny));
+
+        let huge = crate::engine3d::config_3d::WorldBounds3D::with_faces(
+            1000.0, 1000.0, 1000.0, 1000.0, 200.0,
+        );
+        let area = super::generation_area(&huge);
+        assert!(area.width <= 2000.0 && area.depth <= 2000.0);
+        assert!(area.contains(&huge));
+    }
+
+    #[test]
+    fn las_columnas_del_mundo_se_alinean_con_el_area() {
+        let area = super::GenerationArea {
+            min_x: -100.0,
+            min_z: -100.0,
+            width: 300.0,
+            depth: 300.0,
+        };
+        let bounds = crate::engine3d::config_3d::WorldBounds3D::with_faces(
+            100.0, 100.0, 100.0, 100.0, 100.0,
+        );
+        let columns = super::chunk_columns_for_bounds(&bounds, &area, 32.0, 10, 10).unwrap();
+        // [-100, 100] sobre un área que empieza en -100: 200 m / 32 → 7 chunks.
+        assert_eq!(columns.cx_min, 0);
+        assert_eq!(columns.cx_max, 6);
+        assert_eq!(columns.cz_min, 0);
+        assert_eq!(columns.cz_max, 6);
+        assert!(columns.contains(0, 0));
+        assert!(!columns.contains(7, 0));
+    }
+
+    #[test]
+    fn un_chunk_cortado_por_el_borde_se_reconoce() {
+        let area = super::GenerationArea {
+            min_x: 0.0,
+            min_z: -100.0,
+            width: 640.0,
+            depth: 640.0,
+        };
+        // Cara este de 40 → 80: el borde pasa por los chunks 1 y 2.
+        let old =
+            crate::engine3d::config_3d::WorldBounds3D::with_faces(100.0, 100.0, 40.0, 100.0, 100.0);
+        let new =
+            crate::engine3d::config_3d::WorldBounds3D::with_faces(100.0, 100.0, 80.0, 100.0, 100.0);
+        assert!(super::chunk_touches_changed_bounds(
+            (1, 0, 1),
+            &old,
+            &new,
+            &area,
+            32.0
+        ));
+        assert!(super::chunk_touches_changed_bounds(
+            (2, 0, 1),
+            &old,
+            &new,
+            &area,
+            32.0
+        ));
+        assert!(!super::chunk_touches_changed_bounds(
+            (5, 0, 1),
+            &old,
+            &new,
+            &area,
+            32.0
+        ));
+    }
+
+    #[test]
+    fn la_config_del_area_conserva_el_resto_del_json() {
+        let config = r#"{"seed":7,"bounds":{"width":100.0,"length":80.0,"height":96.0},"resolution":{"voxelSize":2.0}}"#;
+        let area = super::GenerationArea {
+            min_x: -75.0,
+            min_z: -60.0,
+            width: 150.0,
+            depth: 120.0,
+        };
+        let world =
+            crate::engine3d::config_3d::WorldBounds3D::with_faces(40.0, 40.0, 50.0, 50.0, 96.0);
+        let updated = super::config_with_bounds(config, &area, &world);
+        let value: serde_json::Value = serde_json::from_str(&updated).unwrap();
+        assert_eq!(value["bounds"]["width"], 150.0);
+        assert_eq!(value["bounds"]["length"], 120.0);
+        assert_eq!(value["bounds"]["visibleWidth"], 100.0);
+        assert_eq!(value["bounds"]["visibleLength"], 80.0);
+        assert_eq!(value["bounds"]["visibleOffsetX"], 25.0);
+        assert_eq!(value["bounds"]["visibleOffsetZ"], 20.0);
+        assert_eq!(value["bounds"]["height"], 96.0);
+        assert_eq!(value["seed"], 7);
+        assert_eq!(value["resolution"]["voxelSize"], 2.0);
+    }
+
+    #[test]
+    fn el_area_con_margen_encaja_con_la_dll() {
+        // El engine entrega a la DLL un área algo mayor que el mundo visible y
+        // luego pide solo las columnas que lo solapan. Si el DLL recorta o
+        // fuerza el área a otro tamaño, `wg_chunk_status`/`wg_mesh_chunk`
+        // devuelven fuera de rango: este test detecta esa desincronización.
+        let Some(path) = dll_path() else {
+            eprintln!("DLL de rer-worldgen no encontrada: test omitido");
+            return;
+        };
+        let library = WorldgenLibrary::load(&path).expect("la DLL debe cargar");
+        let config = r#"{
+            "seed": 11,
+            "bounds": {
+                "width": 384.0,
+                "length": 288.0,
+                "height": 96.0,
+                "visibleWidth": 128.0,
+                "visibleLength": 96.0,
+                "visibleOffsetX": 128.0,
+                "visibleOffsetZ": 96.0
+            },
+            "resolution": { "voxelSize": 1.0, "lodEnabled": false }
+        }"#;
+        let world =
+            crate::engine3d::config_3d::WorldBounds3D::with_faces(48.0, 48.0, 64.0, 64.0, 96.0);
+        let area = super::GenerationArea {
+            min_x: -192.0,
+            min_z: -144.0,
+            width: 384.0,
+            depth: 288.0,
+        };
+        let (chunks_x, chunks_z, max_y) = super::chunk_grid_size(384.0, 288.0, 96.0, 1.0);
+        let columns =
+            super::chunk_columns_for_bounds(&world, &area, 32.0, chunks_x, chunks_z).unwrap();
+
+        // # Seguridad: contrato ABI; el handle se libera al final.
+        unsafe {
+            let handle = (library.world_create)(config.as_ptr(), config.len());
+            assert!(
+                !handle.is_null(),
+                "wg_world_create falló: {}",
+                library.last_error_text(std::ptr::null())
+            );
+            let mut meshed = 0;
+            'columns: for cz in columns.cz_min..=columns.cz_max {
+                for cx in columns.cx_min..=columns.cx_max {
+                    for cy in 0..=max_y {
+                        let status = (library.chunk_status)(handle, cx, cy, cz);
+                        assert_ne!(
+                            status, -1,
+                            "columna ({cx},{cy},{cz}) fuera del área de la DLL"
+                        );
+                        if status != 1 {
+                            continue;
+                        }
+                        let mut out = super::abi::WgMeshBuffers::empty();
+                        let code = (library.mesh_chunk)(handle, cx, cy, cz, 0, &mut out);
+                        assert_eq!(
+                            code,
+                            Status::Ok as i32,
+                            "wg_mesh_chunk({cx},{cy},{cz}) falló: {}",
+                            library.last_error_text(handle)
+                        );
+                        (library.free_mesh_buffers)(&mut out);
+                        meshed += 1;
+                        if meshed >= 4 {
+                            break 'columns;
+                        }
+                    }
+                }
+            }
+            assert!(meshed > 0, "el área de prueba no produjo geometría");
+            (library.world_free)(handle);
+        }
     }
 
     fn dll_path() -> Option<std::path::PathBuf> {
@@ -1699,7 +2389,7 @@ mod tests {
                 lod: 0,
             },
         ];
-        super::finalize_pending(&mut pending, 32.0, glam::Vec3::ZERO);
+        super::finalize_pending(&mut pending, 32.0, glam::Vec3::ZERO, glam::Vec3::ZERO);
         let first = pending.pop().expect("la cola no está vacía");
         assert_eq!(first.key.1, 3, "la capa más alta sale primero");
         assert_eq!(first.lod, 0);

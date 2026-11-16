@@ -271,6 +271,8 @@ fn build_world(world: Option<&Value>) -> Value {
         ("worldHeight", "world_height"),
         ("worldDepth", "world_depth"),
         ("worldRadius", "world_radius"),
+        ("worldCenterX", "world_center_x"),
+        ("worldCenterZ", "world_center_z"),
         ("gridVisible", "grid_visible"),
         ("gridCellSize", "grid_cell_size"),
         ("gravity", "gravity"),

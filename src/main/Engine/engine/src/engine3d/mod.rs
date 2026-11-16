@@ -29,7 +29,10 @@ pub(crate) use config_3d::model_lod::{
     DEFAULT_MODEL_LOD_ENABLED, DEFAULT_MODEL_LOD1_DISTANCE_M, DEFAULT_MODEL_LOD2_DISTANCE_M,
 };
 #[cfg(feature = "editor")]
-pub(crate) use config_3d::world_bounds::{MAX_WORLD_RADIUS_3D, MIN_WORLD_RADIUS_3D};
+pub(crate) use config_3d::world_bounds::{
+    MAX_WORLD_FACE_3D, MAX_WORLD_RADIUS_3D, MIN_WORLD_FACE_3D, MIN_WORLD_RADIUS_3D,
+};
+pub(crate) use config_3d::world_bounds::{MAX_WORLD_HEIGHT_3D, MIN_WORLD_HEIGHT_3D};
 mod config_base;
 #[path = "config_compat/mod.rs"]
 mod config_compat;

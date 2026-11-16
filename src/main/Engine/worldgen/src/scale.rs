@@ -25,11 +25,40 @@ pub const MAX_WORLDGEN_HEIGHT: f32 = 256.0;
 /// Margen al borde del disco para no plantar sitios en el recorte.
 pub const SITE_EDGE_MARGIN: f32 = 24.0;
 
-/// Radio del disco cubierto por el rectángulo de generación.
+/// Radio del **mundo visible**. Si el área generada es mayor, el grade y los
+/// rasgos se escalan a este radio.
 #[inline]
 #[must_use]
 pub fn world_radius(bounds: &WorldBounds) -> f32 {
+    let width = if bounds.visible_width > 0.0 {
+        bounds.visible_width
+    } else {
+        bounds.width
+    };
+    let length = if bounds.visible_length > 0.0 {
+        bounds.visible_length
+    } else {
+        bounds.length
+    };
+    width.min(length) * 0.5
+}
+
+/// Radio del área generada (puede incluir margen de crecimiento).
+#[inline]
+#[must_use]
+pub fn generation_radius(bounds: &WorldBounds) -> f32 {
     bounds.width.min(bounds.length) * 0.5
+}
+
+/// Factor de densidad de sitios: el plan cubre el área generada (que puede ser
+/// mayor que el mundo visible) y necesita más sitios para conservar la misma
+/// densidad dentro del mundo jugable.
+#[inline]
+#[must_use]
+pub fn generation_density(bounds: &WorldBounds) -> f32 {
+    let visible = world_radius(bounds).max(1.0);
+    let area = generation_radius(bounds).max(visible);
+    (area / visible).powi(2).max(1.0)
 }
 
 /// Altura del volumen a partir del radio (el usuario solo elige el radio).
@@ -79,10 +108,11 @@ pub fn snow_line_meters(config: &WorldGenConfig) -> f32 {
     plains + relief * 0.97
 }
 
-/// Desnivel de la rampa cardinal (metros de lado a lado).
+/// Desnivel de la rampa cardinal (metros de lado a lado). Rebajado a ~3° para
+/// que el mundo no parezca una ladera gigante, incluso en mundos pequeños.
 #[must_use]
 pub fn land_grade_amplitude(radius: f32) -> f32 {
-    (radius.max(32.0) * 0.16).clamp(28.0, 64.0)
+    (radius * 0.12).clamp(4.0, 56.0)
 }
 
 /// Altura de montaña **sobre el terreno local** (la rampa ya ocupó `grade` metros).
@@ -93,18 +123,27 @@ pub fn mountain_relief(config: &WorldGenConfig) -> f32 {
     config.mountains.max_height.max(8.0).min(cap)
 }
 
-/// Ajusta cotas, tamaños y biomas al radio del disco. Idempotente.
+/// Ajusta cotas, tamaños y biomas al rectángulo de generación. Idempotente.
 pub fn fit_config_to_world(config: &mut WorldGenConfig) {
+    // Rectángulo explícito: no se fuerza cuadrado (caras N/S/E/O independientes).
+    config.bounds.width = config.bounds.width.clamp(64.0, 2000.0);
+    config.bounds.length = config.bounds.length.clamp(64.0, 2000.0);
     let radius = world_radius(&config.bounds).clamp(MIN_WORLDGEN_RADIUS, MAX_WORLDGEN_RADIUS);
-    let diameter = radius * 2.0;
-    config.bounds.width = diameter;
-    config.bounds.length = diameter;
+    let area_radius =
+        generation_radius(&config.bounds).clamp(MIN_WORLDGEN_RADIUS, MAX_WORLDGEN_RADIUS);
     config.bounds.height = config
         .bounds
         .height
         .clamp(MIN_WORLDGEN_HEIGHT, MAX_WORLDGEN_HEIGHT);
 
-    fit_feature(&mut config.hills.base, radius, 0.04, 0.09, 0.24);
+    fit_feature(
+        &mut config.hills.base,
+        radius,
+        area_radius,
+        0.04,
+        0.09,
+        0.24,
+    );
     config.hills.max_height = config
         .hills
         .max_height
@@ -123,7 +162,14 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
         .max(need)
         .clamp(MIN_WORLDGEN_HEIGHT, MAX_WORLDGEN_HEIGHT);
 
-    fit_feature(&mut config.mountains.base, radius, 0.16, 0.32, 0.58);
+    fit_feature(
+        &mut config.mountains.base,
+        radius,
+        area_radius,
+        0.16,
+        0.32,
+        0.58,
+    );
     let hill_span = config.hills.base.max_size.max(1.0);
     let want_span = (hill_span * 3.0).min(radius * 0.45);
     config.mountains.base.max_size = config.mountains.base.max_size.max(want_span);
@@ -136,11 +182,39 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
         .max(config.hills.max_height * 3.0);
     config.mountains.max_height = mountain_relief(config);
     config.mountains.sharpness = config.mountains.sharpness.clamp(0.8, 1.4);
-    fit_feature(&mut config.valleys.base, radius, 0.12, 0.30, 0.36);
-    fit_feature(&mut config.plains.base, radius, 0.16, 0.40, 0.32);
-    fit_feature(&mut config.cliffs.base, radius, 0.08, 0.22, 0.30);
+    fit_feature(
+        &mut config.valleys.base,
+        radius,
+        area_radius,
+        0.12,
+        0.30,
+        0.36,
+    );
+    fit_feature(
+        &mut config.plains.base,
+        radius,
+        area_radius,
+        0.16,
+        0.40,
+        0.32,
+    );
+    fit_feature(
+        &mut config.cliffs.base,
+        radius,
+        area_radius,
+        0.08,
+        0.22,
+        0.30,
+    );
     // sep > 2*max_frac: si no, dos lagos grandes se tocan o se solapan.
-    fit_feature(&mut config.lakes.base, radius, 0.07, 0.18, 0.58);
+    fit_feature(
+        &mut config.lakes.base,
+        radius,
+        area_radius,
+        0.07,
+        0.18,
+        0.58,
+    );
 
     let river_span = (radius * 1.5).max(40.0);
     config.rivers.length_max = config.rivers.length_max.min(river_span).max(40.0);
@@ -149,10 +223,10 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
         .length_min
         .min(config.rivers.length_max * 0.45)
         .max(20.0);
-    let river_cap = max_sites_in_disk(radius, radius * 0.55).max(1);
+    let river_cap = max_sites_in_disk(area_radius, radius * 0.55).max(1);
     config.rivers.max_count = config.rivers.max_count.min(river_cap);
 
-    let cave_cap = ((radius / 22.0).floor() as u32).clamp(1, 16);
+    let cave_cap = ((area_radius / 22.0).floor() as u32).clamp(1, 16);
     config.caves.max_count = config.caves.max_count.min(cave_cap);
     config.caves.depth_max = config
         .caves
@@ -160,7 +234,7 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
         .min((config.bounds.height - TERRAIN_FLOOR - 16.0).max(8.0));
     config.caves.depth_min = config.caves.depth_min.min(config.caves.depth_max).max(4.0);
 
-    let fall_cap = max_sites_in_disk(radius, radius * 0.7).max(1);
+    let fall_cap = max_sites_in_disk(area_radius, radius * 0.7).max(1);
     config.waterfalls.max_count = config.waterfalls.max_count.min(fall_cap);
 
     config.biomes = clamp_biomes(config.biomes, radius);
@@ -169,6 +243,7 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
 fn fit_feature(
     feature: &mut FeatureConfig,
     radius: f32,
+    area_radius: f32,
     min_frac: f32,
     max_frac: f32,
     sep_frac: f32,
@@ -179,7 +254,7 @@ fn fit_feature(
     feature.min_size = feature.min_size.clamp(min_size * 0.6, feature.max_size);
     let spacing = (radius * sep_frac).max(feature.min_size);
     feature.min_separation = spacing.min(radius.max(1.0));
-    let cap = max_sites_in_disk(radius, feature.min_separation).max(1);
+    let cap = max_sites_in_disk(area_radius, feature.min_separation).max(1);
     if feature.enabled {
         feature.max_count = feature.max_count.min(cap);
     }
@@ -309,5 +384,47 @@ mod tests {
         let first = config.clone();
         fit_config_to_world(&mut config);
         assert_eq!(config, first);
+    }
+
+    #[test]
+    fn el_margen_escala_los_rasgos_al_mundo_visible() {
+        let mut config = WorldGenConfig::default();
+        config.bounds.width = 512.0;
+        config.bounds.length = 512.0;
+        config.bounds.visible_width = 256.0;
+        config.bounds.visible_length = 256.0;
+        fit_config_to_world(&mut config);
+        // Radio visible 128: una montaña no debe superar 0.32 * 128 ≈ 41 m,
+        // aunque el área generada tenga radio 256.
+        assert!(config.mountains.base.max_size <= 42.0);
+        assert!((world_radius(&config.bounds) - 128.0).abs() < 0.5);
+        assert!((generation_radius(&config.bounds) - 256.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn la_densidad_compensa_el_area_de_crecimiento() {
+        let bounds = crate::config::WorldBounds {
+            width: 512.0,
+            length: 512.0,
+            visible_width: 256.0,
+            visible_length: 256.0,
+            ..crate::config::WorldBounds::default()
+        };
+        let density = generation_density(&bounds);
+        assert!((density - 4.0).abs() < 0.01, "densidad {density}");
+    }
+
+    #[test]
+    fn la_rampa_cardinal_es_suave_en_cualquier_tamano() {
+        for radius in [32.0, 64.0, 128.0, 256.0, 500.0] {
+            let side = radius * 2.0;
+            let slope = land_grade_amplitude(radius) / side;
+            assert!(
+                slope <= 0.07,
+                "rampa {:.1} m en {:.1} m (radio {radius})",
+                land_grade_amplitude(radius),
+                side
+            );
+        }
     }
 }

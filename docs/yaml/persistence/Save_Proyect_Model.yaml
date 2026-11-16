@@ -246,6 +246,25 @@ manifest_layers:
       backgroundPath y entity.model/path referencian ítems de bibliotecas globales.
       sprites[] en escena = precarga/referencias de esa escena, no duplica la biblioteca.
       player del manifest es el jugador play character (cámara `first-person` en gameStyle); entidades category=player en entities[] se ignoran en carga 3D.
+  world_3d:
+    shape: rectángulo (cuadrado por defecto); ya no hay esfera ni suelo en disco
+    fields: |
+      worldWidth, worldHeight, worldDepth, worldCenterX, worldCenterZ y
+      worldRadius (radio equivalente = mayor semieje, compatibilidad).
+    faces: |
+      Norte/Sur (Z) y Este/Oeste (X) son extensiones desde el origen; cambiar una
+      cara mueve solo esa cara (la opuesta queda fija) y desplaza
+      worldCenterX/worldCenterZ.
+    runtime: |
+      `WorldBounds3D { north, south, east, west, height }` reconstruye suelo
+      cuadrado, cielo en caja, wireframe y colliders (`set_world_bounds`).
+    worldgen: |
+      El generador cubre un rectángulo con margen (el mundo visible + 100 % por
+      lado), sin recorte en disco. El grade, los rasgos y su densidad se escalan
+      al tamaño visible (`visibleWidth/visibleLength`), no al área con margen.
+      Al mover una cara, un mundo ya generado se actualiza solo: meshea la
+      franja nueva o elimina la que queda fuera; si supera el área generada, se
+      regenera entera. Solo ocurre con el plugin instalado.
   per_scene_resources:
     status: implementado
     description: |
