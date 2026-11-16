@@ -74,6 +74,26 @@ devtools:
   scope: ventana Electron con foco (main o modal)
   file: src/main/devToolsShortcut.ts
 
+log_console:
+  file: src/main/Engine/engine/src/editor/ui/bottom_bar.rs
+  layers:
+    default: [engine, editor, loading, 3d, 2d, physics, worldgen]
+    off_by_default: [assets, runtime]
+    scene_check: |
+      La franja muestra un solo check de escena: «Escena 3D» en proyectos 3D o
+      «Escena 2D» en proyectos 2D; la capa del otro motor no se ofrece.
+    toggles: |
+      Franja de checks encima de las líneas. Cambia a la vez la consola y el
+      filtro de stderr del motor in-process (capas `RER_LOG_LAYERS`).
+  engine_logger:
+    file: src/main/Engine/core/src/logging.rs
+    env: RER_LOG_LAYERS
+    values: "all | none | lista (3d, 2d, physics, worldgen, assets, runtime...)"
+    note: |
+      Los avisos y errores (`warn`/`error`) se emiten siempre; las capas solo
+      controlan info/debug/trace. Sin editor, el motor autónomo usa el valor
+      por defecto o `RER_LOG_LAYERS`.
+
 sidebar_native:
   sections:
     - Escenas, Camara, Recursos, Crear entidad, Interfaz de usuario, Herramientas, Controles

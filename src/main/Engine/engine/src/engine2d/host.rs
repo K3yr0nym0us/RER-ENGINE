@@ -809,11 +809,9 @@ impl App {
     }
 }
 pub fn run() {
-    // Logs van a stderr; IPC usa stdout.
-    rer_engine_core::logging::init(
-        // `rer_engine::engine2d=info` permite ver logs de colisión/física sin RUST_LOG.
-        "rer_engine::engine2d=info,warn",
-    );
+    // Logs van a stderr; IPC usa stdout. Capas ajustables en el editor o con
+    // RER_LOG_LAYERS en el motor autónomo.
+    rer_engine_core::logging::init(rer_engine_core::logging::LogLayers::default());
 
     // Canal IPC: hilo stdin → event loop vía EventLoopProxy (despierta el loop inmediatamente)
     let event_loop = EventLoop::<EngineCommand>::with_user_event()

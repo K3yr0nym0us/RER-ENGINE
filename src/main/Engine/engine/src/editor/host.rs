@@ -20,9 +20,6 @@ use crate::editor::cli::Cli;
 use crate::editor::user_event::UserEvent;
 use rer_engine_core::vulkan::VulkanOptions;
 
-const DEFAULT_LOG_FILTER: &str =
-    "rer_engine::editor=info,rer_engine_core::vulkan=info,ash=warn,egui_ash_renderer=warn";
-
 /// Motor in-process del editor: 3D o 2D según el tipo de proyecto.
 pub(crate) enum InProcessEngine {
     Three(Box<crate::engine3d::host::App>),
@@ -1065,7 +1062,7 @@ fn spawn_electron_reader(proxy: EventLoopProxy<UserEvent>) {
 }
 
 pub fn run() {
-    rer_engine_core::logging::init(DEFAULT_LOG_FILTER);
+    rer_engine_core::logging::init(rer_engine_core::logging::LogLayers::default());
 
     let cli = Cli::parse_from(std::env::args());
     log::info!("[editor] {}", Cli::usage());

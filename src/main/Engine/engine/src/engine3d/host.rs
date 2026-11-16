@@ -1545,20 +1545,9 @@ impl ApplicationHandler<EngineCommand> for App {
     }
 }
 pub fn run() {
-    // Logs van a stderr; IPC usa stdout.
-    // La capa de validación y el contexto Ash viven ahora en rer_engine_core::vulkan. Sin listar ese
-    // módulo, sus [vulkan-validación] (nivel warn) quedan filtrados por rer_engine=warn: son justo
-    // los mensajes que delatan un layout de imagen mal declarado.
-    const DEFAULT_LOG_FILTER: &str = "rer_engine=warn,rer_engine::engine3d::config_base=info,\
-rer_engine::engine3d::config_3d::skin_diag=info,\
-rer_engine::engine3d::config_3d::model_asset=info,\
-rer_engine::engine3d::config_3d::reflection_settings=info,\
-rer_engine::engine3d::engine::commands=info,\
-rer_engine::engine3d::reflections=info,\
-rer_engine::engine3d::engine::render=info,\
-rer_engine_core::vulkan=info";
-
-    rer_engine_core::logging::init(DEFAULT_LOG_FILTER);
+    // Logs van a stderr; IPC usa stdout. Las capas se pueden ajustar en caliente
+    // desde la consola del editor o con RER_LOG_LAYERS en el motor autónomo.
+    rer_engine_core::logging::init(rer_engine_core::logging::LogLayers::default());
 
     // Canal IPC: hilo stdin → event loop vía EventLoopProxy (despierta el loop inmediatamente)
     let event_loop = EventLoop::<EngineCommand>::with_user_event()

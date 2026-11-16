@@ -42,6 +42,8 @@ pub struct EditorApp {
     pub extract_dir: Option<PathBuf>,
     pub save_error: Option<String>,
     pub log: Vec<LogEntry>,
+    /// Capas de log activas (consola inferior + stderr del motor).
+    pub log_layers: rer_engine_core::logging::LogLayers,
     pub metrics: Option<DebugMetrics>,
     pub world: WorldSettings,
     pub world_sync_pending: bool,
@@ -91,6 +93,7 @@ impl EditorApp {
             auto_save_enabled: false,
             save_error: None,
             log: Vec::new(),
+            log_layers: rer_engine_core::logging::layers(),
             metrics: None,
             world: WorldSettings::default(),
             world_sync_pending: false,
@@ -159,6 +162,37 @@ mod tests {
         app.log_engine_event(&json!({ "event": "autosave_tick" }));
         app.log_engine_event(&json!({ "event": "player_ui_text_boxes_list" }));
         assert!(app.log.is_empty());
+    }
+
+    #[test]
+    fn enabling_runtime_layer_shows_noisy_events() {
+        let mut app = test_app();
+        app.log_layers
+            .set(rer_engine_core::logging::LogLayer::Runtime, true);
+        app.log_engine_event(&json!({ "event": "debug_metrics", "fps": 60 }));
+        assert_eq!(app.log.len(), 1);
+        assert!(app.log[0].text.starts_with("[debug_metrics]"));
+    }
+
+    #[test]
+    fn errors_are_always_logged_even_with_engine_layer_off() {
+        let mut app = test_app();
+        app.log_layers
+            .set(rer_engine_core::logging::LogLayer::Engine, false);
+        app.log_engine_event(&json!({ "event": "error", "message": "boom" }));
+        assert_eq!(app.log.len(), 1);
+        assert!(app.log[0].is_error);
+    }
+
+    #[test]
+    fn asset_events_need_the_assets_layer() {
+        let mut app = test_app();
+        app.log_engine_event(&json!({ "event": "model_loaded", "name": "Tree" }));
+        assert!(app.log.is_empty());
+        app.log_layers
+            .set(rer_engine_core::logging::LogLayer::Assets, true);
+        app.log_engine_event(&json!({ "event": "model_loaded", "name": "Tree" }));
+        assert_eq!(app.log.len(), 1);
     }
 
     #[test]

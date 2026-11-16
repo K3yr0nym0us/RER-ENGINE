@@ -1,5 +1,7 @@
 use super::*;
 
+use rer_engine_core::logging::LogLayer;
+
 /// Entrada de la consola inferior (espejo de `LogEntry` en React).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogEntry {
@@ -7,74 +9,78 @@ pub struct LogEntry {
     pub is_error: bool,
 }
 
-/// Eventos que no merecen una línea de consola (ruido de runtime/carga).
-fn is_quiet_engine_event(name: &str) -> bool {
+/// Errores que deben verse siempre, aunque su capa esté apagada.
+fn is_engine_error_event(name: &str) -> bool {
     matches!(
         name,
-        "debug_metrics"
-            | "autosave_tick"
-            | "save_snapshot_ready"
-            | "preview_playing_changed"
-            | "animation_finished"
-            | "animation_logical_resolved"
-            | "entity_selected"
-            | "entity_deselected"
-            | "entity_hovered"
-            | "entity_unhovered"
-            | "entity_model_replaced"
-            | "physics_changed"
-            | "quick_build_move"
-            | "quick_build_click"
-            | "camera_2d_updated"
-            | "multi_select_changed"
-            | "multi_selection_transformed"
-            | "character_loaded"
-            | "player_ready"
-            | "sprite_loaded"
-            | "background_loaded"
-            | "sound_loaded"
-            | "font_loaded"
-            | "hud_image_loaded"
-            | "background_asset_loaded"
-            | "scenario_loaded"
-            | "scene_imported"
-            | "model_asset_preload_started"
-            | "model_asset_importing"
-            | "model_asset_imported"
-            | "model_asset_loaded"
-            | "model_asset_load_failed"
-            | "model_clips_ready"
-            | "plane_tool_ready"
-            | "tool_cancelled"
-            | "atlas_exhausted"
-            | "play_character_view_changed"
-            | "graphics_texture_tier_changed"
-            | "texture_detail_distance_changed"
-            | "reflection_tier_changed"
-            | "reflection_tier_effective"
-            | "reflection_raytracing_changed"
-            | "reflection_probes_changed"
-            | "reflection_debug_view_changed"
-            | "ssr_debug_mode_changed"
-            | "shadow_tier_changed"
-            | "msaa_tier_changed"
-            | "taa_changed"
-            | "default_scene_name_ready"
-            | "editor_scenes_list"
-            | "entity_bones_list"
-            | "entity_sockets_list"
-            | "entity_sockets_changed"
-            | "socket_bone_picked"
-            | "entity_socket_attached"
-            | "entity_attachment_restored"
-            | "entity_properties_open"
-    ) || name.ends_with("_list")
-        || name.ends_with("_loaded")
-        || name.ends_with("_changed")
-        || name.starts_with("player_ui_")
-        || name.starts_with("project_loaded")
-        || name.starts_with("project_load")
-        || name.starts_with("quick_build_")
+        "error" | "world_gen_error" | "model_asset_load_failed"
+    )
+}
+
+/// Capa a la que pertenece un evento del motor (consola inferior).
+fn engine_event_layer(name: &str) -> LogLayer {
+    // Assets/lists primero: son los eventos más ruidosos y van apagados por defecto.
+    if name.ends_with("_loaded")
+        || name.ends_with("_list")
+        || name.starts_with("model_asset_")
+        || name.starts_with("atlas_")
+    {
+        return LogLayer::Assets;
+    }
+    match name {
+        "ready" | "stopped" | "error" | "pong" => LogLayer::Engine,
+        "load_progress" => LogLayer::Loading,
+        "world_gen_progress" | "world_gen_chunk_ready" => LogLayer::Runtime,
+        "editor_scenes_updated"
+        | "editor_scene_created"
+        | "editor_scene_switched"
+        | "editor_scene_switch_blocked"
+        | "entities_merged"
+        | "entities_attachments_restored"
+        | "collider_created"
+        | "execution_area_created" => LogLayer::Editor,
+        "trigger_entered" | "trigger_exited" | "physics_changed" => LogLayer::Physics,
+        n if n.starts_with("world_gen_") => LogLayer::Worldgen,
+        n if n.starts_with("physics_") || n.starts_with("projectile_") => LogLayer::Physics,
+        // Ajustes de render y eventos internos: ruido de depuración.
+        n if n.ends_with("_changed")
+            || n.ends_with("_effective")
+            || n.ends_with("_updated")
+            || n.starts_with("default_scene_name")
+            || n.starts_with("quick_build_")
+            || n == "editor_scenes_list"
+            || n == "entity_properties_open" =>
+        {
+            LogLayer::Runtime
+        }
+        n if n.starts_with("camera_2d")
+            || n.starts_with("scenario_")
+            || n.starts_with("drawing_")
+            || n.starts_with("sprite_")
+            || n.starts_with("sound_")
+            || n.starts_with("font_")
+            || n.starts_with("background_") =>
+        {
+            LogLayer::World2d
+        }
+        n if n.starts_with("model_")
+            || n.starts_with("mesh_")
+            || n.starts_with("light")
+            || n.starts_with("sun")
+            || n.starts_with("reflection")
+            || n.starts_with("ssr_")
+            || n.starts_with("shadow_")
+            || n.starts_with("msaa_")
+            || n.starts_with("taa_")
+            || n.starts_with("graphics_")
+            || n.starts_with("texture_")
+            || n.starts_with("world_")
+            || n.starts_with("sky_") =>
+        {
+            LogLayer::World3d
+        }
+        _ => LogLayer::Runtime,
+    }
 }
 
 fn scene_list(scenes: &[Value]) -> String {
@@ -117,7 +123,11 @@ impl EditorApp {
         let Some(name) = event.get("event").and_then(Value::as_str) else {
             return;
         };
-        if name.is_empty() || is_quiet_engine_event(name) {
+        if name.is_empty() {
+            return;
+        }
+        // Los errores se muestran siempre; el resto depende de su capa.
+        if !is_engine_error_event(name) && !self.log_layers.contains(engine_event_layer(name)) {
             return;
         }
 
@@ -151,6 +161,37 @@ impl EditorApp {
                     _ => String::new(),
                 };
                 self.push_log(format!("[Carga] {message}{timing}"), false);
+            }
+            "world_gen_error" => {
+                let message = event
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("error del generador");
+                self.push_log(format!("[Worldgen] {message}"), true);
+            }
+            "world_gen_completed" => {
+                let chunks = event.get("chunks").and_then(Value::as_u64).unwrap_or(0);
+                self.push_log(
+                    format!("[Worldgen] generación completa ({chunks} chunks)"),
+                    false,
+                );
+            }
+            "world_gen_status" => {
+                let state = event.get("state").and_then(Value::as_str).unwrap_or("");
+                if !state.is_empty() {
+                    self.push_log(format!("[Worldgen] estado: {state}"), false);
+                }
+            }
+            "world_gen_scatter_done" => {
+                let blueprint = event
+                    .get("blueprint_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?");
+                let count = event.get("count").and_then(Value::as_u64).unwrap_or(0);
+                self.push_log(
+                    format!("[Worldgen] scatter «{blueprint}»: {count} instancia(s)"),
+                    false,
+                );
             }
             "entities_merged" => {
                 let parent = event.get("parent_id").and_then(Value::as_u64).unwrap_or(0);
