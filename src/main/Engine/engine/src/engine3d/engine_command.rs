@@ -66,11 +66,13 @@ pub enum EngineCommand3dOnly {
         path: String,
     },
     GetModelsList,
-    /// «Cargar desde otra escena»: referencia por `model_id` sin reimportar
-    /// (carga GPU desde el `.rerasset` ya empaquetado).
-    WarmSceneModel {
-        model_id: String,
+    /// Convierte un modelo de la escena actual en recurso global: deja de estar
+    /// atado a su escena y se mantiene disponible en todas.
+    GlobalizeModel {
+        path: String,
     },
+    /// «Limpiar escena»: elimina el contenido por defecto conservando jugador y cámaras.
+    ClearSceneContent,
     SpawnEditorBox {
         name: String,
         position: [f32; 3],

@@ -95,6 +95,12 @@ nested_modals:
     reciben `category` en `model_asset_importing/imported/preload_started`, se
     muestran con spinner y su botón queda deshabilitado hasta `model_asset_loaded`.
     El modal se actualiza en vivo por `patchModalElectron` al cambiar engine.models.
+  model_picker_order: |
+    La lista se ordena por nombre (`localeCompare`, sensibilidad base) porque el
+    motor emite `models_list` desde un HashMap. Se excluye el modelo actual de la
+    entidad (`currentModelPath` = `visualModelPath` o `path`): se compara contra
+    `path`, `model_id` y `asset` normalizados. Recursos → Modelos ordena con el
+    mismo criterio, así ambas listas coinciden.
   examples:
     - CreateEntityFromModelModalBody (reemplazar modelo 3D)
     - CreateEntityFromSpriteModalBody (2D)

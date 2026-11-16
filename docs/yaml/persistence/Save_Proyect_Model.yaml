@@ -61,7 +61,9 @@ libraries:
       manifest_v2: |
         version: 2
         resources.models[]: id, name, type, asset (imported/models/{id}.rerasset),
-          importer_version, source (opcional, dev: source/models/…)
+          importer_version, scene_id (opcional, recurso por escena),
+          global: true (opcional, modelo globalizado por el usuario),
+          source (opcional, dev: source/models/…)
         models[]: metadatos editor (path fuente lógico + model_id opcional)
         entities[].model_id: referencia estable al asset importado
       motor_store: |
@@ -266,12 +268,34 @@ manifest_layers:
     promotion: |
       Al guardar, si un recurso por escena pasa a compartirse (>=2 escenas o
       blueprint), el manifest lo promueve a global con ruta imported/models/.
+    globalize: |
+      Botón globo (tooltip «Globalizar modelo») junto a la papelera en
+      Resources → Models, solo para modelos de la escena activa. Abre una modal
+      nativa egui (`globalize_model_modal.rs`) que confirma que el modelo pasará
+      a estar disponible en todas las escenas; al confirmar envía
+      globalize_model { path }: quita el `model_id` de `model_scene_ids`, lo
+      marca en `State.globalized_models` y reemite models_list (sin `scene_id`).
+      El manifest escribe `global: true` en resources.models[] para que el
+      enrutado automático no lo vuelva a atar a una escena al recargar; pack.rs
+      copia el `.rerasset` desde `scene-{id}/assets/` a `imported/models/` cuando
+      hace falta. La categoría no cambia: aparece en los selectores de todas las
+      escenas y deja de liberarse al cambiar de escena.
+    visibility: |
+      Recursos → Modelos y los selectores de entidades (crear/reemplazar) muestran
+      solo modelos globales + los de la escena activa
+      (`AssetEntry::is_visible_in_scene`, `ModelInfo.available_in_scene`). Los de
+      otras escenas solo aparecen en «Cargar desde otra escena», que los globaliza.
+      Al cambiar de escena el motor reemite models_list para refrescar el flag.
     ui: |
-      Botón "+ Cargar desde otra escena" (Resources → Models, 3D) en el sidebar
-      egui → modal React (load_from_scene) que lista los recursos por escena del
-      .save y los carga sin reimportar (comando warm_scene_model { model_id }).
+      Botón "+ Cargar desde otra escena" (Resources → Models, 3D) → modal NATIVA
+      egui (`load_from_scene_modal.rs`) que lista SOLO modelos de OTRAS escenas.
+      Al elegir uno se abre la confirmación de globalización
+      (`globalize_model_modal.rs`, misma lógica que el botón globo): el recurso
+      NO se duplica por escena, pasa a la biblioteca global y queda disponible en
+      los selectores de todas (comando globalize_model { path }, que además carga
+      la GPU desde el `.rerasset`).
       Los imports de sesión se asignan a la escena activa
-      (state.model_scene_ids); aparecen en el modal tras guardar.
+      (state.model_scene_ids); aparecen en la lista tras guardar.
 
 # ---------------------------------------------------------------------------
 # Cargar .save

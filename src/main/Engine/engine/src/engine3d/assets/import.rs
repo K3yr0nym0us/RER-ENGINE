@@ -254,5 +254,9 @@ impl State {
                 .get(model_id)
                 .and_then(|entry| entry.category.clone()),
         });
+        // Refresco autoritativo: el editor necesita el `scene_id` del modelo
+        // recién importado para ofrecer «Globalizar modelo» sin esperar a otro
+        // cambio en la biblioteca.
+        self.send_models_list();
     }
 }

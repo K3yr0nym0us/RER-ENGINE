@@ -267,6 +267,9 @@ impl State {
         if let Some(ref id) = model_id {
             self.imported_model_registry.remove(id);
             self.invalidate_static_model_cache(id);
+            // Sin rastro de alcance por escena ni override global.
+            self.model_scene_ids.remove(id);
+            self.globalized_models.remove(id);
         }
 
         let canonical = model_id
@@ -281,5 +284,32 @@ impl State {
         }
 
         Some(canonical)
+    }
+
+    /// Convierte un modelo de la biblioteca en global: deja de pertenecer a su
+    /// escena (`model_scene_ids`) y se marca para que el manifest no lo enrute a
+    /// `scene-{id}/assets/` aunque solo lo use una escena. Así queda disponible
+    /// y cargado en todas las escenas (categoría intacta).
+    pub(crate) fn globalize_model_asset(&mut self, path: &str) -> bool {
+        let key = self.model_path_key(path);
+        let model_id = if key.starts_with("model_") {
+            Some(key.clone())
+        } else {
+            self.imported_model_registry.model_id_for_path(&key)
+        };
+        let Some(model_id) = model_id else {
+            send_event(&EngineEvent::Error {
+                message: format!("Modelo no registrado en recursos: {path}"),
+            });
+            return false;
+        };
+        self.model_scene_ids.remove(&model_id);
+        self.model_scene_ids.remove(&key);
+        self.globalized_models.insert(model_id.clone());
+        log::info!("[model] modelo globalizado: {model_id}");
+        // El modelo puede venir de otra escena (caché liberada): carga GPU desde
+        // el `.rerasset` y reemite `models_list` sin `scene_id`.
+        self.warm_scene_model(&model_id);
+        true
     }
 }

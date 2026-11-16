@@ -23,7 +23,6 @@ import {
   resolveEngineModelPath,
 } from '../../utils/blueprintModelPath';
 import ModalSetNameUi from './components/sidebar/UIAccordion/components/ModalSetNameUi';
-import ModalLoadFromScene from './components/sidebar/ResourcesAccordion/ModelsAccordion/components/ModalLoadFromScene';
 import { QuickBuildProvider } from '../../context/QuickBuildContext';
 import { PlaneToolProvider } from '../../context/PlaneToolContext';
 import { SceneManagerProvider, useSceneManager } from './hooks/useSceneManager';
@@ -225,7 +224,6 @@ function LegacyWindowListener() {
     openSceneScriptEditor,
     openVisualScriptingModal,
     scenes,
-    activeSceneId,
   } = useSceneManager()
 
   // Mantiene el ciclo de vida de propiedades (parches de selecciÃ³n, cierre).
@@ -295,17 +293,6 @@ function LegacyWindowListener() {
           })
           break
         }
-        case 'load_from_scene':
-          openModal({
-            title: t('Load from another scene'),
-            size: 'sm',
-            body: createElement(ModalLoadFromScene, {
-              scenes,
-              activeSceneId,
-              onConfirm: ({ modelId }) => engine.warmSceneModel(modelId),
-            }),
-          })
-          break
         case 'socket_config':
           openModal({
             title: t('Socket configuration'),
@@ -421,7 +408,6 @@ function LegacyWindowListener() {
     })
   }, [
     activeBluePrint,
-    activeSceneId,
     engine,
     openBindingsModal,
     openCreateSceneModal,

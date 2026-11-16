@@ -77,6 +77,10 @@ pub(crate) struct SavedResourceModel {
     /// global (`imported/models/…`). Ver `docs/yaml/persistence/Save_Proyect_Model.yaml`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) scene_id: Option<u32>,
+    /// `true` si el usuario globalizó el modelo desde Recursos: se guarda sin
+    /// `scene_id` aunque solo lo use una escena (override del enrutado automático).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) global: Option<bool>,
 }
 
 #[allow(non_snake_case)]

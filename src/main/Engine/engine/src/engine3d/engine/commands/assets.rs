@@ -30,6 +30,10 @@ impl State {
                         path: removed.clone(),
                     });
                     log::info!("[model] eliminado de recursos: {}", removed);
+                    // El editor nativo y el renderer reconstruyen sus listas desde el
+                    // motor: el evento de borrado lleva la clave canónica (`model_id`)
+                    // y la fila puede estar listada con la ruta fuente.
+                    self.send_models_list();
                 } else {
                     log::warn!("[model] intento de eliminar modelo inexistente: {}", path);
                 }
@@ -37,8 +41,9 @@ impl State {
             EngineCommand::Only3d(EngineCommand3dOnly::GetModelsList) => {
                 self.send_models_list();
             }
-            EngineCommand::Only3d(EngineCommand3dOnly::WarmSceneModel { model_id }) => {
-                self.warm_scene_model(&model_id);
+            EngineCommand::Only3d(EngineCommand3dOnly::GlobalizeModel { path }) => {
+                // Globalizar también carga GPU on demand y reemite `models_list`.
+                self.globalize_model_asset(&path);
             }
             EngineCommand::Common(EngineCommandCommon::ReloadAsset { path }) => {
                 log::info!("[IPC] ReloadAsset: {}", path);
@@ -274,6 +279,7 @@ impl State {
     /// Lista de biblioteca de modelos para el editor/renderer, con el alcance
     /// por escena de cada recurso (`docs/yaml/persistence/Save_Proyect_Model.yaml`).
     pub(crate) fn send_models_list(&mut self) {
+        let active_scene_id = self.editor_scenes.active_scene_id;
         let models: Vec<crate::engine3d::ipc::ModelInfo> = self
             .model_store
             .iter()
@@ -300,6 +306,7 @@ impl State {
                     asset: entry.rerasset_path.clone(),
                     state,
                     scene_id,
+                    available_in_scene: scene_id.is_none_or(|id| id == active_scene_id),
                 }
             })
             .collect();
@@ -308,9 +315,9 @@ impl State {
         log::info!("[model] lista enviada: {} modelos", count);
     }
 
-    /// «Cargar desde otra escena»: referencia por `model_id` sin reimportar.
-    /// Valida el `.rerasset` registrado y encola la carga GPU desde disco
-    /// (sin re-bake ni reimportación del GLB fuente).
+    /// «Cargar desde otra escena» / «Globalizar»: referencia por `model_id` sin
+    /// reimportar. Valida el `.rerasset` registrado y encola la carga GPU desde
+    /// disco (sin re-bake ni reimportación del GLB fuente).
     pub(crate) fn warm_scene_model(&mut self, model_id: &str) {
         let Some(entry) = self.imported_model_registry.get(model_id).cloned() else {
             let message = format!("Modelo no registrado en recursos: {model_id}");

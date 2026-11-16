@@ -58,6 +58,27 @@ pub struct SidebarLeftState {
     pub(crate) active_ui_screen: Option<String>,
     /// Importación de modelo pendiente: la modal nativa pide categoría (y nombre).
     pub(crate) model_import: Option<ModelImportDraft>,
+    /// Globalización pendiente: la modal nativa confirma antes de enviar el comando.
+    pub(crate) globalize_model: Option<GlobalizeModelDraft>,
+    /// Modal nativa «Cargar desde otra escena» abierta (lista de recursos ajenos).
+    pub(crate) load_from_scene_open: bool,
+    /// Cambio de escena pendiente de confirmar en la modal nativa.
+    pub(crate) pending_scene_switch: Option<SceneSwitchDraft>,
+    /// «Limpiar escena» pendiente de confirmar en la modal nativa.
+    pub(crate) pending_clear_scene: bool,
+}
+
+/// Escena destino del cambio pendiente; la modal nativa confirma antes de cargar.
+pub(crate) struct SceneSwitchDraft {
+    pub id: u64,
+    pub name: String,
+}
+
+/// Modelo que el usuario quiere convertir en global; la modal nativa explica
+/// que pasará a estar disponible en todas las escenas.
+pub(crate) struct GlobalizeModelDraft {
+    pub path: String,
+    pub name: String,
 }
 
 /// Borrador de importación de modelo 3D: la modal nativa (egui) elige la
@@ -130,6 +151,13 @@ enum LeftAction {
     ImportAsset(AssetKind),
     /// Resources → modelos: modal «Cargar desde otra escena» (referencia por path).
     OpenLoadFromScene,
+    /// Resources → modelos: convierte el modelo de la escena activa en global.
+    GlobalizeModel {
+        path: String,
+        name: String,
+    },
+    /// Escenas → «Limpiar escena» (modal nativa de confirmación).
+    ClearScene,
     OpenRemoveAsset {
         kind: AssetKind,
         path: String,
@@ -253,7 +281,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         icons::PACKAGE,
                         crate::editor::i18n::tr(locale, "Recursos", "Resources"),
                         |ui, state| {
-                            resources_body(ui, state, &assets, context, locale, &mut actions)
+                            resources_body(
+                                ui,
+                                state,
+                                &assets,
+                                context,
+                                locale,
+                                scenes.active_scene_id,
+                                &mut actions,
+                            )
                         },
                     );
                     section(
@@ -263,7 +299,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         icons::USERS,
                         crate::editor::i18n::tr(locale, "Crear entidad", "Create entity"),
                         |ui, state| {
-                            entities_body(ui, state, &assets, context, locale, &mut actions)
+                            entities_body(
+                                ui,
+                                state,
+                                &assets,
+                                context,
+                                locale,
+                                scenes.active_scene_id,
+                                &mut actions,
+                            )
                         },
                     );
                     section(
@@ -377,10 +421,11 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             crate::editor::bridge::request_legacy_window("delete_scene", json!({ "scene_id": id }));
         }
         LeftAction::SwitchScene(id) => {
-            let name = app.scenes.name_for(id);
-            app.scenes.begin_switch(id);
-            app.send_engine(json!({ "cmd": "switch_editor_scene", "scene_id": id }));
-            app.push_log(format!("[Escenas] Cargando «{name}»…"), false);
+            // La modal nativa confirma antes de cargar la escena.
+            app.left_sidebar.pending_scene_switch = Some(SceneSwitchDraft {
+                id,
+                name: app.scenes.name_for(id),
+            });
         }
         LeftAction::SetCamera2d { x, y, half_h } => {
             app.world.camera2d = Some(Camera2d { x, y, half_h });
@@ -461,11 +506,19 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
         }
         LeftAction::ImportAsset(kind) => import_asset(app, kind),
         LeftAction::OpenLoadFromScene => {
-            crate::editor::bridge::request_legacy_window("load_from_scene", json!({}));
-            app.push_log(
-                "[Recursos] Abriendo «Cargar desde otra escena»…".to_string(),
-                false,
-            );
+            // Lista nativa de modelos de otras escenas; al elegir uno se abre la
+            // confirmación de globalización (misma lógica que el botón globo).
+            // Refresco para tener el `scene_id` al día antes de listar.
+            app.send_engine(json!({ "cmd": "get_models_list" }));
+            app.left_sidebar.load_from_scene_open = true;
+        }
+        LeftAction::GlobalizeModel { path, name } => {
+            // La modal nativa pide confirmación antes de enviar el comando.
+            app.left_sidebar.globalize_model = Some(GlobalizeModelDraft { path, name });
+        }
+        LeftAction::ClearScene => {
+            // La modal nativa pide confirmación antes de vaciar los DEMO.
+            app.left_sidebar.pending_clear_scene = true;
         }
         LeftAction::OpenRemoveAsset { kind, path, name } => {
             crate::editor::bridge::request_legacy_window(

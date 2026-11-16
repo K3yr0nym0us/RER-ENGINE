@@ -160,11 +160,6 @@ export function createEngineActions({
 		send3dFn({ cmd: 'get_models_list' });
 	};
 
-	/** Precarga en GPU un `.rerasset` por escena sin reimportar (Recursos por escena). */
-	const warmSceneModel = (modelId: string) => {
-		send3dFn({ cmd: 'warm_scene_model', model_id: modelId });
-	};
-
 	const spawnModel = (path: string, kind: EntityMeta['kind'] = 'model', category?: EntityMeta['entityCategory']) => {
 		refs.pendingModelPathRef.current = path;
 		refs.pendingSpawnCategoryRef.current = category ?? null;
@@ -1169,7 +1164,6 @@ export function createEngineActions({
 		replaceEntityModel,
 		removeModelAsset,
 		getModelsList,
-		warmSceneModel,
 		retryEngine,
 		removeScenario,
 		removeCharacter,

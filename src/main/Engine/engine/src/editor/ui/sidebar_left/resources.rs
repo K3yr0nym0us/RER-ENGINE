@@ -6,6 +6,7 @@ pub(super) fn resources_body(
     assets: &AssetLists,
     context: ProjectContext,
     locale: Locale,
+    active_scene_id: u64,
     actions: &mut Vec<LeftAction>,
 ) {
     if context.is_3d() {
@@ -17,6 +18,7 @@ pub(super) fn resources_body(
             crate::editor::i18n::tr(locale, "Modelos", "Models"),
             assets,
             locale,
+            active_scene_id,
             actions,
         );
     } else {
@@ -28,6 +30,7 @@ pub(super) fn resources_body(
             crate::editor::i18n::tr(locale, "Sprites", "Sprites"),
             assets,
             locale,
+            active_scene_id,
             actions,
         );
     }
@@ -40,6 +43,7 @@ pub(super) fn resources_body(
         crate::editor::i18n::tr(locale, "Sonidos", "Sounds"),
         assets,
         locale,
+        active_scene_id,
         actions,
     );
     asset_section(
@@ -50,6 +54,7 @@ pub(super) fn resources_body(
         crate::editor::i18n::tr(locale, "Fuentes", "Fonts"),
         assets,
         locale,
+        active_scene_id,
         actions,
     );
     asset_section(
@@ -60,6 +65,7 @@ pub(super) fn resources_body(
         crate::editor::i18n::tr(locale, "Imágenes", "Images"),
         assets,
         locale,
+        active_scene_id,
         actions,
     );
 
@@ -72,6 +78,7 @@ pub(super) fn resources_body(
             crate::editor::i18n::tr(locale, "Fondos", "Backgrounds"),
             assets,
             locale,
+            active_scene_id,
             actions,
         );
     }
@@ -85,6 +92,7 @@ pub(super) fn asset_section(
     title: &str,
     assets: &AssetLists,
     locale: Locale,
+    active_scene_id: u64,
     actions: &mut Vec<LeftAction>,
 ) {
     sub(ui, state, kind.id(), icon, title, |ui| {
@@ -114,8 +122,8 @@ pub(super) fn asset_section(
                 ),
                 crate::editor::i18n::tr(
                     locale,
-                    "Referenciar un modelo de otra escena sin reimportarlo",
-                    "Reference a model from another scene without re-importing it",
+                    "Convierte un modelo de otra escena en global para usarlo en todas",
+                    "Make a model from another scene global so every scene can use it",
                 ),
                 crate::editor::theme::OUTLINE_SECONDARY,
             )
@@ -123,7 +131,13 @@ pub(super) fn asset_section(
             actions.push(LeftAction::OpenLoadFromScene);
         }
 
-        let list = assets.assets(kind);
+        // Solo modelos globales o de la escena activa: los de otras escenas se
+        // traen desde «Cargar desde otra escena» (los globaliza).
+        let list: Vec<&crate::editor::assets::AssetEntry> = assets
+            .assets(kind)
+            .iter()
+            .filter(|asset| asset.is_visible_in_scene(active_scene_id))
+            .collect();
         if list.is_empty() {
             widgets::tiny(
                 ui,
@@ -134,54 +148,104 @@ pub(super) fn asset_section(
 
         for asset in list {
             let loading = asset.state.as_deref() == Some("importing");
-            ui.horizontal(|ui| {
-                let trailing = if loading { 42.0 } else { 24.0 };
-                let name_width = (ui.available_width() - trailing).max(0.0);
-                ui.add_sized(
-                    [name_width, 16.0],
-                    egui::Label::new(
-                        RichText::new(&asset.name)
-                            .size(12.0)
-                            .color(crate::editor::theme::TEXT),
-                    )
-                    .truncate(),
-                );
-                if loading {
-                    let _ = ui.add(egui::Spinner::new().size(14.0)).on_hover_text(
-                        crate::editor::i18n::tr(
-                            locale,
-                            "Cargando modelo… espera antes de usarlo",
-                            "Loading model… wait before using it",
-                        ),
-                    );
-                    // Botón deshabilitado: el recurso todavía no está listo.
-                    ui.add_enabled_ui(false, |ui| {
-                        let _ = widgets::icon_action(
-                            ui,
-                            icons::TRASH,
-                            18.0,
-                            crate::editor::theme::DANGER,
-                            crate::editor::i18n::tr(
-                                locale,
-                                "Espera a que el modelo termine de cargar",
-                                "Wait until the model finishes loading",
-                            ),
+            // «Globalizar»: modelo de la escena activa que aún está atado a ella.
+            let can_globalize = !loading
+                && kind == AssetKind::Model
+                && asset.model_id.is_some()
+                && asset
+                    .scene_id
+                    .is_some_and(|scene_id| u64::from(scene_id) == active_scene_id);
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(8, 6))
+                .corner_radius(4)
+                .stroke(egui::Stroke::new(1.0, crate::editor::theme::BORDER))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let trailing = if loading {
+                            46.0
+                        } else if can_globalize {
+                            48.0
+                        } else {
+                            30.0
+                        };
+                        let name_width = (ui.available_width() - trailing).max(0.0);
+                        ui.add_sized(
+                            [name_width, 18.0],
+                            egui::Label::new(
+                                RichText::new(&asset.name)
+                                    .size(12.0)
+                                    .color(crate::editor::theme::TEXT),
+                            )
+                            .truncate(),
                         );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 2.0;
+                            if loading {
+                                let _ = ui.add(egui::Spinner::new().size(14.0)).on_hover_text(
+                                    crate::editor::i18n::tr(
+                                        locale,
+                                        "Cargando modelo… espera antes de usarlo",
+                                        "Loading model… wait before using it",
+                                    ),
+                                );
+                                // Botón deshabilitado: el recurso todavía no está listo.
+                                ui.add_enabled_ui(false, |ui| {
+                                    let _ = widgets::icon_action(
+                                        ui,
+                                        icons::TRASH,
+                                        18.0,
+                                        crate::editor::theme::DANGER,
+                                        crate::editor::i18n::tr(
+                                            locale,
+                                            "Espera a que el modelo termine de cargar",
+                                            "Wait until the model finishes loading",
+                                        ),
+                                    );
+                                });
+                            } else {
+                                if widgets::icon_action(
+                                    ui,
+                                    icons::TRASH,
+                                    18.0,
+                                    crate::editor::theme::DANGER,
+                                    crate::editor::i18n::tr(
+                                        locale,
+                                        "Quitar recurso",
+                                        "Remove asset",
+                                    ),
+                                ) {
+                                    actions.push(LeftAction::OpenRemoveAsset {
+                                        kind,
+                                        path: asset.path.clone(),
+                                        name: asset.name.clone(),
+                                    });
+                                }
+                                if can_globalize
+                                    && widgets::icon_action(
+                                        ui,
+                                        icons::GLOBE,
+                                        18.0,
+                                        crate::editor::theme::INFO,
+                                        crate::editor::i18n::tr(
+                                            locale,
+                                            "Globalizar modelo",
+                                            "Globalize model",
+                                        ),
+                                    )
+                                {
+                                    actions.push(LeftAction::GlobalizeModel {
+                                        path: asset
+                                            .model_id
+                                            .clone()
+                                            .unwrap_or_else(|| asset.path.clone()),
+                                        name: asset.name.clone(),
+                                    });
+                                }
+                            }
+                        });
                     });
-                } else if widgets::icon_action(
-                    ui,
-                    icons::TRASH,
-                    18.0,
-                    crate::editor::theme::DANGER,
-                    crate::editor::i18n::tr(locale, "Quitar recurso", "Remove asset"),
-                ) {
-                    actions.push(LeftAction::OpenRemoveAsset {
-                        kind,
-                        path: asset.path.clone(),
-                        name: asset.name.clone(),
-                    });
-                }
-            });
+                });
+            ui.add_space(4.0);
         }
     });
 }

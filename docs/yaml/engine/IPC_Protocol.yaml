@@ -159,6 +159,7 @@ command_categories:
       - set_play_character_spawn
       - set_play_character_view
       - set_entity_colision
+      - clear_scene_content
       - list_entity_textures
       - set_entity_texture_lod
       - set_entity_texture_preview_tier
@@ -173,6 +174,7 @@ command_categories:
       - load_model_asset
       - remove_model_asset
       - get_models_list
+      - globalize_model
       - load_hud_image
   tools:
     - set_active_tool

@@ -284,6 +284,9 @@ pub struct State {
     pub(crate) static_model_cache: crate::engine3d::config_3d::static_model_cache::StaticModelCache,
     /// Recursos por escena: `model_id` → escena dueña. Ausente = biblioteca global.
     pub(crate) model_scene_ids: HashMap<String, u32>,
+    /// Modelos que el usuario globalizó: se guardan sin `scene_id` aunque solo
+    /// los use una escena (override del enrutado automático del manifest).
+    pub(crate) globalized_models: std::collections::HashSet<String>,
     /// Plugin de generación procedural de terreno (`rer_worldgen_plugin.dll`).
     pub(crate) worldgen: crate::engine3d::config_3d::worldgen::StateWorldgenState,
     pub(crate) model_preload_rx: crate::engine3d::config_3d::static_model_cache::ModelPreloadRx,

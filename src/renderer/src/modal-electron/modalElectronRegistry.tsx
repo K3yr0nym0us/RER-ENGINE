@@ -28,7 +28,6 @@ import ModalSetNameBackground from '../pages/EngineView/components/sidebar/Resou
 import ModalSetNameFont from '../pages/EngineView/components/sidebar/ResourcesAccordion/FontsAccordion/components/ModalSetNameFont'
 import ModalSetNameHudImage from '../pages/EngineView/components/sidebar/ResourcesAccordion/ImagesAccordion/components/ModalSetNameHudImage'
 import ModalSetNameModel from '../pages/EngineView/components/sidebar/ResourcesAccordion/ModelsAccordion/components/ModalSetNameModel'
-import ModalLoadFromScene from '../pages/EngineView/components/sidebar/ResourcesAccordion/ModelsAccordion/components/ModalLoadFromScene'
 import ModalSetNameSound from '../pages/EngineView/components/sidebar/ResourcesAccordion/SoundsAccordion/components/ModalSetNameSound'
 import ModalSetNameSprite from '../pages/EngineView/components/sidebar/ResourcesAccordion/SpritesAccordion/components/ModalSetNameSprite'
 import ModalSelectFont from '../pages/EngineView/components/sidebar/UIAccordion/components/ModalSelectFont'
@@ -80,7 +79,6 @@ export const MODAL_ELECTRON_REGISTRY: Record<string, RegistryEntry> = {
 	ModalSetNameHudImage: modalEntry(ModalSetNameHudImage),
 	ModalSetNameSprite: modalEntry(ModalSetNameSprite),
 	ModalSetNameModel: modalEntry(ModalSetNameModel),
-	ModalLoadFromScene: modalEntry(ModalLoadFromScene),
 	ModalAddUiButton: modalEntry(ModalAddUiButton),
 	ModalAddUiElementPlaceholder: modalEntry(ModalAddUiElementPlaceholder),
 	ModalSelectUiElement: modalEntry(ModalSelectUiElement),

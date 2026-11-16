@@ -231,6 +231,14 @@ fn rerasset_candidate(extract_dir: Option<&Path>, id: &str, rel: &str) -> Option
         if candidate.is_file() {
             return Some(candidate);
         }
+        // Modelo globalizado o promocionado: el `.rerasset` sigue en
+        // `scene-{id}/assets/` del `.save` cargado y el manifiesto ya lo enruta a
+        // `imported/models/` (biblioteca global).
+        if rel.starts_with("imported/models/")
+            && let Some(found) = rerasset_in_scene_dirs(extract_dir, id)
+        {
+            return Some(found);
+        }
         // Fallback: saves antiguos guardaban los modelos solo en la biblioteca
         // global (`imported/models/<id>.rerasset`), incluso si el manifiesto
         // nuevo los enruta por escena (`scene-{id}/assets/…`).
@@ -247,6 +255,21 @@ fn rerasset_candidate(extract_dir: Option<&Path>, id: &str, rel: &str) -> Option
         .join("models")
         .join(format!("{id}.rerasset"));
     temp_candidate.is_file().then_some(temp_candidate)
+}
+
+/// Busca `scene-{id}/assets/<id>.rerasset` dentro del `.save` extraído.
+fn rerasset_in_scene_dirs(extract_dir: &Path, id: &str) -> Option<PathBuf> {
+    let mut scenes: Vec<PathBuf> = fs::read_dir(extract_dir)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with("scene-"))
+        .map(|entry| entry.path())
+        .collect();
+    scenes.sort();
+    scenes
+        .into_iter()
+        .map(|dir| dir.join("assets").join(format!("{id}.rerasset")))
+        .find(|candidate| candidate.is_file())
 }
 
 fn write_manifest(manifest: &Value, staging: &Path) -> Result<(), String> {
@@ -378,6 +401,26 @@ mod tests {
         walk_strings(&mut value, &mut |text| seen.push(text.clone()));
         seen.sort();
         assert_eq!(seen, vec!["x", "y"]);
+    }
+
+    #[test]
+    fn rerasset_candidate_finds_globalized_model_in_scene_dir() {
+        // Modelo globalizado: el `.rerasset` vive en `scene-2/assets/` y el
+        // manifiesto ya lo referencia en `imported/models/`.
+        let dir = std::env::temp_dir().join(format!("rer-pack-globalize-{}", std::process::id()));
+        let scene_dir = dir.join("scene-2").join("assets");
+        fs::create_dir_all(&scene_dir).unwrap();
+        let scene_asset = scene_dir.join("model_tree.rerasset");
+        fs::write(&scene_asset, b"rerasset").unwrap();
+
+        let candidate = rerasset_candidate(
+            Some(&dir),
+            "model_tree",
+            "imported/models/model_tree.rerasset",
+        );
+        assert_eq!(candidate, Some(scene_asset));
+
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

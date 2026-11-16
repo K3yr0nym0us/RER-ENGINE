@@ -98,6 +98,7 @@ impl State {
                         category: entry.category.clone(),
                         model_id: Some(model_id.clone()),
                         asset: Some(relative_rerasset_manifest_path(model_id)),
+                        global: self.globalized_models.contains(model_id).then_some(true),
                     })
                 })
                 .collect(),
@@ -110,6 +111,7 @@ impl State {
                     category: None,
                     model_id: None,
                     asset: None,
+                    global: None,
                 })
                 .collect(),
             backgrounds: self
@@ -121,6 +123,7 @@ impl State {
                     category: None,
                     model_id: None,
                     asset: None,
+                    global: None,
                 })
                 .collect(),
             fonts: self
@@ -132,6 +135,7 @@ impl State {
                     category: None,
                     model_id: None,
                     asset: None,
+                    global: None,
                 })
                 .collect(),
             hud_images: self
@@ -143,6 +147,7 @@ impl State {
                     category: None,
                     model_id: None,
                     asset: None,
+                    global: None,
                 })
                 .collect(),
             player_ui_text_boxes: self.export_player_ui_text_boxes_snapshot(),

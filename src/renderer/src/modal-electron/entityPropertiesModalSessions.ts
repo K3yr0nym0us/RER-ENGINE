@@ -568,12 +568,19 @@ async function openEntityPropertiesNestedModal(
 			const isPlayer = payload.isPlayer as boolean
 			const isCharacter = payload.isCharacter as boolean
 			const isEnvironment = payload.isEnvironment as boolean
+			const meta = engine.entityMetaRef.current[selectedEntity.id]
+			// El selector no ofrece el modelo ya asignado. Para el jugador `path`
+			// es el marcador `[Player]`, así que manda `visualModelPath`.
+			const currentModelPath =
+				meta?.visualModelPath
+				?? (meta?.path && !meta.path.startsWith('[') ? meta.path : undefined)
 			openModal({
 				title: t('Replace model'),
 				size: 'md',
 				body: createElement(CreateEntityFromModelModalBody, {
 					hintText: payload.hintText as string,
 					intent: isPlayer || isCharacter ? 'character' : isEnvironment ? 'environment' : 'object',
+					...(currentModelPath ? { currentModelPath } : {}),
 					onSpawn: (path: string) => {
 						engine.replaceEntityModel(selectedEntity.id, path)
 						closeModal()

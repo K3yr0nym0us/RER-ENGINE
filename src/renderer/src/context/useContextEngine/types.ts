@@ -1014,6 +1014,8 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 			const entry = {
 				path: nextAction.payload.path,
 				name: nextAction.payload.name,
+				// Un import de esta sesión pertenece a la escena activa.
+				available_in_scene: true,
 				...(nextAction.payload.loading ? { loading: true } : {}),
 				...(nextAction.payload.category ? { category: nextAction.payload.category } : {}),
 				...(nextAction.payload.model_id ? { model_id: nextAction.payload.model_id } : {}),
@@ -1081,6 +1083,9 @@ export function engineReducer(state: EngineState, action: EngineAction): EngineS
 					...(category ? { category } : {}),
 					...(nextModelId ? { model_id: nextModelId } : {}),
 					...(nextAsset ? { asset: nextAsset } : {}),
+					...(m.available_in_scene !== undefined
+						? { available_in_scene: m.available_in_scene }
+						: {}),
 					state: state ?? m.state ?? 'ready',
 				};
 			});
@@ -1505,8 +1510,6 @@ export interface EngineContextValue extends EngineState {
 	replaceEntityModel: (entityId: number, modelPath: string) => void
 	removeModelAsset: (path: string) => void
 	getModelsList: () => void
-	/** Carga en GPU un `.rerasset` por escena sin reimportar (Recursos por escena). */
-	warmSceneModel: (modelId: string) => void
 	reportBounds: () => void
 	retryEngine: () => void
 	removeScenario: (id: number) => void

@@ -990,6 +990,11 @@ export interface ModelInfo {
   state?: string
   /** Escena propietaria del recurso (recurso por escena). `undefined` = biblioteca global. */
   scene_id?: number
+  /**
+   * `false` si el modelo pertenece a otra escena: los selectores del editor solo
+   * ofrecen modelos globales o de la escena activa.
+   */
+  available_in_scene?: boolean
 }
 
 export interface ResourceModelEntry {
@@ -1000,6 +1005,8 @@ export interface ResourceModelEntry {
   importer_version: number
   /** Escena propietaria (recurso por escena). `undefined` = biblioteca global. */
   scene_id?: number
+  /** `true` si el usuario globalizó el modelo (override del enrutado por escena). */
+  global?: boolean
 }
 
 export interface SoundInfo {

@@ -6,6 +6,7 @@ pub(super) fn entities_body(
     assets: &AssetLists,
     context: ProjectContext,
     locale: Locale,
+    active_scene_id: u64,
     actions: &mut Vec<LeftAction>,
 ) {
     let mut kinds = vec![
@@ -45,11 +46,22 @@ pub(super) fn entities_body(
 
     for (kind, icon, title, color) in kinds {
         entity_section(
-            ui, state, kind, icon, title, color, assets, context, locale, actions,
+            ui,
+            state,
+            kind,
+            icon,
+            title,
+            color,
+            assets,
+            context,
+            locale,
+            active_scene_id,
+            actions,
         );
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn entity_section(
     ui: &mut egui::Ui,
     state: &mut SidebarLeftState,
@@ -60,6 +72,7 @@ pub(super) fn entity_section(
     assets: &AssetLists,
     context: ProjectContext,
     locale: Locale,
+    active_scene_id: u64,
     actions: &mut Vec<LeftAction>,
 ) {
     let selected = if context.is_3d() {
@@ -73,7 +86,13 @@ pub(super) fn entity_section(
         } else {
             AssetKind::Sprite
         };
-        let list = assets.assets(asset_kind);
+        // Solo modelos globales o de la escena activa (los de otras escenas se
+        // globalizan desde «Cargar desde otra escena»).
+        let list: Vec<&crate::editor::assets::AssetEntry> = assets
+            .assets(asset_kind)
+            .iter()
+            .filter(|asset| asset.is_visible_in_scene(active_scene_id))
+            .collect();
         if list.is_empty() {
             widgets::note(
                 ui,

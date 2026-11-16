@@ -458,6 +458,11 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
                     state.model_scene_ids.remove(&res.id);
                 }
             }
+            if res.global.unwrap_or(false) {
+                state.globalized_models.insert(res.id.clone());
+            } else {
+                state.globalized_models.remove(&res.id);
+            }
             let asset_rel = relative_rerasset_manifest_path(&res.id);
             let key = if is_imported_model_id(&source_path) {
                 source_path.clone()

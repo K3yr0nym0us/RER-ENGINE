@@ -251,6 +251,9 @@ pub struct SaveAssetRefSnapshot {
     pub model_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asset: Option<String>,
+    /// `true` si el usuario globalizó el modelo (deja de enrutarse por escena).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -507,6 +510,9 @@ pub struct ModelInfo {
     /// Escena dueña del recurso (recursos por escena); `None` = biblioteca global.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub scene_id: Option<u32>,
+    /// `true` si el modelo es global o pertenece a la escena activa. Los selectores
+    /// del editor solo ofrecen modelos disponibles en la escena actual.
+    pub available_in_scene: bool,
 }
 
 /// Categorías válidas de biblioteca (`ModelCategory` en el renderer).

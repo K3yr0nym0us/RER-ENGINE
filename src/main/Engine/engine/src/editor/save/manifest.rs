@@ -533,6 +533,7 @@ fn merged_models(from_editor: &[Value], engine_scene: &Value) -> Vec<Value> {
             copy_first(&mut merged, "category", previous, item);
             copy_first(&mut merged, "model_id", previous, item);
             copy_first(&mut merged, "asset", previous, item);
+            copy_first(&mut merged, "global", previous, item);
             if let Some(state) = previous.and_then(|prev| prev.get("state")) {
                 merged.insert("state".into(), state.clone());
             }
@@ -629,6 +630,7 @@ fn make_resource_entry(
     model_type: &Value,
     scene_id: Option<u64>,
     asset: String,
+    global: bool,
 ) -> Value {
     let mut entry = Map::new();
     entry.insert("id".into(), json!(model_id));
@@ -638,6 +640,11 @@ fn make_resource_entry(
     entry.insert("importer_version".into(), json!(RERASSET_IMPORTER_VERSION));
     if let Some(scene_id) = scene_id {
         entry.insert("scene_id".into(), json!(scene_id));
+    }
+    if global {
+        // Override explícito del usuario («Globalizar modelo»): se conserva al
+        // recargar para que el enrutado automático no vuelva a atarlo a una escena.
+        entry.insert("global".into(), json!(true));
     }
     Value::Object(entry)
 }
@@ -676,18 +683,32 @@ fn build_resources_models(
         else {
             continue;
         };
-        let (scene_id, asset) = match model_scene_scope(&usage, scene_count, state, model_id) {
-            Some(None) => (
+        let forced_global = item.get("global").and_then(Value::as_bool).unwrap_or(false);
+        let (scene_id, asset) = if forced_global {
+            (
                 None,
-                // Conserva rutas no por escena (global relativa o absoluta de sesión).
                 if asset.starts_with("scene-") {
                     imported_model_asset_path(model_id, None)
                 } else {
                     asset.to_string()
                 },
-            ),
-            Some(Some(scene_id)) => (Some(scene_id), scene_model_asset_path(scene_id, model_id)),
-            None => (None, imported_model_asset_path(model_id, Some(asset))),
+            )
+        } else {
+            match model_scene_scope(&usage, scene_count, state, model_id) {
+                Some(None) => (
+                    None,
+                    // Conserva rutas no por escena (global relativa o absoluta de sesión).
+                    if asset.starts_with("scene-") {
+                        imported_model_asset_path(model_id, None)
+                    } else {
+                        asset.to_string()
+                    },
+                ),
+                Some(Some(scene_id)) => {
+                    (Some(scene_id), scene_model_asset_path(scene_id, model_id))
+                }
+                None => (None, imported_model_asset_path(model_id, Some(asset))),
+            }
         };
         let entry = make_resource_entry(
             model_id,
@@ -695,6 +716,7 @@ fn build_resources_models(
             &item.get("category").cloned().unwrap_or(json!("object")),
             scene_id,
             asset,
+            forced_global,
         );
         upsert(&mut entries, model_id.to_string(), entry);
     }
@@ -720,16 +742,29 @@ fn build_resources_models(
             .get("asset")
             .and_then(Value::as_str)
             .filter(|asset| !asset.is_empty());
-        let (scene_id, asset) = match model_scene_scope(&usage, scene_count, state, model_id) {
-            Some(None) => (
+        let forced_global = item.get("global").and_then(Value::as_bool).unwrap_or(false);
+        let (scene_id, asset) = if forced_global {
+            (
                 None,
                 provided_asset
                     .filter(|asset| !asset.starts_with("scene-"))
                     .map(str::to_string)
                     .unwrap_or_else(|| imported_model_asset_path(model_id, None)),
-            ),
-            Some(Some(scene_id)) => (Some(scene_id), scene_model_asset_path(scene_id, model_id)),
-            None => (None, imported_model_asset_path(model_id, provided_asset)),
+            )
+        } else {
+            match model_scene_scope(&usage, scene_count, state, model_id) {
+                Some(None) => (
+                    None,
+                    provided_asset
+                        .filter(|asset| !asset.starts_with("scene-"))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| imported_model_asset_path(model_id, None)),
+                ),
+                Some(Some(scene_id)) => {
+                    (Some(scene_id), scene_model_asset_path(scene_id, model_id))
+                }
+                None => (None, imported_model_asset_path(model_id, provided_asset)),
+            }
         };
         let entry = make_resource_entry(
             model_id,
@@ -737,6 +772,7 @@ fn build_resources_models(
             &item.get("category").cloned().unwrap_or(json!("object")),
             scene_id,
             asset,
+            forced_global,
         );
         upsert(&mut entries, model_id.to_string(), entry);
     }
@@ -991,6 +1027,37 @@ mod tests {
             json!("imported/models/model_hero.rerasset")
         );
         assert_eq!(models[0]["importer_version"], json!(2));
+    }
+
+    #[test]
+    fn globalized_model_keeps_global_routing_on_save() {
+        // `model_tree` es exclusivo de la escena 2, pero el usuario lo globalizó:
+        // debe guardarse como global (sin scene_id) y con el override `global`.
+        let scenes = vec![
+            json!({ "id": 1, "entities": [], "player": null }),
+            json!({
+                "id": 2,
+                "entities": [{ "model_id": "model_tree" }],
+                "player": null
+            }),
+        ];
+        let engine_models = json!([
+            {
+                "model_id": "model_tree",
+                "asset": "imported/models/model_tree.rerasset",
+                "global": true
+            },
+        ]);
+
+        let models = build_resources_models(Some(&engine_models), &[], &scenes, &state());
+        let tree = models
+            .iter()
+            .find(|entry| entry["id"] == json!("model_tree"))
+            .expect("falta model_tree");
+
+        assert_eq!(tree["asset"], json!("imported/models/model_tree.rerasset"));
+        assert!(tree.get("scene_id").is_none());
+        assert_eq!(tree["global"], json!(true));
     }
 
     #[test]

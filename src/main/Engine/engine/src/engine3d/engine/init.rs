@@ -277,6 +277,7 @@ impl State {
             rerasset_material_tex: std::collections::HashMap::new(),
             static_model_cache: HashMap::new(),
             model_scene_ids: HashMap::new(),
+            globalized_models: std::collections::HashSet::new(),
             worldgen: crate::engine3d::config_3d::worldgen::StateWorldgenState::default(),
             model_preload_rx,
             model_preload_tx,

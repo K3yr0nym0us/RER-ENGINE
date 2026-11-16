@@ -15,6 +15,18 @@ pub struct AssetEntry {
     /// Estado de carga (`importing` mientras el modelo aún no está listo).
     /// `None` para recursos que no exponen estado (sprites, sonidos, etc.).
     pub state: Option<String>,
+    /// Escena dueña del modelo (`None` = biblioteca global). Solo modelos.
+    pub scene_id: Option<u32>,
+}
+
+impl AssetEntry {
+    /// `true` si el recurso se puede usar en la escena activa: es global
+    /// (`scene_id == None`) o pertenece a ella. Los recursos de otras escenas
+    /// solo se ofrecen en «Cargar desde otra escena» para globalizarlos.
+    pub fn is_visible_in_scene(&self, active_scene_id: u64) -> bool {
+        self.scene_id
+            .is_none_or(|id| u64::from(id) == active_scene_id)
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -78,9 +90,20 @@ impl AssetLists {
             "font_removed" => remove_path(&mut self.fonts, event),
             "hud_image_removed" => remove_path(&mut self.hud_images, event),
             "background_asset_removed" => remove_path(&mut self.backgrounds, event),
-            "model_asset_removed" => remove_path(&mut self.models, event),
+            "model_asset_removed" => remove_model_entry(&mut self.models, event),
             _ => {}
         }
+        if name == "models_list" || name.starts_with("model_") {
+            self.sort_models();
+        }
+    }
+
+    /// Orden estable por nombre para que Recursos → Modelos, el combo
+    /// «Crear entidad» y el selector «Reemplazar modelo» coincidan: el motor
+    /// emite la lista desde un `HashMap`, cuyo orden no es determinista.
+    fn sort_models(&mut self) {
+        self.models
+            .sort_by_cached_key(|model| (model.name.to_lowercase(), model.path.clone()));
     }
 
     pub fn assets(&self, kind: AssetKind) -> &[AssetEntry] {
@@ -165,6 +188,7 @@ fn entry_from_event(event: &Value) -> AssetEntry {
         asset: None,
         category: None,
         state: None,
+        scene_id: None,
     })
 }
 
@@ -194,6 +218,10 @@ fn entry_from_value(value: &Value) -> Option<AssetEntry> {
             .get("state")
             .and_then(Value::as_str)
             .map(str::to_string),
+        scene_id: value
+            .get("scene_id")
+            .and_then(Value::as_u64)
+            .and_then(|id| u32::try_from(id).ok()),
     })
 }
 
@@ -228,6 +256,9 @@ fn upsert_state(list: &mut Vec<AssetEntry>, entry: AssetEntry, state: Option<&st
         if entry.state.is_some() {
             existing.state = entry.state;
         }
+        if entry.scene_id.is_some() {
+            existing.scene_id = entry.scene_id;
+        }
         if let Some(state) = state {
             existing.state = Some(state.to_string());
         }
@@ -245,6 +276,22 @@ fn remove_path(list: &mut Vec<AssetEntry>, event: &Value) {
         return;
     };
     list.retain(|item| item.path != path);
+}
+
+/// Elimina un modelo por `path` o por `model_id`. El motor emite
+/// `model_asset_removed` con la clave canónica (`model_id`) mientras la fila
+/// puede estar listada con la ruta fuente del GLB/FBX: emparejar solo por
+/// `path` dejaba el modelo borrado en Recursos y en el combo «Crear entidad».
+fn remove_model_entry(list: &mut Vec<AssetEntry>, event: &Value) {
+    let Some(path) = event.get("path").and_then(Value::as_str) else {
+        return;
+    };
+    let model_id = event.get("model_id").and_then(Value::as_str);
+    list.retain(|item| {
+        item.path != path
+            && item.model_id.as_deref() != Some(path)
+            && model_id.is_none_or(|id| item.model_id.as_deref() != Some(id))
+    });
 }
 
 #[cfg(test)]
@@ -286,6 +333,73 @@ mod tests {
         assert_eq!(assets.models[0].path, "C:/models/hero.glb");
         assert_eq!(assets.models[0].state.as_deref(), Some("ready"));
         assert_eq!(assets.models[0].category.as_deref(), Some("character"));
+    }
+
+    #[test]
+    fn removes_model_listed_by_source_path_when_event_uses_model_id() {
+        let mut assets = AssetLists::default();
+        assets.apply_event(&json!({
+            "event": "model_asset_importing",
+            "model_id": "model_hero",
+            "name": "Hero",
+            "path": "C:/models/hero.glb",
+            "category": "character"
+        }));
+        assert_eq!(assets.models.len(), 1);
+
+        // El motor borra por clave canónica (`model_id`) mientras la fila está
+        // listada con la ruta fuente del GLB: debe desaparecer igualmente.
+        assets.apply_event(&json!({
+            "event": "model_asset_removed",
+            "path": "model_hero"
+        }));
+        assert!(assets.models.is_empty());
+    }
+
+    #[test]
+    fn sorts_models_by_name() {
+        let mut assets = AssetLists::default();
+        for (id, name) in [
+            ("model_zeta", "Zeta"),
+            ("model_alfa", "Alfa"),
+            ("model_media", "Media"),
+        ] {
+            assets.apply_event(&json!({
+                "event": "model_asset_loaded",
+                "path": id,
+                "name": name,
+                "model_id": id
+            }));
+        }
+        let names: Vec<&str> = assets.models.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, ["Alfa", "Media", "Zeta"]);
+    }
+
+    #[test]
+    fn hides_models_from_other_scenes() {
+        let global = AssetEntry {
+            name: "Global".into(),
+            path: "model_g".into(),
+            model_id: Some("model_g".into()),
+            asset: None,
+            category: None,
+            state: None,
+            scene_id: None,
+        };
+        let scene_two = AssetEntry {
+            name: "SceneTwo".into(),
+            path: "model_s2".into(),
+            model_id: Some("model_s2".into()),
+            asset: None,
+            category: None,
+            state: None,
+            scene_id: Some(2),
+        };
+
+        assert!(global.is_visible_in_scene(1));
+        assert!(global.is_visible_in_scene(2));
+        assert!(!scene_two.is_visible_in_scene(1));
+        assert!(scene_two.is_visible_in_scene(2));
     }
 
     #[test]
