@@ -433,6 +433,8 @@ pub struct App {
     next_frame_at: std::time::Instant,
     target_fps: u64,
     cursor_captured: bool,
+    /// `true` mientras RMB mantiene capturado el cursor en modo editor (mirar).
+    editor_fly_capture: bool,
     /// Rect físico del viewport con `ClipCursor` aplicado (editor).
     clip_rect: Option<(i32, i32, u32, u32)>,
 }
@@ -461,6 +463,7 @@ impl App {
             next_frame_at: std::time::Instant::now(),
             target_fps: 60,
             cursor_captured: false,
+            editor_fly_capture: false,
             clip_rect: None,
         }
     }
@@ -498,10 +501,14 @@ impl App {
         if !self.cursor_captured {
             return;
         }
-        if let Some(state) = self.state.as_mut()
-            && state.is_play_controller_active()
-        {
-            state.apply_fps_mouse_look(delta_x, delta_y);
+        if let Some(state) = self.state.as_mut() {
+            if state.is_play_controller_active() {
+                state.apply_fps_mouse_look(delta_x, delta_y);
+            } else if self.editor_fly_capture && self.mouse_right && !state.is_preview_playing() {
+                // Con el cursor confinado usamos el movimiento relativo, como
+                // en play: el cursor se recentra cada frame y nunca llega al borde.
+                state.editor_fly_look(delta_x, delta_y);
+            }
         }
     }
 
@@ -624,6 +631,7 @@ impl App {
         rer_engine_core::platform::release_cursor_clip();
         self.clip_rect = None;
         self.cursor_captured = false;
+        self.editor_fly_capture = false;
     }
 
     /// Libera el cursor al abrir una modal/confirmación de salida.
@@ -637,6 +645,10 @@ impl App {
         rer_engine_core::platform::release_cursor_clip();
         self.clip_rect = None;
         self.cursor_captured = false;
+        self.editor_fly_capture = false;
+        // Si se perdió el foco con RMB pulsado, el KeyUp/MouseUp puede no
+        // llegar: sin esto el view seguiría girando con el cursor libre.
+        self.mouse_right = false;
     }
 
     /// Aplica `ClipCursor` al rect físico del viewport del editor.
@@ -667,13 +679,17 @@ impl App {
         rer_engine_core::platform::clip_cursor_to_rect(rect.0, rect.1, rect.2, rect.3);
         self.clip_rect = Some(rect);
 
-        // Recentra el cursor en el viewport para que el look relativo no llegue nunca
-        // al borde del clip y siga girando de forma continua.
-        let center = PhysicalPosition::new(
-            (frame.offset.x + frame.extent.width as i32 / 2) as f64,
-            (frame.offset.y + frame.extent.height as i32 / 2) as f64,
-        );
-        let _ = state.window().set_cursor_position(center);
+        // En play se recentra para que el look relativo no llegue al borde del clip.
+        // En el vuelo del editor se usa el movimiento relativo del DeviceEvent, así
+        // que recentrar movería `last_cursor` y rompería el click derecho sin
+        // arrastre (propiedades). El clip ya mantiene el cursor dentro del viewport.
+        if !self.editor_fly_capture {
+            let center = PhysicalPosition::new(
+                (frame.offset.x + frame.extent.width as i32 / 2) as f64,
+                (frame.offset.y + frame.extent.height as i32 / 2) as f64,
+            );
+            let _ = state.window().set_cursor_position(center);
+        }
     }
 
     fn sync_preview_playback_side_effects(
@@ -989,9 +1005,30 @@ impl App {
                                     && !state.player_ui_edit_active
                                     && self.entity_grab.is_none();
                                 self.right_click_pos = if arm { self.last_cursor } else { None };
+                                if arm {
+                                    // Igual que en play: ocultar y confinar el cursor
+                                    // al viewport mientras se mantiene RMB.
+                                    let window = state.window();
+                                    window.set_cursor_visible(false);
+                                    if let Err(err) = window.set_cursor_grab(CursorGrabMode::Confined)
+                                    {
+                                        log::warn!("[editor] no se pudo confinar el cursor: {err}");
+                                    }
+                                    self.cursor_captured = true;
+                                    self.editor_fly_capture = true;
+                                }
                             }
                             self.mouse_right = pressed;
                             if !pressed {
+                                if self.editor_fly_capture {
+                                    let window = state.window();
+                                    let _ = window.set_cursor_grab(CursorGrabMode::None);
+                                    window.set_cursor_visible(true);
+                                    rer_engine_core::platform::release_cursor_clip();
+                                    self.clip_rect = None;
+                                    self.cursor_captured = false;
+                                    self.editor_fly_capture = false;
+                                }
                                 if !state.is_preview_playing() && self.entity_grab.is_some() {
                                     cancel_entity_grab(&mut self.entity_grab, state);
                                     self.right_click_pos = None;
@@ -1161,8 +1198,10 @@ impl App {
                                             ctrl_active,
                                         );
                                     }
-                                    None if self.mouse_right => {
-                                        // RMB: mirar estilo FPS (gira alrededor del ojo, no del pivote).
+                                    None if self.mouse_right && !self.editor_fly_capture => {
+                                        // RMB sin captura: mirar con el cursor libre.
+                                        // Capturado, `handle_device_motion` ya aplicó
+                                        // el movimiento relativo; no duplicarlo aquí.
                                         state.editor_fly_look(dx, dy);
                                     }
                                     None if self.mouse_middle => {
@@ -1582,6 +1621,7 @@ pub fn run() {
         next_frame_at: std::time::Instant::now(),
         target_fps: 60,
         cursor_captured: false,
+        editor_fly_capture: false,
         clip_rect: None,
     };
     event_loop

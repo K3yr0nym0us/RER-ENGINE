@@ -101,6 +101,36 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                 );
             }
 
+            // Ayuda permanente de navegación en modo edición (no en play, donde
+            // los controles los define el script). Se pinta abajo para no
+            // solaparse con el hint de colocación de entidades.
+            if !app.engine_loading && app.engine_error.is_none() && !app.preview_playing {
+                let nav_hint = crate::editor::i18n::tr(
+                    app.cli.locale,
+                    "Clic en la ventana del motor · WASD mover · Espacio subir · C bajar · Botón derecho mirar",
+                    "Click the engine window · WASD move · Space up · C down · Right mouse look",
+                );
+                let center = egui::pos2(
+                    rect.center().x,
+                    (rect.max.y - 20.0).min(rect.center().y + rect.height() * 0.38),
+                );
+                let width = (nav_hint.chars().count() as f32 * 8.0 + 28.0)
+                    .min(rect.width() - 16.0);
+                let background = egui::Rect::from_center_size(
+                    center,
+                    egui::vec2(width.max(1.0), 34.0),
+                );
+                ui.painter()
+                    .rect_filled(background, 6.0, egui::Color32::from_black_alpha(150));
+                ui.painter().text(
+                    center,
+                    egui::Align2::CENTER_CENTER,
+                    nav_hint,
+                    // Familia bold registrada en `theme::install_fonts`.
+                    egui::FontId::new(13.0, egui::FontFamily::Name("rer-bold".into())),
+                    crate::editor::theme::TEXT,
+                );
+            }
         });
 }
 

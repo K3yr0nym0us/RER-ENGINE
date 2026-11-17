@@ -140,3 +140,15 @@ sidebar_native:
       `pick_translate_gizmo_axis` usa el mismo desplazamiento, de modo que el
       click sobre una flecha activa `GizmoTranslate(eje)` y no el arrastre libre
       de la entidad. `u.flags` también resalta el hover y el eje activo.
+    viewport_navigation: |
+      En modo edición, mantener RMB dentro del viewport oculta y confina el
+      cursor (`CursorGrabMode::Confined` + `ClipCursor`) igual que en play; el
+      giro usa el movimiento relativo del `DeviceEvent::MouseMotion` para no
+      depender de la posición absoluta. Al soltar RMB se libera el clip y vuelve
+      a aparecer el cursor. Un click derecho sin arrastre sigue abriendo las
+      propiedades de la entidad. Si se pierde el foco con RMB pulsado, se libera
+      el cursor y se descarta el estado del botón.
+    controls_hint: |
+      `frame.rs` pinta permanentemente en la parte baja del viewport (modo
+      edición, no play) la ayuda: «Clic en la ventana del motor · WASD mover ·
+      Espacio subir · C bajar · Botón derecho mirar» (traducida al inglés).
