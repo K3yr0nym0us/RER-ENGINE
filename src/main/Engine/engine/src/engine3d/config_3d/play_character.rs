@@ -3,8 +3,7 @@ use std::path::Path;
 use glam::Vec3;
 
 use crate::engine3d::config_3d::character_anchor::{
-    PLAY_CHARACTER_BODY_HEIGHT, PLAY_CHARACTER_COLLIDER_RADIUS, PlayCharacterMeshExtents,
-    body_center_from_feet, center_from_feet, feet_from_transform,
+    PLAY_CHARACTER_BODY_HEIGHT, PlayCharacterMeshExtents, center_from_feet, feet_from_transform,
 };
 use crate::engine3d::config_3d::model_asset;
 use crate::engine3d::config_3d::physics_3d::PhysicsWorld;
@@ -528,7 +527,7 @@ impl State {
         }
     }
 
-    /// Crea o reutiliza entidad jugador sin `setup_play_character_entity` (sin órbita/rotación por defecto).
+    /// Crea o reutiliza entidad jugador sin mesh (el cubo placeholder ya no se usa).
     pub(crate) fn ensure_play_character_shell(
         &mut self,
         display_name: &str,
@@ -589,7 +588,6 @@ impl State {
         self.play_character_entity = Some(id);
         self.play_character_mesh_forward_xz = glam::Vec2::new(0.0, 1.0);
         self.play_character_mesh_extents = None;
-        self.attach_play_character_body(id);
         self.init_play_character_common_state(id);
         self.save_registry.register_meta(
             id,
@@ -692,35 +690,6 @@ impl State {
         });
     }
 
-    pub(crate) fn attach_play_character_body(&mut self, id: EntityId) {
-        self.play_character_mesh_extents = None;
-        let mesh_idx = self.meshes.len();
-        self.meshes
-            .push(crate::engine3d::mesh::create_cube(&self.vulkan));
-        let body_px = [180u8, 200, 255, 255];
-        let tex_idx = self.tex_layers.len();
-        let body_layer = self
-            .texture_array
-            .pack(&self.vulkan, &body_px, 1, 1)
-            .unwrap();
-        self.tex_layers.push(body_layer);
-
-        self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
-        if let Some(t) = self.world.get_mut::<Transform>(id) {
-            let w = PLAY_CHARACTER_COLLIDER_RADIUS * 2.0;
-            t.scale = glam::Vec3::new(w, PLAY_CHARACTER_BODY_HEIGHT, w);
-        }
-    }
-
-    pub(crate) fn setup_play_character_entity(&mut self, id: EntityId, feet: glam::Vec3) {
-        self.init_play_character_entity_core(id, feet);
-        self.attach_play_character_body(id);
-        if let Some(t) = self.world.get_mut::<Transform>(id) {
-            t.position = body_center_from_feet(feet);
-        }
-        self.finish_play_character_entity_setup(id);
-    }
-
     /// Jugador sin cubo placeholder: transform provisional en los pies hasta instalar mesh.
     fn init_play_character_entity_core(&mut self, id: EntityId, feet: glam::Vec3) {
         self.character_entities.push(id);
@@ -747,7 +716,7 @@ impl State {
         self.emit_play_character_view_changed(true);
     }
 
-    fn wait_for_play_character_model_gpu(&mut self, model_id: &str) -> bool {
+    pub(crate) fn wait_for_play_character_model_gpu(&mut self, model_id: &str) -> bool {
         use std::time::{Duration, Instant};
 
         let started = Instant::now();
@@ -834,8 +803,11 @@ impl State {
         let id = self.world.spawn(Some("Player"));
 
         if !self.try_spawn_play_character_with_bundled_model(id, feet) {
-            log::info!("Mesh base no disponible; jugador con cubo placeholder (id={id})");
-            self.setup_play_character_entity(id, feet);
+            log::error!(
+                "Mesh base del jugador no disponible (id={id}); no se usa cubo placeholder"
+            );
+            self.init_play_character_entity_core(id, feet);
+            self.finish_play_character_entity_setup(id);
         }
 
         self.save_registry.register_meta(

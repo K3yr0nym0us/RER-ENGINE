@@ -182,6 +182,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
     }
 }
 
+/// Escena 3D recién creada: suelo, sol (luz), jugador y cámaras. Sin plantilla demo.
 pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScene {
     use crate::engine3d::config_3d::character_anchor::{
         PLAY_CHARACTER_EDITOR_ORBIT_PITCH, PLAY_CHARACTER_EDITOR_ORBIT_YAW,
@@ -228,7 +229,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         lodEnabled: Some(crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD_ENABLED),
         lod1Distance: Some(crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD1_DISTANCE_M),
         lod2Distance: Some(crate::engine3d::config_3d::model_lod::DEFAULT_MODEL_LOD2_DISTANCE_M),
-        particles: None,
+        particles: Some(serde_json::json!({ "emitters": [] })),
     };
 
     let ground_scale = [28.0 / 40.0, 0.02, 56.0 / 40.0];
@@ -293,33 +294,6 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             bone_physics: vec![],
             projectile: None,
         },
-        SavedEntity3D {
-            id: 0,
-            name: "Ball".to_string(),
-            category: "object".to_string(),
-            model: "[Ball]".to_string(),
-            position: [1.5, 0.3, 8.0],
-            rotation: Some([0.0, 0.0, 0.0, 1.0]),
-            scale: [0.6, 0.6, 0.6],
-            physics_type: Some("dynamic".to_string()),
-            colision: true,
-            hardness: 0,
-            animations: None,
-            scripts: None,
-            controls: None,
-            blueprint_id: None,
-            texture_lod: None,
-            model_id: None,
-            attach_parent_id: None,
-            attach_local_position: None,
-            attach_local_rotation: None,
-            attach_local_scale: None,
-            attach_socket_host_id: None,
-            attach_socket_name: None,
-            sockets: vec![],
-            bone_physics: vec![],
-            projectile: None,
-        },
     ];
 
     let player = SavedEntity3D {
@@ -329,7 +303,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         model: "[Player]".to_string(),
         position: [0.0, 0.0, 5.0],
         rotation: Some([0.0, 0.0, 0.0, 1.0]),
-        scale: [0.8, 1.7, 0.8],
+        scale: [1.0, 1.0, 1.0],
         physics_type: Some("dynamic".to_string()),
         colision: true,
         hardness: 0,
@@ -338,7 +312,9 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         controls: None,
         blueprint_id: None,
         texture_lod: None,
-        model_id: None,
+        model_id: Some(
+            rer_engine_core::bundled_models::DEFAULT_PLAY_CHARACTER_MODEL_ID.to_string(),
+        ),
         attach_parent_id: None,
         attach_local_position: None,
         attach_local_rotation: None,
@@ -406,5 +382,44 @@ pub(crate) fn build_minimal_project_from_store(
         hud_images: Vec::new(),
         resources: None,
         worldGen3d: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_fp_placeholder_is_empty_except_ground_sun_player_and_camera() {
+        let scene = build_fp_placeholder_saved_scene(2, "Scene-02");
+        assert!(is_3d_placeholder_saved_scene(&scene));
+        assert_eq!(scene.id, 2);
+        assert_eq!(scene.name, "Scene-02");
+        assert_eq!(scene.entities.len(), 2);
+        let categories: Vec<&str> = scene
+            .entities
+            .iter()
+            .map(|entity| entity.category.as_str())
+            .collect();
+        assert!(categories.contains(&"ground"));
+        assert!(categories.contains(&"sun"));
+        assert!(scene.entities.iter().all(|entity| entity.model != "[Ball]"
+            && !entity.model.contains("MatVal")
+            && !entity.model.contains("ParticleDemo")));
+        let player = scene.player.as_ref().expect("player");
+        assert_eq!(player.model, "[Player]");
+        assert_eq!(
+            player.model_id.as_deref(),
+            Some(rer_engine_core::bundled_models::DEFAULT_PLAY_CHARACTER_MODEL_ID)
+        );
+        assert_eq!(player.scale, [1.0, 1.0, 1.0]);
+        assert!(scene.config_camera.is_some());
+        assert!(scene.models.is_empty());
+        let particles = scene.world.particles.as_ref().expect("empty particles");
+        let emitters = particles
+            .get("emitters")
+            .and_then(serde_json::Value::as_array)
+            .expect("emitters array");
+        assert!(emitters.is_empty());
     }
 }

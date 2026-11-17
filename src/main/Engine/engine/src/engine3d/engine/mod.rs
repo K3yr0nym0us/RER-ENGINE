@@ -5,6 +5,7 @@ mod audio;
 mod commands;
 pub(crate) mod editor_scenes;
 pub(crate) mod entity_restore;
+mod fps_exit_hint;
 mod init;
 #[path = "../engine.rs"]
 mod inner;

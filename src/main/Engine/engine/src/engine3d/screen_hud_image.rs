@@ -100,6 +100,44 @@ impl HudAtlas {
         self.row_h = self.row_h.max(h);
         uv
     }
+
+    /// Empaca un PNG de `Engine/assets` (tooltips de play, splash de carga).
+    pub fn pack_png_from_engine_assets(
+        &mut self,
+        gpu: &SharedGpu,
+        filename: &str,
+    ) -> Option<ScreenHudPackedImage> {
+        let path = engine_assets_dir().join(filename);
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                log::warn!("[hud] no se pudo leer '{}': {error}", path.display());
+                return None;
+            }
+        };
+        match decode_png_rgba(&bytes) {
+            Some((rgba, width, height)) => Some(self.pack_rgba(gpu, &rgba, width, height)),
+            None => {
+                log::warn!("[hud] PNG ilegible: {}", path.display());
+                None
+            }
+        }
+    }
+}
+
+fn engine_assets_dir() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets")
+}
+
+fn decode_png_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
+    let image = image::ImageReader::new(std::io::Cursor::new(bytes))
+        .with_guessed_format()
+        .ok()?
+        .decode()
+        .ok()?
+        .to_rgba8();
+    let (width, height) = image.dimensions();
+    Some((image.into_raw(), width, height))
 }
 
 /// Instancia para `screen_hud_pipeline`. `tex_layer_pad` = UV rect.
@@ -112,4 +150,27 @@ pub fn build_screen_hud_instance(
     inst.tex_layer_pad = packed.uv_rect;
     inst.flag_pad[1] = alpha;
     inst
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_assets_include_localized_hud_pngs() {
+        for name in [
+            "tooltip-btn-esc-exit.png",
+            "tooltip-btn-esc-salir.png",
+            "Loading.png",
+            "Cargando.png",
+        ] {
+            let path = engine_assets_dir().join(name);
+            let bytes = std::fs::read(&path)
+                .unwrap_or_else(|error| panic!("no se pudo leer {}: {error}", path.display()));
+            let (rgba, width, height) =
+                decode_png_rgba(&bytes).unwrap_or_else(|| panic!("PNG ilegible: {name}"));
+            assert!(width > 0 && height > 0, "{name} vacío");
+            assert_eq!(rgba.len(), (width * height * 4) as usize, "{name} RGBA");
+        }
+    }
 }

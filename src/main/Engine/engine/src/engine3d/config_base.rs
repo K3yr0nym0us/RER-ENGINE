@@ -135,6 +135,7 @@ impl State {
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
         self.tool_overlay_buffer = crate::engine3d::gizmo::build_from_vertices(&self.vulkan, &[]);
+        self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.script_engine = ScriptEngine::new(ScriptEngineProfile::Engine3d)
@@ -721,6 +722,7 @@ impl State {
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
         self.tool_overlay_buffer = crate::engine3d::gizmo::build_from_vertices(&self.vulkan, &[]);
+        self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.control_bindings_by_entity.clear();
@@ -732,6 +734,7 @@ impl State {
             crate::engine3d::ipc::PlayCameraFollowMode::MoveWithCharacter;
         self.play_camera_follow_offset = glam::Vec3::ZERO;
         self.play_camera_follow_offset_local = glam::Vec3::ZERO;
+        self.particles.clear();
         self.sun_entity = None;
         self.sun_icon_mesh_idx = None;
         self.sun_icon_tex_idx = None;
@@ -824,23 +827,7 @@ impl State {
             });
             return;
         }
-        let label = rer_engine_core::editor_defaults::entity_label::PLAYER.to_string();
-        let id = self.world.spawn(Some(&label));
-        log::info!("[load_character] jugador placeholder creado (id={id})");
-        let feet = self.camera.target;
-        self.setup_play_character_entity(id, feet);
-        self.save_registry.register_meta(
-            id,
-            EntitySaveMeta {
-                kind: "character".to_string(),
-                path: path.to_string(),
-                visual_model_path: None,
-                entity_category: Some("player".to_string()),
-            },
-        );
-        send_event(&EngineEvent::CharacterLoaded {
-            id,
-            path: path.to_string(),
-        });
+        log::info!("[load_character] creando jugador con mesh empaquetado de la demo");
+        self.spawn_play_character();
     }
 }

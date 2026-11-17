@@ -87,3 +87,54 @@ pub fn pick_localized_screen_hud(
         fallback.or(primary)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn packed(width: f32, height: f32) -> ScreenHudPackedImage {
+        ScreenHudPackedImage {
+            uv_rect: [0.0, 0.0, 1.0, 1.0],
+            pixel_width: width,
+            pixel_height: height,
+        }
+    }
+
+    #[test]
+    fn english_locale_prefers_the_primary_image() {
+        let english = packed(320.0, 80.0);
+        let spanish = packed(321.0, 81.0);
+        let chosen = pick_localized_screen_hud("en", Some(english), Some(spanish)).unwrap();
+        assert_eq!(chosen.pixel_width, 320.0);
+    }
+
+    #[test]
+    fn spanish_locale_prefers_the_fallback_image() {
+        let english = packed(320.0, 80.0);
+        let spanish = packed(321.0, 81.0);
+        let chosen = pick_localized_screen_hud("es", Some(english), Some(spanish)).unwrap();
+        assert_eq!(chosen.pixel_width, 321.0);
+    }
+
+    #[test]
+    fn missing_preferred_image_falls_back() {
+        let spanish = packed(200.0, 50.0);
+        let chosen = pick_localized_screen_hud("en", None, Some(spanish)).unwrap();
+        assert_eq!(chosen.pixel_width, 200.0);
+    }
+
+    #[test]
+    fn bottom_left_ndc_stays_inside_the_viewport() {
+        let model = ndc_transform_bottom_left(
+            1280.0,
+            720.0,
+            packed(360.0, 90.0),
+            ScreenHudBottomLeftLayout::default(),
+            1.0,
+        )
+        .unwrap();
+        let translation = model.w_axis;
+        assert!(translation.x > -1.0 && translation.x < 0.0);
+        assert!(translation.y > -1.0 && translation.y < 0.0);
+    }
+}

@@ -343,6 +343,9 @@ impl State {
             self.rt_skinned_instances.clear();
         }
 
+        // Alpha del tooltip Esc: hay que mutar `State` antes de prestar `self.meshes`.
+        self.update_fps_exit_hint_alpha();
+
         let mut static_batches: Vec<MeshBatch> = Vec::new();
         let shadow_scene_batches = filter_shadow_cast_batches(self, &opaque_batches);
         let mut shadow_static_batches: Vec<MeshBatch> = Vec::new();
@@ -673,21 +676,17 @@ impl State {
             }
         }
 
-        let hud_ready = self.player_ui_hud_visible() && !self.player_ui_glyph_instances.is_empty();
+        let mut hud_scratch = self.player_ui_glyph_instances.clone();
+        if let Some(hint) = self.build_fps_exit_hint_instance() {
+            hud_scratch.push(hint);
+        }
+        let hud_instance_count = hud_scratch.len() as u32;
+        let hud_ready = hud_instance_count > 0;
+        let hud_instances: &[u8] = bytemuck::cast_slice(&hud_scratch);
         let hud_vertex = hud_ready.then_some(&self.hud_quad_mesh.vertex_buffer);
         let hud_index = hud_ready.then_some(&self.hud_quad_mesh.index_buffer);
         let hud_index_count = if hud_ready {
             self.hud_quad_mesh.index_count
-        } else {
-            0
-        };
-        let hud_instances: &[u8] = if hud_ready {
-            bytemuck::cast_slice(&self.player_ui_glyph_instances)
-        } else {
-            &[]
-        };
-        let hud_instance_count = if hud_ready {
-            self.player_ui_glyph_instances.len() as u32
         } else {
             0
         };

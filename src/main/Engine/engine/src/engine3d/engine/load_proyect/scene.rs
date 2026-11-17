@@ -97,6 +97,25 @@ pub(crate) fn load_project_asset_stores(state: &mut State, project: &ProjectSave
     }
 }
 
+/// Mesh visual del jugador al restaurar: `model_id` del save, o el mesh empaquetado
+/// de la demo (`model_male_base_mesh`) cuando el marcador es `[Player]`.
+fn resolve_player_restore_model_id(state: &mut State, player: &SavedEntity3D) -> Option<String> {
+    if let Ok(id) = entity_model_cache_lookup(state, player) {
+        return Some(id);
+    }
+    let bundled = rer_engine_core::bundled_models::DEFAULT_PLAY_CHARACTER_MODEL_ID;
+    let saved_id = player.model_id.as_deref().filter(|id| !id.is_empty());
+    let use_bundled = match saved_id {
+        None => entity_path_marker(&player.model) == Some("[Player]"),
+        Some(id) => id == bundled,
+    };
+    if use_bundled {
+        crate::engine3d::assets::bundled::ensure_bundled_default_player_model(state)
+    } else {
+        None
+    }
+}
+
 /// Restaura jugador 3D desde manifest: mesh sin auto-escala, transform y cámara del save.
 pub(crate) fn restore_player_from_manifest(
     state: &mut State,
@@ -108,13 +127,12 @@ pub(crate) fn restore_player_from_manifest(
     };
 
     let pending = build_player_pending_restore_from_entity(player);
-    let cache_key = entity_model_cache_lookup(state, player).ok();
+    let cache_key = resolve_player_restore_model_id(state, player);
 
-    if let Some(ref id) = cache_key {
-        if !ensure_model_cached(state, id) {
-            log::warn!("[restore] no se pudo precargar modelo jugador: {id}");
-        }
-        state.poll_and_advance_model_preloads(MODEL_GPU_PARTS_DURING_SAVE_LOAD);
+    if let Some(ref id) = cache_key
+        && !state.wait_for_play_character_model_gpu(id)
+    {
+        log::warn!("[restore] no se pudo precargar modelo jugador: {id}");
     }
 
     let id = state.ensure_play_character_shell(
@@ -350,11 +368,11 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
         view.world.lod1Distance,
         view.world.lod2Distance,
     );
-    // Partículas GPU-driven (F5): reemplaza el sistema por el estado guardado de la escena.
+    // Partículas GPU-driven (F5): sustituye el sistema por el snapshot de esta escena.
+    // `None` = escena sin emisores (p. ej. placeholder nuevo); no reutilizar la escena anterior.
     if let Some(particles) = &view.world.particles {
         state.restore_particles_from_value(particles);
     }
-    state.ensure_material_validation_demo();
     send_event(&EngineEvent::GraphicsTextureTierChanged {
         tier: state.graphics_texture_tier.wire().to_string(),
     });

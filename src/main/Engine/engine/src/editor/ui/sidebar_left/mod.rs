@@ -237,6 +237,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     if let Some(next) = next_locale {
         app.cli.locale = next;
         crate::editor::bridge::notify_locale(next);
+        app.send_engine(json!({
+            "cmd": "set_locale",
+            "locale": next.as_str(),
+        }));
     }
 
     egui::ScrollArea::vertical()

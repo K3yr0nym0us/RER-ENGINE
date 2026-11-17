@@ -182,11 +182,7 @@ pub(crate) fn center_from_feet(
         .unwrap_or_else(|| play_character_placeholder_feet_offset(rotation))
 }
 
-/// Cubo `[Player]` antes de asignar un `.glb`: centro del cuerpo a mitad de altura fija (1.7 m).
+/// Offset de pies cuando aún no hay AABB del mesh (altura de cuerpo 1.7 m).
 pub(crate) fn play_character_placeholder_feet_offset(rotation: Quat) -> Vec3 {
     rotation * Vec3::new(0.0, -PLAY_CHARACTER_BODY_HEIGHT * 0.5, 0.0)
-}
-
-pub(crate) fn body_center_from_feet(feet: Vec3) -> Vec3 {
-    center_from_feet(feet, Vec3::ONE, Quat::IDENTITY, None)
 }
