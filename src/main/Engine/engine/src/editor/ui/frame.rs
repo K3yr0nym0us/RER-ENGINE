@@ -82,7 +82,25 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                     egui::FontId::proportional(16.0),
                     crate::editor::theme::DANGER,
                 );
+            } else if let Some(hint) = app.placement_hint.as_deref() {
+                // Aviso flotante mientras una herramienta de colocación está
+                // activa: el motor espera un click en el viewport, no en el sidebar.
+                let center = rect.center() - egui::vec2(0.0, rect.height() * 0.28);
+                let background = egui::Rect::from_center_size(
+                    center,
+                    egui::vec2(hint.chars().count() as f32 * 8.0 + 28.0, 34.0),
+                );
+                ui.painter()
+                    .rect_filled(background, 6.0, egui::Color32::from_black_alpha(150));
+                ui.painter().text(
+                    center,
+                    egui::Align2::CENTER_CENTER,
+                    hint,
+                    egui::FontId::proportional(15.0),
+                    crate::editor::theme::INFO,
+                );
             }
+
         });
 }
 

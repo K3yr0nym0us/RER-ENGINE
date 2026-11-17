@@ -128,6 +128,12 @@ sidebar_native:
       coloca con un click en el viewport. Tras colocar, el motor retira el
       ghost y desactiva la herramienta. `preview_spawn_kind` conserva el `kind`
       del acordeón (`character`, `scenario`, `model`, `projectile`).
+    placement_hint: |
+      Mientras hay una colocación activa, `frame.rs` pinta sobre el viewport un
+      texto flotante («Mueve el cursor sobre el mundo y haz click para colocar
+      la entidad»). Se enciende al pulsar «Crear entidad» y con el evento IPC
+      `quick_build_ghost_ready`, y se apaga con `tool_cancelled` (o al recibir
+      `collider_created` / `execution_area_created`).
     transform_gizmo: |
       Las flechas X/Y/Z del gizmo 3D se pintan desplazadas desde el AABB de la
       selección (`u.axis_start` en `shaders/raster/gizmo.vert`). El hit-test de

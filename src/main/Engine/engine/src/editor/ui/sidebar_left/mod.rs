@@ -626,6 +626,7 @@ fn create_entity(app: &mut EditorApp, kind: EntityKind, asset: String) {
         app.send_engine(begin_entity_placement_command(kind, asset));
         // El motor emitirá `quick_build_ghost_ready`, pero mostramos el hint
         // ya mismo para que no haya que adivinar qué hacer en el viewport.
+        app.placement_hint = Some(crate::editor::i18n::tr(
             app.cli.locale,
             "Mueve el cursor sobre el mundo y haz click para colocar la entidad",
             "Move the cursor over the world and click to place the entity",

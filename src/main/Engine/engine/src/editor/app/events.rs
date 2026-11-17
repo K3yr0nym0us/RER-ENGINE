@@ -155,6 +155,15 @@ fn control_summary(player: &Value) -> Option<ControlSummary> {
     })
 }
 
+/// Texto del hint flotante sobre el viewport mientras se coloca una entidad.
+fn placement_hint_text(locale: crate::editor::cli::Locale) -> &'static str {
+    crate::editor::i18n::tr(
+        locale,
+        "Mueve el cursor sobre el mundo y haz click para colocar la entidad",
+        "Move the cursor over the world and click to place the entity",
+    )
+}
+
 impl EditorApp {
     /// Actualiza el estado de la barra superior a partir de un evento del motor.
     pub fn handle_engine_event(&mut self, event: &Value) {
@@ -178,6 +187,7 @@ impl EditorApp {
                 self.status = EditorStatus::Starting;
                 self.preview_playing = false;
                 self.left_sidebar.active_tool = None;
+                self.placement_hint = None;
                 self.selected_entity = None;
                 self.play_view = None;
                 self.pending_properties = None;
@@ -242,6 +252,10 @@ impl EditorApp {
             }
             "tool_cancelled" | "collider_created" | "execution_area_created" => {
                 self.left_sidebar.active_tool = None;
+                self.placement_hint = None;
+            }
+            "quick_build_ghost_ready" => {
+                self.placement_hint = Some(placement_hint_text(self.cli.locale).to_string());
             }
             "player_ui_active_screen_changed" => {
                 self.left_sidebar.active_ui_screen = event
@@ -301,5 +315,26 @@ impl EditorApp {
     /// Aplica un comando de React para no desincronizar la barra derecha.
     pub fn apply_engine_command(&mut self, command: &Value) {
         self.world.apply_command(command);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placement_hint_follows_the_ghost_lifecycle() {
+        let mut app = EditorApp::new(crate::editor::cli::Cli::default());
+        assert!(app.placement_hint.is_none());
+
+        app.handle_engine_event(&json!({
+            "event": "quick_build_ghost_ready",
+            "path": "model_hero",
+            "name": "Hero",
+        }));
+        assert!(app.placement_hint.is_some());
+
+        app.handle_engine_event(&json!({ "event": "tool_cancelled" }));
+        assert!(app.placement_hint.is_none());
     }
 }

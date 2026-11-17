@@ -73,6 +73,9 @@ pub struct EditorApp {
     pub engine_loading: bool,
     /// Error de arranque del motor, mostrado en el viewport.
     pub engine_error: Option<String>,
+    /// Texto flotante sobre el viewport mientras una herramienta de colocación
+    /// está activa (Crear entidad / Construcción rápida).
+    pub placement_hint: Option<String>,
 }
 
 mod events;
@@ -115,6 +118,7 @@ impl EditorApp {
             pending_engine: std::cell::RefCell::new(Vec::new()),
             engine_loading: false,
             engine_error: None,
+            placement_hint: None,
         }
     }
 
