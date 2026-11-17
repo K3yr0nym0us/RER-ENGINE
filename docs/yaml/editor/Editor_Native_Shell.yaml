@@ -128,3 +128,9 @@ sidebar_native:
       coloca con un click en el viewport. Tras colocar, el motor retira el
       ghost y desactiva la herramienta. `preview_spawn_kind` conserva el `kind`
       del acordeón (`character`, `scenario`, `model`, `projectile`).
+    transform_gizmo: |
+      Las flechas X/Y/Z del gizmo 3D se pintan desplazadas desde el AABB de la
+      selección (`u.axis_start` en `shaders/raster/gizmo.vert`). El hit-test de
+      `pick_translate_gizmo_axis` usa el mismo desplazamiento, de modo que el
+      click sobre una flecha activa `GizmoTranslate(eje)` y no el arrastre libre
+      de la entidad. `u.flags` también resalta el hover y el eje activo.

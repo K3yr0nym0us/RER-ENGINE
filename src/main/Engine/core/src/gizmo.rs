@@ -109,4 +109,25 @@ mod tests {
         let start = axis_start_mesh_units(0.5, gap, 2.0);
         assert!(start > 0.25);
     }
+
+    /// Regresión del port a Ash/Vulkan: el vertex shader debe desplazar la
+    /// geometría con `axis_start` antes de aplicar el modelo, igual que hace
+    /// `pick_translate_gizmo_axis` al construir su segmento. Si el shader
+    /// ignora `axis_start`, la flecha visible y el segmento testeado no se
+    /// solapan y el click cae en la entidad (movimiento libre).
+    #[test]
+    fn rendered_arrow_tip_matches_pick_segment_tip() {
+        let scale = 2.5;
+        let half = 1.2;
+        let gap = 0.3;
+        let start_mesh = axis_start_mesh_units(half, gap, scale);
+
+        let rendered_tip = (start_mesh + GIZMO_MESH_AXIS_LENGTH) * scale;
+        let pick_tip = start_mesh * scale + axis_world_length(scale);
+
+        assert!(
+            (rendered_tip - pick_tip).abs() < 1e-5,
+            "render {rendered_tip} != pick {pick_tip}"
+        );
+    }
 }
