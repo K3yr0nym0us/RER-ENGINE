@@ -1,0 +1,485 @@
+#version 460
+// Simulación unificada de partículas (F1: fuego; los materiales F2–F4 se ramifican en
+// `material_kind`). Ping-pong por emisor: lee el buffer marcado por `read_is_a` y hace
+// append-consume sobre el opuesto. El contador de SALIDA lo reinicia el host con
+// vkCmdFillBuffer + barrera TRANSFER_WRITE -> COMPUTE antes de este dispatch.
+//
+// Dispatch indirecto: `build_indirect.comp` del frame ANTERIOR escribió el número de
+// workgroups (latencia de 1 frame, autosaneante). Cubre leer vivos + spawn nuevos.
+
+layout(local_size_x = 64) in;
+
+struct Particle {
+    vec4 pos_life;   // xyz posición, w vida restante (s)
+    vec4 vel_age;    // xyz velocidad, w edad (s)
+    vec4 rot_seed;   // x ángulo, y tamaño, z semilla (fract; 1 rodando, 2 asentado, 3 splash), w ω
+    vec4 color;      // RGBA de la curva de vida
+};
+
+// Debe coincidir con `EmitterParams` de params.rs (160 bytes).
+layout(set = 0, binding = 0) uniform Emitter {
+    vec4 origin_radius;      // xyz origen (puede seguir a la cámara), w radio de emisión
+    vec4 velocity_spread;    // xyz velocidad base, w dispersión
+    vec4 size_life;          // x tamaño, y variación, z vida media, w variación
+    vec4 color_start;
+    vec4 color_end;
+    vec4 phys;               // x gravedad/flotabilidad (+Y), y drag, z turbulencia, w cohesión
+    vec4 env;                // x ground_y, y spin rad/s, z viento X, w viento Z
+    uvec4 misc;              // x material_kind, y capacidad, z billboard, w flags
+    vec4 volume;             // xyz semi-extensión del volumen de cámara, w reservado
+    vec4 collide;            // x bounciness, y friction, z size_end, w stretch
+} emitter;
+
+layout(set = 0, binding = 1) buffer PartA { Particle part_a[]; };
+layout(set = 0, binding = 2) buffer PartB { Particle part_b[]; };
+layout(set = 0, binding = 3) buffer CntA { uint cnt_a; };
+layout(set = 0, binding = 4) buffer CntB { uint cnt_b; };
+
+layout(push_constant) uniform Push {
+    float dt;        // delta time acotado por la CPU (<= 0.05 s)
+    uint  spawn;     // partículas nuevas este frame
+    uint  read_is_a; // 1 = lee A / escribe B
+    uint  seed;      // semilla RNG del emisor
+} pc;
+
+const float TAU = 6.283185307179586;
+
+uint out_count_ref() {
+    return pc.read_is_a == 1u ? cnt_b : cnt_a;
+}
+
+uint in_count_ref() {
+    return pc.read_is_a == 1u ? cnt_a : cnt_b;
+}
+
+void store_particle(uint index, Particle p) {
+    if (pc.read_is_a == 1u) {
+        part_b[index] = p;
+    } else {
+        part_a[index] = p;
+    }
+}
+
+Particle load_particle(uint index) {
+    return pc.read_is_a == 1u ? part_a[index] : part_b[index];
+}
+
+// ---- RNG determinista por hilo (semilla del emisor + id de hilo) ----
+uint hash_u(uint x) {
+    x ^= x >> 16;
+    x *= 0x7feb352du;
+    x ^= x >> 15;
+    x *= 0x846ca68bu;
+    x ^= x >> 16;
+    return x;
+}
+
+float rand01(uint salt) {
+    return float(hash_u(pc.seed ^ salt ^ gl_GlobalInvocationID.x * 0x68bc21ebu)) * (1.0 / 4294967296.0);
+}
+
+// ---- Curl noise (potencial de value noise 3D suavizado) ----
+float hash13(vec3 p) {
+    p = fract(p * 0.3183099 + vec3(0.11, 0.23, 0.31));
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+float value_noise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    vec3 u = f * f * (3.0 - 2.0 * f);
+    return mix(
+        mix(mix(hash13(i + vec3(0, 0, 0)), hash13(i + vec3(1, 0, 0)), u.x),
+            mix(hash13(i + vec3(0, 1, 0)), hash13(i + vec3(1, 1, 0)), u.x), u.y),
+        mix(mix(hash13(i + vec3(0, 0, 1)), hash13(i + vec3(1, 0, 1)), u.x),
+            mix(hash13(i + vec3(0, 1, 1)), hash13(i + vec3(1, 1, 1)), u.x), u.y),
+        u.z);
+}
+
+vec3 noise_potential(vec3 p, float t) {
+    return vec3(
+        value_noise(p + vec3(0.0, t, 0.0)),
+        value_noise(p + vec3(5.2, t, 1.3)),
+        value_noise(p + vec3(1.7, t, 9.2))
+    );
+}
+
+vec3 curl_noise(vec3 p, float t) {
+    const float e = 0.12;
+    vec3 dx = noise_potential(p + vec3(e, 0, 0), t) - noise_potential(p - vec3(e, 0, 0), t);
+    vec3 dy = noise_potential(p + vec3(0, e, 0), t) - noise_potential(p - vec3(0, e, 0), t);
+    vec3 dz = noise_potential(p + vec3(0, 0, e), t) - noise_potential(p - vec3(0, 0, e), t);
+    return vec3(dy.z - dz.y, dz.x - dx.z, dx.y - dy.x) / (2.0 * e);
+}
+
+bool is_rolling(Particle p) {
+    return p.rot_seed.z >= 1.0 && p.rot_seed.z < 2.0;
+}
+
+bool is_settled(Particle p) {
+    return p.rot_seed.z >= 2.0 && p.rot_seed.z < 3.0;
+}
+
+bool is_splashed(Particle p) {
+    return p.rot_seed.z >= 3.0;
+}
+
+float particle_seed(Particle p) {
+    return fract(p.rot_seed.z);
+}
+
+void mark_rolling(inout Particle p) {
+    if (p.rot_seed.z < 1.0) {
+        p.rot_seed.z += 1.0;
+    }
+}
+
+void mark_settled(inout Particle p) {
+    if (p.rot_seed.z < 1.0) {
+        p.rot_seed.z += 2.0;
+    } else if (p.rot_seed.z < 2.0) {
+        p.rot_seed.z += 1.0;
+    }
+}
+
+void mark_splashed(inout Particle p) {
+    p.rot_seed.z = fract(p.rot_seed.z) + 3.0;
+}
+
+vec2 rand_dir_xz(uint salt_a, uint salt_b) {
+    vec2 dir = vec2(rand01(salt_a), rand01(salt_b)) * 2.0 - 1.0;
+    float mag = length(dir);
+    return mag > 1e-4 ? dir / mag : vec2(1.0, 0.0);
+}
+
+void apply_wind_and_swirl(inout vec3 vel, vec3 pos, float age, float seed, float turb) {
+    vel.x += emitter.env.z * pc.dt;
+    vel.z += emitter.env.w * pc.dt;
+    if (turb > 0.0) {
+        vec3 swirl = curl_noise(pos * 0.55, age * 1.7 + seed * 10.0);
+        vel += swirl * turb * pc.dt;
+        float phase = seed * TAU;
+        vel.x += sin(age * 6.2 + phase) * turb * 0.45 * pc.dt;
+        vel.z += cos(age * 4.7 + phase * 1.3) * turb * 0.45 * pc.dt;
+    }
+}
+
+void collide_ground(inout Particle p, inout vec3 vel, inout bool settled, inout float age) {
+    uint flags = emitter.misc.w;
+    uint mat = emitter.misc.x;
+    if ((flags & 1u) == 0u || is_splashed(p)) {
+        return;
+    }
+    // El centro del billboard se apoya a media altura sobre el plano para que el
+    // grano/gota toque la superficie, no flote por encima ni se clave bajo ella.
+    float rest_y = emitter.env.x + p.rot_seed.y * 0.5;
+    bool on_plane = p.pos_life.y <= rest_y;
+    if (!on_plane || (vel.y >= 0.0 && !is_rolling(p))) {
+        return;
+    }
+
+    if (mat == 6u && (flags & 4u) != 0u) {
+        // Agua: deja de ser una línea stretched, rebota y vive 0.22 s como espuma.
+        mark_splashed(p);
+        p.rot_seed.w = 0.0;
+        p.pos_life.y = rest_y;
+        age = 0.0;
+        p.pos_life.w = 0.22;
+        vec2 radial = rand_dir_xz(10u, 11u);
+        float out_speed = 0.45 + 0.7 * rand01(12u);
+        vel = vec3(radial.x * out_speed, 1.2, radial.y * out_speed);
+        return;
+    }
+
+    if (mat == 5u) {
+        p.pos_life.y = rest_y;
+        vel.y = 0.0;
+        if (!is_rolling(p) && !is_settled(p)) {
+            vec2 roll = rand_dir_xz(10u, 11u);
+            float impulse = 0.22 + 0.38 * rand01(12u);
+            vel.x += roll.x * impulse;
+            vel.z += roll.y * impulse;
+            mark_rolling(p);
+        }
+        vel.x *= exp(-2.4 * pc.dt);
+        vel.z *= exp(-2.4 * pc.dt);
+        if (length(vec2(vel.x, vel.z)) < 0.05) {
+            vel = vec3(0.0);
+            settled = true;
+            mark_settled(p);
+            float linger = 1.2 + 0.6 * rand01(13u);
+            p.pos_life.w = age + linger + 0.4;
+        }
+        return;
+    }
+
+    p.pos_life.y = emitter.env.x;
+    float bounce = emitter.collide.x;
+    float friction = clamp(emitter.collide.y, 0.0, 1.0);
+    float impact = -vel.y;
+    vel.y = impact * bounce;
+    vel.x *= (1.0 - friction);
+    vel.z *= (1.0 - friction);
+    if (bounce < 0.08 || length(vec2(vel.x, vel.z)) < 0.12) {
+        vel = vec3(0.0);
+        settled = true;
+        mark_settled(p);
+        p.pos_life.w = min(p.pos_life.w, age + 0.45);
+    }
+}
+
+vec4 color_over_life(uint mat, float k) {
+    if (mat == 0u) {
+        // Fuego: blanco/amarillo → naranja (color_start) → rojo oscuro (color_end).
+        vec3 hot = vec3(1.0, 0.97, 0.72);
+        vec3 mid = emitter.color_start.rgb;
+        vec3 cold = emitter.color_end.rgb;
+        vec3 rgb = k < 0.28 ? mix(hot, mid, k / 0.28) : mix(mid, cold, (k - 0.28) / 0.72);
+        float alpha = mix(emitter.color_start.a, emitter.color_end.a, k);
+        return vec4(rgb, alpha);
+    }
+    if (mat == 1u) {
+        // Humo: RGB lineal; alfa con fade-in corto y caída pow para no cortar al morir.
+        vec3 rgb = mix(emitter.color_start.rgb, emitter.color_end.rgb, k);
+        float fade_in = smoothstep(0.0, 0.08, k);
+        float fade_out = pow(max(1.0 - k, 0.0), 2.5);
+        float alpha = emitter.color_start.a * fade_out * fade_in;
+        return vec4(rgb, alpha);
+    }
+    return mix(emitter.color_start, emitter.color_end, k);
+}
+
+// ---- Integración por material ----
+bool integrate(inout Particle p) {
+    float life = max(p.pos_life.w, 1e-3);
+    float age = p.vel_age.w + pc.dt;
+    if (age >= life) {
+        return false;
+    }
+    vec3 vel = p.vel_age.xyz;
+    float seed = particle_seed(p);
+    uint mat = emitter.misc.x;
+
+    // Estado "asentado" (F4): copo de nieve depositado o grano frenado en el suelo.
+    // Sigue viviendo un rato en el plano y muere por vida; el reciclado lo ignora.
+    bool settled = is_settled(p);
+
+    p.rot_seed.x += p.rot_seed.w * pc.dt;
+
+    if (settled) {
+        // Quieta en el plano: velocidad nula; solo envejece y se desvanece.
+        vel = vec3(0.0);
+    } else if (mat == 0u) {
+        // FUEGO: flotabilidad +Y, curl + seno XZ, drag. Emisión continua hacia arriba.
+        apply_wind_and_swirl(vel, p.pos_life.xyz, age, seed, emitter.phys.z);
+        vel.y += emitter.phys.x * pc.dt;
+        vel *= exp(-emitter.phys.y * pc.dt);
+    } else if (mat == 1u) {
+        // HUMO: flotabilidad suave, viento constante, swirl lento, se dispersa.
+        apply_wind_and_swirl(vel, p.pos_life.xyz, age, seed, emitter.phys.z);
+        vel.y += emitter.phys.x * pc.dt;
+        vel *= exp(-emitter.phys.y * pc.dt);
+    } else if (emitter.misc.x == 2u) {
+        // NIEBLA (F3): deriva mínima con viento; el reciclado por volumen la mantiene
+        // alrededor de la cámara.
+        vel = emitter.velocity_spread.xyz + vec3(emitter.env.z, 0.0, emitter.env.w);
+    } else if (emitter.misc.x == 3u) {
+        // LLUVIA: velocidad terminal constante + viento horizontal (sin integrar
+        // gravedad: viene precargada como velocidad de caída).
+        vel = vec3(emitter.env.z, emitter.velocity_spread.y, emitter.env.w);
+    } else if (emitter.misc.x == 4u) {
+        // NIEVE: caída lenta + viento + flutter sinusoidal desfasado por semilla.
+        float phase = particle_seed(p) * 40.0;
+        vec3 flutter = vec3(sin(age * 1.6 + phase), 0.0, cos(age * 1.1 + phase * 1.9));
+        vel = vec3(
+            emitter.env.z + flutter.x * 0.9,
+            emitter.velocity_spread.y,
+            emitter.env.w + flutter.z * 0.7
+        );
+    } else if (mat == 5u || mat == 6u) {
+        // ARENA/AGUA: gravedad + drag + cohesión. Granos y gotas usan bounce/friction
+        // del UBO; el polvo de arena es un emisor separado (`sand_dust()`).
+        vel.y += emitter.phys.x * pc.dt;
+        vel *= exp(-emitter.phys.y * pc.dt);
+        float cohesion = emitter.phys.w;
+        if (cohesion > 0.0 && !is_splashed(p)) {
+            vel = mix(vel, emitter.velocity_spread.xyz, min(cohesion * pc.dt, 1.0));
+        }
+        collide_ground(p, vel, settled, age);
+    } else {
+        // Materiales futuros: balística base.
+        vel.y += emitter.phys.x * pc.dt;
+        vel *= exp(-emitter.phys.y * pc.dt);
+    }
+
+    // Acumulación de nieve (F4): al tocar el suelo el copo se deposita y linger en el
+    // plano desvaneciéndose (aproximación visual de acumulación sin heightmap).
+    if (emitter.misc.x == 4u && !settled
+        && (emitter.misc.w & 2u) != 0u
+        && p.pos_life.y <= emitter.env.x) {
+        p.pos_life.y = emitter.env.x;
+        vel = vec3(0.0);
+        settled = true;
+        mark_settled(p);
+        p.pos_life.w = min(p.pos_life.w, age + 1.8);
+    }
+
+    p.pos_life.xyz += vel * pc.dt;
+    p.vel_age = vec4(vel, age);
+    if (mat == 5u && p.rot_seed.z >= 1.0 && p.rot_seed.z < 3.0) {
+        p.pos_life.y = max(p.pos_life.y, emitter.env.x + p.rot_seed.y * 0.5);
+    }
+
+    // Niebla rasante (F6): nunca por debajo del plano (`env.x`); así la capa se apoya
+    // en el suelo y se lee como niebla en vez de manchas flotantes.
+    if (emitter.misc.x == 2u && p.pos_life.y < emitter.env.x) {
+        p.pos_life.y = emitter.env.x;
+    }
+
+    // Reciclado de clima (F2): la partícula no muere, reaparece arriba del volumen
+    // alrededor de la cámara. Al tocar el suelo desaparece en la parte alta igual.
+    // Las asentadas (nieve acumulada) no se reciclan: mueren por vida. La niebla
+    // además respeta un radio de exclusión alrededor de la cámara: sin él, un
+    // billboard de varios metros a un metro del ojo traga la pantalla entera y al
+    // orbitar parece que la cámara se invierte.
+    if (emitter.misc.x == 3u || emitter.misc.x == 4u
+        || (emitter.misc.x == 2u && emitter.volume.x > 0.5)) {
+        vec3 rel = p.pos_life.xyz - emitter.origin_radius.xyz;
+        vec3 vol = emitter.volume.xyz;
+        bool outside = abs(rel.x) > vol.x || abs(rel.z) > vol.z
+            || rel.y < -vol.y || rel.y > vol.y;
+        bool grounded = !settled
+            && p.pos_life.y <= emitter.env.x
+            && rel.y < vol.y * 0.5;
+        bool too_close = emitter.misc.x == 2u && length(rel) < 3.0;
+        if (outside || grounded || too_close) {
+            float r1 = rand01(7u);
+            float r2 = rand01(8u);
+            float r3 = rand01(9u);
+            // La niebla reaparece DENTRO de su capa rasante (no al techo del volumen).
+            float respawn_y = vol.y * 0.95;
+            if (emitter.misc.x == 2u) {
+                respawn_y = emitter.env.x + r3 * vol.y * 0.35;
+            }
+            p.pos_life.xyz = emitter.origin_radius.xyz
+                + vec3((r1 * 2.0 - 1.0) * vol.x, respawn_y, (r2 * 2.0 - 1.0) * vol.z);
+            // Desincroniza la edad para que el flutter de la nieve no oscile en bloque.
+            p.vel_age.w += r3 * 2.5;
+            p.rot_seed.z = fract(p.rot_seed.z);
+        }
+    }
+
+    float k = clamp(age / life, 0.0, 1.0);
+    p.color = color_over_life(mat, k);
+    if (mat == 5u && p.rot_seed.z >= 1.0) {
+        // Grano en el suelo: alfa lleno durante el reposo; solo se desvanece al final.
+        p.color.a = emitter.color_start.a;
+        if (is_settled(p)) {
+            float remain = max(life - age, 0.0);
+            if (remain < 0.4) {
+                p.color.a *= remain / 0.4;
+            }
+        }
+    }
+    return true;
+}
+
+Particle spawn_particle() {
+    float r1 = rand01(1u);
+    float r2 = rand01(2u);
+    float r3 = rand01(3u);
+    float r4 = rand01(4u);
+    float r5 = rand01(5u);
+    float r6 = rand01(6u);
+
+    // Niebla de escena (volume≈0) nace en el emisor; la de clima usa la caja.
+    bool weather = emitter.misc.x == 3u || emitter.misc.x == 4u
+        || (emitter.misc.x == 2u && emitter.volume.x > 0.5);
+    vec3 pos;
+    vec3 vel;
+    if (weather) {
+        // Clima (F2/F6): nace en cualquier punto del volumen alrededor de la cámara.
+        vec3 vol = emitter.volume.xyz;
+        // La niebla forma una CAPA rasante pegada al suelo (~35 % del volumen de
+        // altura sobre el plano): nubes bajas visibles, no manchas flotando a todas
+        // las alturas (con vel vertical 0 nunca bajarían del punto de nacimiento).
+        float spawn_y = (r4 * 2.0 - 1.0) * vol.y;
+        if (emitter.misc.x == 2u) {
+            spawn_y = emitter.env.x + r4 * vol.y * 0.35;
+        }
+        pos = emitter.origin_radius.xyz
+            + vec3((r3 * 2.0 - 1.0) * vol.x, spawn_y, (r5 * 2.0 - 1.0) * vol.z);
+        // Caída terminal del preset + viento; la dispersión solo es jitter horizontal.
+        float fall = emitter.velocity_spread.y;
+        vel = vec3(
+            emitter.env.z + (r1 * 2.0 - 1.0) * emitter.velocity_spread.w,
+            fall,
+            emitter.env.w + (r2 * 2.0 - 1.0) * emitter.velocity_spread.w
+        );
+    } else {
+        // Emisores puntuales: disco horizontal centrado en el origen del emisor.
+        float angle = r1 * TAU;
+        float radius = emitter.origin_radius.w * sqrt(r2);
+        pos = emitter.origin_radius.xyz + vec3(cos(angle) * radius, 0.0, sin(angle) * radius);
+        // Velocidad base + dispersión isotrópica.
+        vec3 jitter = vec3(r3, r4, r5) * 2.0 - 1.0;
+        if (emitter.misc.x == 0u) {
+            // Fuego: jitter más horizontal, siempre algo de +Y.
+            jitter.y *= 0.35;
+        }
+        vel = emitter.velocity_spread.xyz + jitter * emitter.velocity_spread.w;
+        if (emitter.misc.x == 0u) {
+            vel.y = max(vel.y, 0.55);
+        }
+        if (emitter.misc.x == 6u) {
+            // Cono del chorro: ±0.6 m/s en XZ para que no caigan en líneas paralelas.
+            vel.x += (rand01(10u) * 2.0 - 1.0) * 0.6;
+            vel.z += (rand01(11u) * 2.0 - 1.0) * 0.6;
+        }
+    }
+
+    float life = emitter.size_life.z * (1.0 + emitter.size_life.w * (r6 - 0.5));
+    float size = emitter.size_life.x * (1.0 + emitter.size_life.y * (r4 - 0.5));
+    float ang_vel = emitter.env.y * (0.55 + 0.9 * r3) * (r1 > 0.5 ? 1.0 : -1.0);
+    vec4 tint = emitter.color_start;
+
+    Particle p;
+    p.pos_life = vec4(pos, life);
+    p.vel_age = vec4(vel, 0.0);
+    p.rot_seed = vec4(r5 * TAU, size, r6, ang_vel);
+    p.color = tint;
+    return p;
+}
+
+void main() {
+    uint capacity = emitter.misc.y;
+    uint in_count = min(in_count_ref(), capacity);
+    uint i = gl_GlobalInvocationID.x;
+
+    Particle p;
+    bool keep = false;
+    if (i < in_count) {
+        p = load_particle(i);
+        keep = integrate(p);
+    } else if (i < in_count + pc.spawn) {
+        p = spawn_particle();
+        keep = true;
+    }
+
+    if (keep) {
+        // Append-consume sobre el buffer de salida (precisión 2: el host lo reinició a 0).
+        // El destino del atomic debe ser el buffer de salida explícito (l-value directo).
+        uint slot;
+        if (pc.read_is_a == 1u) {
+            slot = atomicAdd(cnt_b, 1u);
+        } else {
+            slot = atomicAdd(cnt_a, 1u);
+        }
+        if (slot < capacity) {
+            store_particle(slot, p);
+        }
+        // Si se pasó de capacidad, la partícula se descarta; el kernel de la lectura
+        // siguiente acota `in_count` a `capacity`, así que el contador no crece sin límite.
+    }
+}

@@ -12,6 +12,7 @@ mod gizmo;
 mod hud_image_asset;
 pub(crate) mod ipc;
 mod mesh;
+mod particles;
 mod platform;
 mod probe_registry;
 mod save_entity_3d;

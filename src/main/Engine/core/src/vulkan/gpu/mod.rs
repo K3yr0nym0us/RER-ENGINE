@@ -45,7 +45,6 @@ pub struct RtProperties {
 
 struct GpuInner {
     /// Mantiene viva la librería de Vulkan durante toda la vida de `Instance`/`Device`.
-    #[allow(dead_code)]
     entry: ash::Entry,
     instance: ash::Instance,
     surface_loader: ash::khr::surface::Instance,
@@ -154,12 +153,14 @@ impl VulkanOptions {
 mod context;
 mod frame;
 mod memory;
+mod present;
 mod swapchain;
 
 use self::frame::FrameSync;
 pub use self::frame::{FrameAcquire, FrameTarget};
 use self::memory::pick_sample_count;
 pub use self::memory::{GpuBuffer, GpuImage};
+pub use self::present::PresentTarget;
 use self::swapchain::SwapchainState;
 
 impl SharedGpu {
@@ -210,6 +211,21 @@ impl SharedGpu {
     /// Instancia Vulkan, necesaria para crear el renderer de egui sobre este mismo device.
     pub fn instance(&self) -> &ash::Instance {
         &self.inner.instance
+    }
+
+    /// Librería Vulkan (`vulkan-1.dll`). Hace falta para crear superficies extra
+    /// (ventanas nativas secundarias) sobre el mismo device.
+    pub fn entry(&self) -> &ash::Entry {
+        &self.inner.entry
+    }
+
+    /// Cola gráfica/de presentación. Quien envía o presenta debe mantener este
+    /// candado durante `queue_submit` / `queue_present`.
+    pub(super) fn lock_queue(&self) -> std::sync::MutexGuard<'_, vk::Queue> {
+        self.inner
+            .queue
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
     }
 
     pub fn physical_device(&self) -> vk::PhysicalDevice {

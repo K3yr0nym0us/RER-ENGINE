@@ -134,6 +134,10 @@ pub(crate) struct SavedWorldConfig {
     pub(crate) lod1Distance: Option<f32>,
     #[serde(default)]
     pub(crate) lod2Distance: Option<f32>,
+    /// Partículas GPU-driven (F5): se copia verbatim del manifiesto y se restaura por
+    /// `restore_particles_from_value` al cargar la escena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) particles: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Default, Deserialize, Clone, Serialize)]

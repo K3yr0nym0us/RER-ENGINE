@@ -299,6 +299,11 @@ fn build_world(world: Option<&Value>) -> Value {
             out.insert(target.into(), value.clone());
         }
     }
+    // Partículas (F5): la sección entera viaja verbatim (clima + emisores con sus
+    // campos snake_case); la restauración la deserializa tal cual.
+    if let Some(particles) = world.get("particles").filter(|value| value.is_object()) {
+        out.insert("particles".into(), particles.clone());
+    }
     Value::Object(out)
 }
 

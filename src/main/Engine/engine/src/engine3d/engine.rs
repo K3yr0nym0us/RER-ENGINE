@@ -148,6 +148,8 @@ pub struct State {
     >,
     /// Cache hueso → índice joint (invalidar al cambiar modelo).
     pub(crate) bone_index_cache: std::collections::HashMap<(EntityId, String), usize>,
+    /// Sistema de partículas GPU-driven (F1: fuego) del lado CPU del motor.
+    pub(crate) particles: crate::engine3d::particles::ParticleSystem,
     /// Modo editor: seleccionar hueso con click para un socket.
     pub(crate) socket_bone_pick_entity: Option<EntityId>,
     pub(crate) socket_bone_pick_hovered_joint: Option<usize>,

@@ -51,6 +51,24 @@ fn spv(name: &str) -> &'static [u8] {
         "present.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/present.frag.spv")),
         "depth_only.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/depth_only.frag.spv")),
         "sky.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv")),
+        // Partículas GPU-driven.
+        "particle_spawn_sim" => include_bytes!(concat!(env!("OUT_DIR"), "/spawn_sim.comp.spv")),
+        "particle_build_indirect" => {
+            include_bytes!(concat!(env!("OUT_DIR"), "/build_indirect.comp.spv"))
+        }
+        "particle_render.vert" => {
+            include_bytes!(concat!(env!("OUT_DIR"), "/particle_render.vert.spv"))
+        }
+        "particle_render.frag" => {
+            include_bytes!(concat!(env!("OUT_DIR"), "/particle_render.frag.spv"))
+        }
+        // WBOIT (F3): acumulación + resolve.
+        "particle_wboit.frag" => {
+            include_bytes!(concat!(env!("OUT_DIR"), "/particle_wboit.frag.spv"))
+        }
+        "particle_wboit_resolve.frag" => {
+            include_bytes!(concat!(env!("OUT_DIR"), "/particle_wboit_resolve.frag.spv"))
+        }
         _ => &[],
     }
 }
@@ -61,6 +79,48 @@ pub struct MeshBatch<'a> {
     pub index_count: u32,
     pub instances: &'a [u8],
     pub instance_count: u32,
+}
+
+/// Lote de partículas de un emisor para este frame. `read_is_a` ya viene decidido por el
+/// `sim_step` PROPIO del emisor (precisión 1 del plan); el pool GPU lo consume tal cual.
+pub struct ParticleBatch {
+    pub id: u64,
+    /// Presupuesto del pool (capacidad); el pool GPU crece/recicla según esto.
+    pub max_particles: u32,
+    /// Partículas nuevas este frame (CPU: rate·dt con acarreo).
+    pub spawn: u32,
+    /// 1 = el pool reinicia contadores/indirecto de este emisor antes de simular
+    /// (clima reemplazado con el mismo id / restauración de escena, F6).
+    pub reset: u32,
+    /// Emisión estimada del frame siguiente (`build_indirect.comp` la usa para el dispatch).
+    pub next_spawn: u32,
+    /// Delta time ya acotado (≤ 0.05 s).
+    pub dt: f32,
+    /// Semilla RNG del emisor (avanza por frame).
+    pub seed: u32,
+    /// 1 = este frame leyó A y escribió B.
+    pub read_is_a: u32,
+    /// 0 = blending aditivo (fuego), 1 = alpha estándar (lluvia/nieve, F2).
+    pub blend_alpha: u32,
+    /// 1 = acumulador WBOIT (humo/niebla/agua, F3); 0 = pase directo.
+    pub wboit: u32,
+    /// 1 = soft particles contra la depth del forward (F3).
+    pub soft: u32,
+    /// Parámetros del emisor (160 B, espejo std140 del GLSL).
+    pub params: crate::engine3d::particles::EmitterParams,
+}
+
+/// Cámara para el pase de billboards: el jitter TAA de `view_proj` es el mismo que
+/// rasterizó el forward, así que los billboards no parpadean respecto a la escena.
+#[derive(Clone, Copy, Debug)]
+pub struct ParticleCamera {
+    pub view_proj: [[f32; 4]; 4],
+    /// xyz = derecha de cámara en mundo, w reservado.
+    pub cam_right: [f32; 4],
+    /// xyz = arriba de cámara en mundo, w reservado.
+    pub cam_up: [f32; 4],
+    /// `[near, far]` de la cámara: linealización de la depth para soft particles (F3).
+    pub near_far: [f32; 2],
 }
 
 pub struct SkinnedBatch<'a> {
@@ -144,6 +204,10 @@ pub struct FrameInput<'a> {
     pub bvh_node_count: u32,
     pub bvh_tris: &'a [u8],
     pub bvh_tri_count: u32,
+    /// Lotes de partículas GPU-driven (F1: fuego). El pool GPU crece/recicla por `id`.
+    pub particles: &'a [ParticleBatch],
+    /// Cámara del pase de billboards (misma `view_proj` con jitter que el forward).
+    pub particle_camera: ParticleCamera,
 }
 
 pub struct FrameRenderer {
@@ -209,6 +273,8 @@ pub struct FrameRenderer {
     ms_pipelines: Option<[vk::Pipeline; 5]>,
     /// `[depth_only, depth_only_skinned]` a 1×: rellenan `targets.depth` tras el pase MSAA.
     depth_pipelines: [vk::Pipeline; 2],
+    /// Pool GPU del sistema de partículas (buffers, pipelines y descriptores dedicados).
+    particle_pool: ParticlePool,
     /// Módulos del forward, guardados para poder recrear los pipelines cuando cambia el tier.
     forward_vert: vk::ShaderModule,
     forward_frag: vk::ShaderModule,
@@ -295,6 +361,7 @@ impl Drop for FrameRenderer {
 mod commands;
 mod forward;
 mod layouts;
+mod particles;
 mod pipelines;
 mod present;
 mod reflections;
@@ -303,6 +370,7 @@ mod shadow;
 mod targets;
 use self::commands::*;
 use self::layouts::*;
+use self::particles::ParticlePool;
 use self::pipelines::*;
 use self::targets::*;
 
@@ -687,6 +755,17 @@ impl FrameRenderer {
             &mut pipelines,
         )?;
         let depth_pipelines = [depth_only, depth_only_skinned];
+        // Pool GPU de partículas: pipelines y descriptores dedicados, sin tocar el registro
+        // indexado de `pipelines` del renderer (el MSAA hace pop de los últimos).
+        let mut particle_pool = ParticlePool::new(gpu, targets.depth.view)?;
+        // Enlace inicial de la depth (soft particles) y de los samplers del resolve WBOIT;
+        // `rewrite_target_descriptors` lo repite cuando los targets se recrean.
+        particle_pool.rewrite_targets(
+            targets.scene.view,
+            targets.particles_accum.view,
+            targets.particles_reveal.view,
+            targets.depth.view,
+        )?;
         let _kept = (
             forward,
             forward_blend,
@@ -713,6 +792,7 @@ impl FrameRenderer {
             forward_frag: frag,
             skinned_vert,
             depth_pipelines,
+            particle_pool,
             full_vert,
             sky_frag,
             layout_full: full_layout,
@@ -840,6 +920,12 @@ impl FrameRenderer {
         // con los de 1× porque la captura de sondas dibuja en imágenes de una muestra; solo
         // `forward_pass` cambia a los pipelines MSAA.
         self.ensure_msaa(input.msaa_samples, &device)?;
+        // Partículas: compute de simulación ANTES de cualquier pase gráfico (fill del
+        // contador de salida + sim + build_indirect + barreras Compute -> Graphics).
+        if !input.particles.is_empty() {
+            self.particle_pool
+                .sim(slot, input.particles, &device, cmd)?;
+        }
         self.trace_background(slot, input, &pipes, &device, cmd)?;
         if input.shadows {
             self.shadow_pass(slot, input, &pipes, &device, cmd)?;
@@ -859,6 +945,15 @@ impl FrameRenderer {
             self.capture_probe(slot, input, *capture, &pipes, &device, cmd)?;
         }
         self.forward_pass(slot, input, &pipes, &device, cmd)?;
+        // Partículas: billboards aditivos sobre el HDR del forward (con su depth ya en
+        // READ_ONLY) y antes de reflejos/SSR/composite, así el humo/llama entra en el
+        // color que consumen los reflejos. Orden documentado respecto a translúcidos:
+        // `forward_blend` dibuja los objetos translúcidos del forward ANTES (mismo
+        // render pass, depth-write off) y las partículas se mezclan ENCIMA; F3 (WBOIT)
+        // añadirá su propio pase entre ambos para humo/niebla/agua sin ordenar en CPU.
+        if !input.particles.is_empty() {
+            self.particles_draw(slot, input, &device, cmd)?;
+        }
         if input.reflections && input.raytracing {
             self.reflection_pass(slot, input, &pipes, &device, cmd)?;
         }

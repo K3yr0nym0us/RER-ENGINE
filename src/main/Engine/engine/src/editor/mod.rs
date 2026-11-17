@@ -9,6 +9,7 @@ mod bridge;
 mod cli;
 mod context;
 mod i18n;
+mod particle_window;
 mod project_state;
 mod render;
 mod save;

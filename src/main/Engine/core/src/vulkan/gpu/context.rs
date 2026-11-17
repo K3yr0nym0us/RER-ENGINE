@@ -357,12 +357,27 @@ impl SharedGpu {
             );
             hw_rt = false;
         }
+        // `independentBlend` lo necesita el acumulador WBOIT de partículas (F3/F6): accum y
+        // revealage usan blending distinto por adjunto en el mismo pipeline. Core desde 1.0,
+        // presente en todo adaptador de escritorio; si faltara, la creación del pipeline
+        // fallaría con la validación pidiendo adjuntos idénticos.
+        let independent_blend = core_features.independent_blend == vk::TRUE;
+        if !independent_blend {
+            log::warn!(
+                "[vulkan] el adaptador no expone independentBlend: el pase WBOIT de partículas no podrá crearse."
+            );
+        }
         let base_features = vk::PhysicalDeviceFeatures {
             sampler_anisotropy: vk::TRUE,
             shader_sampled_image_array_dynamic_indexing: vk::TRUE,
             fill_mode_non_solid: vk::TRUE,
             fragment_stores_and_atomics: vk::TRUE,
             shader_int64: core_features.shader_int64,
+            independent_blend: if independent_blend {
+                vk::TRUE
+            } else {
+                vk::FALSE
+            },
             // Las probes del 3D usan un `texture_cube_array` (6 caras por ranura) y el forward lo
             // muestrea con `samplerCubeArray`: sin la feature la vista y el muestreo quedan
             // indefinidos (reflejos duplicados / basura). El 2D no la pide.

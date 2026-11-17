@@ -328,6 +328,72 @@ pub enum EngineCommand3dOnly {
         id: u32,
         hardness: u32,
     },
+    /// Partículas GPU-driven: alta de un emisor con preset del material + overrides.
+    AddParticleEmitter {
+        #[serde(default = "default_particle_material")]
+        material: String,
+        #[serde(default)]
+        position: [f32; 3],
+        #[serde(default)]
+        radius: Option<f32>,
+        #[serde(default)]
+        rate: Option<f32>,
+        #[serde(default)]
+        max_particles: Option<u32>,
+        #[serde(default)]
+        velocity: Option<[f32; 3]>,
+        #[serde(default)]
+        size: Option<f32>,
+        #[serde(default)]
+        life: Option<f32>,
+        #[serde(default)]
+        gravity: Option<f32>,
+        #[serde(default)]
+        drag: Option<f32>,
+        #[serde(default)]
+        turbulence: Option<f32>,
+        #[serde(default)]
+        ground_y: Option<f32>,
+        /// 0 = billboard a cámara, 1 = orientado a velocidad.
+        #[serde(default)]
+        billboard: Option<u32>,
+        /// F4: cohesión de flujo (0–1).
+        #[serde(default)]
+        cohesion: Option<f32>,
+        /// F4: viento horizontal (m/s).
+        #[serde(default)]
+        wind: Option<[f32; 2]>,
+        /// F4: flags granulares.
+        #[serde(default)]
+        ground_collision: Option<bool>,
+        #[serde(default)]
+        accumulate: Option<bool>,
+        #[serde(default)]
+        splash: Option<bool>,
+        /// F5: id asignado por la UI (ids altos) para poder borrar el emisor después.
+        #[serde(default)]
+        id: Option<u64>,
+    },
+    RemoveParticleEmitter {
+        id: u64,
+    },
+    ClearParticleEmitters,
+    /// Clima global (F2/F6-bis): lluvia, nieve o niebla con seguimiento de cámara.
+    /// "none" lo retira. `fall_speed` (multiplicador 0.25–3) y `wind_x` (m/s,
+    /// negativo = hacia la izquierda) solo afectan a lluvia/nieve.
+    SetParticleEnvironment {
+        kind: String,
+        #[serde(default)]
+        intensity: Option<f32>,
+        #[serde(default)]
+        fall_speed: Option<f32>,
+        #[serde(default)]
+        wind_x: Option<f32>,
+    },
+}
+
+fn default_particle_material() -> String {
+    "fire".to_string()
 }
 
 #[cfg(test)]

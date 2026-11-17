@@ -199,6 +199,13 @@ impl State {
             entity_attachments: HashMap::new(),
             entity_sockets: HashMap::new(),
             bone_index_cache: HashMap::new(),
+            particles: {
+                let mut particles = crate::engine3d::particles::ParticleSystem::new();
+                // F1: emisor demo de fuego cableado a mano sobre el origen del mundo
+                // (visible con la cámara por defecto del editor).
+                particles.add(crate::engine3d::particles::EmitterConfig::fire_demo());
+                particles
+            },
             socket_bone_pick_entity: None,
             socket_bone_pick_hovered_joint: None,
             bone_physics_editor_entity: None,

@@ -350,6 +350,10 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
         view.world.lod1Distance,
         view.world.lod2Distance,
     );
+    // Partículas GPU-driven (F5): reemplaza el sistema por el estado guardado de la escena.
+    if let Some(particles) = &view.world.particles {
+        state.restore_particles_from_value(particles);
+    }
     state.ensure_material_validation_demo();
     send_event(&EngineEvent::GraphicsTextureTierChanged {
         tier: state.graphics_texture_tier.wire().to_string(),

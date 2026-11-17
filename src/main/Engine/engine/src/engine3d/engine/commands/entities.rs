@@ -600,6 +600,132 @@ impl State {
             EngineCommand::Only3d(EngineCommand3dOnly::SetEntityHardness { id, hardness }) => {
                 self.set_entity_hardness(id, hardness);
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::AddParticleEmitter {
+                material,
+                position,
+                radius,
+                rate,
+                max_particles,
+                velocity,
+                size,
+                life,
+                gravity,
+                drag,
+                turbulence,
+                ground_y,
+                billboard,
+                cohesion,
+                wind,
+                ground_collision,
+                accumulate,
+                splash,
+                id,
+            }) => match crate::engine3d::particles::MaterialKind::from_wire(&material) {
+                Some(material) => {
+                    let replacing = id.is_some_and(|id| self.particles.contains(id));
+                    let new_id = self.add_particle_emitter(
+                        material,
+                        position,
+                        radius,
+                        rate,
+                        max_particles,
+                        velocity,
+                        size,
+                        life,
+                        gravity,
+                        drag,
+                        turbulence,
+                        ground_y,
+                        billboard,
+                        cohesion,
+                        wind,
+                        ground_collision,
+                        accumulate,
+                        splash,
+                        id,
+                    );
+                    if replacing {
+                        log::info!("[partículas] emisor {material:?} actualizado (id {new_id})");
+                    } else {
+                        log::info!("[partículas] emisor {material:?} creado (id {new_id})");
+                    }
+                }
+                None => {
+                    log::warn!("[partículas] material IPC no reconocido: {material}");
+                }
+            },
+            EngineCommand::Only3d(EngineCommand3dOnly::RemoveParticleEmitter { id }) => {
+                if self.particles.remove(id) {
+                    log::info!("[partículas] emisor {id} eliminado");
+                } else {
+                    log::warn!("[partículas] emisor {id} no encontrado");
+                }
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::ClearParticleEmitters) => {
+                self.particles.clear();
+                log::info!("[partículas] emisores eliminados");
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetParticleEnvironment {
+                kind,
+                intensity,
+                fall_speed,
+                wind_x,
+            }) => {
+                let intensity = intensity.unwrap_or(1.0);
+                let fall_speed = fall_speed.unwrap_or(1.0);
+                let wind_x = wind_x.unwrap_or(0.0);
+                let wind_note = if wind_x != 0.0 {
+                    format!(", viento {wind_x:+.1} m/s")
+                } else {
+                    String::new()
+                };
+                let fall_note = if fall_speed != 1.0 {
+                    format!(" · caída ×{fall_speed:.1}")
+                } else {
+                    String::new()
+                };
+                match kind.as_str() {
+                    "none" | "clear" => {
+                        self.particles
+                            .set_weather(None, intensity, fall_speed, wind_x);
+                        log::info!("[clima] desactivado");
+                    }
+                    "rain" => {
+                        self.particles.set_weather(
+                            Some(crate::engine3d::particles::MaterialKind::Rain),
+                            intensity,
+                            fall_speed,
+                            wind_x,
+                        );
+                        log::info!(
+                            "[clima] lluvia (intensidad {intensity:.1}{fall_note}{wind_note})"
+                        );
+                    }
+                    "snow" => {
+                        self.particles.set_weather(
+                            Some(crate::engine3d::particles::MaterialKind::Snow),
+                            intensity,
+                            fall_speed,
+                            wind_x,
+                        );
+                        log::info!(
+                            "[clima] nieve (intensidad {intensity:.1}{fall_note}{wind_note})"
+                        );
+                    }
+                    "fog" => {
+                        self.particles.set_weather(
+                            Some(crate::engine3d::particles::MaterialKind::Fog),
+                            intensity,
+                            fall_speed,
+                            wind_x,
+                        );
+                        log::info!("[clima] niebla (intensidad {intensity:.1})");
+                    }
+                    other => {
+                        log::warn!("[clima] tipo IPC no reconocido: {other}");
+                    }
+                }
+            }
             EngineCommand::Common(EngineCommandCommon::ApplyEntityRestore {
                 id,
                 name,

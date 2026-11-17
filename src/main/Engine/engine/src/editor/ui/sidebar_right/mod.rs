@@ -33,6 +33,8 @@ pub struct SidebarRightState {
     grid_cell: NumberDraft,
     fps_selection: u32,
     fps_dirty: bool,
+    /// Partículas GPU-driven (F5): clima + emisores de escena gestionados desde la UI.
+    pub particles: particles::ParticlesUiState,
 }
 
 impl SidebarRightState {
@@ -90,6 +92,16 @@ enum WorldAction {
         lod1_distance: Option<f32>,
         lod2_distance: Option<f32>,
     },
+    /// Partículas (F5/F6-bis): clima global del dropdown (None = ninguno), con
+    /// multiplicador de velocidad de caída y viento X (lluvia/nieve).
+    SetParticleWeather {
+        kind: Option<&'static str>,
+        intensity: f32,
+        fall: f32,
+        wind: f32,
+    },
+    /// Partículas (F5): baja de un emisor de escena creado por la UI.
+    RemoveParticleEmitter(u64),
 }
 
 mod fps;
@@ -99,6 +111,8 @@ mod lighting;
 mod lod;
 mod metrics;
 mod msaa;
+/// Partículas GPU-driven (F5): dropdown de clima + emisores de escena.
+pub(crate) mod particles;
 mod reflections;
 mod shadows;
 mod taa;
@@ -112,6 +126,7 @@ use self::lighting::*;
 use self::lod::*;
 use self::metrics::*;
 use self::msaa::*;
+use self::particles::*;
 use self::reflections::*;
 use self::shadows::*;
 use self::taa::*;
@@ -184,6 +199,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         grid_cell,
                         fps_selection,
                         fps_dirty,
+                        particles,
                     } = &mut app.right_sidebar;
 
                     // Sincroniza los borradores con el estado del motor.
@@ -331,6 +347,19 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         sub(ui, open, "world_lod", icons::STACK, "LOD", enabled, |ui| {
                             lod_body(ui, world, locale, &mut actions)
                         });
+                        sub(
+                            ui,
+                            open,
+                            "world_particles",
+                            icons::SPARKLE,
+                            crate::editor::i18n::tr(
+                                locale,
+                                "Entorno y partículas",
+                                "Environment & particles",
+                            ),
+                            enabled,
+                            |ui| particles_body(ui, particles, locale, &mut actions),
+                        );
                     }
 
                     sub(
@@ -561,6 +590,43 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
                 ),
                 false,
             );
+        }
+        WorldAction::SetParticleWeather {
+            kind,
+            intensity,
+            fall,
+            wind,
+        } => {
+            // El estado ya lo fijó el body; aquí solo viaja el comando.
+            let wire = kind.unwrap_or("none");
+            app.send_engine(json!({
+                "cmd": "set_particle_environment",
+                "kind": wire,
+                "intensity": intensity,
+                "fall_speed": fall,
+                "wind_x": wind,
+            }));
+            app.push_log(
+                match kind {
+                    Some("rain") => format!(
+                        "[Clima] Lluvia (intensidad {intensity:.1}, caída ×{fall:.1}, viento {wind:+.1})"
+                    ),
+                    Some("snow") => format!(
+                        "[Clima] Nieve (intensidad {intensity:.1}, caída ×{fall:.1}, viento {wind:+.1})"
+                    ),
+                    Some("fog") => format!("[Clima] Niebla (intensidad {intensity:.1})"),
+                    _ => "[Clima] Desactivado".to_string(),
+                },
+                false,
+            );
+        }
+        WorldAction::RemoveParticleEmitter(id) => {
+            app.send_engine(json!({ "cmd": "remove_particle_emitter", "id": id }));
+            app.right_sidebar
+                .particles
+                .emitters
+                .retain(|row| row.id != id);
+            app.push_log(format!("[Partículas] Emisor {id} eliminado"), false);
         }
     }
 }

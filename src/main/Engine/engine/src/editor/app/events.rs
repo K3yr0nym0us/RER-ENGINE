@@ -275,6 +275,11 @@ impl EditorApp {
     /// Aplica `scene.world` de un `save_snapshot_ready`.
     pub fn apply_world_snapshot(&mut self, scene: &Value) {
         self.world.apply_snapshot(scene);
+        // Partículas (F5): el dropdown del sidebar se sincroniza con el estado real
+        // del motor (clima + emisores de escena).
+        if let Some(particles) = scene.get("world").and_then(|world| world.get("particles")) {
+            self.right_sidebar.particles.apply_snapshot(particles);
+        }
         self.background_path = scene
             .get("background_path")
             .and_then(Value::as_str)

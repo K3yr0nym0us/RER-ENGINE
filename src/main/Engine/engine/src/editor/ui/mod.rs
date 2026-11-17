@@ -8,6 +8,8 @@ mod globalize_model_modal;
 mod load_from_scene_modal;
 mod model_import_modal;
 mod number_draft;
+/// Modal nativa del editor de emisores de partículas (F5).
+mod particles_config_modal;
 pub(crate) mod sidebar_left;
 pub(crate) mod sidebar_right;
 mod switch_scene_modal;
@@ -25,4 +27,9 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     globalize_model_modal::show(&ctx, app);
     switch_scene_modal::show(&ctx, app);
     clear_scene_modal::show(&ctx, app);
+}
+
+/// Cuerpo del editor de emisores: vive en una ventana nativa winit aparte.
+pub(crate) fn show_particle_editor(ui: &mut egui::Ui, app: &mut EditorApp) {
+    particles_config_modal::show(ui, app);
 }

@@ -28,7 +28,8 @@ pub(crate) mod select {
 }
 
 pub use frame::{
-    FrameInput, FrameRenderer, GizmoBatch, MeshBatch, ProbeCapture, RtBatch, SkinnedBatch,
+    FrameInput, FrameRenderer, GizmoBatch, MeshBatch, ParticleBatch, ParticleCamera, ProbeCapture,
+    RtBatch, SkinnedBatch,
 };
 
 pub use rer_engine_core::vulkan::{

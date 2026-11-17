@@ -64,6 +64,98 @@ pub struct SaveWorldSnapshot {
     pub model_lod1_distance_m: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_lod2_distance_m: Option<f32>,
+    /// Partículas GPU-driven (F5): clima + emisores de escena. `None` = sin sección
+    /// (escenas viejas); los campos internos van en snake_case tal cual los emite el
+    /// motor y el manifiesto del proyecto los copia verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub particles: Option<SaveParticlesSnapshot>,
+}
+
+/// Sección de partículas del snapshot: un solo emisor de clima opcional + emisores
+/// de escena con su configuración editable. Los colores NO viajan: se restauran del
+/// preset del material (la UI de F5 no los edita).
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
+pub struct SaveParticlesSnapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub weather: Option<SaveWeatherSnapshot>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub emitters: Vec<SaveParticleEmitterSnapshot>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct SaveWeatherSnapshot {
+    /// `rain | snow | fog` (MaterialKind::wire).
+    pub kind: String,
+    pub intensity: f32,
+    /// F6-bis: multiplicador de velocidad de caída (1.0 = preset) y viento horizontal X
+    /// (m/s, negativo = hacia la izquierda). `None` en guardados antiguos.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fall_speed: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wind_x: Option<f32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct SaveParticleEmitterSnapshot {
+    /// Id del emisor; la UI usa ids altos (0x6000…) para no chocar con los del motor.
+    pub id: u64,
+    /// `fire | smoke | fog | rain | snow | sand | water`.
+    pub material: String,
+    pub position: [f32; 3],
+    #[serde(default)]
+    pub radius: f32,
+    #[serde(default)]
+    pub rate: f32,
+    #[serde(default)]
+    pub max_particles: u32,
+    #[serde(default)]
+    pub velocity: [f32; 3],
+    #[serde(default)]
+    pub spread: f32,
+    #[serde(default)]
+    pub size: f32,
+    #[serde(default)]
+    pub size_variation: f32,
+    #[serde(default)]
+    pub life: f32,
+    #[serde(default)]
+    pub life_variation: f32,
+    #[serde(default)]
+    pub gravity: f32,
+    #[serde(default)]
+    pub drag: f32,
+    #[serde(default)]
+    pub turbulence: f32,
+    #[serde(default)]
+    pub cohesion: f32,
+    #[serde(default)]
+    pub ground_y: f32,
+    #[serde(default)]
+    pub spin: f32,
+    #[serde(default)]
+    pub wind: [f32; 2],
+    #[serde(default)]
+    pub billboard: u32,
+    #[serde(default = "default_true")]
+    pub soft: bool,
+    #[serde(default)]
+    pub ground_collision: bool,
+    #[serde(default)]
+    pub accumulate: bool,
+    #[serde(default)]
+    pub splash: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounciness: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friction: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_end: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stretch: Option<f32>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

@@ -1,0 +1,55 @@
+#version 460
+// GPU-driven puro: convierte el contador de partículas vivas del paso de simulación en
+// 1) `VkDrawIndirectCommand` (offset 0, 16 B) para el pase de billboards y
+// 2) `VkDispatchIndirectCommand` (offset 16, 12 B) para el dispatch de simulación del
+//    frame siguiente (latencia de 1 frame; el primer frame usa el valor inicial de CPU).
+//
+// Un solo hilo: los contadores ya están estabilizados por la barrera previa.
+
+layout(local_size_x = 1) in;
+
+// Debe coincidir con `EmitterParams` de params.rs (160 bytes); aquí solo interesa misc.y.
+layout(set = 0, binding = 0) uniform Emitter {
+    vec4 origin_radius;
+    vec4 velocity_spread;
+    vec4 size_life;
+    vec4 color_start;
+    vec4 color_end;
+    vec4 phys;
+    vec4 env;
+    uvec4 misc;      // y = capacidad del pool
+    vec4 volume;
+    vec4 collide;
+} emitter;
+
+layout(set = 0, binding = 3) buffer CntA { uint cnt_a; };
+layout(set = 0, binding = 4) buffer CntB { uint cnt_b; };
+layout(set = 0, binding = 5) buffer Indirect {
+    uint draw_vertex_count;     // 0
+    uint draw_instance_count;   // 4
+    uint draw_first_vertex;     // 8
+    uint draw_first_instance;   // 12
+    uint dispatch_groups_x;     // 16
+    uint dispatch_groups_y;     // 20
+    uint dispatch_groups_z;     // 24
+} indirect;
+
+layout(push_constant) uniform Push {
+    uint read_is_a;  // lectura de ESTE frame: la salida es el buffer opuesto
+    uint next_spawn; // emisión estimada del frame siguiente
+} pc;
+
+void main() {
+    uint capacity = emitter.misc.y;
+    uint out_count = min(pc.read_is_a == 1u ? cnt_b : cnt_a, capacity);
+
+    indirect.draw_vertex_count = 6u;   // quad TRIANGLE_LIST, sin index buffer
+    indirect.draw_instance_count = out_count;
+    indirect.draw_first_vertex = 0u;
+    indirect.draw_first_instance = 0u;
+
+    uint estimated = min(out_count + pc.next_spawn, capacity);
+    indirect.dispatch_groups_x = (estimated + 63u) / 64u;
+    indirect.dispatch_groups_y = 1u;
+    indirect.dispatch_groups_z = 1u;
+}

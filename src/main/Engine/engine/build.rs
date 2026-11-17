@@ -33,6 +33,20 @@ const SHADERS_3D: &[(&str, &str)] = &[
     ("shaders/raster/present.frag", "present.frag.spv"),
     ("shaders/raster/depth_only.frag", "depth_only.frag.spv"),
     ("shaders/raster/sky.frag", "sky.frag.spv"),
+    // Partículas GPU-driven (F1: fuego; F2–F4 reutilizan los mismos pipelines).
+    ("shaders/particles/spawn_sim.comp", "spawn_sim.comp.spv"),
+    (
+        "shaders/particles/build_indirect.comp",
+        "build_indirect.comp.spv",
+    ),
+    ("shaders/particles/render.vert", "particle_render.vert.spv"),
+    ("shaders/particles/render.frag", "particle_render.frag.spv"),
+    // WBOIT (F3): acumulación ponderada + resolve para humo/niebla/agua.
+    ("shaders/particles/wboit.frag", "particle_wboit.frag.spv"),
+    (
+        "shaders/particles/wboit_resolve.frag",
+        "particle_wboit_resolve.frag.spv",
+    ),
 ];
 
 const SHADERS_2D: &[(&str, &str)] = &[

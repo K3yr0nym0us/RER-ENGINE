@@ -188,6 +188,38 @@ impl State {
         self.prev_view_proj = vp_stable;
         let scene_bytes = bytemuck::bytes_of(&scene_uni);
 
+        // ── Partículas GPU-driven (F1: fuego) ────────────────────────────────────
+        // Cada lote avanza el `sim_step` propio del emisor (precisión 1 del plan), así
+        // que solo se construyen cuando este frame realmente va a simular. La base de
+        // cámara sale de la matriz de vista (V es ortonormal: sus filas 0/1 son right/up
+        // de cámara en mundo).
+        let view_t = view.transpose();
+        let particle_camera = crate::engine3d::vulkan::ParticleCamera {
+            view_proj,
+            cam_right: [view_t.x_axis.x, view_t.x_axis.y, view_t.x_axis.z, 0.0],
+            cam_up: [view_t.y_axis.x, view_t.y_axis.y, view_t.y_axis.z, 0.0],
+            near_far: [self.camera.near, self.camera.far],
+        };
+        let particle_batches: Vec<crate::engine3d::vulkan::ParticleBatch> = self
+            .particles
+            .batches(self.delta_time, [eye.x, eye.y, eye.z])
+            .into_iter()
+            .map(|batch| crate::engine3d::vulkan::ParticleBatch {
+                id: batch.id,
+                max_particles: batch.max_particles,
+                spawn: batch.spawn,
+                reset: batch.reset,
+                next_spawn: batch.next_spawn,
+                dt: batch.dt,
+                seed: batch.seed,
+                read_is_a: batch.read_is_a,
+                blend_alpha: batch.blend_alpha,
+                wboit: batch.wboit,
+                soft: batch.soft,
+                params: batch.params,
+            })
+            .collect();
+
         // ── Datos del frame (locales) ────────────────────────────────────────────
         let frustum_vp = {
             let raw = self
@@ -785,6 +817,8 @@ impl State {
             bvh_node_count,
             bvh_tris,
             bvh_tri_count,
+            particles: &particle_batches,
+            particle_camera,
         };
 
         self.frame_renderer

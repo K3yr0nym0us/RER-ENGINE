@@ -69,6 +69,7 @@ impl State {
                 model_lod_enabled: Some(self.model_lod_enabled),
                 model_lod1_distance_m: Some(self.model_lod1_distance_m),
                 model_lod2_distance_m: Some(self.model_lod2_distance_m),
+                particles: Some(self.particles.export()),
             },
             background_path: self.background_path.clone(),
             entities,

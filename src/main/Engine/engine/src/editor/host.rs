@@ -152,6 +152,8 @@ struct EditorWindow {
     app: EditorApp,
     /// Congelado mientras Electron muestra la confirmación de salida.
     paused: bool,
+    /// Ventana OS independiente del editor de emisores (mismo device, otra superficie).
+    particle_window: Option<crate::editor::particle_window::ParticleWindow>,
 }
 
 impl EditorWindow {
@@ -196,6 +198,7 @@ impl EditorWindow {
             egui_state,
             app: EditorApp::new(cli),
             paused: false,
+            particle_window: None,
         })
     }
 
@@ -524,6 +527,7 @@ impl EditorWindow {
             egui_state,
             app,
             paused: _,
+            particle_window: _,
         } = self;
 
         if let Some(engine) = engine.as_mut() {
@@ -548,6 +552,32 @@ impl EditorWindow {
             viewport,
         )?;
         Ok(())
+    }
+
+    fn sync_particle_window(&mut self, event_loop: &ActiveEventLoop) {
+        let wants = self.app.right_sidebar.particles.modal.is_some();
+        if wants && self.particle_window.is_none() {
+            match crate::editor::particle_window::ParticleWindow::open(
+                event_loop,
+                self.gpu.shared_gpu(),
+                self.app.cli.locale,
+                self.window.as_ref(),
+                app_window_icon(),
+                self.app.right_sidebar.particles.modal_is_new,
+            ) {
+                Ok(window) => self.particle_window = Some(window),
+                Err(error) => {
+                    log::error!("[editor] ventana de emisor: {error}");
+                    self.app.right_sidebar.particles.modal = None;
+                    self.app.push_log(
+                        format!("[Partículas] No se pudo abrir la ventana del emisor: {error}"),
+                        true,
+                    );
+                }
+            }
+        } else if !wants {
+            self.particle_window = None;
+        }
     }
 }
 
@@ -772,6 +802,56 @@ impl EditorApplication {
             )));
         }
     }
+
+    fn handle_particle_window_event(&mut self, event: WindowEvent) {
+        let Some(editor) = self.editor.as_mut() else {
+            return;
+        };
+        if matches!(event, WindowEvent::CloseRequested) {
+            editor.app.right_sidebar.particles.modal = None;
+            editor.particle_window = None;
+            return;
+        }
+
+        {
+            let Some(particle) = editor.particle_window.as_mut() else {
+                return;
+            };
+            let response = particle.on_window_event(&event);
+            let is_redraw = matches!(event, WindowEvent::RedrawRequested);
+            if response.repaint && !is_redraw {
+                particle.request_redraw();
+            }
+            if response.consumed && !is_redraw {
+                return;
+            }
+
+            match event {
+                WindowEvent::Resized(size) => {
+                    if let Err(error) = particle.resize(size) {
+                        log::error!("[editor] ventana de emisor: {error}");
+                    }
+                    particle.request_redraw();
+                }
+                WindowEvent::ScaleFactorChanged { .. } => {
+                    let size = particle.inner_size();
+                    if let Err(error) = particle.resize(size) {
+                        log::error!("[editor] ventana de emisor: {error}");
+                    }
+                    particle.request_redraw();
+                }
+                WindowEvent::RedrawRequested => {
+                    if let Err(error) = particle.render(&mut editor.app) {
+                        log::error!("[editor] ventana de emisor: {error}");
+                    }
+                }
+                _ => {}
+            }
+        }
+        if editor.app.right_sidebar.particles.modal.is_none() {
+            editor.particle_window = None;
+        }
+    }
 }
 
 impl ApplicationHandler<UserEvent> for EditorApplication {
@@ -919,10 +999,21 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
 
     fn window_event(
         &mut self,
-        _event_loop: &ActiveEventLoop,
+        event_loop: &ActiveEventLoop,
         window_id: WindowId,
         event: WindowEvent,
     ) {
+        let is_particle = self.editor.as_ref().is_some_and(|editor| {
+            editor
+                .particle_window
+                .as_ref()
+                .is_some_and(|window| window.window_id() == window_id)
+        });
+        if is_particle {
+            self.handle_particle_window_event(event);
+            return;
+        }
+
         let is_main = self
             .editor
             .as_ref()
@@ -999,6 +1090,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 if let Err(error) = editor.render() {
                     log::error!("[editor] {error}");
                 }
+                editor.sync_particle_window(event_loop);
             }
             _ => {}
         }
@@ -1028,8 +1120,12 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
 
         let frame_duration = Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
         if now >= self.next_frame_at {
-            if let Some(editor) = self.editor.as_ref() {
+            if let Some(editor) = self.editor.as_mut() {
+                editor.sync_particle_window(event_loop);
                 editor.window.request_redraw();
+                if let Some(particle) = editor.particle_window.as_ref() {
+                    particle.request_redraw();
+                }
             }
             self.next_frame_at += frame_duration;
             if self.next_frame_at < now {

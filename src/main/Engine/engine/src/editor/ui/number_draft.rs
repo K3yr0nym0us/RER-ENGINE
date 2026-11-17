@@ -3,7 +3,7 @@
 //! El texto solo se reescribe cuando el valor externo cambia, para no borrar lo
 //! que el usuario está escribiendo.
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct NumberDraft {
     pub text: String,
     last_value: f32,
@@ -23,6 +23,12 @@ impl NumberDraft {
             .parse::<f32>()
             .ok()
             .filter(|value| value.is_finite())
+    }
+
+    /// Reescribe el texto aunque el usuario estuviera editando (campos bloqueados).
+    pub fn force(&mut self, value: f32) {
+        self.text = format_number(value);
+        self.last_value = value;
     }
 }
 
@@ -54,5 +60,15 @@ mod tests {
     fn format_keeps_integers_clean() {
         assert_eq!(format_number(50.0), "50");
         assert_eq!(format_number(0.25), "0.25");
+    }
+
+    #[test]
+    fn force_overwrites_an_edit() {
+        let mut draft = NumberDraft::default();
+        draft.sync(50.0);
+        draft.text = "12.5".to_string();
+        draft.force(0.0);
+        assert_eq!(draft.text, "0");
+        assert_eq!(draft.parsed(), Some(0.0));
     }
 }

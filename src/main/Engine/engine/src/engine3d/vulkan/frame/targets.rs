@@ -12,6 +12,11 @@ pub(super) struct Targets {
     pub(super) reflection: GpuImage,
     pub(super) ssr: GpuImage,
     pub(super) denoise: GpuImage,
+    /// WBOIT (F3): acumulación ponderada (RGBA16F), revealage (R16F) y salida compuesta
+    /// que `copy_color` lleva al HDR (el resolve no puede escribir la escena que muestrea).
+    pub(super) particles_accum: GpuImage,
+    pub(super) particles_reveal: GpuImage,
+    pub(super) particles_out: GpuImage,
     /// Historial TAA propio cuando los reflejos están activos (ping-pong).
     pub(super) refl_history: [GpuImage; 2],
     pub(super) history: [GpuImage; 2],
@@ -122,6 +127,26 @@ impl Targets {
         let denoise = color("denoise")?;
         let refl_history = [color("refl-history-0")?, color("refl-history-1")?];
         let history = [color("history-0")?, color("history-1")?];
+        // WBOIT (F3): a resolución 1× — la acumulación en un framebuffer multisampleado
+        // no tiene sentido y el resolve muestrea la depth 1×.
+        let wboit_usage = vk::ImageUsageFlags::COLOR_ATTACHMENT
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_SRC;
+        let particles_accum = gpu.create_image(
+            extent,
+            vk::Format::R16G16B16A16_SFLOAT,
+            wboit_usage,
+            vk::ImageAspectFlags::COLOR,
+            "particles-wboit-accum",
+        )?;
+        let particles_reveal = gpu.create_image(
+            extent,
+            vk::Format::R16_SFLOAT,
+            wboit_usage,
+            vk::ImageAspectFlags::COLOR,
+            "particles-wboit-reveal",
+        )?;
+        let particles_out = color("particles-wboit-out")?;
         let shadow = gpu.create_image(
             vk::Extent2D {
                 width: crate::engine3d::engine::SHADOW_MAP_SIZE,
@@ -204,6 +229,9 @@ impl Targets {
             reflection,
             ssr,
             denoise,
+            particles_accum,
+            particles_reveal,
+            particles_out,
             refl_history,
             history,
             shadow,
@@ -356,7 +384,7 @@ impl Targets {
 }
 
 impl FrameRenderer {
-    pub(super) fn rewrite_target_descriptors(&self) -> Result<(), VulkanError> {
+    pub(super) fn rewrite_target_descriptors(&mut self) -> Result<(), VulkanError> {
         let device = self.gpu.device();
         for slot in 0..FRAMES {
             write_combined(
@@ -384,6 +412,14 @@ impl FrameRenderer {
                 vk::ImageLayout::GENERAL,
             )?;
         }
+        // Partículas (F3): la depth del soft particles y los samplers del resolve WBOIT
+        // apuntan a imágenes recién recreadas.
+        self.particle_pool.rewrite_targets(
+            self.targets.scene.view,
+            self.targets.particles_accum.view,
+            self.targets.particles_reveal.view,
+            self.targets.depth.view,
+        )?;
         Ok(())
     }
 
