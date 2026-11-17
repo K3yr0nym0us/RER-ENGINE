@@ -343,9 +343,6 @@ impl State {
             self.rt_skinned_instances.clear();
         }
 
-        // Alpha del tooltip Esc: hay que mutar `State` antes de prestar `self.meshes`.
-        self.update_fps_exit_hint_alpha();
-
         let mut static_batches: Vec<MeshBatch> = Vec::new();
         let shadow_scene_batches = filter_shadow_cast_batches(self, &opaque_batches);
         let mut shadow_static_batches: Vec<MeshBatch> = Vec::new();
@@ -676,10 +673,7 @@ impl State {
             }
         }
 
-        let mut hud_scratch = self.player_ui_glyph_instances.clone();
-        if let Some(hint) = self.build_fps_exit_hint_instance() {
-            hud_scratch.push(hint);
-        }
+        let hud_scratch = self.player_ui_glyph_instances.clone();
         let hud_instance_count = hud_scratch.len() as u32;
         let hud_ready = hud_instance_count > 0;
         let hud_instances: &[u8] = bytemuck::cast_slice(&hud_scratch);

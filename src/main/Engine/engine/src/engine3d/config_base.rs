@@ -137,7 +137,6 @@ impl State {
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
         self.tool_overlay_buffer = crate::engine3d::gizmo::build_from_vertices(&self.vulkan, &[]);
-        self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.script_engine = ScriptEngine::new(ScriptEngineProfile::Engine3d)
@@ -726,7 +725,6 @@ impl State {
         self.bone_physics_sim.clear();
         self.bone_physics_entity_motion.clear();
         self.tool_overlay_buffer = crate::engine3d::gizmo::build_from_vertices(&self.vulkan, &[]);
-        self.fps_exit_hint_alpha = 0.0;
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;
         self.control_bindings_by_entity.clear();

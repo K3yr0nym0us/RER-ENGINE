@@ -267,9 +267,6 @@ impl State {
             play_session_camera_yaw_baseline: 0.0,
             tool_overlay_buffer: tool_overlay_buffer_init,
             snap_locale: "en".to_string(),
-            fps_exit_hint_es: None,
-            fps_exit_hint_en: None,
-            fps_exit_hint_alpha: 0.0,
             anim_saved_transforms: std::collections::HashMap::new(),
             pivot_edit_mode: None,
             logical_area_mode: None,
@@ -375,7 +372,6 @@ impl State {
             fp_baseline_defer_frames: 0,
             editor_scenes: crate::engine3d::engine::editor_scenes::EditorSceneStore::new(),
         };
-        state.pack_fps_exit_hints();
         state.ensure_particle_demo_row();
         Ok(state)
     }

@@ -101,6 +101,33 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                 );
             }
 
+            // Modo play: sustituye al tooltip PNG «Esc para salir / Esc to exit».
+            if !app.engine_loading && app.engine_error.is_none() && app.preview_playing {
+                let esc_hint = crate::editor::i18n::tr(
+                    app.cli.locale,
+                    "ESC para salir del modo juego",
+                    "ESC to exit play mode",
+                );
+                let width = esc_hint.chars().count() as f32 * 8.0 + 28.0;
+                let center = egui::pos2(
+                    rect.min.x + 12.0 + width * 0.5,
+                    rect.max.y - 20.0,
+                );
+                let background = egui::Rect::from_center_size(
+                    center,
+                    egui::vec2(width.min(rect.width() - 16.0), 34.0),
+                );
+                ui.painter()
+                    .rect_filled(background, 6.0, egui::Color32::from_black_alpha(150));
+                ui.painter().text(
+                    background.center(),
+                    egui::Align2::CENTER_CENTER,
+                    esc_hint,
+                    egui::FontId::new(13.0, egui::FontFamily::Name("rer-bold".into())),
+                    crate::editor::theme::TEXT,
+                );
+            }
+
             // Ayuda permanente de navegación en modo edición (no en play, donde
             // los controles los define el script). Se pinta abajo para no
             // solaparse con el hint de colocación de entidades.

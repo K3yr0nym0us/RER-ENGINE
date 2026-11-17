@@ -152,3 +152,114 @@ sidebar_native:
       `frame.rs` pinta permanentemente en la parte baja del viewport (modo
       edición, no play) la ayuda: «Clic en la ventana del motor · WASD mover ·
       Espacio subir · C bajar · Botón derecho mirar» (traducida al inglés).
+    play_exit_hint: |
+      En play, el mismo sistema de mensajes pinta abajo a la izquierda
+      «ESC para salir del modo juego» / «ESC to exit play mode». Sustituye a
+      los PNG `tooltip-btn-esc-salir.png` / `tooltip-btn-esc-exit.png`, que se
+      eliminaron junto con el módulo `engine/fps_exit_hint.rs` y sus campos de
+      estado en `State`.
+    delete_sync: |
+      Al confirmar el borrado en la modal, el motor reemite `models_list` y el
+      editor empareja `model_asset_removed` por `path` o `model_id`: la fila
+      desaparece de Recursos y del combo «Crear entidad» aunque esté listada con
+      la ruta fuente del GLB/FBX y el evento llegue con la clave canónica.
+  legacy_bridges:
+    controls: control_bindings -> ControlBindingsModalBody
+    plugins: plugins -> PluginsModalBody
+    user_guide: user_guide -> UserGuide
+    ui: ui_create_screen / ui_edit_screen / ui_delete_screen / ui_set_active_screen
+    quick_build: quick_build (open | toggle)
+  native_modals:
+    model_import:
+      file: src/main/Engine/engine/src/editor/ui/model_import_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Recursos → Modelos → importar: el diálogo de archivos guarda un
+        `ModelImportDraft` en `SidebarLeftState::model_import`; la modal pide
+        nombre + categoría y solo entonces envía `load_model_asset` con
+        `category`.
+      categories: [character, environment, object, weapon, projectile]
+      note: |
+        Sin categoría el motor registra el modelo con `category: None` y no
+        aparece en selectores filtrados (p. ej. «cambiar modelo» de un
+        personaje). Reimportar un modelo existente actualiza su categoría.
+      loading: |
+        Mientras el modelo carga (bake + subida a GPU), la fila de Recursos →
+        Modelos muestra un spinner y el botón de quitar queda deshabilitado.
+        El motor emite `category` en `model_asset_importing/imported/preload_started`
+        para que también aparezca con spinner en el selector «Reemplazar modelo»
+        del modal de propiedades; se habilita al llegar `model_asset_loaded`.
+    globalize_model:
+      file: src/main/Engine/engine/src/editor/ui/globalize_model_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Recursos → Modelos → icono globo (solo modelos de la escena activa): el
+        sidebar guarda un `GlobalizeModelDraft` en
+        `SidebarLeftState::globalize_model` y no envía nada al motor todavía.
+      confirm: |
+        La modal explica que el modelo deja de pertenecer a esta escena y pasa a
+        la biblioteca global (aparecerá en la categoría correspondiente de todas
+        las escenas). Confirmar envía `globalize_model { path }`; cancelar o Esc
+        descartan el borrador sin tocar la biblioteca.
+    load_from_scene:
+      file: src/main/Engine/engine/src/editor/ui/load_from_scene_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Recursos → Modelos → «Cargar desde otra escena» (3D): abre
+        `SidebarLeftState::load_from_scene_open`.
+      behavior: |
+        Lista SOLO modelos de otras escenas (agrupados por nombre de escena).
+        Al pulsar uno se cierra la lista y se abre `globalize_model` con el
+        borrador del modelo: misma confirmación y mismo comando que el botón
+        globo. No se duplica el recurso por escena ni se reimporta.
+    switch_scene:
+      file: src/main/Engine/engine/src/editor/ui/switch_scene_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Escenas → icono de cargar en una escena no activa: el sidebar guarda
+        `SceneSwitchDraft { id, name }` en `SidebarLeftState::pending_scene_switch`
+        y no envía nada al motor todavía.
+      confirm: |
+        La modal avisa de que se conserva el estado de la escena actual.
+        Confirmar llama a `begin_switch` + `switch_editor_scene { scene_id }`;
+        cancelar o Esc no cambian de escena.
+    clear_scene:
+      file: src/main/Engine/engine/src/editor/ui/clear_scene_modal.rs
+      engine: egui::Modal (nativo, no Electron)
+      trigger: |
+        Escenas (arriba de la lista) → botón «Limpiar escena»
+        (`LeftAction::ClearScene` → `SidebarLeftState::pending_clear_scene`).
+        Solo se muestra mientras la escena activa tenga elementos DEMO:
+        `SceneList::demo_entities > 0` (contador que envía el motor en
+        `editor_scenes_updated/created/switched`).
+      confirm: |
+        Envía `clear_scene_content`: elimina los elementos DEMO —
+        `[EditorBox]` (muros/cubos), `[Ball]` (esfera de física),
+        `[ReflectionProbe]` (sondas), `[MatVal]`/`[MatValLabel]` y
+        `[MatComparison]` (esferas, alfombras y letreros de prueba de
+        materiales) — y conserva suelo, sol, jugador y cámaras. Cada entidad deja
+        undo (Ctrl+Z). Al terminar el motor reemite `editor_scenes_updated` con
+        `demo_entities = 0` y el botón desaparece.
+  right_sidebar_workspace:
+    file: src/main/Engine/engine/src/editor/ui/sidebar_right/workspace.rs
+    layout: |
+      Mundo 3D rectangular (cuadrado por defecto) con la disposición de una rosa
+      de los vientos: input Norte arriba y centrado, Oeste a la izquierda, Este a
+      la derecha, Sur abajo y centrado, y una cruz en el centro que une las cuatro
+      caras. Cada input es la extensión de esa cara en metros (N/S sobre Z; O/E
+      sobre X). Cambiar una cara solo mueve esa cara: la opuesta queda fija y el
+      mundo se descentra (`worldCenterX/Z` en el .save). Debajo se muestra el
+      tamaño total W × D. Con el plugin worldgen instalado y un mundo ya
+      generado, el terreno se actualiza solo: crece en la franja nueva,
+      desaparece en la zona que se encoge y se regenera entero si el mundo
+      supera el área generada con margen.
+    bounds: |
+      Límites de cada cara: 5–1000 m (`MIN/MAX_WORLD_FACE_3D`); altura del cielo
+      10–2000 m. El motor reconstruye suelo cuadrado, cielo en caja, wireframe y
+      colliders al cambiar cualquier cara (`set_world_bounds`).
+
+key_files:
+  editor_host: src/main/Engine/engine/src/editor/host.rs
+  cursor_play: src/main/Engine/engine/src/engine3d/host.rs
+  camera_restore: src/main/Engine/engine/src/engine3d/config_3d/preview_editor.rs
+  devtools: src/main/devToolsShortcut.ts

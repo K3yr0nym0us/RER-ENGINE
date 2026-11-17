@@ -101,34 +101,14 @@ impl HudAtlas {
         uv
     }
 
-    /// Empaca un PNG de `Engine/assets` (tooltips de play, splash de carga).
-    pub fn pack_png_from_engine_assets(
-        &mut self,
-        gpu: &SharedGpu,
-        filename: &str,
-    ) -> Option<ScreenHudPackedImage> {
-        let path = engine_assets_dir().join(filename);
-        let bytes = match std::fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                log::warn!("[hud] no se pudo leer '{}': {error}", path.display());
-                return None;
-            }
-        };
-        match decode_png_rgba(&bytes) {
-            Some((rgba, width, height)) => Some(self.pack_rgba(gpu, &rgba, width, height)),
-            None => {
-                log::warn!("[hud] PNG ilegible: {}", path.display());
-                None
-            }
-        }
-    }
 }
 
+#[cfg(test)]
 fn engine_assets_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets")
 }
 
+#[cfg(test)]
 fn decode_png_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
     let image = image::ImageReader::new(std::io::Cursor::new(bytes))
         .with_guessed_format()
@@ -158,12 +138,7 @@ mod tests {
 
     #[test]
     fn engine_assets_include_localized_hud_pngs() {
-        for name in [
-            "tooltip-btn-esc-exit.png",
-            "tooltip-btn-esc-salir.png",
-            "Loading.png",
-            "Cargando.png",
-        ] {
+        for name in ["Loading.png", "Cargando.png"] {
             let path = engine_assets_dir().join(name);
             let bytes = std::fs::read(&path)
                 .unwrap_or_else(|error| panic!("no se pudo leer {}: {error}", path.display()));

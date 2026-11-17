@@ -300,11 +300,11 @@ Implementación front: `usePlaneToolPlacement`, `PlaneToolContext`, botones `Col
 
 ### Assets
 
-- Hints HUD: `../assets/tooltip-btn-esc-*.png`; `snap_locale` EN/ES.
+- El hint «Esc para salir / Esc to exit» ya no es un PNG: lo pinta el editor egui en `ui/frame.rs` con el mismo sistema de mensajes flotantes que los hints de colocación y navegación.
 
 ### Render HUD
 
-- Overlays en play (crosshair, tooltip Esc) usan `hud_quad_mesh`, `screen_hud_atlas` y `screen_hud_pipeline`; no reutilizar `texture_array` ni el mesh del suelo para PNG de UI.
+- Overlays en play (crosshair, HUD del jugador) usan `hud_quad_mesh`, `screen_hud_atlas` y `screen_hud_pipeline`; no reutilizar `texture_array` ni el mesh del suelo para PNG de UI.
 
 ### Player UI HUD (editor y play)
 
