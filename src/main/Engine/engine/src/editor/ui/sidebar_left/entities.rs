@@ -1,5 +1,33 @@
 use super::*;
 
+/// Categoría de biblioteca que corresponde a cada acordeón de «Crear entidad».
+/// Debe coincidir con `create_entity` (`mod.rs`) y con
+/// `normalize_model_library_category` del motor.
+fn category_for_entity_kind(kind: EntityKind) -> &'static str {
+    match kind {
+        EntityKind::Character => "character",
+        EntityKind::Environment => "environment",
+        EntityKind::Object => "object",
+        EntityKind::Weapon => "weapon",
+        EntityKind::Projectile => "projectile",
+    }
+}
+
+/// `true` si el modelo debe ofrecerse en el acordeón de `kind`.
+/// Los modelos importados antes de la modal nativa (o con una categoría que el
+/// motor no normaliza) se tratan como `object`, igual que hace el selector del
+/// renderer (`CreateEntityFromModelModalBody`).
+fn asset_matches_entity_kind(
+    asset: &crate::editor::assets::AssetEntry,
+    kind: EntityKind,
+) -> bool {
+    let expected = category_for_entity_kind(kind);
+    match crate::engine3d::ipc::normalize_model_library_category(asset.category.as_deref()) {
+        Some(category) => category == expected,
+        None => expected == "object",
+    }
+}
+
 pub(super) fn entities_body(
     ui: &mut egui::Ui,
     state: &mut SidebarLeftState,
@@ -87,11 +115,16 @@ pub(super) fn entity_section(
             AssetKind::Sprite
         };
         // Solo modelos globales o de la escena activa (los de otras escenas se
-        // globalizan desde «Cargar desde otra escena»).
+        // globalizan desde «Cargar desde otra escena»). En 3D, además, cada
+        // acordeón ofrece únicamente los modelos de su categoría: la modal de
+        // importación guarda la categoría en el recurso y el motor la reporta
+        // en `models_list`. En 2D los sprites no tienen categoría y se listan
+        // todos, como antes.
         let list: Vec<&crate::editor::assets::AssetEntry> = assets
             .assets(asset_kind)
             .iter()
             .filter(|asset| asset.is_visible_in_scene(active_scene_id))
+            .filter(|asset| !context.is_3d() || asset_matches_entity_kind(asset, kind))
             .collect();
         if list.is_empty() {
             widgets::note(
@@ -203,5 +236,69 @@ fn create_tooltip(kind: EntityKind, context: ProjectContext, locale: Locale) -> 
             "Crea la entidad con el sprite seleccionado",
             "Create the entity from the selected sprite",
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model(category: Option<&str>) -> crate::editor::assets::AssetEntry {
+        crate::editor::assets::AssetEntry {
+            name: "Modelo".into(),
+            path: "model_test".into(),
+            model_id: Some("model_test".into()),
+            asset: None,
+            category: category.map(str::to_string),
+            state: Some("ready".into()),
+            scene_id: None,
+        }
+    }
+
+    const CATEGORIES: [EntityKind; 5] = [
+        EntityKind::Character,
+        EntityKind::Environment,
+        EntityKind::Object,
+        EntityKind::Weapon,
+        EntityKind::Projectile,
+    ];
+
+    #[test]
+    fn each_accordion_lists_only_its_own_category() {
+        for kind in CATEGORIES {
+            for other in CATEGORIES {
+                let belongs = kind == other;
+                assert_eq!(
+                    asset_matches_entity_kind(
+                        &model(Some(category_for_entity_kind(other))),
+                        kind
+                    ),
+                    belongs,
+                    "acordeón {:?} con modelo {:?}",
+                    kind,
+                    other
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn uncategorized_or_invalid_models_are_objects_only() {
+        for category in [None, Some("desconocida")] {
+            assert!(asset_matches_entity_kind(&model(category), EntityKind::Object));
+            for kind in [EntityKind::Character, EntityKind::Environment, EntityKind::Weapon, EntityKind::Projectile] {
+                assert!(!asset_matches_entity_kind(&model(category), kind));
+            }
+        }
+    }
+
+    #[test]
+    fn base_player_model_is_only_offered_as_character() {
+        // `bundled.rs` registra el jugador base con category = "character".
+        let player = model(Some("character"));
+        assert!(asset_matches_entity_kind(&player, EntityKind::Character));
+        for kind in [EntityKind::Environment, EntityKind::Object, EntityKind::Weapon, EntityKind::Projectile] {
+            assert!(!asset_matches_entity_kind(&player, kind));
+        }
     }
 }
