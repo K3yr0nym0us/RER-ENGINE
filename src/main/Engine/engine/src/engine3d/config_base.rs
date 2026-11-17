@@ -116,6 +116,8 @@ impl State {
         self.quick_build_preview_path = None;
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;
+        self.quick_build_place_once = false;
+        self.quick_build_spawn_kind = None;
         self.quick_build_blueprint = None;
         self.blueprint_registry.clear();
         self.entity_blueprint_ids.clear();
@@ -703,6 +705,8 @@ impl State {
         self.quick_build_preview_path = None;
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;
+        self.quick_build_place_once = false;
+        self.quick_build_spawn_kind = None;
         self.quick_build_blueprint = None;
         self.blueprint_registry.clear();
         self.entity_blueprint_ids.clear();

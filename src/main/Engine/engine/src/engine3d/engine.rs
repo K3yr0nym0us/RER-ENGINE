@@ -124,6 +124,11 @@ pub struct State {
     pub(crate) quick_build_preview_path: Option<String>,
     pub(crate) quick_build_preview_kind: Option<String>,
     pub(crate) quick_build_preview_scale: Option<[f32; 3]>,
+    /// `true` si la herramienta de colocación viene de «Crear entidad»: tras
+    /// colocar una entidad se desactiva. Quick Build mantiene el ghost activo.
+    pub(crate) quick_build_place_once: bool,
+    /// `kind` de la entidad creada por «Crear entidad» con ghost.
+    pub(crate) quick_build_spawn_kind: Option<String>,
     /// Metadatos del blueprint activo (nombre, física, rotación…) para colocar instancias.
     pub(crate) quick_build_blueprint:
         Option<crate::engine3d::config_3d::quick_build::QuickBuildBlueprint>,
@@ -264,7 +269,6 @@ pub struct State {
     pub(crate) play_session_camera_yaw_baseline: f32,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     pub(crate) snap_locale: String,
-    /// Tooltip «Esc para salir» / «Esc to exit» (PNG en `Engine/assets`, atlas HUD).
     pub(crate) fps_exit_hint_es: Option<crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
     pub(crate) fps_exit_hint_en: Option<crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
     pub(crate) fps_exit_hint_alpha: f32,

@@ -121,3 +121,10 @@ sidebar_native:
       `normalize_model_library_category`; los modelos sin categoría (importes
       anteriores a la modal nativa) se tratan como `object`. En 2D los sprites
       no se filtran.
+    entity_placement: |
+      Al elegir un modelo en «Crear entidad» (3D) se activa `set_active_tool`
+      con `tool: quick_build_place` y `preview_place_once: true`: el mismo ghost
+      semitransparente de Construcción rápida sigue al cursor y la entidad se
+      coloca con un click en el viewport. Tras colocar, el motor retira el
+      ghost y desactiva la herramienta. `preview_spawn_kind` conserva el `kind`
+      del acordeón (`character`, `scenario`, `model`, `projectile`).

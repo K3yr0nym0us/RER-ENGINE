@@ -124,6 +124,16 @@ pub enum EngineCommandCommon {
         preview_blueprint_id: Option<String>,
         #[serde(default)]
         preview_blueprint: Option<serde_json::Value>,
+        /// Colocar una sola entidad y desactivar la herramienta tras el click.
+        /// Lo usa «Crear entidad» del sidebar; Quick Build lo deja en `false`
+        /// para poder colocar varias instancias de la blueprint activa.
+        #[serde(default)]
+        preview_place_once: Option<bool>,
+        /// `kind` con el que se registra la entidad al colocarla (`character`,
+        /// `scenario`, `projectile`, `model`). Quick Build no lo envía y se
+        /// mantiene `model`, como hasta ahora.
+        #[serde(default)]
+        preview_spawn_kind: Option<String>,
     },
     PlayAudio {
         path: String,

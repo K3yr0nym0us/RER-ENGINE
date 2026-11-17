@@ -597,35 +597,53 @@ fn import_asset(app: &mut EditorApp, kind: AssetKind) {
     app.push_log(format!("[Recursos] Importando «{name}»…"), false);
 }
 
+/// Comando para iniciar la colocación con ghost de una entidad nueva.
+/// Reutiliza el mismo mecanismo que Construcción rápida (`quick_build_place`),
+/// pero en modo `preview_place_once`: el modelo sigue al cursor y se coloca
+/// con un click, tras el cual la herramienta se desactiva.
+fn begin_entity_placement_command(kind: EntityKind, asset: String) -> serde_json::Value {
+    let (entity_kind, category) = match kind {
+        EntityKind::Character => ("character", "character"),
+        EntityKind::Environment => ("scenario", "environment"),
+        EntityKind::Object => ("model", "object"),
+        EntityKind::Weapon => ("model", "weapon"),
+        EntityKind::Projectile => ("projectile", "projectile"),
+    };
+    json!({
+        "cmd": "set_active_tool",
+        "tool": "quick_build_place",
+        "preview_path": asset,
+        "preview_kind": "model",
+        "preview_scale": [1.0, 1.0, 1.0],
+        "preview_entity_category": category,
+        "preview_spawn_kind": entity_kind,
+        "preview_place_once": true,
+    })
+}
+
 fn create_entity(app: &mut EditorApp, kind: EntityKind, asset: String) {
     if app.cli.context.is_3d() {
-        let (entity_kind, category) = match kind {
-            EntityKind::Character => ("character", "character"),
-            EntityKind::Environment => ("scenario", "environment"),
-            EntityKind::Object => ("model", "object"),
-            EntityKind::Weapon => ("model", "weapon"),
-            EntityKind::Projectile => ("projectile", "projectile"),
-        };
-        app.send_engine(json!({
-            "cmd": "load_model",
-            "path": asset,
-            "single_instance": true,
-            "kind": entity_kind,
-            "entity_category": category,
-        }));
-    } else {
-        let command = match kind {
-            EntityKind::Character => "load_character",
-            EntityKind::Environment | EntityKind::Object | EntityKind::Weapon => "load_scenario",
-            EntityKind::Projectile => "load_projectile",
-        };
-        app.send_engine(json!({ "cmd": command, "path": asset }));
+        app.send_engine(begin_entity_placement_command(kind, asset));
+        // El motor emitirá `quick_build_ghost_ready`, pero mostramos el hint
+        // ya mismo para que no haya que adivinar qué hacer en el viewport.
+            app.cli.locale,
+            "Mueve el cursor sobre el mundo y haz click para colocar la entidad",
+            "Move the cursor over the world and click to place the entity",
+        ).to_string());
+        app.push_log(
+            format!("[Entidad] Mueve el cursor y haz click para colocar {:?}…", kind),
+            false,
+        );
+        return;
     }
+    let command = match kind {
+        EntityKind::Character => "load_character",
+        EntityKind::Environment | EntityKind::Object | EntityKind::Weapon => "load_scenario",
+        EntityKind::Projectile => "load_projectile",
+    };
+    app.send_engine(json!({ "cmd": command, "path": asset }));
     app.push_log(
-        format!(
-            "[Entidad] Creando {:?} desde el recurso seleccionado…",
-            kind
-        ),
+        format!("[Entidad] Creando {:?} desde el recurso seleccionado…", kind),
         false,
     );
 }
@@ -724,5 +742,34 @@ mod tests {
 
         assert_eq!(state.open_section, Some(Section::Camera));
         assert_eq!(state.open_sub, None);
+    }
+
+    #[test]
+    fn create_entity_uses_one_shot_ghost_placement() {
+        let cmd = begin_entity_placement_command(EntityKind::Character, "model_hero".into());
+
+        assert_eq!(cmd["cmd"], "set_active_tool");
+        assert_eq!(cmd["tool"], "quick_build_place");
+        assert_eq!(cmd["preview_path"], "model_hero");
+        assert_eq!(cmd["preview_kind"], "model");
+        assert_eq!(cmd["preview_entity_category"], "character");
+        assert_eq!(cmd["preview_spawn_kind"], "character");
+        assert_eq!(cmd["preview_place_once"], true);
+    }
+
+    #[test]
+    fn each_entity_kind_keeps_its_spawn_kind_and_category() {
+        let cases = [
+            (EntityKind::Character, "character", "character"),
+            (EntityKind::Environment, "scenario", "environment"),
+            (EntityKind::Object, "model", "object"),
+            (EntityKind::Weapon, "model", "weapon"),
+            (EntityKind::Projectile, "projectile", "projectile"),
+        ];
+        for (kind, spawn_kind, category) in cases {
+            let cmd = begin_entity_placement_command(kind, "asset".into());
+            assert_eq!(cmd["preview_spawn_kind"], spawn_kind);
+            assert_eq!(cmd["preview_entity_category"], category);
+        }
     }
 }

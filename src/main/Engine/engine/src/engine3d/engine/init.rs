@@ -191,6 +191,8 @@ impl State {
             quick_build_preview_path: None,
             quick_build_preview_kind: None,
             quick_build_preview_scale: None,
+            quick_build_place_once: false,
+            quick_build_spawn_kind: None,
             quick_build_blueprint: None,
             blueprint_registry: HashMap::new(),
             entity_blueprint_ids: HashMap::new(),

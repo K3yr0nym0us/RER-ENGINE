@@ -453,6 +453,8 @@ impl State {
                 preview_entity_category,
                 preview_blueprint_id,
                 preview_blueprint,
+                preview_place_once,
+                preview_spawn_kind,
             }) => {
                 let preview_blueprint: Option<crate::engine3d::ipc::BlueprintPlacementMeta> =
                     preview_blueprint.and_then(|v| serde_json::from_value(v).ok());
@@ -465,6 +467,8 @@ impl State {
                     self.quick_build_preview_path = None;
                     self.quick_build_preview_kind = None;
                     self.quick_build_preview_scale = None;
+                    self.quick_build_place_once = false;
+                    self.quick_build_spawn_kind = None;
                     self.quick_build_blueprint = None;
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer =
@@ -485,6 +489,8 @@ impl State {
                     self.quick_build_preview_path = None;
                     self.quick_build_preview_kind = None;
                     self.quick_build_preview_scale = None;
+                    self.quick_build_place_once = preview_place_once.unwrap_or(false);
+                    self.quick_build_spawn_kind = preview_spawn_kind;
                     self.quick_build_blueprint = None;
                     match tool.as_str() {
                         "draw_collider" => {

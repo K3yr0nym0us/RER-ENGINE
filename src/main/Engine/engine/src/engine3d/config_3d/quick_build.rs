@@ -398,7 +398,12 @@ impl State {
             .copied()?;
         let bp = self.quick_build_blueprint.clone();
         let rotation = bp.as_ref().map(|b| b.rotation).unwrap_or(DEFAULT_ROTATION);
-        let kind = "model".to_string();
+        // Quick Build mantiene `model`; «Crear entidad» puede pedir `character`,
+        // `scenario` o `projectile` para conservar el kind del accordion.
+        let kind = self
+            .quick_build_spawn_kind
+            .clone()
+            .unwrap_or_else(|| "model".to_string());
         let entity_category = bp.as_ref().and_then(resolve_quick_build_entity_category);
         let is_environment = entity_category.as_deref() == Some("environment");
         let default_label = entity_label_for_category(entity_category.as_deref());
@@ -477,7 +482,34 @@ impl State {
         let scale = self
             .quick_build_effective_scale_3d()
             .unwrap_or([1.0, 1.0, 1.0]);
-        self.place_quick_build_model_at(pos, scale).is_some()
+        let placed = self.place_quick_build_model_at(pos, scale).is_some();
+        if placed {
+            self.finish_place_once_if_needed();
+        }
+        placed
+    }
+
+    /// «Crear entidad» activa el mismo ghost que Quick Build pero en modo
+    /// un solo uso: al colocar, se retira el fantasma y se desactiva la
+    /// herramienta. Quick Build (`quick_build_place_once == false`) conserva
+    /// el ghost para colocar varias instancias de la blueprint activa.
+    pub(crate) fn finish_place_once_if_needed(&mut self) {
+        if !self.quick_build_place_once {
+            return;
+        }
+        self.quick_build_place_once = false;
+        if let Some(ghost_id) = self.quick_build_ghost_id.take() {
+            self.world.despawn(ghost_id);
+        }
+        self.quick_build_preview_path = None;
+        self.quick_build_preview_kind = None;
+        self.quick_build_preview_scale = None;
+        self.quick_build_spawn_kind = None;
+        self.quick_build_blueprint = None;
+        self.active_tool = ActiveTool::None;
+        self.tool_overlay_buffer = crate::engine3d::gizmo::build_from_vertices(&self.vulkan, &[]);
+        send_event(&EngineEvent::ToolCancelled);
+        log::info!("[quick_build] colocación única completada; herramienta desactivada");
     }
 
     pub(crate) fn spawn_quick_build_instance_at(
