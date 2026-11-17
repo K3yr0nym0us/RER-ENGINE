@@ -54,7 +54,7 @@ Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 | Editor `EditorGpu` | Crea el `SharedGpu` de la ventana y lo comparte con el motor in-process. |
 | `EngineGpuErrorOverlay` | Ayuda en el viewport si el motor no envía `ready`. |
 
-`yarn dev` / `yarn start` **no** definen backend GPU; solo compilan motores y arrancan electron-vite (`RER_ENGINE_PROFILE` opcional para release).
+`yarn dev` / `yarn start` **no** definen backend GPU; solo compilan el binario del editor y arrancan electron-vite (`RER_ENGINE_PROFILE` fija el perfil release).
 
 ---
 
@@ -86,10 +86,10 @@ Desde la raíz del repositorio:
 # Instalar dependencias (primera vez)
 yarn
 
-# Desarrollo: compila motores (debug) y abre el editor
+# Desarrollo: compila el editor (debug) y abre la app
 yarn dev
 
-# Desarrollo con motores en release (más rápido al renderizar)
+# Desarrollo con el editor en release (más rápido al renderizar)
 yarn start
 
 # Build del editor (sin empaquetar instalador)
@@ -98,16 +98,31 @@ yarn build
 # Vista previa del build
 yarn preview
 
-# Instalador (compila motores release + electron-builder)
+# Instalador (compila los 3 binarios release + electron-builder)
 yarn dist
 ```
 
-Compilar solo los motores (opcional):
+### Builds de Rust
+
+La app Electron lanza **solo** `rer_engine_editor` (`startEditorFrame` en
+`src/main/index.ts`). Por eso `yarn dev` y `yarn start` compilan únicamente ese
+binario; compilar también los standalone 2D/3D era reutilizar la cadena de
+empaquetado para otra cosa. Todos los builds pasan por
+`scripts/build-rust.mjs` (fuente única, con feature sets aislados):
 
 ```bash
-cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine --bin rer_engine_2d --no-default-features --features engine2d
-cargo build --manifest-path src/main/Engine/Cargo.toml -p rer-engine --bin rer_engine_3d --no-default-features --features engine3d
+# Editor debug / release: lo que usan dev / start
+yarn rust:build:editor
+yarn rust:build:editor:release
+
+# Los 3 binarios (rer_engine_2d, rer_engine_3d, rer_engine_editor):
+# para dist y depuración standalone
+yarn rust:build
+yarn rust:build:release
 ```
+
+`rer-engine-core` no se compila aparte: es dependencia de `rer-engine` y cargo
+ya lo construye con el conjunto de features correcto en cada invocación.
 
 Los ejecutables quedan en `src/main/Engine/target/debug/` o `target/release/`.
 
