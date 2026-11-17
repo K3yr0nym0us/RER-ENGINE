@@ -2,7 +2,7 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** 14 nov 2026 (World Generator: porcentajes de bioma, nieve en cumbres, atlas de splats, progreso del barrido; ver `yaml/plugins/` y `worldgen/README.md`). Revisión anterior: noviembre 2026 (motores 2D y 3D Ash/Vulkan; LOD GLB). Antes: junio 2026 (reflejos).
+**Última revisión:** 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`). Revisión anterior: 14 nov 2026 (World Generator). Antes: noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
 
 ## Estructura
 
@@ -23,7 +23,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Engine_Runtime_Foundation.yaml](./yaml/engine/Engine_Runtime_Foundation.yaml) | Ventana única del editor, GPU Vulkan, métricas (Windows) |
+| [Engine_Runtime_Foundation.yaml](./yaml/engine/Engine_Runtime_Foundation.yaml) | Ventana única del editor, GPU Vulkan, métricas; intro 4K del build de juego (`status: pendiente`) |
 | [Engine_Context.yaml](./yaml/engine/Engine_Context.yaml) | `EngineProvider`, refs, `createEngineActions` / `createEngineEventHandler` |
 | [IPC_Protocol.yaml](./yaml/engine/IPC_Protocol.yaml) | `engine:cmd` / `engine:event`, catálogo por motor, `core/src/ipc` |
 

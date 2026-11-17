@@ -14,13 +14,14 @@ const ENTITY_MARKERS: &[&str] = &[
     "[MatVal]",
     "[MatValLabel]",
     "[MatComparison]",
+    "[ParticleDemoLabel]",
     "[Colisionador]",
     "[ExecutionArea]",
 ];
 
 /// Elementos DEMO/plantilla que elimina «Limpiar escena»: cajas de prueba
 /// (muros/cubos), esfera de física, sondas de reflexión y las pruebas de
-/// materiales (esferas `[MatVal]` y escena `[MatComparison]` con alfombras y letreros).
+/// materiales (esferas `[MatVal]`, escena `[MatComparison]` y letreros de partículas).
 pub(crate) const DEMO_ENTITY_MARKERS: &[&str] = &[
     "[EditorBox]",
     "[Ball]",
@@ -28,6 +29,7 @@ pub(crate) const DEMO_ENTITY_MARKERS: &[&str] = &[
     "[MatVal]",
     "[MatValLabel]",
     "[MatComparison]",
+    "[ParticleDemoLabel]",
 ];
 
 /// `true` si la entidad es contenido DEMO de la escena (se puede limpiar).
@@ -283,6 +285,7 @@ mod demo_marker_tests {
             "[MatVal]",
             "[MatValLabel]",
             "[MatComparison]",
+            "[ParticleDemoLabel]",
         ] {
             assert!(is_demo_entity_path(marker), "falta {marker}");
         }

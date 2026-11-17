@@ -16,6 +16,7 @@ use super::pbr_presets::{
 
 pub const MAT_VAL_PATH: &str = "[MatVal]";
 pub const MAT_VAL_LABEL_PATH: &str = "[MatValLabel]";
+pub const PARTICLE_DEMO_LABEL_PATH: &str = "[ParticleDemoLabel]";
 
 const TEX_SIZE: u32 = 32;
 
@@ -180,6 +181,124 @@ fn sync_material_comparison_pbr(state: &mut State) {
     );
 }
 
+fn particle_demo_label_ids(state: &State) -> Vec<EntityId> {
+    state
+        .save_registry
+        .meta
+        .iter()
+        .filter(|(_, m)| entity_path_marker(&m.path) == Some(PARTICLE_DEMO_LABEL_PATH))
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+fn particle_demo_label_pose(origin: [f32; 3]) -> (Vec3, Quat, Vec3) {
+    const LABEL_W: f32 = 1.35;
+    const LABEL_H: f32 = 0.45;
+    const FRONT: f32 = 1.7;
+    // Misma lógica que MatComp (todos de frente, sin look-at): el quad XY mira +Z;
+    // −90° en Y los alinea hacia −X, el frente de la fila en z.
+    let rotation = Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2);
+    let position = Vec3::new(origin[0] - FRONT, LABEL_H * 0.5, origin[2]);
+    (position, rotation, Vec3::new(LABEL_W, LABEL_H, 1.0))
+}
+
+fn spawn_particle_demo_label(state: &mut State, text: &str, accent: [f32; 3], origin: [f32; 3]) {
+    let (position, rotation, scale) = particle_demo_label_pose(origin);
+    let name = format!("ParticleDemo · {text}");
+    let id = state.world.spawn(Some(&name));
+    let mesh_idx = state.mat_val_label_mesh_idx();
+    let tex_idx = state.texture_for_label_text(&format!("particle-label:v2:{text}"), text, accent);
+    state.world.insert(id, MeshComponent { mesh_idx, tex_idx });
+    state.world.insert(id, NonSelectable);
+    state.world.insert(
+        id,
+        SurfacePbr {
+            roughness: 0.62,
+            metallic: 0.0,
+            ior: 0.0,
+            opacity: 1.0,
+        },
+    );
+    if let Some(t) = state.world.get_mut::<Transform>(id) {
+        t.position = position;
+        t.rotation = rotation;
+        t.scale = scale;
+    }
+    state.save_registry.register_meta(
+        id,
+        EntitySaveMeta {
+            kind: "model".to_string(),
+            path: PARTICLE_DEMO_LABEL_PATH.to_string(),
+            visual_model_path: None,
+            entity_category: Some("object".to_string()),
+        },
+    );
+    send_event(&EngineEvent::ModelLoaded {
+        id,
+        name: Some(name),
+        position: Some(position.to_array()),
+        scale: Some(scale.to_array()),
+        rotation: Some([rotation.x, rotation.y, rotation.z, rotation.w]),
+        path: Some(PARTICLE_DEMO_LABEL_PATH.to_string()),
+        kind: Some("model".to_string()),
+        blueprint_id: None,
+        physics_enabled: Some(false),
+        physics_type: None,
+        entity_category: Some("object".to_string()),
+    });
+}
+
+fn particle_demo_labels_current(
+    state: &State,
+    slots: &[crate::engine3d::particles::ParticleDemoSlot; 5],
+) -> bool {
+    let ids = particle_demo_label_ids(state);
+    if ids.len() != slots.len() {
+        return false;
+    }
+    let mut have: Vec<String> = ids
+        .iter()
+        .filter_map(|id| state.world.name(*id).map(str::to_owned))
+        .collect();
+    if have.len() != slots.len() {
+        return false;
+    }
+    have.sort();
+    let mut want: Vec<String> = slots
+        .iter()
+        .map(|slot| format!("ParticleDemo · {}", slot.label))
+        .collect();
+    want.sort();
+    if have != want {
+        return false;
+    }
+    slots.iter().all(|slot| {
+        let expected_name = format!("ParticleDemo · {}", slot.label);
+        let (want_pos, _, _) = particle_demo_label_pose(slot.config.origin);
+        ids.iter().any(|id| {
+            state.world.name(*id) == Some(expected_name.as_str())
+                && state.world.get::<Transform>(*id).is_some_and(|transform| {
+                    transform.position.distance(want_pos) < 0.05
+                        && (transform.rotation * Vec3::Z).dot(Vec3::NEG_X) > 0.95
+                })
+        })
+    })
+}
+
+/// Letreros de pie de la fila demo de partículas (FIRE/SMOKE/SAND/WATER/FOG).
+pub fn ensure_particle_demo_labels(state: &mut State) {
+    let slots = crate::engine3d::particles::particle_demo_slots();
+    if particle_demo_labels_current(state, &slots) {
+        return;
+    }
+    for id in particle_demo_label_ids(state) {
+        despawn_validation_entity(state, id);
+    }
+    for slot in slots {
+        spawn_particle_demo_label(state, slot.label, slot.accent, slot.config.origin);
+    }
+}
+
 /// Escena comparativa: 1 esfera por material en fila, letrero arriba, pared entre cada una.
 pub fn ensure_material_comparison_demo(state: &mut State) {
     if material_comparison_sphere_ids(state).len() != MAT_VAL_ROW_COUNT {
@@ -260,6 +379,15 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
             },
         );
         state.world.insert(label_id, NonSelectable);
+        state.world.insert(
+            label_id,
+            SurfacePbr {
+                roughness: 0.62,
+                metallic: 0.0,
+                ior: 0.0,
+                opacity: 1.0,
+            },
+        );
         if let Some(t) = state.world.get_mut::<Transform>(label_id) {
             t.position = Vec3::new(x, LABEL_Y, SPHERE_Z);
             t.scale = Vec3::new(LABEL_W, LABEL_H, 1.0);
@@ -387,7 +515,7 @@ impl State {
     }
 
     pub(crate) fn mat_val_texture_for_label(&mut self, preset: &PbrMaterialPreset) -> usize {
-        let key = format!("label:v2:{}", preset.id);
+        let key = format!("label:v3:{}", preset.id);
         if let Some(&idx) = self.mat_val_texture_cache.get(&key) {
             return idx;
         }
@@ -399,6 +527,24 @@ impl State {
         tex_idx
     }
 
+    pub(crate) fn texture_for_label_text(
+        &mut self,
+        cache_key: &str,
+        text: &str,
+        accent: [f32; 3],
+    ) -> usize {
+        if let Some(&idx) = self.mat_val_texture_cache.get(cache_key) {
+            return idx;
+        }
+        let (rgba, w, h) = build_label_rgba(text, accent);
+        let tex_idx = self.tex_layers.len();
+        let layer = self.texture_array.pack(&self.vulkan, &rgba, w, h).unwrap();
+        self.tex_layers.push(layer);
+        self.mat_val_texture_cache
+            .insert(cache_key.to_string(), tex_idx);
+        tex_idx
+    }
+
     pub(crate) fn apply_mat_val_sphere_visual(&mut self, id: EntityId, tex_idx: usize) {
         let mesh_idx = self.sun_icon_mesh_idx();
         if let Some(mc) = self.world.get_mut::<MeshComponent>(id) {
@@ -407,5 +553,26 @@ impl State {
         } else {
             self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         }
+    }
+}
+
+#[cfg(test)]
+mod particle_demo_label_tests {
+    use super::particle_demo_label_pose;
+    use glam::Vec3;
+
+    #[test]
+    fn standing_labels_share_front_yaw() {
+        let (a, rot_a, scale) = particle_demo_label_pose([10.0, 0.35, -1.0]);
+        let (b, rot_b, _) = particle_demo_label_pose([10.0, 0.35, 7.0]);
+        assert_eq!(rot_a, rot_b);
+        assert!((scale.y - 0.45).abs() < 1e-5);
+        let forward = rot_a * Vec3::Z;
+        assert!(forward.dot(Vec3::NEG_X) > 0.99);
+        assert!(forward.y.abs() < 1e-5);
+        assert!((a.x - 8.3).abs() < 1e-4);
+        assert!((b.x - a.x).abs() < 1e-5);
+        assert!((a.z + 1.0).abs() < 1e-5);
+        assert!((b.z - 7.0).abs() < 1e-5);
     }
 }

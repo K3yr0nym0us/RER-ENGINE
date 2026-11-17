@@ -88,11 +88,13 @@ impl State {
     /// Elementos DEMO de la escena activa (cajas, esfera de física, pruebas de
     /// reflejos/materiales). El editor muestra «Limpiar escena» mientras queden.
     pub(crate) fn demo_editor_entity_count(&self) -> u32 {
-        self.save_registry
+        let entities = self
+            .save_registry
             .meta
             .values()
             .filter(|meta| crate::engine3d::entity_save_meta::is_demo_entity_path(&meta.path))
-            .count() as u32
+            .count();
+        (entities + self.particles.demo_showcase_count()) as u32
     }
 
     /// Refresca `dirty` de la escena activa en el renderer (pila undo del mundo).

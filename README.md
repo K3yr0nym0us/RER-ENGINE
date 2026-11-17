@@ -124,6 +124,7 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine::engine2d=debu
 | [docs/yaml/plugins/Plugins_Model.yaml](./docs/yaml/plugins/Plugins_Model.yaml) | Plugins opcionales (catálogo, IPC, persistencia) |
 | [docs/ai/AI_Assistant_Plugin.yaml](./docs/ai/AI_Assistant_Plugin.yaml) | Plugin asistente RER-AI (OpenCode free, sandbox docs/ai, tools de UI) |
 | [docs/README.md](./docs/README.md) | Índice de documentación (funcionalidad implementada) |
+| [`src/main/Engine/branding/README.md`](src/main/Engine/branding/README.md) | Intro 4K del motor para el build final del juego (`status: pendiente`) |
 | [`src/main/Engine/engine/src/engine2d/ARCHITECTURE.md`](src/main/Engine/engine/src/engine2d/ARCHITECTURE.md) | Contrato del motor 2D |
 | [`src/main/Engine/engine/ARCHITECTURE.md`](src/main/Engine/engine/ARCHITECTURE.md) | Contrato del motor 3D |
 | [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) | Rol del frontend y qué no duplicar |

@@ -756,7 +756,7 @@ impl State {
 impl State {
     /// «Limpiar escena»: elimina los elementos DEMO de la plantilla (muros y
     /// cubos `[EditorBox]`, esfera de física `[Ball]`, sondas `[ReflectionProbe]`,
-    /// pruebas `[MatVal]` y la escena `[MatComparison]` con sus alfombras/letreros).
+    /// pruebas `[MatVal]`, `[MatComparison]`, letreros `[ParticleDemoLabel]` y la fila de partículas).
     /// Conserva suelo, sol, jugador y cámaras. Cada entidad pasa por el borrado
     /// normal (eventos, meta, física) y deja undo.
     pub(crate) fn clear_scene_content(&mut self) {
@@ -775,6 +775,8 @@ impl State {
             }));
             removed += 1;
         }
+        let particles_removed = self.particles.remove_demo_showcase();
+        removed += particles_removed;
         self.emit_scene_demo_count();
         log::info!(
             "[editor] elementos DEMO eliminados: {removed} (suelo, sol, jugador y cámaras conservados)"

@@ -31,7 +31,7 @@ function getOptions(t: (key: string) => string): ProjectOption[] {
       type:        '3D',
       label:       t('3D Project'),
       icon:        '⬡',
-      description: t('Full engine with meshes, lights, shadows and 3D physics using wgpu + Rapier.'),
+      description: t('Full engine with meshes, lights, shadows and 3D physics using Vulkan + Rapier.'),
       badge:       '3D',
       badgeColor:  '#34d399',
       available:   true,

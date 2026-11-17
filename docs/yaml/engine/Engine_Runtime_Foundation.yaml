@@ -9,7 +9,7 @@
 #   - .cursor/rules/project.mdc
 
 version: 1
-updated: 2026-11-09
+updated: 2026-11-16
 
 editor_window:
   principle: |
@@ -63,6 +63,20 @@ metrics:
   sampler: core/src/process_metrics.rs
   electron_gpu: "src/main/gpuProcessUsage.ts (Windows: contadores GPU Engine por PID)"
   ui: MetricsPanel.tsx
+
+game_build_intro:
+  status: pendiente
+  asset: src/main/Engine/branding/RER_ENGINE_Intro_4K.mp4
+  notes: src/main/Engine/branding/README.md
+  when: pipeline de build final del juego (ejecutable standalone 2D/3D)
+  purpose: |
+    Al arrancar un juego compilado, reproducir este vídeo para indicar que se
+    desarrolló con RER-ENGINE. El asset ya está en el árbol del motor; la
+    reproducción y el empaquetado se cablean cuando exista esa exportación.
+  not_for:
+    - rer_engine_editor / yarn dev / yarn start
+    - instalador Electron (yarn dist)
+    - splash propio del proyecto .save
 
 do_not:
   - Reintroducir overlay, tracker Win32, set_bounds o proceso 2D legacy

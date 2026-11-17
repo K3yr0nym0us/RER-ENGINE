@@ -115,7 +115,7 @@ impl State {
 
         let (model_preload_tx, model_preload_rx) =
             crate::engine3d::config_3d::static_model_cache::create_model_preload_channel();
-        let state = Self {
+        let mut state = Self {
             window,
             vulkan: vulkan.clone(),
             size,
@@ -201,9 +201,7 @@ impl State {
             bone_index_cache: HashMap::new(),
             particles: {
                 let mut particles = crate::engine3d::particles::ParticleSystem::new();
-                // F1: emisor demo de fuego cableado a mano sobre el origen del mundo
-                // (visible con la cámara por defecto del editor).
-                particles.add(crate::engine3d::particles::EmitterConfig::fire_demo());
+                particles.seed_default_showcase();
                 particles
             },
             socket_bone_pick_entity: None,
@@ -372,6 +370,7 @@ impl State {
             fp_baseline_defer_frames: 0,
             editor_scenes: crate::engine3d::engine::editor_scenes::EditorSceneStore::new(),
         };
+        state.ensure_particle_demo_row();
         Ok(state)
     }
 }

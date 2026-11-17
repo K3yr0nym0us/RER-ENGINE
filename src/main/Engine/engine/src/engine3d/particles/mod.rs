@@ -421,6 +421,70 @@ impl EmitterConfig {
     // (fin de presets)
 }
 
+/// Fila demo de la plantilla 3D: x fija, un emisor cada 2 m en z (origen z=-1).
+pub(crate) const PARTICLE_DEMO_X: f32 = 10.0;
+pub(crate) const PARTICLE_DEMO_Z0: f32 = -1.0;
+pub(crate) const PARTICLE_DEMO_Z_STEP: f32 = 2.0;
+/// Ids reservados de la fila demo (no chocan con la UI `0x6000…` ni con el clima).
+pub(crate) const DEMO_EMITTER_ID_BASE: u64 = 0x00D0_0000_0000_0000;
+const DEMO_ORIGIN_EPS: f32 = 0.05;
+
+pub(crate) fn demo_emitter_id(index: usize) -> u64 {
+    DEMO_EMITTER_ID_BASE + index as u64
+}
+
+pub(crate) fn is_demo_emitter_id(id: u64) -> bool {
+    let count = particle_demo_slots().len() as u64;
+    (DEMO_EMITTER_ID_BASE..DEMO_EMITTER_ID_BASE + count).contains(&id)
+}
+
+pub(crate) fn is_demo_showcase_pose(material: MaterialKind, origin: [f32; 3]) -> bool {
+    particle_demo_slots().iter().any(|slot| {
+        slot.config.material == material
+            && (slot.config.origin[0] - origin[0]).abs() <= DEMO_ORIGIN_EPS
+            && (slot.config.origin[2] - origin[2]).abs() <= DEMO_ORIGIN_EPS
+    })
+}
+
+pub(crate) fn is_demo_showcase_wire(material: &str, origin: [f32; 3], id: u64) -> bool {
+    if is_demo_emitter_id(id) {
+        return true;
+    }
+    MaterialKind::from_wire(material).is_some_and(|kind| is_demo_showcase_pose(kind, origin))
+}
+
+pub(crate) struct ParticleDemoSlot {
+    pub config: EmitterConfig,
+    pub label: &'static str,
+    pub accent: [f32; 3],
+}
+
+fn demo_origin(preset_y: f32, index: usize) -> [f32; 3] {
+    [
+        PARTICLE_DEMO_X,
+        preset_y,
+        PARTICLE_DEMO_Z0 + index as f32 * PARTICLE_DEMO_Z_STEP,
+    ]
+}
+
+pub(crate) fn particle_demo_slots() -> [ParticleDemoSlot; 5] {
+    let place = |mut config: EmitterConfig, index: usize, label: &'static str, accent: [f32; 3]| {
+        config.origin = demo_origin(config.origin[1], index);
+        ParticleDemoSlot {
+            config,
+            label,
+            accent,
+        }
+    };
+    [
+        place(EmitterConfig::fire_demo(), 0, "FIRE", [1.0, 0.48, 0.08]),
+        place(EmitterConfig::smoke(), 1, "SMOKE", [0.36, 0.36, 0.40]),
+        place(EmitterConfig::sand(), 2, "SAND", [0.82, 0.66, 0.38]),
+        place(EmitterConfig::water(), 3, "WATER", [0.40, 0.62, 0.88]),
+        place(EmitterConfig::scene_fog(), 4, "FOG", [0.72, 0.78, 0.86]),
+    ]
+}
+
 /// Un emisor vivo: configuración + estado de simulación (todo CPU).
 pub(crate) struct Emitter {
     pub id: u64,
@@ -553,6 +617,33 @@ impl ParticleSystem {
         self.next_id += 1;
         self.emitters.push(Emitter::new(id, config));
         id
+    }
+
+    /// Fuego, humo, arena, agua y niebla en x=10, separados 2 m en z (desde z=-1).
+    pub(crate) fn seed_default_showcase(&mut self) {
+        for (index, slot) in particle_demo_slots().into_iter().enumerate() {
+            self.add_or_with_id(Some(demo_emitter_id(index)), slot.config);
+        }
+    }
+
+    fn is_demo_showcase_emitter(emitter: &Emitter) -> bool {
+        is_demo_emitter_id(emitter.id)
+            || is_demo_showcase_pose(emitter.config.material, emitter.config.origin)
+    }
+
+    /// Quita la fila demo; conserva clima y emisores creados por el usuario.
+    pub(crate) fn remove_demo_showcase(&mut self) -> usize {
+        let before = self.emitters.len();
+        self.emitters
+            .retain(|emitter| !Self::is_demo_showcase_emitter(emitter));
+        before - self.emitters.len()
+    }
+
+    pub(crate) fn demo_showcase_count(&self) -> usize {
+        self.emitters
+            .iter()
+            .filter(|emitter| Self::is_demo_showcase_emitter(emitter))
+            .count()
     }
 
     /// Alta o reemplazo con id externo (la UI usa ids altos para no chocar con los del
@@ -979,6 +1070,66 @@ mod tests {
         let second = system.add(EmitterConfig::fire_demo());
         assert_ne!(first, second);
         assert_eq!(system.len(), 2);
+    }
+
+    #[test]
+    fn default_showcase_is_a_row_at_x10() {
+        let slots = particle_demo_slots();
+        let kinds = [
+            MaterialKind::Fire,
+            MaterialKind::Smoke,
+            MaterialKind::Sand,
+            MaterialKind::Water,
+            MaterialKind::Fog,
+        ];
+        for (index, (slot, kind)) in slots.iter().zip(kinds).enumerate() {
+            assert_eq!(slot.config.material, kind);
+            assert_eq!(slot.config.origin[0], 10.0);
+            assert_eq!(
+                slot.config.origin[2],
+                PARTICLE_DEMO_Z0 + index as f32 * PARTICLE_DEMO_Z_STEP
+            );
+        }
+        assert_eq!(slots[0].label, "FIRE");
+        assert_eq!(slots[4].label, "FOG");
+    }
+
+    #[test]
+    fn seed_default_showcase_adds_five_emitters() {
+        let mut system = ParticleSystem::new();
+        system.seed_default_showcase();
+        assert_eq!(system.len(), 5);
+        assert_eq!(system.emitters[0].config.origin, [10.0, 0.35, -1.0]);
+        assert_eq!(system.emitters[1].config.origin[2], 1.0);
+        assert_eq!(system.emitters[4].config.origin[2], 7.0);
+        assert_eq!(system.emitters[0].id, DEMO_EMITTER_ID_BASE);
+        assert_eq!(system.demo_showcase_count(), 5);
+    }
+
+    #[test]
+    fn remove_demo_showcase_keeps_user_emitters_and_weather() {
+        let mut system = ParticleSystem::new();
+        system.seed_default_showcase();
+        system.set_weather(Some(MaterialKind::Rain), 1.0, 1.0, 0.0);
+        let mut user = EmitterConfig::fire_demo();
+        user.origin = [2.0, 0.35, 4.0];
+        let user_id = system.add_or_with_id(Some(0x6000_0000_0000_0001), user);
+        assert_eq!(system.remove_demo_showcase(), 5);
+        assert_eq!(system.len(), 2);
+        assert!(system.contains(user_id));
+        assert_eq!(system.weather_active(), Some(MaterialKind::Rain));
+        assert_eq!(system.demo_showcase_count(), 0);
+    }
+
+    #[test]
+    fn remove_demo_showcase_matches_legacy_sequential_ids() {
+        let mut system = ParticleSystem::new();
+        for slot in particle_demo_slots() {
+            system.add(slot.config);
+        }
+        assert_eq!(system.emitters[0].id, 0);
+        assert_eq!(system.remove_demo_showcase(), 5);
+        assert!(system.is_empty());
     }
 
     #[test]

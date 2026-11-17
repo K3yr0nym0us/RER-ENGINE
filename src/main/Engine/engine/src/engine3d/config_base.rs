@@ -445,6 +445,7 @@ impl State {
         self.ensure_default_sun();
         self.ensure_default_physics_ball();
         self.ensure_material_validation_demo();
+        self.ensure_particle_demo_row();
         if self.play_character_entity.is_none() {
             self.spawn_play_character();
         }
@@ -553,6 +554,14 @@ impl State {
     /// Esferas demo PBR (`[MatVal]`). Independiente del pipeline de reflejos / probes.
     pub(crate) fn ensure_material_validation_demo(&mut self) {
         crate::engine3d::config_3d::material_validation::ensure_material_comparison_demo(self);
+    }
+
+    /// Fila demo de partículas (x=10, paso 2 m en z desde -1) y letreros de pie.
+    pub(crate) fn ensure_particle_demo_row(&mut self) {
+        if self.particles.is_empty() {
+            self.particles.seed_default_showcase();
+        }
+        crate::engine3d::config_3d::material_validation::ensure_particle_demo_labels(self);
     }
 
     /// Tras cargar escena FP placeholder (switch sin guardar): alinear sol, luz y cámara orbital del editor.

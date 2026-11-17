@@ -7,7 +7,7 @@
   "2D Project": "Proyecto 2D",
   "3D Project": "Proyecto 3D",
   "Sprites, tilemaps and flat physics. Ideal for platformer, top-down or puzzle games.": "Sprites, tilemaps y física plana. Ideal para juegos plataformer, top-down o puzzle.",
-  "Full engine with meshes, lights, shadows and 3D physics using wgpu + Rapier.": "Motor completo con meshes, luces, sombras y física 3D usando wgpu + Rapier.",
+  "Full engine with meshes, lights, shadows and 3D physics using Vulkan + Rapier.": "Motor completo con mallas, luces, sombras y física 3D usando Vulkan + Rapier.",
   "COMING SOON": "PRÓXIMAMENTE",
   "Back to project selector": "Volver al selector de proyecto",
   "Project type": "Tipo de proyecto",

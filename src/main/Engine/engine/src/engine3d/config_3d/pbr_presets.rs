@@ -217,11 +217,20 @@ fn glyph_rows_5x7(c: char) -> [u8; 7] {
         'A' => [
             0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
         ],
+        'B' => [
+            0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+        ],
         'C' => [
             0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
         ],
+        'D' => [
+            0b11110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b11110,
+        ],
         'E' => [
             0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+        ],
+        'F' => [
+            0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000,
         ],
         'G' => [
             0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110,
@@ -231,6 +240,9 @@ fn glyph_rows_5x7(c: char) -> [u8; 7] {
         ],
         'I' => [
             0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+        ],
+        'K' => [
+            0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
         ],
         'L' => [
             0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
@@ -256,6 +268,9 @@ fn glyph_rows_5x7(c: char) -> [u8; 7] {
         'T' => [
             0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
         ],
+        'U' => [
+            0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+        ],
         'W' => [
             0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001,
         ],
@@ -263,67 +278,201 @@ fn glyph_rows_5x7(c: char) -> [u8; 7] {
     }
 }
 
+/// El array GPU es 1024²; el quad del letrero es ~4.44:1. Se dibuja en un
+/// lienzo lógico ancho y se estira en Y (nearest) para que el resize a cuadrado
+/// + el quad vuelvan a dejar las letras con la proporción correcta.
+const LABEL_TEX: u32 = 1024;
+const LABEL_LOG_H: u32 = 230;
+
+fn plaque_bar_rgb(accent: [f32; 3]) -> [u8; 3] {
+    let r = accent[0].clamp(0.0, 1.0);
+    let g = accent[1].clamp(0.0, 1.0);
+    let b = accent[2].clamp(0.0, 1.0);
+    let maxc = r.max(g).max(b);
+    let boost = if maxc < 0.38 {
+        0.38 / maxc.max(0.04)
+    } else {
+        1.0
+    };
+    [
+        linear_to_u8((r * boost).min(1.0)),
+        linear_to_u8((g * boost).min(1.0)),
+        linear_to_u8((b * boost).min(1.0)),
+    ]
+}
+
+fn blit_logical(px: &mut [u8], x: i32, y: i32, rgba: [u8; 4]) {
+    if x < 0 || y < 0 {
+        return;
+    }
+    let x = x as u32;
+    let y = y as u32;
+    if x >= LABEL_TEX || y >= LABEL_LOG_H {
+        return;
+    }
+    let y0 = y * LABEL_TEX / LABEL_LOG_H;
+    let y1 = ((y + 1) * LABEL_TEX / LABEL_LOG_H)
+        .max(y0 + 1)
+        .min(LABEL_TEX);
+    for ty in y0..y1 {
+        let i = ((ty * LABEL_TEX + x) * 4) as usize;
+        px[i..i + 4].copy_from_slice(&rgba);
+    }
+}
+
+fn fill_rect_logical(px: &mut [u8], x0: i32, y0: i32, x1: i32, y1: i32, rgba: [u8; 4]) {
+    let x0 = x0.max(0);
+    let y0 = y0.max(0);
+    let x1 = x1.min(LABEL_TEX as i32);
+    let y1 = y1.min(LABEL_LOG_H as i32);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            blit_logical(px, x, y, rgba);
+        }
+    }
+}
+
+fn stamp_glyph_cell(
+    px: &mut [u8],
+    origin: [i32; 2],
+    scale: u32,
+    cell: [u32; 2],
+    offset: [i32; 2],
+    rgba: [u8; 4],
+) {
+    for sy in 0..scale {
+        for sx in 0..scale {
+            let x = origin[0] + (cell[0] * scale + sx) as i32 + offset[0];
+            let y = origin[1] + (cell[1] * scale + sy) as i32 + offset[1];
+            blit_logical(px, x, y, rgba);
+        }
+    }
+}
+
 fn draw_glyph_5x7(
     px: &mut [u8],
-    w: u32,
-    h: u32,
-    origin_x: i32,
-    origin_y: i32,
+    origin: [i32; 2],
     scale: u32,
     ch: char,
+    fill: [u8; 4],
+    outline: [u8; 4],
 ) {
     let rows = glyph_rows_5x7(ch);
     for (row, &bits) in rows.iter().enumerate() {
+        let row = row as u32;
         for col in 0..5u32 {
             if (bits >> (4 - col)) & 1 == 0 {
                 continue;
             }
-            for sy in 0..scale {
-                for sx in 0..scale {
-                    let x = origin_x + (col * scale + sx) as i32;
-                    let y = origin_y + (row as u32 * scale + sy) as i32;
-                    if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    if dx == 0 && dy == 0 {
                         continue;
                     }
-                    let i = ((y as u32 * w + x as u32) * 4) as usize;
-                    px[i] = 240;
-                    px[i + 1] = 243;
-                    px[i + 2] = 248;
-                    px[i + 3] = 255;
+                    stamp_glyph_cell(px, origin, scale, [col, row], [dx, dy], outline);
                 }
             }
+        }
+    }
+    for (row, &bits) in rows.iter().enumerate() {
+        let row = row as u32;
+        for col in 0..5u32 {
+            if (bits >> (4 - col)) & 1 == 0 {
+                continue;
+            }
+            stamp_glyph_cell(px, origin, scale, [col, row], [0, 0], fill);
         }
     }
 }
 
 pub fn build_label_rgba(text: &str, accent: [f32; 3]) -> (Vec<u8>, u32, u32) {
-    const W: u32 = 112;
-    const H: u32 = 24;
-    const SCALE: u32 = 2;
-    const CHAR_W: i32 = (5 * SCALE + 2) as i32;
-    let mut px = vec![0u8; (W * H * 4) as usize];
-    let bg = [24u8, 26, 30, 235];
-    for chunk in px.chunks_exact_mut(4) {
-        chunk.copy_from_slice(&bg);
-    }
-    let bar_h = 3u32;
-    let ar = linear_to_u8(accent[0]);
-    let ag = linear_to_u8(accent[1]);
-    let ab = linear_to_u8(accent[2]);
-    for y in 0..bar_h {
-        for x in 0..W {
-            let i = ((y * W + x) * 4) as usize;
-            px[i] = ar;
-            px[i + 1] = ag;
-            px[i + 2] = ab;
-            px[i + 3] = 255;
-        }
-    }
-    let mut pen_x = 8i32;
-    let pen_y = 6i32;
+    const SCALE: u32 = 20;
+    const GAP: i32 = 8;
+    const CHAR_W: i32 = (5 * SCALE) as i32 + GAP;
+    const BAR_H: i32 = 14;
+    const BORDER: i32 = 4;
+    let mut px = vec![0u8; (LABEL_TEX * LABEL_TEX * 4) as usize];
+    let bg = [26u8, 28, 34, 255];
+    let border = [62u8, 66, 76, 255];
+    let fill = [236u8, 240, 246, 255];
+    let outline = [10u8, 11, 14, 255];
+    fill_rect_logical(&mut px, 0, 0, LABEL_TEX as i32, LABEL_LOG_H as i32, bg);
+    fill_rect_logical(&mut px, 0, 0, LABEL_TEX as i32, BORDER, border);
+    fill_rect_logical(
+        &mut px,
+        0,
+        LABEL_LOG_H as i32 - BORDER,
+        LABEL_TEX as i32,
+        LABEL_LOG_H as i32,
+        border,
+    );
+    fill_rect_logical(&mut px, 0, 0, BORDER, LABEL_LOG_H as i32, border);
+    fill_rect_logical(
+        &mut px,
+        LABEL_TEX as i32 - BORDER,
+        0,
+        LABEL_TEX as i32,
+        LABEL_LOG_H as i32,
+        border,
+    );
+    let bar = plaque_bar_rgb(accent);
+    let bar_rgba = [bar[0], bar[1], bar[2], 255];
+    fill_rect_logical(
+        &mut px,
+        BORDER,
+        BORDER,
+        LABEL_TEX as i32 - BORDER,
+        BAR_H,
+        bar_rgba,
+    );
+    let n = text.chars().count() as i32;
+    let text_w = (n * CHAR_W - GAP).max(0);
+    let mut pen_x = ((LABEL_TEX as i32) - text_w).max(0) / 2;
+    let glyph_h = (7 * SCALE) as i32;
+    let pen_y = BAR_H + ((LABEL_LOG_H as i32 - BAR_H) - glyph_h).max(0) / 2;
     for ch in text.chars() {
-        draw_glyph_5x7(&mut px, W, H, pen_x, pen_y, SCALE, ch);
+        draw_glyph_5x7(&mut px, [pen_x, pen_y], SCALE, ch, fill, outline);
         pen_x += CHAR_W;
     }
-    (px, W, H)
+    (px, LABEL_TEX, LABEL_TEX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn alpha_min(px: &[u8]) -> u8 {
+        px.chunks_exact(4).map(|c| c[3]).min().unwrap_or(0)
+    }
+
+    fn bright_count(px: &[u8]) -> usize {
+        px.chunks_exact(4)
+            .filter(|c| c[0] > 200 && c[1] > 200 && c[2] > 200)
+            .count()
+    }
+
+    #[test]
+    fn chrome_label_is_opaque_square_with_glyphs() {
+        let (px, w, h) = build_label_rgba("CHROME", [0.08, 0.08, 0.09]);
+        assert_eq!((w, h), (1024, 1024));
+        assert_eq!(px.len(), 1024 * 1024 * 4);
+        assert_eq!(alpha_min(&px), 255);
+        assert!(bright_count(&px) > 8_000);
+    }
+
+    #[test]
+    fn steel_label_keeps_opaque_plate() {
+        let (px, _, _) = build_label_rgba("STEEL", [0.52, 0.54, 0.56]);
+        assert_eq!(alpha_min(&px), 255);
+        assert!(bright_count(&px) > 5_000);
+    }
+
+    #[test]
+    fn particle_name_labels_draw_glyphs() {
+        for tag in ["FIRE", "SMOKE", "SAND", "WATER", "FOG"] {
+            let (px, _, _) = build_label_rgba(tag, [0.8, 0.4, 0.1]);
+            assert_eq!(alpha_min(&px), 255, "{tag}");
+            assert!(bright_count(&px) > 4_000, "{tag}");
+        }
+    }
 }

@@ -439,6 +439,19 @@ impl ParticlesUiState {
             "splash": values.splash,
         })
     }
+
+    /// Quita la fila demo del sidebar al «Limpiar escena».
+    pub(crate) fn remove_demo_showcase(&mut self) {
+        let is_demo = |row: &EmitterRow| {
+            let x = row.position[0].parsed().unwrap_or(0.0);
+            let z = row.position[2].parsed().unwrap_or(0.0);
+            crate::engine3d::particles::is_demo_showcase_wire(row.material, [x, 0.0, z], row.id)
+        };
+        if self.modal.as_ref().is_some_and(is_demo) {
+            self.modal = None;
+        }
+        self.emitters.retain(|row| !is_demo(row));
+    }
 }
 
 pub(super) fn particles_body(

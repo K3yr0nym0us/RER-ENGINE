@@ -3,7 +3,8 @@
 //! El botón de Escenas (visible solo mientras queden elementos DEMO) marca
 //! `SidebarLeftState::pending_clear_scene`. Confirmar envía `clear_scene_content`:
 //! elimina los elementos DEMO (`[EditorBox]`, `[Ball]`, `[ReflectionProbe]`,
-//! `[MatVal]`, `[MatComparison]`…) y conserva suelo, sol, jugador y cámaras.
+//! `[MatVal]`, `[MatComparison]`, `[ParticleDemoLabel]` y la fila de partículas)
+//! y conserva suelo, sol, jugador y cámaras.
 
 use egui::{Color32, RichText};
 use serde_json::json;
@@ -44,8 +45,8 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
             ui.label(
                 RichText::new(tr(
                     locale,
-                    "Se eliminarán todos los elementos DEMO de la escena (muros, cubos, esfera de física, sondas y las pruebas de materiales: esferas, alfombras y letreros). El suelo, el sol, el jugador y las cámaras se conservan.",
-                    "All DEMO elements in the scene will be removed (walls, cubes, physics ball, probes and the material tests: spheres, rugs and labels). The ground, sun, player and cameras are kept.",
+                    "Se eliminarán todos los elementos DEMO de la escena (muros, cubos, esfera de física, sondas, las pruebas de materiales y la fila de partículas con sus letreros). El suelo, el sol, el jugador y las cámaras se conservan.",
+                    "All DEMO elements in the scene will be removed (walls, cubes, physics ball, probes, the material tests and the particle row with its labels). The ground, sun, player and cameras are kept.",
                 ))
                 .size(13.0)
                 .color(theme::TEXT),
@@ -92,6 +93,7 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
 
     if confirm {
         app.left_sidebar.pending_clear_scene = false;
+        app.right_sidebar.particles.remove_demo_showcase();
         app.send_engine(json!({ "cmd": "clear_scene_content" }));
         app.push_log(
             "[Escenas] Limpiando elementos DEMO de la escena…".to_string(),
