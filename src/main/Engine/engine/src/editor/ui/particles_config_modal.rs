@@ -78,13 +78,15 @@ pub(crate) fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             let mask = field_mask(draft.material);
 
             position_row(ui, locale, draft);
-            number_row(
-                ui,
-                locale,
-                "Emisión (part/s)",
-                "Emission (part/s)",
-                &mut draft.rate,
-            );
+            ui.add_enabled_ui(mask.rate, |ui| {
+                number_row(
+                    ui,
+                    locale,
+                    "Emisión (part/s)",
+                    "Emission (part/s)",
+                    &mut draft.rate,
+                );
+            });
             number_row(ui, locale, "Tamaño (m)", "Size (m)", &mut draft.size);
             number_row(ui, locale, "Vida (s)", "Life (s)", &mut draft.life);
             ui.add_enabled_ui(mask.gravity, |ui| {

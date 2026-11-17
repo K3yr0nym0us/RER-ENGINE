@@ -874,7 +874,10 @@ mod tests {
                 let Ok(mut entry) = archive.by_index(i) else {
                     continue;
                 };
-                let name = entry.name().to_string();
+                let Ok(name) = entry.name() else {
+                    continue;
+                };
+                let name = name.into_owned();
                 if !name.ends_with(".rhai") {
                     continue;
                 }

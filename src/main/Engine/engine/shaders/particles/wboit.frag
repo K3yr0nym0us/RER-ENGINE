@@ -86,6 +86,16 @@ void main() {
         float shape = smoothstep(1.0, 0.2, dd);
         rgb = v_color.rgb * shape;
         alpha = v_color.a * shape;
+    } else if (mat == 7u) {
+        // Cubo de agua: mismo blob con borde brillante que el pase directo.
+        float d = length(v_uv);
+        if (d > 1.0) {
+            discard;
+        }
+        float shape = smoothstep(1.0, 0.15, d);
+        float rim = smoothstep(0.5, 0.9, d) * shape;
+        rgb = v_color.rgb * (shape + rim * 0.55);
+        alpha = v_color.a * shape;
     } else if (mat == 1u) {
         float shape = volute_shape(v_uv, v_spin_size.x);
         if (shape <= 0.001) {

@@ -101,8 +101,9 @@ struct EmitterGpu {
 
 fn initial_indirect_bytes() -> Vec<u8> {
     // Draw: 6 vértices, 0 instancias (no-op hasta que el primer build_indirect escriba).
-    // Dispatch: 1 grupo (kickstart aunque no haya partículas vivas).
-    let words = [6u32, 0, 0, 0, 1, 1, 1];
+    // Dispatch: 8 grupos (512 hilos) de kickstart. 1 grupo solo cubre 64 spawns; el
+    // cubo de agua nace en un lattice de hasta 8³ en el primer frame.
+    let words = [6u32, 0, 0, 0, 8, 1, 1];
     words.iter().flat_map(|w| w.to_le_bytes()).collect()
 }
 
@@ -673,7 +674,7 @@ impl ParticlePool {
                     bytes_of(&push),
                 );
                 // Dispatch indirecto: grupos escritos por `build_indirect.comp` del frame
-                // anterior (latencia 1 frame, autosaneante; semilla CPU = 1 grupo).
+                // anterior (latencia 1 frame, autosaneante; semilla CPU = 8 grupos).
                 device.cmd_dispatch_indirect(cmd, entry.indirect.buffer, INDIRECT_DISPATCH_OFFSET);
             }
             // 4. Salida del sim visible para `build_indirect`.

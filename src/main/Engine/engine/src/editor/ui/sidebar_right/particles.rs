@@ -31,12 +31,13 @@ const WEATHER_OPTIONS: [(&str, &str, &str); 4] = [
 ];
 
 /// Materiales para la alta manual de emisores.
-pub(crate) const MATERIAL_OPTIONS: [(&str, &str, &str); 5] = [
+pub(crate) const MATERIAL_OPTIONS: [(&str, &str, &str); 6] = [
     ("fire", "Fuego", "Fire"),
     ("smoke", "Humo", "Smoke"),
     ("fog", "Niebla", "Fog"),
     ("sand", "Arena", "Arena"),
     ("water", "Agua", "Water"),
+    ("water_cube", "Cubo de agua", "Water cube"),
 ];
 
 /// Valores planos de un emisor (preset o snapshot). Los borradores de la UI se
@@ -132,6 +133,9 @@ impl EmitterRow {
     pub(crate) fn pin_inapplicable_fields(&mut self) {
         let preset = preset_values(self.material);
         let mask = field_mask(self.material);
+        if !mask.rate {
+            self.rate.force(preset.rate);
+        }
         if !mask.gravity {
             self.gravity.force(preset.gravity);
         }
@@ -207,13 +211,14 @@ pub struct ParticlesUiState {
 }
 
 /// Preset de valores por material para la alta nueva (coincide con los presets del
-/// motor: `EmitterConfig::{fire_demo,smoke,fog,rain,snow,sand,water}`).
+/// motor: `EmitterConfig::{fire_demo,smoke,fog,rain,snow,sand,water,water_cube}`).
 pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
     let (position, rate, size, life, gravity, drag, turbulence, cohesion) = match material {
         "smoke" => ([0.0, 0.3, 0.0], 90.0, 0.9, 3.8, 1.35, 0.55, 1.2, 0.0),
         "fog" => ([0.0, 1.2, 0.0], 36.0, 2.2, 10.0, 0.0, 0.0, 0.0, 0.0),
         "sand" => ([0.0, 2.0, 0.0], 320.0, 0.05, 4.0, -9.8, 0.6, 0.3, 0.1),
         "water" => ([0.0, 2.0, 0.0], 380.0, 0.06, 3.5, -9.8, 0.35, 0.2, 0.5),
+        "water_cube" => ([0.0, 1.6, 0.0], 0.0, 0.09, 12.0, -9.8, 2.4, 0.0, 0.62),
         // fuego
         _ => ([0.0, 0.35, 0.0], 160.0, 0.55, 1.1, -1.9, 0.9, 2.4, 0.0),
     };
@@ -232,9 +237,9 @@ pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
         } else {
             [0.0, 0.0]
         },
-        ground_collision: matches!(material, "sand" | "water"),
+        ground_collision: matches!(material, "sand" | "water" | "water_cube"),
         accumulate: false,
-        splash: material == "water",
+        splash: matches!(material, "water" | "water_cube"),
     }
 }
 
@@ -242,6 +247,7 @@ pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
 /// El resto se muestra bloqueado en el valor del preset.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EmitterFieldMask {
+    pub rate: bool,
     pub gravity: bool,
     pub drag: bool,
     pub turbulence: bool,
@@ -256,6 +262,7 @@ pub(crate) struct EmitterFieldMask {
 pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
     match material {
         "fog" => EmitterFieldMask {
+            rate: true,
             gravity: false,
             drag: false,
             turbulence: false,
@@ -267,6 +274,7 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             splash: false,
         },
         "sand" => EmitterFieldMask {
+            rate: true,
             gravity: true,
             drag: true,
             turbulence: false,
@@ -278,6 +286,19 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             splash: false,
         },
         "water" => EmitterFieldMask {
+            rate: true,
+            gravity: true,
+            drag: true,
+            turbulence: false,
+            cohesion: true,
+            ground_y: true,
+            wind: false,
+            ground_collision: true,
+            accumulate: false,
+            splash: true,
+        },
+        "water_cube" => EmitterFieldMask {
+            rate: false,
             gravity: true,
             drag: true,
             turbulence: false,
@@ -290,6 +311,7 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
         },
         // fuego y humo: flotabilidad, drag, curl y viento. Sin suelo ni cohesión.
         _ => EmitterFieldMask {
+            rate: true,
             gravity: true,
             drag: true,
             turbulence: true,
@@ -713,6 +735,27 @@ mod tests {
         let mask = field_mask("water");
         assert!(mask.splash && mask.ground_collision && mask.cohesion);
         assert!(!mask.turbulence && !mask.wind && !mask.accumulate);
+    }
+
+    #[test]
+    fn water_cube_is_listed_and_keeps_splash() {
+        assert!(
+            super::MATERIAL_OPTIONS
+                .iter()
+                .any(|(wire, es, en)| *wire == "water_cube"
+                    && *es == "Cubo de agua"
+                    && *en == "Water cube")
+        );
+        let mask = field_mask("water_cube");
+        assert!(mask.splash && mask.ground_collision && mask.cohesion && mask.gravity);
+        assert!(!mask.turbulence && !mask.wind && !mask.accumulate);
+        let values = preset_values("water_cube");
+        assert!(!mask.rate);
+        assert_eq!(values.position, [0.0, 1.6, 0.0]);
+        assert_eq!(values.rate, 0.0);
+        assert_eq!(values.cohesion, 0.62);
+        assert!(values.splash && values.ground_collision);
+        assert!(!values.accumulate);
     }
 
     #[test]

@@ -26,7 +26,7 @@ layout(set = 0, binding = 0) uniform Emitter {
     vec4 phys;               // x gravedad/flotabilidad (+Y), y drag, z turbulencia, w cohesión
     vec4 env;                // x ground_y, y spin rad/s, z viento X, w viento Z
     uvec4 misc;              // x material_kind, y capacidad, z billboard, w flags
-    vec4 volume;             // xyz semi-extensión del volumen de cámara, w reservado
+    vec4 volume;             // xyz semi-extensión del volumen de cámara; w = n del lattice (cubo de agua)
     vec4 collide;            // x bounciness, y friction, z size_end, w stretch
 } emitter;
 
@@ -214,6 +214,35 @@ void collide_ground(inout Particle p, inout vec3 vel, inout bool settled, inout 
         return;
     }
 
+    if (mat == 7u) {
+        // Cubo de agua: impacto rápido → salpicadura efímera (como el agua F4);
+        // caída lenta o rebote agotado → asentarse como charco (agua quieta con
+        // vida extendida, se desvanece al final en vez de morir de golpe).
+        p.pos_life.y = rest_y;
+        float impact = -vel.y;
+        if (impact > 2.2 && (flags & 4u) != 0u) {
+            mark_splashed(p);
+            p.rot_seed.w = 0.0;
+            age = 0.0;
+            p.pos_life.w = 0.22 + 0.1 * rand01(12u);
+            vec2 radial = rand_dir_xz(10u, 11u);
+            float out_speed = 0.5 + 0.9 * rand01(13u);
+            vel = vec3(radial.x * out_speed, 1.4, radial.y * out_speed);
+            return;
+        }
+        vel.y = 0.0;
+        vel.x *= exp(-3.2 * pc.dt); // fricción: el charco frena y quieta
+        vel.z *= exp(-3.2 * pc.dt);
+        if (length(vec2(vel.x, vel.z)) < 0.08) {
+            vel = vec3(0.0);
+            settled = true;
+            mark_settled(p);
+            float linger = 8.0 + 4.0 * rand01(13u);
+            p.pos_life.w = age + linger + 0.4;
+        }
+        return;
+    }
+
     p.pos_life.y = emitter.env.x;
     float bounce = emitter.collide.x;
     float friction = clamp(emitter.collide.y, 0.0, 1.0);
@@ -297,9 +326,20 @@ bool integrate(inout Particle p) {
             emitter.velocity_spread.y,
             emitter.env.w + flutter.z * 0.7
         );
+    } else if (mat == 7u) {
+        // CUBO DE AGUA: el cubo ES el fluido (no un vaso de cristal). Gravedad +
+        // muelle hacia el centro del bloque (origin del UBO, que la CPU hace caer)
+        // para que el lattice viaje junto y se aplasté en charco, no como lluvia.
+        vel.y += emitter.phys.x * pc.dt;
+        vel *= exp(-emitter.phys.y * pc.dt);
+        float cohesion = emitter.phys.w;
+        if (cohesion > 0.0 && !is_splashed(p)) {
+            vec3 to_center = emitter.origin_radius.xyz - p.pos_life.xyz;
+            vel += to_center * (cohesion * 14.0) * pc.dt;
+        }
+        collide_ground(p, vel, settled, age);
     } else if (mat == 5u || mat == 6u) {
-        // ARENA/AGUA: gravedad + drag + cohesión. Granos y gotas usan bounce/friction
-        // del UBO; el polvo de arena es un emisor separado (`sand_dust()`).
+        // ARENA/AGUA: gravedad + drag + cohesión hacia la velocidad del emisor.
         vel.y += emitter.phys.x * pc.dt;
         vel *= exp(-emitter.phys.y * pc.dt);
         float cohesion = emitter.phys.w;
@@ -372,8 +412,9 @@ bool integrate(inout Particle p) {
 
     float k = clamp(age / life, 0.0, 1.0);
     p.color = color_over_life(mat, k);
-    if (mat == 5u && p.rot_seed.z >= 1.0) {
-        // Grano en el suelo: alfa lleno durante el reposo; solo se desvanece al final.
+    if ((mat == 5u || mat == 7u) && p.rot_seed.z >= 1.0) {
+        // Grano/charco en el suelo: alfa lleno durante el reposo; solo se desvanece
+        // al final (el charco de agua se mantiene, no se desintegra al asentarse).
         p.color.a = emitter.color_start.a;
         if (is_settled(p)) {
             float remain = max(life - age, 0.0);
@@ -417,6 +458,18 @@ Particle spawn_particle() {
             fall,
             emitter.env.w + (r2 * 2.0 - 1.0) * emitter.velocity_spread.w
         );
+    } else if (emitter.misc.x == 7u) {
+        // Cubo de agua: lattice regular que llena el cubo (no un spray aleatorio).
+        // `volume.w` = n (lado); el índice de hilo mapea a la celda.
+        uint idx = gl_GlobalInvocationID.x - in_count_ref();
+        uint n = max(uint(emitter.volume.w + 0.5), 1u);
+        uint ix = idx % n;
+        uint iy = (idx / n) % n;
+        uint iz = idx / (n * n);
+        vec3 uv = (vec3(float(ix), float(iy), float(iz)) + 0.5) / float(n);
+        float hx = emitter.origin_radius.w;
+        pos = emitter.origin_radius.xyz + (uv * 2.0 - 1.0) * hx;
+        vel = emitter.velocity_spread.xyz;
     } else {
         // Emisores puntuales: disco horizontal centrado en el origen del emisor.
         float angle = r1 * TAU;

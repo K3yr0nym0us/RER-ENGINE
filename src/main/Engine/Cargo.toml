@@ -33,7 +33,7 @@ gilrs = "0.11"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Accessibility", "Win32_System_Performance"] }
 ttf-parser = "0.25"
 ab_glyph = "0.2"
-zip = { version = "8", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 sysinfo = "0.39"
 # UI del editor: egui 0.35 + backend Vulkan/ash.
 ash = "0.38"

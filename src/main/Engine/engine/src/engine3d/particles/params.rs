@@ -62,7 +62,8 @@ pub(crate) struct EmitterParams {
     /// x = material_kind (ver `MaterialKind`), y = capacidad del pool,
     /// z = modo billboard (0 cámara, 1 velocidad, 2 stretched), w = flags (F3/F4).
     pub misc: [u32; 4],
-    /// xyz = semi-extensión del volumen de cámara (lluvia/nieve/niebla), w reservado.
+    /// xyz = semi-extensión del volumen de cámara (lluvia/nieve/niebla);
+    /// w = lado n del lattice del cubo de agua (0 en el resto).
     pub volume: [f32; 4],
     /// x = restitución al suelo, y = fricción [0,1], z = multiplicador de tamaño al
     /// morir (`sizeOverLife`), w = escala de stretched billboard (eje de velocidad).
@@ -121,6 +122,10 @@ pub(crate) enum MaterialKind {
     Snow,
     Sand,
     Water,
+    /// "Cubo de agua": bloque compacto de agua que cae, salpica al impactar y el
+    /// resto se asienta como charco en el plano (`ground_y`). Referencia física:
+    /// solver PBF/XPBD de KawaiiFluid (ver `fluid.rs` para el port CPU completo).
+    WaterCube,
 }
 
 impl MaterialKind {
@@ -133,6 +138,7 @@ impl MaterialKind {
             Self::Snow => 4,
             Self::Sand => 5,
             Self::Water => 6,
+            Self::WaterCube => 7,
         }
     }
 
@@ -146,6 +152,7 @@ impl MaterialKind {
             Self::Snow => "snow",
             Self::Sand => "sand",
             Self::Water => "water",
+            Self::WaterCube => "water_cube",
         }
     }
 
@@ -158,6 +165,7 @@ impl MaterialKind {
             "snow" => Some(Self::Snow),
             "sand" => Some(Self::Sand),
             "water" => Some(Self::Water),
+            "water_cube" => Some(Self::WaterCube),
             _ => None,
         }
     }
@@ -167,14 +175,23 @@ impl MaterialKind {
     pub(crate) fn alpha_blend(self) -> u32 {
         match self {
             Self::Fire => 0,
-            Self::Smoke | Self::Fog | Self::Rain | Self::Snow | Self::Sand | Self::Water => 1,
+            Self::Smoke
+            | Self::Fog
+            | Self::Rain
+            | Self::Snow
+            | Self::Sand
+            | Self::Water
+            | Self::WaterCube => 1,
         }
     }
 
     /// Materiales que renderizan por WBOIT (F3): sin ordenar en CPU, con acumulación
     /// ponderada y revealage multiplicativo.
     pub(crate) fn uses_wboit(self) -> bool {
-        matches!(self, Self::Smoke | Self::Fog | Self::Water)
+        matches!(
+            self,
+            Self::Smoke | Self::Fog | Self::Water | Self::WaterCube
+        )
     }
 }
 
@@ -204,10 +221,32 @@ mod tests {
 
     #[test]
     fn material_kind_round_trips_through_wire() {
-        for name in ["fire", "smoke", "fog", "rain", "snow", "sand", "water"] {
+        for name in [
+            "fire",
+            "smoke",
+            "fog",
+            "rain",
+            "snow",
+            "sand",
+            "water",
+            "water_cube",
+        ] {
             let kind = MaterialKind::from_wire(name).expect("material reconocido");
             assert_eq!(kind, MaterialKind::from_wire(name).unwrap());
         }
         assert!(MaterialKind::from_wire("plasma").is_none());
+    }
+
+    #[test]
+    fn water_cube_is_wboit_alpha_kind_seven() {
+        let kind = MaterialKind::WaterCube;
+        assert_eq!(kind.as_u32(), 7);
+        assert_eq!(kind.wire(), "water_cube");
+        assert_eq!(kind.alpha_blend(), 1);
+        assert!(kind.uses_wboit());
+        assert_eq!(
+            MaterialKind::from_wire("water_cube"),
+            Some(MaterialKind::WaterCube)
+        );
     }
 }

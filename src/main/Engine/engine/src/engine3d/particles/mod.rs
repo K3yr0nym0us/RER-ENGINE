@@ -8,6 +8,7 @@
 //! F1 (slice vertical): fuego. Los demás materiales llegan en F2–F4 reutilizando esta
 //! misma estructura.
 
+mod fluid;
 mod params;
 
 pub(crate) use params::{
@@ -418,6 +419,47 @@ impl EmitterConfig {
         }
     }
 
+    /// Preset "cubo de agua": un BLOQUE de fluido, no un emisor continuo.
+    /// Nace una vez como lattice que llena `radius` (semi-extensión), cae junto
+    /// por cohesión hacia el centro del bloque, salpica al impactar y el resto
+    /// se asienta como charco. No hace falta un cubo de cristal: el cubo ES el agua.
+    pub(crate) fn water_cube() -> Self {
+        Self {
+            material: MaterialKind::WaterCube,
+            origin: [0.0, 1.6, 0.0],
+            radius: 0.38,
+            velocity: [0.0, 0.0, 0.0],
+            spread: 0.0,
+            size: 0.09,
+            size_variation: 0.08,
+            life: 12.0,
+            life_variation: 0.05,
+            rate: 0.0,
+            max_particles: 512,
+            color_start: [0.45, 0.72, 0.95, 0.62],
+            color_end: [0.35, 0.6, 0.9, 0.55],
+            gravity: -9.8,
+            drag: 2.4,
+            turbulence: 0.0,
+            cohesion: 0.62,
+            ground_y: 0.0,
+            spin: 0.0,
+            wind: [0.0, 0.0],
+            volume: [0.0, 0.0, 0.0],
+            follow_camera: false,
+            billboard_mode: BILLBOARD_CAMERA,
+            intensity: 1.0,
+            soft: true,
+            ground_collision: true,
+            accumulate: false,
+            splash: true,
+            bounciness: 0.0,
+            friction: 0.72,
+            size_end: 1.0,
+            stretch: 0.0,
+        }
+    }
+
     // (fin de presets)
 }
 
@@ -446,6 +488,7 @@ pub(crate) fn is_demo_showcase_pose(material: MaterialKind, origin: [f32; 3]) ->
     })
 }
 
+#[cfg(feature = "editor")]
 pub(crate) fn is_demo_showcase_wire(material: &str, origin: [f32; 3], id: u64) -> bool {
     if is_demo_emitter_id(id) {
         return true;
@@ -500,6 +543,10 @@ pub(crate) struct Emitter {
     /// viejas (el clima se reemplaza con el MISMO id): el primer frame pide al pool
     /// reiniciar contadores e indirecto, en vez de esperar a que mueran las antiguas.
     pub reset: bool,
+    /// Cubo de agua: el lattice ya se disparó (no es un emisor continuo).
+    burst_done: bool,
+    /// Segundos desde el burst; el origen del UBO sigue la caída del bloque.
+    fluid_t: f32,
 }
 
 impl Emitter {
@@ -511,8 +558,22 @@ impl Emitter {
             seed: 0x9E37_79B9 ^ id as u32,
             spawn_carry: 0.0,
             reset: false,
+            burst_done: false,
+            fluid_t: 0.0,
         }
     }
+}
+
+/// Lado del lattice del cubo de agua (4..=8). `radius` es la semi-extensión (m).
+pub(crate) fn water_cube_lattice_n(radius: f32) -> u32 {
+    let span = radius.max(0.08) * 2.0;
+    (span / 0.11).round().clamp(4.0, 8.0) as u32
+}
+
+/// Partículas del burst: n³, cabe en el kickstart de 8 grupos (512 hilos).
+pub(crate) fn water_cube_lattice_count(radius: f32) -> u32 {
+    let n = water_cube_lattice_n(radius);
+    n * n * n
 }
 
 /// Lote que el engine le pasa al `FrameRenderer` cada frame por emisor activo.
@@ -555,6 +616,7 @@ fn config_from_saved(
         MaterialKind::Snow => EmitterConfig::snow(1.0, 1.0, 0.0),
         MaterialKind::Sand => EmitterConfig::sand(),
         MaterialKind::Water => EmitterConfig::water(),
+        MaterialKind::WaterCube => EmitterConfig::water_cube(),
     };
     config.follow_camera = false; // lo guardado usa posición fija
     config.origin = saved.position;
@@ -656,6 +718,8 @@ impl ParticleSystem {
                     existing.config = config;
                     existing.spawn_carry = 0.0;
                     existing.reset = true;
+                    existing.burst_done = false;
+                    existing.fluid_t = 0.0;
                     return id;
                 }
                 self.next_id = self.next_id.max(id + 1);
@@ -711,8 +775,12 @@ impl ParticleSystem {
             MaterialKind::Snow => EmitterConfig::snow(intensity, fall, wind_x),
             MaterialKind::Fog => EmitterConfig::fog(intensity),
             // Humo y fuego son emisores de escena (add_particle_emitter), no clima;
-            // arena/agua llegan en F4.
-            MaterialKind::Fire | MaterialKind::Smoke | MaterialKind::Sand | MaterialKind::Water => {
+            // arena/agua llegan en F4. El cubo de agua es un emisor de escena también.
+            MaterialKind::Fire
+            | MaterialKind::Smoke
+            | MaterialKind::Sand
+            | MaterialKind::Water
+            | MaterialKind::WaterCube => {
                 return;
             }
         };
@@ -844,12 +912,40 @@ impl ParticleSystem {
             .iter_mut()
             .map(|emitter| {
                 let config = &emitter.config;
-                // Emisión con acarreo fraccional: rate*dt + resto del frame anterior.
-                emitter.spawn_carry += config.rate.max(0.0) * dt;
-                let spawn = emitter.spawn_carry as u32;
-                emitter.spawn_carry -= spawn as f32;
-                let next_carry = emitter.spawn_carry + config.rate.max(0.0) * dt;
-                let next_spawn = next_carry as u32;
+                let max_particles = config.max_particles.max(MIN_PARTICLES);
+                let (spawn, next_spawn, origin) = if config.material == MaterialKind::WaterCube {
+                    // Un lattice de un golpe, luego 0: no es un lanzador continuo.
+                    let lattice = water_cube_lattice_count(config.radius)
+                        .min(max_particles.saturating_sub(1));
+                    if !emitter.burst_done {
+                        emitter.burst_done = true;
+                        (lattice, 0, config.origin)
+                    } else {
+                        emitter.fluid_t += dt;
+                        let t = emitter.fluid_t;
+                        let mut y = config.origin[1]
+                            + config.velocity[1] * t
+                            + 0.5 * config.gravity * t * t;
+                        let rest = config.ground_y + config.radius.max(0.05) * 0.3;
+                        if y < rest {
+                            y = rest;
+                        }
+                        (0, 0, [config.origin[0], y, config.origin[2]])
+                    }
+                } else {
+                    // Emisión con acarreo fraccional: rate*dt + resto del frame anterior.
+                    emitter.spawn_carry += config.rate.max(0.0) * dt;
+                    let spawn = emitter.spawn_carry as u32;
+                    emitter.spawn_carry -= spawn as f32;
+                    let next_carry = emitter.spawn_carry + config.rate.max(0.0) * dt;
+                    let next_spawn = next_carry as u32;
+                    let origin = if config.follow_camera {
+                        camera_pos
+                    } else {
+                        config.origin
+                    };
+                    (spawn, next_spawn, origin)
+                };
 
                 let read_is_a = emitter.sim_step & 1;
                 emitter.sim_step = emitter.sim_step.wrapping_add(1);
@@ -863,13 +959,12 @@ impl ParticleSystem {
                 let reset = emitter.reset as u32;
                 emitter.reset = false;
 
-                let max_particles = config.max_particles.max(MIN_PARTICLES);
                 let spawn = spawn.min(max_particles.saturating_sub(1));
                 let next_spawn = next_spawn.min(max_particles.saturating_sub(1));
-                let origin = if config.follow_camera {
-                    camera_pos
+                let lattice_n = if config.material == MaterialKind::WaterCube {
+                    water_cube_lattice_n(config.radius) as f32
                 } else {
-                    config.origin
+                    0.0
                 };
                 // Niebla (F6): la intensidad es ESPESOR, no cantidad — el alpha escala
                 // con ella y la tasa queda fija en el preset.
@@ -938,7 +1033,7 @@ impl ParticleSystem {
                             config.volume[0].max(0.0),
                             config.volume[1].max(0.0),
                             config.volume[2].max(0.0),
-                            0.0,
+                            lattice_n,
                         ],
                         collide: [
                             config.bounciness.max(0.0),
@@ -996,6 +1091,7 @@ impl crate::engine3d::engine::State {
             // F4: presets granulares reales (arena/agua con suelo y salpicadura).
             MaterialKind::Sand => EmitterConfig::sand(),
             MaterialKind::Water => EmitterConfig::water(),
+            MaterialKind::WaterCube => EmitterConfig::water_cube(),
         };
         config.material = material;
         config.origin = position;
@@ -1309,6 +1405,44 @@ mod tests {
         assert!(batch.params.size_life[0] <= 0.012);
         assert!(batch.params.collide[2] <= 0.02); // no crecen al morir
         assert!(batch.params.color_start[3] <= 0.25);
+    }
+
+    #[test]
+    fn water_cube_falls_as_block_through_wboit() {
+        let mut system = ParticleSystem::new();
+        system.add(EmitterConfig::water_cube());
+        let batch = system.batches(0.016, [0.0; 3]).remove(0);
+        assert_eq!(batch.params.misc[0], MaterialKind::WaterCube.as_u32());
+        assert_eq!(batch.wboit, 1);
+        assert_eq!(batch.blend_alpha, 1);
+        assert_eq!(batch.params.misc[3], 0b101); // suelo + splat; el charco es settle
+        assert_eq!(batch.params.misc[2], BILLBOARD_CAMERA);
+        assert!(batch.params.origin_radius[3] > 0.2); // semi-extensión del cubo
+        assert!(batch.params.phys[3] > 0.2); // cohesión del bloque
+        assert!(batch.params.phys[0] < -9.0);
+        assert_eq!(batch.params.collide[3], 0.0); // sin stretch de chorro
+        let lattice = water_cube_lattice_count(batch.params.origin_radius[3]);
+        assert_eq!(batch.spawn, lattice);
+        assert_eq!(batch.next_spawn, 0);
+        assert!(lattice >= 64);
+    }
+
+    #[test]
+    fn water_cube_is_a_single_drop_not_a_launcher() {
+        let mut system = ParticleSystem::new();
+        system.add(EmitterConfig::water_cube());
+        let first = system.batches(0.016, [0.0; 3]).remove(0);
+        let second = system.batches(0.016, [0.0; 3]).remove(0);
+        let later = system.batches(0.25, [0.0; 3]).remove(0);
+        assert_eq!(second.spawn, 0);
+        assert_eq!(later.spawn, 0);
+        assert!(
+            later.params.origin_radius[1] < first.params.origin_radius[1],
+            "el centro del bloque debe caer: {} -> {}",
+            first.params.origin_radius[1],
+            later.params.origin_radius[1]
+        );
+        assert!(later.params.origin_radius[1] >= -0.01);
     }
 
     #[test]

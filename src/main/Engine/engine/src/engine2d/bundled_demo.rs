@@ -35,7 +35,10 @@ fn extract_zip_bytes_to(bytes: &[u8], dest: &Path) -> Result<(), String> {
         let mut entry = archive
             .by_index(i)
             .map_err(|e| format!("entrada zip {i}: {e}"))?;
-        let raw_name = entry.name().replace('\\', "/");
+        let raw_name = entry
+            .name()
+            .map_err(|e| format!("nombre zip {i}: {e}"))?
+            .replace('\\', "/");
         if raw_name.is_empty() || raw_name.contains("..") {
             continue;
         }
