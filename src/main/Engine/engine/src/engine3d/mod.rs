@@ -20,6 +20,7 @@ mod screen_hud_image;
 mod scripting;
 mod texture;
 pub(crate) mod vulkan;
+pub(crate) mod water;
 
 #[path = "config_3d/mod.rs"]
 mod config_3d;

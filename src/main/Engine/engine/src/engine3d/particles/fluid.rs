@@ -31,10 +31,10 @@
 //! iteración construye la lista; las demás la reutilizan con chequeo de distancia,
 //! igual que el cache `NeighborList` del shader GPU).
 //!
-//! Sin Vulkan ni dependencias: lógica pura y determinista. Destinado a integrarse
-//! en el generador procedural (lagos/ríos: la caja será el vaso tallado del lago);
-//! mientras tanto vive junto al emisor "cubo de agua", que es su aproximación
-//! visual barata.
+//! Sin Vulkan ni dependencias: lógica pura y determinista. Vive dentro de una
+//! caja contenedora cerrada; no tiene acoplamiento con actores ni con el
+//! generador de mundos. El agua jugable del editor es el autómata celular de
+//! `engine3d::water` (bloques que se distribuyen estilo Minecraft).
 //!
 //! Todavía no se llama desde el tick de partículas; `dead_code` / clippy se
 //! retiran al enganchar `FluidSolver` a `ParticleSystem`.
@@ -48,8 +48,6 @@ use std::collections::HashMap;
 const SMALL: f32 = 1e-4;
 
 /// Caja contenedora alineada a ejes: el fluido queda DENTRO de estas paredes.
-/// Para el generador de mundo esto será el vaso del lago/río (un AABB por tramo,
-/// o varios encadenados siguiendo el cauce tallado en el SDF).
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FluidBounds {
     pub min: [f32; 3],
@@ -76,98 +74,6 @@ impl FluidBounds {
 
     fn contains(&self, p: [f32; 3], margin: f32) -> bool {
         (0..3).all(|axis| p[axis] >= self.min[axis] + margin && p[axis] <= self.max[axis] - margin)
-    }
-}
-
-/// Suelo altimétrico muestreado: la altura del terreno en una rejilla XZ con
-/// interpolación bilineal. Es el vaso tallado de un lago (o el cauce de un
-/// río): el fluido se apoya en el TERRENO, no en una caja de cristal, y puede
-/// desbordar por la orilla si le echas más agua de la que cabe.
-#[derive(Debug, Clone)]
-pub(crate) struct HeightFloor {
-    /// Esquina mínima de la rejilla (x, z).
-    min: [f32; 2],
-    /// Paso de la rejilla (m).
-    step: f32,
-    nx: usize,
-    nz: usize,
-    /// Alturas row-major: índice = iz * nx + ix.
-    heights: Vec<f32>,
-}
-
-impl HeightFloor {
-    /// Muestrea `f(x, z)` en la rejilla `[min, min + size]` con paso `step`.
-    fn from_fn(
-        min: [f32; 2],
-        size: [f32; 2],
-        step: f32,
-        mut f: impl FnMut(f32, f32) -> f32,
-    ) -> Self {
-        let nx = ((size[0] / step).ceil() as usize).max(2);
-        let nz = ((size[1] / step).ceil() as usize).max(2);
-        let mut heights = Vec::with_capacity(nx * nz);
-        for iz in 0..nz {
-            for ix in 0..nx {
-                heights.push(f(min[0] + ix as f32 * step, min[1] + iz as f32 * step));
-            }
-        }
-        Self {
-            min,
-            step,
-            nx,
-            nz,
-            heights,
-        }
-    }
-
-    /// Altura del terreno en `(x, z)` (bilineal). Fuera de la rejilla devuelve
-    /// el borde (llano a la altura de la orilla): el agua que se escapa del
-    /// vaso sigue apoyada en terreno válido.
-    fn sample(&self, x: f32, z: f32) -> f32 {
-        let fx = ((x - self.min[0]) / self.step).clamp(0.0, (self.nx - 1) as f32);
-        let fz = ((z - self.min[1]) / self.step).clamp(0.0, (self.nz - 1) as f32);
-        let ix = (fx.floor() as usize).min(self.nx - 2);
-        let iz = (fz.floor() as usize).min(self.nz - 2);
-        let tx = fx - ix as f32;
-        let tz = fz - iz as f32;
-        let at = |ix: usize, iz: usize| self.heights[iz * self.nx + ix];
-        let a = at(ix, iz);
-        let b = at(ix + 1, iz);
-        let c = at(ix, iz + 1);
-        let d = at(ix + 1, iz + 1);
-        a * (1.0 - tx) * (1.0 - tz) + b * tx * (1.0 - tz) + c * (1.0 - tx) * tz + d * tx * tz
-    }
-}
-
-/// Vaso de lago: bowl liso (paraboloide achatado) tallado en un llano, el mapa
-/// directo al carvado del lago en `worldgen::planner` (`LakeInfo`: pos/radius/
-/// water_level/depth). La tangente es horizontal en la orilla: el agua se
-/// asienta contra un vaso sin aristas.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LakeBowl {
-    /// Centro XZ.
-    pub center: [f32; 2],
-    /// Radio de la cuenca (m).
-    pub radius: f32,
-    /// Altura Y del terreno sin tallar (la orilla).
-    pub shore_y: f32,
-    /// Profundidad del vaso en el centro (m).
-    pub depth: f32,
-}
-
-impl LakeBowl {
-    /// Altura del terreno en `(x, z)`: `depth·(1 − r²/R²)²` bajo la orilla.
-    /// Fuera del radio devuelve la orilla (llano). El perfil al cuadrado hace
-    /// la pendiente 0 en el centro y en la orilla.
-    fn floor_y(&self, x: f32, z: f32) -> f32 {
-        let dx = x - self.center[0];
-        let dz = z - self.center[1];
-        let r2 = dx * dx + dz * dz;
-        if r2 >= self.radius * self.radius {
-            return self.shore_y;
-        }
-        let k = 1.0 - r2 / (self.radius * self.radius);
-        self.shore_y - self.depth * k * k
     }
 }
 
@@ -240,19 +146,10 @@ impl Default for FluidConfig {
     }
 }
 
-/// Solver PBF/XPBD: agua contenida — en una caja de cristal (`new`) o tallada
-/// en el terreno (`new_bowl`, el vaso de un lago).
+/// Solver PBF/XPBD: agua contenida dentro de una caja de cristal.
 pub(crate) struct FluidSolver {
     pub config: FluidConfig,
     pub bounds: FluidBounds,
-    /// Suelo altimétrico opcional: cuando existe, la pared de abajo es el
-    /// TERRENO (`floor.sample(x, z)`), no el plano `bounds.min.y`, y no hay
-    /// techo (`bounds.max.y = ∞`): el agua que SALTA por encima de la orilla
-    /// puede desbordar. El banco (y ≤ orilla) sigue siendo sólido.
-    floor: Option<HeightFloor>,
-    /// Orilla del vaso (`new_bowl`): el cilindro `radius` es sólido bajo
-    /// `shore_y`, para que el agua no se cuele por el llano a través del banco.
-    rim: Option<LakeBowl>,
     /// Posiciones reales (post post-step del substep anterior).
     positions: Vec<[f32; 3]>,
     velocities: Vec<[f32; 3]>,
@@ -461,8 +358,6 @@ impl FluidSolver {
         Self {
             config,
             bounds,
-            floor: None,
-            rim: None,
             positions: Vec::new(),
             velocities: Vec::new(),
             predicted: Vec::new(),
@@ -475,33 +370,6 @@ impl FluidSolver {
         }
     }
 
-    /// Solver en un VASO DE LAGO: el suelo es el terreno tallado (`bowl`).
-    /// Sin techo: un salto por encima de la orilla puede desbordar al llano.
-    /// El banco (`y ≤ shore_y`, `r > radius`) es sólido — el agua no atraviesa
-    /// el terreno. `fill_bowl` spawnea el agua.
-    pub(crate) fn new_bowl(config: FluidConfig, bowl: LakeBowl) -> Self {
-        let h = config.smoothing_radius;
-        // Región muestreada: cuenca + 2·h de llano alrededor (los virtuales
-        // necesitan terreno bajo las columnas vecinas del borde).
-        let region = bowl.radius + 2.0 * h;
-        let min = [bowl.center[0] - region, -1.0e4, bowl.center[1] - region];
-        let max = [
-            bowl.center[0] + region,
-            f32::INFINITY,
-            bowl.center[1] + region,
-        ];
-        let floor = HeightFloor::from_fn(
-            [min[0], min[2]],
-            [region * 2.0, region * 2.0],
-            h * 0.5,
-            |x, z| bowl.floor_y(x, z),
-        );
-        let mut solver = Self::new(config, FluidBounds::new(min, max));
-        solver.floor = Some(floor);
-        solver.rim = Some(bowl);
-        solver
-    }
-
     pub(crate) fn particle_count(&self) -> usize {
         self.positions.len()
     }
@@ -510,94 +378,21 @@ impl FluidSolver {
         &self.positions
     }
 
-    /// Nivel de superficie del agua asentada: percentil ~92 de las alturas Y
-    /// (robusto a las salpicaduras aisladas que van por encima del charco).
-    /// Es el `water_level` que el generador quiere para la malla de agua.
-    pub(crate) fn surface_level(&self) -> f32 {
-        let mut ys: Vec<f32> = self.positions.iter().map(|p| p[1]).collect();
-        if ys.is_empty() {
-            return 0.0;
-        }
-        ys.sort_by(f32::total_cmp);
-        let idx = ((ys.len() as f32 * 0.92) as usize).min(ys.len() - 1);
-        ys[idx]
-    }
-
-    /// Suelo real bajo `(x, z)`: el terreno tallado si existe, si no el plano
-    /// de la caja.
-    fn ground_y(&self, x: f32, z: f32) -> f32 {
-        match &self.floor {
-            Some(floor) => floor.sample(x, z),
-            None => self.bounds.min[1],
-        }
-    }
-
-    /// Empuja un punto de vuelta al dominio de fluido (paredes estáticas con
-    /// margen + suelo de terreno). No rebota: la velocidad la reconstruye el
-    /// post-step desde Δx, así que la pared funciona como el `collide` del
-    /// solver — desliza, no atraviesa.
+    /// Empuja un punto de vuelta a la caja (paredes estáticas con margen).
+    /// No rebota: la velocidad la reconstruye el post-step desde Δx, así que la
+    /// pared funciona como el `collide` del solver — desliza, no atraviesa.
     fn clamp_position(&self, p: &mut [f32; 3], margin: f32) {
-        for axis in 0..3 {
-            let lo = self.bounds.min[axis] + margin;
-            let hi = self.bounds.max[axis] - margin;
-            if hi > lo {
-                p[axis] = p[axis].clamp(lo, hi);
-            }
-        }
-        if self.floor.is_some() {
-            let ground = self.ground_y(p[0], p[2]) + margin;
-            if p[1] < ground {
-                p[1] = ground;
-            }
-        }
-        if let Some(rim) = self.rim {
-            let dx = p[0] - rim.center[0];
-            let dz = p[2] - rim.center[1];
-            let radial = (dx * dx + dz * dz).sqrt();
-            // Banco sólido: a la altura de la orilla o por debajo no se sale
-            // del disco. Por encima, el desborde al llano sigue permitido.
-            if radial > rim.radius && p[1] <= rim.shore_y + margin {
-                let scale = rim.radius / radial.max(SMALL);
-                p[0] = rim.center[0] + dx * scale;
-                p[2] = rim.center[1] + dz * scale;
-                let ground = self.ground_y(p[0], p[2]) + margin;
-                if p[1] < ground {
-                    p[1] = ground;
-                }
-            }
-        }
+        self.bounds.clamp_inside(p, margin);
     }
 
-    /// ¿Está el punto en el dominio de fluido? (caja + suelo de terreno).
+    /// ¿Está el punto dentro de la caja de cristal?
     fn position_inside(&self, p: [f32; 3], margin: f32) -> bool {
-        if !self.bounds.contains(p, margin) {
-            return false;
-        }
-        if self.floor.is_some() {
-            return p[1] >= self.ground_y(p[0], p[2]) + margin;
-        }
-        true
-    }
-
-    /// Llena el vaso de agua hasta la orilla: lattice regular recortada por el
-    /// terreno tallado (`spawn_block` con el suelo consciente del terreno hace
-    /// de cincel). El objetivo es una superficie justo bajo la orilla; sobre
-    /// ella no spawnea nada (el llano está en el dominio del terreno).
-    /// Devuelve cuántas partículas se spawnearon.
-    pub(crate) fn fill_bowl(&mut self, bowl: LakeBowl, spacing: f32) -> usize {
-        let h = self.config.smoothing_radius;
-        // Franco de orilla (~0.4·h): llenar hasta el borde empuja el PBF a
-        // desbordar; el test de lago pide superficie en [shore−0.35, shore−0.02].
-        let top = bowl.shore_y - h * 0.4;
-        let bottom = bowl.shore_y - bowl.depth - h; // bajo el fondo: el terreno recorta
-        let center = [bowl.center[0], (top + bottom) * 0.5, bowl.center[1]];
-        let half = [bowl.radius, (top - bottom) * 0.5, bowl.radius];
-        self.spawn_block(center, half, spacing)
+        self.bounds.contains(p, margin)
     }
 
     /// Spawnea un BLOQUE de agua (lattice regular) centrado en `center` con
     /// semi-extensión `half`, espaciado `spacing`. Las partículas que caen fuera
-    /// de la caja se recortan: el cubo de agua solo puede existir DENTRO del vaso.
+    /// de la caja se recortan: el bloque solo puede existir DENTRO de la caja.
     /// Devuelve cuántas partículas se spawnearon.
     ///
     /// También auto-calibra `rest_density` a la densidad real del lattice: el
@@ -606,7 +401,7 @@ impl FluidSolver {
         let margin = self.config.smoothing_radius * 0.25;
         // CEIL, no floor: el bloque debe cubrir TODO el volumen pedido (el
         // exceso lo recorta el dominio de fluido). Con floor(), un span no
-        // múltiplo del espaciado dejaba el relleno del vaso cuantizado muy por
+        // múltiplo del espaciado dejaba el relleno de la caja cuantizado muy por
         // debajo del objetivo (128 de ~300 partículas).
         let n = [
             ((half[0] * 2.0) / spacing).ceil().max(1.0) as usize,
@@ -622,8 +417,8 @@ impl FluidSolver {
                         center[1] - half[1] + (iy as f32 + 0.5) * spacing,
                         center[2] - half[2] + (iz as f32 + 0.5) * spacing,
                     ];
-                    // Nace fuera del vaso → descartado: el cubo de agua solo puede
-                    // existir DENTRO de la caja contenedora (mismo margen que el
+                    // Nace fuera de la caja → descartado: el bloque solo puede
+                    // existir DENTRO del dominio de fluido (mismo margen que el
                     // clamp del solver).
                     if !self.position_inside(p, margin) {
                         continue;
@@ -653,7 +448,7 @@ impl FluidSolver {
         spawned
     }
 
-    /// Un substep completo (predict → solver de constraints → post-step).
+    /// Un frame de fluido: predict → solver de constraints → post-step.
     /// `dt` se acota a 0.05 s como el `MAX_DT` del sistema de partículas.
     pub(crate) fn step(&mut self, dt: f32) {
         let dt = dt.clamp(1e-4, 0.05);
@@ -677,7 +472,7 @@ impl FluidSolver {
             })
             .collect();
         // Vecinos VIRTUALES por partícula: la nube de frontera es estática, pero
-        // el fluido se mueve, así que la lista se refresca cada substep.
+        // el fluido se mueve, así que la lista se refresca cada frame.
         let empty: Vec<u32> = Vec::new();
         let b_neighbors: Vec<Vec<u32>> = match &self.boundary_grid {
             Some(grid) => (0..self.positions.len())
@@ -695,8 +490,8 @@ impl FluidSolver {
         };
 
         self.predict(dt, &neighbors);
-        // Δp acumulado del SUBSTEP: el guard anti-explosión es el desplazamiento
-        // TOTAL del constraint por substep (0.2·h), no el de cada iteración.
+        // Δp acumulado del FRAME: el guard anti-explosión es el desplazamiento
+        // TOTAL del constraint por frame (0.2·h), no el de cada iteración.
         // Clampar por iteración permite 4×0.2·h = 0.8·h por substep ≈ 14 m/s de
         // velocidad inyectada: el λ de atracción (partícula dilatada con pocos
         // vecinos → Σ|∇C|² diminuto → λ enorme) rebotaba el fluido sin fin.
@@ -716,15 +511,11 @@ impl FluidSolver {
     /// La ψ es UNA para todas: ρ0 dividido por la suma de kernels de la lattice
     /// infinita de paso sb (con sb = h/2 = paso de fluido típico da ψ = masa de
     /// partícula, exactamente la media cáscara que el suelo le quita al fluido).
-    /// - Caja de cristal: UNA lattice global de paso h/2 sobre la caja
-    ///   expandida h, excluyendo el dominio de fluido. Generar por pared con
-    ///   barridos solapados sobre-cuenta las esquinas (soporte ~3× → ρ 1561 >
-    ///   ρ0 → presión espuria que rociaba el charco) y las ψ calibradas con el
-    ///   vecindario local salían sobre-ponderadas en el borde de la nube.
-    /// - Vaso de lago: por COLUMNA de la rejilla del terreno, 3 capas de
-    ///   virtuales bajo el límite de fluido (terreno + margen). Las columnas
-    ///   del llano alrededor del vaso también generan: el agua desbordada
-    ///   sigue apoyada en terreno válido.
+    /// UNA lattice global de paso h/2 sobre la caja expandida h, excluyendo el
+    /// dominio de fluido. Generar por pared con barridos solapados sobre-cuenta
+    /// las esquinas (soporte ~3× → ρ 1561 > ρ0 → presión espuria que rociaba el
+    /// charco) y las ψ calibradas con el vecindario local salían sobre-ponderadas
+    /// en el borde de la nube.
     fn ensure_boundary(&mut self) {
         if self.boundary_built || self.config.boundary_support <= 0.0 {
             self.boundary_built = true;
@@ -735,44 +526,27 @@ impl FluidSolver {
         let sb = h * 0.5;
         let margin = h * 0.25;
         let mut positions: Vec<[f32; 3]> = Vec::new();
-        match self.floor.clone() {
-            Some(floor) => {
-                for iz in 0..floor.nz {
-                    for ix in 0..floor.nx {
-                        let x = floor.min[0] + ix as f32 * floor.step;
-                        let z = floor.min[1] + iz as f32 * floor.step;
-                        let ground = floor.heights[iz * floor.nx + ix];
-                        for k in 0..3 {
-                            positions.push([x, ground + margin - (0.5 + k as f32) * sb, z]);
-                        }
-                    }
-                }
-            }
-            None => {
-                let n = ((self.bounds.max[0] - self.bounds.min[0] + 2.0 * h) / sb)
-                    .ceil()
-                    .max(((self.bounds.max[1] - self.bounds.min[1] + 2.0 * h) / sb).ceil())
-                    .max(((self.bounds.max[2] - self.bounds.min[2] + 2.0 * h) / sb).ceil())
-                    as i32;
-                for ix in 0..=n {
-                    for iy in 0..=n {
-                        for iz in 0..=n {
-                            let p = [
-                                self.bounds.min[0] - h + ix as f32 * sb,
-                                self.bounds.min[1] - h + iy as f32 * sb,
-                                self.bounds.min[2] - h + iz as f32 * sb,
-                            ];
-                            // Fuera del dominio de fluido en ALGÚN eje
-                            // (estricto: un punto justo en el plano límite
-                            // chocaría con el fluido).
-                            let outside = (0..3).any(|a| {
-                                p[a] <= self.bounds.min[a] + margin - SMALL
-                                    || p[a] >= self.bounds.max[a] - margin + SMALL
-                            });
-                            if outside {
-                                positions.push(p);
-                            }
-                        }
+        let n = ((self.bounds.max[0] - self.bounds.min[0] + 2.0 * h) / sb)
+            .ceil()
+            .max(((self.bounds.max[1] - self.bounds.min[1] + 2.0 * h) / sb).ceil())
+            .max(((self.bounds.max[2] - self.bounds.min[2] + 2.0 * h) / sb).ceil())
+            as i32;
+        for ix in 0..=n {
+            for iy in 0..=n {
+                for iz in 0..=n {
+                    let p = [
+                        self.bounds.min[0] - h + ix as f32 * sb,
+                        self.bounds.min[1] - h + iy as f32 * sb,
+                        self.bounds.min[2] - h + iz as f32 * sb,
+                    ];
+                    // Fuera del dominio de fluido en ALGÚN eje (estricto: un
+                    // punto justo en el plano límite chocaría con el fluido).
+                    let outside = (0..3).any(|a| {
+                        p[a] <= self.bounds.min[a] + margin - SMALL
+                            || p[a] >= self.bounds.max[a] - margin + SMALL
+                    });
+                    if outside {
+                        positions.push(p);
                     }
                 }
             }
@@ -891,13 +665,7 @@ impl FluidSolver {
                         from_walls += self.boundary_psi[b as usize] * poly6(r2, h);
                     }
                 }
-                // CAP: el suelo no puede aportar más que la media cáscara que
-                // quita (~ρ0/2). En PENDIENTES la nube por columnas se cizalla
-                // contra la normal (talud 45° → ~1.45×) y el sobre-soporte
-                // empujaba el agua fuera del vaso (ρ máx 1263 > ρ0 ya en el
-                // frame 0, retención 0.33). Con terreno plano el cap no actúa.
-                let cap = self.config.rest_density * 0.55 * self.config.boundary_support;
-                density += from_walls.min(cap) * self.config.boundary_support;
+                density += self.config.boundary_support * from_walls;
             }
             self.densities[i] = density;
             sum_sq += dot(grad_i, grad_i);
@@ -910,7 +678,7 @@ impl FluidSolver {
             // superficial que es blanda) y en partículas dilatadas con pocos
             // vecinos Σ|∇C|² es diminuto → λ enorme; el clamp convierte la
             // explosión en un ciclo bang-bang a velocidad máxima perpetua
-            // (medido: v media clavada en 0.2·h/dt, el fluido llenando el vaso
+            // (medido: v media clavada en 0.2·h/dt, el fluido llenando la caja
             // como gas y sin asentarse jamás). La atracción la aporta la
             // cohesión Akinci del predict: una ACELERACIÓN limitada (como la
             // gravedad), física y estable por construcción.
@@ -986,7 +754,7 @@ impl FluidSolver {
 mod tests {
     use super::*;
 
-    /// Caja-vaso de 1.8 × 1.2 × 1.8 m con suelo en y=0.
+    /// Caja de 1.8 × 1.2 × 1.8 m con suelo en y=0.
     fn test_bounds() -> FluidBounds {
         FluidBounds::new([0.0, 0.0, 0.0], [1.8, 1.2, 1.8])
     }
@@ -1063,11 +831,11 @@ mod tests {
 
     #[test]
     fn settled_density_stays_close_to_rest() {
-        // Incompresibilidad en un vaso PROPORCIONAL al volumen del bloque: 125
+        // Incompresibilidad en una caja PROPORCIONAL al volumen del bloque: 125
         // partículas (5³, espaciado 0.15 → 0.42 m³ de agua) sobre 0.81 m² de
         // fondo ≈ 0.52 m de profundidad ≈ 3.4 capas. Con ≥3 capas existen
         // partículas interiores con la cáscara 3D de vecinos completa, así que
-        // el promedio puede acercarse de verdad a ρ0. (Un vaso más grande con
+        // el promedio puede acercarse de verdad a ρ0. (Una caja más grande con
         // menos agua es un charco de 1-2 capas donde CASI TODA partícula es
         // superficie o pared: su densidad de equilibrio es ~0.42·ρ0 legítimamente
         // — lámina 2D ≈ 0.55·ρ0, capa superior de una pila ≈ 0.37·ρ0 — y no
@@ -1088,13 +856,13 @@ mod tests {
              colapsó o se dispersó",
             solver.config.rest_density
         );
-        // Todo sigue dentro del vaso y en reposo volumétrico.
+        // Todo sigue dentro de la caja y en reposo volumétrico.
         let margin = solver.config.smoothing_radius * 0.25;
         let mut sum_speed = 0.0;
         for (i, &p) in solver.positions().iter().enumerate() {
             assert!(
                 solver.position_inside(p, margin * 0.5),
-                "partícula fuera del vaso: {p:?}"
+                "partícula fuera de la caja: {p:?}"
             );
             sum_speed += length(solver.velocities[i]);
         }
@@ -1121,130 +889,9 @@ mod tests {
     }
 
     #[test]
-    fn fill_bowl_spawns_inside_the_basin() {
-        let config = FluidConfig::default();
-        let bowl = LakeBowl {
-            center: [10.0, 10.0],
-            radius: 1.2,
-            shore_y: 0.0,
-            depth: 0.8,
-        };
-        let mut solver = FluidSolver::new_bowl(config, bowl);
-        let spawned = solver.fill_bowl(bowl, 0.15);
-        assert!(spawned > 150, "el vaso debe llenarse: {spawned}");
-        let margin = solver.config.smoothing_radius * 0.25;
-        for &p in solver.positions() {
-            assert!(
-                p[1] >= bowl.floor_y(p[0], p[2]) + margin * 0.5,
-                "partícula dentro del terreno: {p:?}"
-            );
-            let dx = p[0] - bowl.center[0];
-            let dz = p[2] - bowl.center[1];
-            assert!(
-                (dx * dx + dz * dz).sqrt() <= bowl.radius + 0.2,
-                "spawn fuera de la cuenca: {p:?}"
-            );
-        }
-    }
-
-    #[test]
-    #[ignore = "el PBF del vaso todavía dispara un surtidor sobre la orilla; el acoplamiento worldgen no está cableado. El cubo de agua usa el emisor GPU."]
-    fn lake_pool_fills_the_bowl_and_stays_inside() {
-        // Un lago de worldgen: bowl tallado en el llano (el vaso del planner)
-        // lleno de agua que debe asentarse DENTRO de la cuenca — nada atraviesa
-        // el terreno, casi nada desborda la orilla, y la superficie queda
-        // cerca de la orilla (vaso lleno).
-        let config = FluidConfig::default();
-        let bowl = LakeBowl {
-            center: [10.0, 10.0],
-            radius: 1.2,
-            shore_y: 0.0,
-            depth: 0.8,
-        };
-        let mut solver = FluidSolver::new_bowl(config, bowl);
-        let spawned = solver.fill_bowl(bowl, 0.15);
-        assert!(spawned > 150, "el vaso debe llenarse: {spawned}");
-        for _ in 0..150 {
-            solver.step(1.0 / 60.0);
-        }
-        let margin = solver.config.smoothing_radius * 0.25;
-        let mut inside = 0usize;
-        for &p in solver.positions() {
-            // Nada atraviesa el terreno tallado.
-            assert!(
-                p[1] >= bowl.floor_y(p[0], p[2]) + margin * 0.5,
-                "partícula dentro del terreno: {p:?}"
-            );
-            let dx = p[0] - bowl.center[0];
-            let dz = p[2] - bowl.center[1];
-            if (dx * dx + dz * dz).sqrt() <= bowl.radius + 0.2 {
-                inside += 1;
-            }
-        }
-        let retained = inside as f32 / spawned as f32;
-        assert!(
-            retained > 0.9,
-            "el agua desbordó la orilla: retención {retained:.2}"
-        );
-        let level = solver.surface_level();
-        assert!(
-            (bowl.shore_y - 0.35..=bowl.shore_y - 0.02).contains(&level),
-            "el vaso no llenó hasta cerca de la orilla: nivel {level:.3}"
-        );
-        // Reposo volumétrico: el lago asentado no se mueve.
-        let avg_speed: f32 =
-            solver.velocities.iter().map(|v| length(*v)).sum::<f32>() / spawned as f32;
-        assert!(
-            avg_speed < 0.5,
-            "el lago no se estabilizó: velocidad media {avg_speed}"
-        );
-    }
-
-    #[test]
-    #[ignore = "volcado de diagnóstico del vaso PBF; no es una regresión."]
-    fn debug_lake() {
-        let config = FluidConfig::default();
-        let bowl = LakeBowl {
-            center: [10.0, 10.0],
-            radius: 1.2,
-            shore_y: 0.0,
-            depth: 0.8,
-        };
-        let mut solver = FluidSolver::new_bowl(config, bowl);
-        let spawned = solver.fill_bowl(bowl, 0.15);
-        println!("spawned={spawned}");
-        for s in 0..150 {
-            solver.step(1.0 / 60.0);
-            if s % 25 == 0 {
-                let mut inside = 0;
-                let (mut ymin, mut ymax) = (f32::MAX, f32::MIN);
-                for &p in solver.positions() {
-                    let dx = p[0] - bowl.center[0];
-                    let dz = p[2] - bowl.center[1];
-                    if (dx * dx + dz * dz).sqrt() <= bowl.radius + 0.2 {
-                        inside += 1;
-                    }
-                    ymin = ymin.min(p[1]);
-                    ymax = ymax.max(p[1]);
-                }
-                let avg_speed: f32 =
-                    solver.velocities.iter().map(|v| length(*v)).sum::<f32>() / spawned as f32;
-                let avg_rho: f32 = solver.densities.iter().sum::<f32>() / spawned as f32;
-                let max_rho = solver.densities.iter().fold(0.0f32, |a, b| a.max(*b));
-                println!(
-                    "s={s:3} inside={inside:3} ({:.2}) y=[{ymin:.2},{ymax:.2}] v={avg_speed:.2} level={:.3} rho={avg_rho:.0}/{:.0} max={max_rho:.0}",
-                    inside as f32 / spawned as f32,
-                    solver.surface_level(),
-                    solver.config.rest_density
-                );
-            }
-        }
-    }
-
-    #[test]
     fn spawn_block_clips_outside_particles() {
         // Vaso mínimo: el cubo solo cabe en la zona interior; no se spawnea nada
-        // fuera de la caja (el agua del lago nace dentro del vaso tallado).
+        // fuera de la caja (mismo margen que el clamp del solver).
         let config = FluidConfig::default();
         let tiny = FluidBounds::new([0.0, 0.0, 0.0], [0.4, 0.4, 0.4]);
         let mut solver = FluidSolver::new(config, tiny);

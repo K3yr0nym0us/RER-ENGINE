@@ -21,11 +21,12 @@ use super::app::EditorApp;
 use super::cli::Locale;
 use super::i18n::tr;
 use super::theme;
+use super::ui::sidebar_right::particles::field_mask;
 
 /// Ancho interior de la ventana del emisor (puntos egui).
 const INNER_WIDTH: f64 = 420.0;
 const MIN_INNER_WIDTH: f64 = 320.0;
-const MIN_INNER_HEIGHT: f64 = 160.0;
+const MIN_INNER_HEIGHT: f64 = 96.0;
 
 pub(crate) struct ParticleWindow {
     window: Arc<Window>,
@@ -39,6 +40,9 @@ pub(crate) struct ParticleWindow {
     parent_outer: PhysicalSize<u32>,
     /// Tras el primer layout, la ventana ya se encogió al contenido y se centró.
     fitted: bool,
+    /// Tope de altura según el modo de la modal (evita que egui reporte el rect
+    /// completo de la ventana como «contenido usado»).
+    height_hint: f64,
 }
 
 impl ParticleWindow {
@@ -48,18 +52,21 @@ impl ParticleWindow {
         locale: Locale,
         beside: &Window,
         icon: Option<winit::window::Icon>,
-        is_new: bool,
+        height_hint: f64,
     ) -> Result<Self, String> {
         let title = tr(
             locale,
             "Editor de emisor de partículas",
             "Particle emitter editor",
         );
-        let inner_height = estimated_inner_height(is_new);
+        let inner_height = height_hint;
         let mut attributes = Window::default_attributes()
             .with_title(title)
             .with_inner_size(LogicalSize::new(INNER_WIDTH, inner_height))
             .with_min_inner_size(LogicalSize::new(MIN_INNER_WIDTH, MIN_INNER_HEIGHT))
+            // Las modales del emisor no se redimensionan: su tamaño lo ajusta
+            // el propio contenido en el primer layout.
+            .with_resizable(false)
             .with_visible(false);
         if let Some(icon) = icon {
             attributes = attributes.with_window_icon(Some(icon));
@@ -136,6 +143,7 @@ impl ParticleWindow {
             parent_pos,
             parent_outer,
             fitted: false,
+            height_hint,
         })
     }
 
@@ -284,7 +292,10 @@ impl ParticleWindow {
         }
         let scale = self.window.scale_factor();
         let width = f64::from(used.width()).max(INNER_WIDTH);
-        let height = f64::from(used.height()).ceil().max(MIN_INNER_HEIGHT);
+        let height = f64::from(used.height())
+            .ceil()
+            .max(MIN_INNER_HEIGHT)
+            .min(self.height_hint.max(MIN_INNER_HEIGHT));
         let max_height = (f64::from(self.parent_outer.height) / scale) * 0.9;
         let height = if max_height > MIN_INNER_HEIGHT {
             height.min(max_height)
@@ -357,10 +368,40 @@ fn set_centered_over_parent(
     ));
 }
 
-/// Estimación en puntos para el primer frame (el layout real ajusta después).
-fn estimated_inner_height(is_new: bool) -> f64 {
-    let material = if is_new { 56.0 } else { 20.0 };
-    32.0 + material + 6.0 + 64.0 + 11.0 * 28.0 + 28.0 + 56.0
+/// Altura en puntos de cada modo de la modal (techos generosos: tras el primer
+/// layout la ventana se encoge al contenido real). Incluyen el padding del
+/// Frame (12 px por lado). La modal de selección solo tiene el dropdown y los
+/// botones; la de propiedades cuenta solo los sliders visibles del material.
+pub(crate) fn estimated_inner_height(is_new: bool, is_3d: bool, material: &str) -> f64 {
+    if is_new && is_3d {
+        return 140.0;
+    }
+    let mask = field_mask(material);
+    let rows = if mask.cell_size {
+        1
+    } else {
+        2 + usize::from(mask.rate)
+            + usize::from(mask.gravity)
+            + usize::from(mask.drag)
+            + usize::from(mask.turbulence)
+            + usize::from(mask.cohesion)
+            + usize::from(mask.ground_y)
+            + 2 * usize::from(mask.wind)
+    };
+    let flags = usize::from(mask.ground_collision || mask.accumulate || mask.splash);
+    // Padding + material + botones + una fila de slider (label/valor/control) y
+    // la fila de checkboxes cuando aplica.
+    (12.0
+        + 20.0
+        + 6.0
+        + rows as f64 * 28.0
+        + flags as f64 * 28.0
+        + 10.0
+        + 12.0
+        + 30.0
+        + 12.0
+        + 24.0)
+        .max(150.0)
 }
 
 #[cfg(test)]

@@ -69,7 +69,11 @@ impl State {
                 model_lod_enabled: Some(self.model_lod_enabled),
                 model_lod1_distance_m: Some(self.model_lod1_distance_m),
                 model_lod2_distance_m: Some(self.model_lod2_distance_m),
-                particles: Some(self.particles.export()),
+                particles: Some({
+                    let mut snapshot = self.particles.export();
+                    self.water_export_into(&mut snapshot.emitters);
+                    snapshot
+                }),
             },
             background_path: self.background_path.clone(),
             entities,

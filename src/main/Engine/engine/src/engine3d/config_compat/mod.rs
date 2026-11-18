@@ -19,12 +19,18 @@ pub(crate) enum ActiveTool {
         /// Rotación horizontal (rad) alrededor del eje Y; tecla E incrementa 90°.
         yaw: f32,
     },
+    /// Ghost para colocar el emisor de partículas mientras su modal está abierta.
+    PlaceParticleEmitter {
+        cursor_world: Option<[f32; 3]>,
+    },
 }
 
 pub(crate) fn is_editor_placement_tool(tool: &ActiveTool) -> bool {
     matches!(
         tool,
-        ActiveTool::QuickBuildPlace { .. } | ActiveTool::PlacePlaneTool { .. }
+        ActiveTool::QuickBuildPlace { .. }
+            | ActiveTool::PlacePlaneTool { .. }
+            | ActiveTool::PlaceParticleEmitter { .. }
     )
 }
 

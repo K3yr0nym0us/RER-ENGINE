@@ -95,7 +95,7 @@ pub struct SaveWeatherSnapshot {
     pub wind_x: Option<f32>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default, PartialEq)]
 pub struct SaveParticleEmitterSnapshot {
     /// Id del emisor; la UI usa ids altos (0x6000…) para no chocar con los del motor.
     pub id: u64,
@@ -152,6 +152,9 @@ pub struct SaveParticleEmitterSnapshot {
     pub size_end: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stretch: Option<f32>,
+    /// Solo `water_block`: tamaño de celda del agua (m).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_size: Option<f32>,
 }
 
 fn default_true() -> bool {

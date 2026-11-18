@@ -1,254 +1,403 @@
 //! Cuerpo del editor de emisores de partículas (F5), pintado en una ventana
-//! nativa winit aparte (`particle_window`). Al confirmar envía
-//! `add_particle_emitter` con id de UI: el motor hace upsert (alta o reemplazo
-//! si el id ya existe) y el sidebar actualiza la misma fila; cancelar o cerrar
-//! la ventana OS no tocan el motor.
+//! nativa winit aparte (`particle_window`).
+//!
+//! Dos modos:
+//! - Alta nueva (`modal_is_new`): solo elige el material; al confirmar se activa
+//!   el ghost y el click del viewport CREA el elemento y abre su modal de
+//!   propiedades.
+//! - Propiedades (`!modal_is_new`): el botón «Aplicar» envía el comando
+//!   (`add_particle_emitter` o `add_water_source`) con el id de UI —el motor hace
+//!   upsert— y deja la ventana abierta. No hay botón cancelar.
 
 use egui::RichText;
 
 use crate::editor::app::EditorApp;
+use crate::editor::cli::Locale;
 use crate::editor::i18n::tr;
 use crate::editor::theme;
+use crate::editor::ui::number_draft::NumberDraft;
 use crate::editor::ui::sidebar_right::particles::{
-    EmitterRow, MATERIAL_OPTIONS, field_mask, preset_values,
+    EmitterRow, FieldRange, MATERIAL_OPTIONS, field_mask, field_ranges, next_ui_id, preset_values,
 };
 
 use super::widgets;
 
+/// Ancho reservado a la etiqueta de cada slider; el resto es pista + valor.
+const SLIDER_LABEL_WIDTH: f32 = 124.0;
+
 /// Dibuja el formulario a pantalla completa de la ventana nativa del emisor.
+/// El Frame da el padding: la ventana nativa es full-bleed y egui no añade
+/// márgenes por su cuenta.
 pub(crate) fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     if app.right_sidebar.particles.modal.is_none() {
         return;
     }
+    egui::Frame::NONE
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| show_body(ui, app));
+}
+
+fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
+    let Some(mut draft) = app.right_sidebar.particles.modal.clone() else {
+        return;
+    };
     let is_new = app.right_sidebar.particles.modal_is_new;
+    let is_3d = app.cli.context.is_3d();
+    // Alta nueva en 3D: esta modal SOLO elige el material; el ghost coloca el
+    // elemento y entonces se abre la modal de propiedades.
+    let select_only = is_new && is_3d;
     let locale = app.cli.locale;
     let mut confirm = false;
     let mut cancel = false;
+    let mut apply = false;
 
-    egui::Frame::new()
-        .fill(theme::SIDEBAR_BG)
-        .inner_margin(egui::Margin::same(16))
-        .show(ui, |ui| {
-            let Some(draft) = app.right_sidebar.particles.modal.as_mut() else {
-                return;
-            };
-            ui.set_width(ui.available_width());
-            // Material: solo se elige en la alta nueva (editar mantiene el del emisor).
-            if is_new {
-                ui.label(field_label(locale, "Material", "Material"));
-                egui::ComboBox::from_id_salt("particles_material_combo")
-                    .width(ui.available_width())
-                    .selected_text(
-                        RichText::new(
-                            MATERIAL_OPTIONS
-                                .iter()
-                                .find(|(wire, _, _)| *wire == draft.material)
-                                .map(|option| tr(locale, option.1, option.2))
-                                .unwrap_or(draft.material),
-                        )
-                        .size(12.5),
-                    )
-                    .show_ui(ui, |ui| {
-                        let mut next = draft.material;
-                        for (wire, es, en) in MATERIAL_OPTIONS {
-                            ui.selectable_value(
-                                &mut next,
-                                wire,
-                                RichText::new(tr(locale, es, en)).size(12.5),
-                            );
-                        }
-                        if next != draft.material {
-                            // Cambiar material recarga el preset del sidebar.
-                            draft.apply_values(&preset_values(next));
-                            draft.material = next;
-                            draft.pin_inapplicable_fields();
-                        }
-                    });
-            } else {
-                let material = MATERIAL_OPTIONS
-                    .iter()
-                    .find(|(wire, _, _)| *wire == draft.material)
-                    .map(|option| tr(locale, option.1, option.2))
-                    .unwrap_or(draft.material);
-                widgets::tiny(ui, material);
-            }
-            ui.add_space(6.0);
+    ui.set_width(ui.available_width());
+    // Material: solo se elige en la alta nueva (editar mantiene el del emisor).
+    if is_new {
+        ui.label(field_label(locale, "Material", "Material"));
+        egui::ComboBox::from_id_salt("particles_material_combo")
+            .width(ui.available_width())
+            .selected_text(
+                RichText::new(
+                    MATERIAL_OPTIONS
+                        .iter()
+                        .find(|(wire, _, _)| *wire == draft.material)
+                        .map(|option| tr(locale, option.1, option.2))
+                        .unwrap_or(draft.material),
+                )
+                .size(12.5),
+            )
+            .show_ui(ui, |ui| {
+                let mut next = draft.material;
+                for (wire, es, en) in MATERIAL_OPTIONS {
+                    ui.selectable_value(
+                        &mut next,
+                        wire,
+                        RichText::new(tr(locale, es, en)).size(12.5),
+                    );
+                }
+                if next != draft.material {
+                    // Cambiar material recarga el preset del sidebar.
+                    draft.apply_values(&preset_values(next));
+                    draft.material = next;
+                    draft.pin_inapplicable_fields();
+                }
+            });
+    } else {
+        let material = MATERIAL_OPTIONS
+            .iter()
+            .find(|(wire, _, _)| *wire == draft.material)
+            .map(|option| tr(locale, option.1, option.2))
+            .unwrap_or(draft.material);
+        widgets::tiny(ui, material);
+    }
+    ui.add_space(6.0);
 
-            draft.pin_inapplicable_fields();
-            let mask = field_mask(draft.material);
-
-            position_row(ui, locale, draft);
-            ui.add_enabled_ui(mask.rate, |ui| {
-                number_row(
+    if !select_only {
+        draft.pin_inapplicable_fields();
+        let mask = field_mask(draft.material);
+        let ranges = field_ranges(draft.material);
+        // Los campos que el material no usa NO se renderizan (antes se
+        // mostraban bloqueados): así la modal solo enseña lo que aplica.
+        if mask.cell_size {
+            // Agua de bloques: el único parámetro es el tamaño de celda.
+            slider_row(
+                ui,
+                locale,
+                "Tamaño de celda (m)",
+                "Cell size (m)",
+                &mut draft.cell_size,
+                ranges.cell_size,
+                0.5,
+            );
+        } else {
+            if mask.rate {
+                slider_row(
                     ui,
                     locale,
                     "Emisión (part/s)",
                     "Emission (part/s)",
                     &mut draft.rate,
+                    ranges.rate,
+                    100.0,
                 );
-            });
-            number_row(ui, locale, "Tamaño (m)", "Size (m)", &mut draft.size);
-            number_row(ui, locale, "Vida (s)", "Life (s)", &mut draft.life);
-            ui.add_enabled_ui(mask.gravity, |ui| {
-                number_row(
+            }
+            slider_row(
+                ui,
+                locale,
+                "Tamaño (m)",
+                "Size (m)",
+                &mut draft.size,
+                ranges.size,
+                0.3,
+            );
+            slider_row(
+                ui,
+                locale,
+                "Vida (s)",
+                "Life (s)",
+                &mut draft.life,
+                ranges.life,
+                3.0,
+            );
+            if mask.gravity {
+                slider_row(
                     ui,
                     locale,
                     "Gravedad (m/s²)",
                     "Gravity (m/s²)",
                     &mut draft.gravity,
+                    ranges.gravity,
+                    -9.8,
                 );
-            });
-            ui.add_enabled_ui(mask.drag, |ui| {
-                number_row(ui, locale, "Arrastre", "Drag", &mut draft.drag);
-            });
-            ui.add_enabled_ui(mask.turbulence, |ui| {
-                number_row(
+            }
+            if mask.drag {
+                slider_row(
+                    ui,
+                    locale,
+                    "Arrastre",
+                    "Drag",
+                    &mut draft.drag,
+                    ranges.drag,
+                    0.5,
+                );
+            }
+            if mask.turbulence {
+                slider_row(
                     ui,
                     locale,
                     "Turbulencia",
                     "Turbulence",
                     &mut draft.turbulence,
+                    ranges.turbulence,
+                    0.0,
                 );
-            });
-            ui.add_enabled_ui(mask.cohesion, |ui| {
-                number_row(ui, locale, "Cohesión", "Cohesion", &mut draft.cohesion);
-            });
-            ui.add_enabled_ui(mask.ground_y, |ui| {
-                number_row(ui, locale, "Suelo (m)", "Ground (m)", &mut draft.ground_y);
-            });
-            ui.add_enabled_ui(mask.wind, |ui| {
-                number_row(
+            }
+            if mask.cohesion {
+                slider_row(
+                    ui,
+                    locale,
+                    "Cohesión",
+                    "Cohesion",
+                    &mut draft.cohesion,
+                    ranges.cohesion,
+                    0.0,
+                );
+            }
+            if mask.ground_y {
+                slider_row(
+                    ui,
+                    locale,
+                    "Suelo (m)",
+                    "Ground (m)",
+                    &mut draft.ground_y,
+                    ranges.ground_y,
+                    0.0,
+                );
+            }
+            if mask.wind {
+                slider_row(
                     ui,
                     locale,
                     "Viento X (m/s)",
                     "Wind X (m/s)",
                     &mut draft.wind[0],
+                    ranges.wind,
+                    0.0,
                 );
-                number_row(
+                slider_row(
                     ui,
                     locale,
                     "Viento Z (m/s)",
                     "Wind Z (m/s)",
                     &mut draft.wind[1],
+                    ranges.wind,
+                    0.0,
                 );
-            });
+            }
 
-            ui.add_space(4.0);
-            ui.horizontal_wrapped(|ui| {
-                ui.add_enabled_ui(mask.ground_collision, |ui| {
-                    checkbox_tr(
-                        ui,
-                        locale,
-                        "Colisión suelo",
-                        "Ground collision",
-                        &mut draft.ground_collision,
-                    );
+            if mask.ground_collision || mask.accumulate || mask.splash {
+                ui.add_space(4.0);
+                ui.horizontal_wrapped(|ui| {
+                    if mask.ground_collision {
+                        checkbox_tr(
+                            ui,
+                            locale,
+                            "Colisión suelo",
+                            "Ground collision",
+                            &mut draft.ground_collision,
+                        );
+                    }
+                    if mask.accumulate {
+                        checkbox_tr(ui, locale, "Acumular", "Accumulate", &mut draft.accumulate);
+                    }
+                    if mask.splash {
+                        checkbox_tr(ui, locale, "Salpicar", "Splash", &mut draft.splash);
+                    }
                 });
-                ui.add_enabled_ui(mask.accumulate, |ui| {
-                    checkbox_tr(ui, locale, "Acumular", "Accumulate", &mut draft.accumulate);
-                });
-                ui.add_enabled_ui(mask.splash, |ui| {
-                    checkbox_tr(ui, locale, "Salpicar", "Splash", &mut draft.splash);
-                });
-            });
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(8.0);
+            }
+        }
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(8.0);
+    }
 
-            ui.horizontal(|ui| {
-                if ui
-                    .add(egui::Button::new(
-                        RichText::new(tr(locale, "Confirmar", "Confirm"))
-                            .size(13.0)
-                            .color(theme::TEXT),
-                    ))
-                    .clicked()
-                {
-                    confirm = true;
-                }
-                if ui
-                    .add(egui::Button::new(
-                        RichText::new(tr(locale, "Cancelar", "Cancel"))
-                            .size(13.0)
-                            .color(theme::TEXT_MUTED),
-                    ))
-                    .clicked()
-                {
-                    cancel = true;
-                }
-            });
-        });
+    ui.horizontal(|ui| {
+        if !is_new {
+            // Modal de propiedades: aplicar SIN cerrar, sin cancelar.
+            if ui
+                .add(egui::Button::new(
+                    RichText::new(tr(locale, "Aplicar", "Apply"))
+                        .size(13.0)
+                        .color(theme::TEXT),
+                ))
+                .clicked()
+            {
+                apply = true;
+            }
+        } else {
+            if ui
+                .add(egui::Button::new(
+                    RichText::new(if is_3d {
+                        tr(locale, "Posicionar en el mundo", "Place in world")
+                    } else {
+                        tr(locale, "Confirmar", "Confirm")
+                    })
+                    .size(13.0)
+                    .color(theme::TEXT),
+                ))
+                .clicked()
+            {
+                confirm = true;
+            }
+            if ui
+                .add(egui::Button::new(
+                    RichText::new(tr(locale, "Cancelar", "Cancel"))
+                        .size(13.0)
+                        .color(theme::TEXT_MUTED),
+                ))
+                .clicked()
+            {
+                cancel = true;
+            }
+        }
+    });
+    ui.add_space(6.0);
 
-    if !(confirm || cancel) {
+    if apply {
+        // El borrador es un clon con los valores recién editados: se guarda de
+        // vuelta, se aplica al motor y la modal sigue abierta.
+        app.right_sidebar.particles.modal = Some(draft.clone());
+        apply_properties(app, &draft);
         return;
     }
-    // Libera el préstamo del borrador antes de tocar el estado.
-    let mut draft = app
-        .right_sidebar
-        .particles
-        .modal
-        .take()
-        .expect("borrador abierto");
+    if cancel {
+        app.right_sidebar.particles.modal = None;
+        return;
+    }
     if !confirm {
+        // Sin acción: conserva lo escrito en los drafts para el próximo frame.
+        app.right_sidebar.particles.modal = Some(draft);
         return;
     }
 
-    // Confirmar: id de UI para altas nuevas (edición conserva el id) + fila del sidebar.
-    if is_new {
-        draft.id = crate::editor::ui::sidebar_right::particles::next_ui_id(
-            &mut app.right_sidebar.particles,
-        );
-    }
-    let command = app.right_sidebar.particles.emitter_command(&draft);
-    app.send_engine(command);
-    let emitters = &mut app.right_sidebar.particles.emitters;
-    match emitters.iter_mut().find(|existing| existing.id == draft.id) {
-        Some(existing) => {
-            *existing = draft.clone();
-        }
-        None => {
-            emitters.push(draft.clone());
-        }
-    }
+    // Alta nueva: id de UI asignado aquí; el click del ghost creará el elemento
+    // con este id y abrirá su modal de propiedades.
+    app.right_sidebar.particles.modal = None;
+    draft.id = next_ui_id(&mut app.right_sidebar.particles);
+    let emitter_id = draft.id;
     let material = draft.material;
     let kind_label = MATERIAL_OPTIONS
         .iter()
         .find(|(wire, _, _)| *wire == material)
         .map(|option| option.1.to_string())
         .unwrap_or_else(|| material.to_string());
+
+    // En 2D no hay ghost de viewport: se aplica directamente, como antes.
+    if !is_3d {
+        apply_properties(app, &draft);
+        app.right_sidebar.particles.modal = None;
+        app.push_log(
+            format!("[Partículas] Emisor «{kind_label}» confirmado (id {emitter_id})"),
+            false,
+        );
+        return;
+    }
+
+    app.right_sidebar.particles.awaiting_config = true;
+    app.right_sidebar.particles.pending_placement = Some(draft);
     app.push_log(
         format!(
-            "[Partículas] Emisor «{kind_label}» confirmado (id {})",
+            "[Partículas] Mueve el cursor y haz click en el mundo para colocar «{kind_label}» (id {emitter_id})…"
+        ),
+        false,
+    );
+}
+
+/// Envía los valores actuales al motor (upsert por id) y actualiza la fila del
+/// sidebar. No toca `modal`: la ventana se queda abierta para seguir editando.
+fn apply_properties(app: &mut EditorApp, draft: &EmitterRow) {
+    let command = app.right_sidebar.particles.emitter_command(draft);
+    app.send_engine(command);
+    let emitters = &mut app.right_sidebar.particles.emitters;
+    match emitters.iter_mut().find(|existing| existing.id == draft.id) {
+        Some(existing) => *existing = draft.clone(),
+        None => emitters.push(draft.clone()),
+    }
+    let material = MATERIAL_OPTIONS
+        .iter()
+        .find(|(wire, _, _)| *wire == draft.material)
+        .map(|option| option.1.to_string())
+        .unwrap_or_else(|| draft.material.to_string());
+    app.push_log(
+        format!(
+            "[Partículas] Cambios aplicados a «{material}» (id {})",
             draft.id
         ),
         false,
     );
 }
 
-/// Fila de posición X/Y/Z en columnas (patrón de la sección Cámara del sidebar).
-fn position_row(ui: &mut egui::Ui, locale: crate::editor::cli::Locale, draft: &mut EmitterRow) {
-    ui.label(field_label(locale, "Posición (m)", "Position (m)"));
-    ui.columns(3, |columns| {
-        for (index, axis) in ["X", "Y", "Z"].iter().enumerate() {
-            let width = columns[index].available_width();
-            columns[index].label(RichText::new(*axis).size(11.5).color(theme::TEXT_MUTED));
-            widgets::number_input(&mut columns[index], width, &mut draft.position[index].text);
-        }
-    });
-}
-
-fn number_row(
+/// Fila de slider: etiqueta a la izquierda, valor actual a la derecha y el
+/// control ocupando el resto. El borrador se escribe con los decimales del paso.
+fn slider_row(
     ui: &mut egui::Ui,
-    locale: crate::editor::cli::Locale,
+    locale: Locale,
     es: &'static str,
     en: &'static str,
-    draft: &mut crate::editor::ui::number_draft::NumberDraft,
+    draft: &mut NumberDraft,
+    range: FieldRange,
+    fallback: f32,
 ) {
+    let decimals = range.decimals();
+    let parsed = draft.parsed().unwrap_or(fallback);
+    let mut value = range.clamp(parsed);
+    if (value - parsed).abs() > 1e-6 {
+        draft.force_precise(value, decimals);
+    }
+
     ui.horizontal(|ui| {
-        ui.label(field_label(locale, es, en));
+        ui.add_sized(
+            [SLIDER_LABEL_WIDTH, 18.0],
+            egui::Label::new(field_label(locale, es, en)).truncate(),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let width = (ui.available_width() - 8.0).max(60.0);
-            widgets::number_input(ui, width, &mut draft.text);
+            ui.label(
+                RichText::new(format!("{value:.decimals$}"))
+                    .size(11.5)
+                    .color(theme::INFO),
+            );
+            ui.add_space(6.0);
+            if widgets::range_slider(
+                ui,
+                &mut value,
+                range.min,
+                range.max,
+                range.step,
+                theme::CONTROL_BLUE,
+            ) {
+                draft.force_precise(value, decimals);
+            }
         });
     });
 }

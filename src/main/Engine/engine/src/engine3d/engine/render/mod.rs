@@ -584,6 +584,25 @@ impl State {
             });
         }
 
+        // Zona clickeable del emisor de partículas bajo el cursor (F5): el mismo
+        // anillo azul de hover que usan los modelos 3D.
+        if !self.preview_playing && !self.player_ui_edit_active {
+            let verts = self.emitter_hover_overlay_verts();
+            crate::engine3d::gizmo::write_lines(
+                &self.vulkan,
+                &mut self.emitter_hover_overlay,
+                &verts,
+            );
+            if self.emitter_hover_overlay.vertex_count > 0 {
+                gizmos.push(crate::engine3d::vulkan::GizmoBatch {
+                    vertices: &self.emitter_hover_overlay.vertex_buffer,
+                    vertex_count: self.emitter_hover_overlay.vertex_count,
+                    uniform: &world_uni_bytes,
+                    lines: true,
+                });
+            }
+        }
+
         // Widget de transformación (traslación/rotación).
         let transform_uniform_bytes;
         if !self.preview_playing

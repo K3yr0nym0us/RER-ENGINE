@@ -940,6 +940,11 @@ impl App {
                                             } => {
                                                 state.place_plane_tool_at_cursor(Some(cur));
                                             }
+                                            crate::engine3d::config_compat::ActiveTool::PlaceParticleEmitter {
+                                                ..
+                                            } => {
+                                                state.place_particle_emitter_at_cursor(Some(cur));
+                                            }
                                             _ => {}
                                         }
                                     }
@@ -988,7 +993,7 @@ impl App {
                                                 self.ctrl_held || query_ctrl_held_os();
                                             state.ctrl_held = ctrl_active;
                                             if !state.handle_tool_click_3d(cur.0, cur.1) {
-                                                state.pick_entity(cur.0, cur.1);
+                                                state.pick_editor_click(cur.0, cur.1);
                                             }
                                         }
                                     }
@@ -1010,7 +1015,8 @@ impl App {
                                     // al viewport mientras se mantiene RMB.
                                     let window = state.window();
                                     window.set_cursor_visible(false);
-                                    if let Err(err) = window.set_cursor_grab(CursorGrabMode::Confined)
+                                    if let Err(err) =
+                                        window.set_cursor_grab(CursorGrabMode::Confined)
                                     {
                                         log::warn!("[editor] no se pudo confinar el cursor: {err}");
                                     }
@@ -1044,12 +1050,21 @@ impl App {
                                         let dy = (cur.1 - start.1).abs();
                                         if dx < ENTITY_CLICK_DRAG_THRESHOLD_PX
                                             && dy < ENTITY_CLICK_DRAG_THRESHOLD_PX
-                                            && let Some(id) = state.entity_at_pixel(cur.0, cur.1)
                                         {
-                                            state.pick_entity(cur.0, cur.1);
-                                            crate::engine3d::ipc::send_event(
-                                                &EngineEvent::EntityPropertiesOpen { id },
-                                            );
+                                            // Entidad: seleccionar y abrir propiedades;
+                                            // emisor de partículas: abrir sus propiedades.
+                                            if let Some(id) = state.entity_at_pixel(cur.0, cur.1) {
+                                                state.pick_entity(cur.0, cur.1);
+                                                crate::engine3d::ipc::send_event(
+                                                    &EngineEvent::EntityPropertiesOpen { id },
+                                                );
+                                            } else if let Some(id) =
+                                                state.emitter_at_pixel(cur.0, cur.1)
+                                            {
+                                                crate::engine3d::ipc::send_event(
+                                                    &EngineEvent::EmitterPicked { id },
+                                                );
+                                            }
                                         }
                                     }
                                 }

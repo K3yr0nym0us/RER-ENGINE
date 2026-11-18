@@ -102,6 +102,8 @@ enum WorldAction {
     },
     /// Partículas (F5): baja de un emisor de escena creado por la UI.
     RemoveParticleEmitter(u64),
+    /// Agua de bloques (F5): baja de una fuente creada desde el sidebar.
+    RemoveWaterSource(u64),
 }
 
 mod fps;
@@ -627,6 +629,14 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
                 .emitters
                 .retain(|row| row.id != id);
             app.push_log(format!("[Partículas] Emisor {id} eliminado"), false);
+        }
+        WorldAction::RemoveWaterSource(id) => {
+            app.send_engine(json!({ "cmd": "remove_water_source", "id": id }));
+            app.right_sidebar
+                .particles
+                .emitters
+                .retain(|row| row.id != id);
+            app.push_log(format!("[Agua] Fuente {id} eliminada"), false);
         }
     }
 }

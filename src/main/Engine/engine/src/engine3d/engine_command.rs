@@ -379,6 +379,19 @@ pub enum EngineCommand3dOnly {
         id: u64,
     },
     ClearParticleEmitters,
+    /// Agua de bloques estilo Minecraft: añade una fuente que se expande por
+    /// la rejilla de agua. `cell_size` en metros (0.5 por defecto en la UI).
+    AddWaterSource {
+        #[serde(default)]
+        position: [f32; 3],
+        #[serde(default = "default_water_cell_size")]
+        cell_size: f32,
+        #[serde(default)]
+        id: Option<u64>,
+    },
+    RemoveWaterSource {
+        id: u64,
+    },
     /// Clima global (F2/F6-bis): lluvia, nieve o niebla con seguimiento de cámara.
     /// "none" lo retira. `fall_speed` (multiplicador 0.25–3) y `wind_x` (m/s,
     /// negativo = hacia la izquierda) solo afectan a lluvia/nieve.
@@ -395,6 +408,10 @@ pub enum EngineCommand3dOnly {
 
 fn default_particle_material() -> String {
     "fire".to_string()
+}
+
+fn default_water_cell_size() -> f32 {
+    crate::engine3d::water::DEFAULT_CELL_SIZE
 }
 
 #[cfg(test)]

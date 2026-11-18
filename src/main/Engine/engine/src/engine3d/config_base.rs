@@ -737,6 +737,8 @@ impl State {
         self.play_camera_follow_offset = glam::Vec3::ZERO;
         self.play_camera_follow_offset_local = glam::Vec3::ZERO;
         self.particles.clear();
+        self.hovered_emitter = None;
+        self.water_clear();
         self.sun_entity = None;
         self.sun_icon_mesh_idx = None;
         self.sun_icon_tex_idx = None;

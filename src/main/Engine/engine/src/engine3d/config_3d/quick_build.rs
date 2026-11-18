@@ -278,7 +278,11 @@ impl State {
             return;
         }
 
-        if !matches!(self.active_tool, ActiveTool::QuickBuildPlace { .. }) {
+        let is_particle = matches!(self.active_tool, ActiveTool::PlaceParticleEmitter { .. });
+        if !matches!(
+            self.active_tool,
+            ActiveTool::QuickBuildPlace { .. } | ActiveTool::PlaceParticleEmitter { .. }
+        ) {
             return;
         }
 
@@ -286,10 +290,16 @@ impl State {
             return;
         };
         let target = self.quick_build_snap_position_3d(raw);
-        let scale = self.quick_build_effective_scale_3d();
+        let scale = if is_particle {
+            None
+        } else {
+            self.quick_build_effective_scale_3d()
+        };
 
-        if let ActiveTool::QuickBuildPlace { cursor_world } = &mut self.active_tool {
-            *cursor_world = Some(target);
+        match &mut self.active_tool {
+            ActiveTool::QuickBuildPlace { cursor_world }
+            | ActiveTool::PlaceParticleEmitter { cursor_world } => *cursor_world = Some(target),
+            _ => {}
         }
 
         if let Some(ghost_id) = self.quick_build_ghost_id
@@ -358,6 +368,26 @@ impl State {
     ) -> Option<(usize, crate::engine3d::mesh::InstanceData)> {
         self.build_plane_tool_ghost_overlay()
             .or_else(|| self.build_quick_build_ghost_overlay())
+            .or_else(|| self.build_particle_ghost_overlay())
+    }
+
+    /// Overlay del ghost del emisor de partículas (marcador coloreado).
+    pub(crate) fn build_particle_ghost_overlay(
+        &self,
+    ) -> Option<(usize, crate::engine3d::mesh::InstanceData)> {
+        if !matches!(self.active_tool, ActiveTool::PlaceParticleEmitter { .. }) {
+            return None;
+        }
+        let ghost_id = self.quick_build_ghost_id?;
+        let mc = self.world.get::<MeshComponent>(ghost_id)?;
+        let t = self.world.get::<Transform>(ghost_id)?;
+        if t.position.x < GHOST_OFFSCREEN + 1.0 {
+            return None;
+        }
+        let layer = self.texture_layer_for(mc.tex_idx);
+        let mut inst = crate::engine3d::mesh::InstanceData::new(t.to_matrix(), 0.0, layer);
+        inst.flag_pad[1] = GHOST_ALPHA + 0.2;
+        Some((mc.mesh_idx, inst))
     }
 
     pub(crate) fn build_quick_build_ghost_overlay(
@@ -451,6 +481,36 @@ impl State {
         }
         log::info!("[quick_build] colocado {id} «{entity_name}» en {position:?}");
         Some(id)
+    }
+
+    /// Confirmación del ghost de partículas: avisa al editor de la posición
+    /// elegida para que actualice el formulario; no crea nada en el motor aún.
+    pub(crate) fn place_particle_emitter_at_cursor(&mut self, pixels: Option<(f32, f32)>) -> bool {
+        if !matches!(self.active_tool, ActiveTool::PlaceParticleEmitter { .. }) {
+            return false;
+        }
+        let stored = match &self.active_tool {
+            ActiveTool::PlaceParticleEmitter { cursor_world } => *cursor_world,
+            _ => None,
+        };
+        let position = if let Some((px, py)) = pixels {
+            let raw = self.raycast_placement_point(px, py);
+            if self.ctrl_held {
+                raw.map(|p| self.quick_build_snap_position_3d(p)).or(stored)
+            } else {
+                stored.or(raw)
+            }
+        } else {
+            stored
+        };
+        let Some([x, y, z]) = position else {
+            send_event(&EngineEvent::Error {
+                message: "[partículas] sin posición (mueve el ghost sobre el suelo)".into(),
+            });
+            return false;
+        };
+        send_event(&EngineEvent::ParticleEmitterPlaced { x, y, z });
+        true
     }
 
     pub(crate) fn place_quick_build_at_cursor(&mut self, pixels: Option<(f32, f32)>) -> bool {

@@ -596,6 +596,36 @@ impl State {
                             }
                             log::info!("Herramienta activa: construcción rápida");
                         }
+                        "place_particle_emitter" => {
+                            self.active_tool =
+                                ActiveTool::PlaceParticleEmitter { cursor_world: None };
+                            self.tool_overlay_buffer =
+                                crate::engine3d::gizmo::build_from_vertices(&self.vulkan, &[]);
+                            // Cubo pequeño: se ve desde cualquier ángulo, a
+                            // diferencia del quad plano de las herramientas.
+                            let (mesh_idx, _white) = self.ensure_editor_box_gpu_assets();
+                            let tex_idx =
+                                self.ensure_plane_tool_colored_texture([70, 190, 255, 255]);
+                            let ghost = self.world.spawn(Some("__particle_ghost__"));
+                            self.world.insert(
+                                ghost,
+                                crate::engine3d::ecs::MeshComponent { mesh_idx, tex_idx },
+                            );
+                            self.world.insert(
+                                ghost,
+                                Transform {
+                                    position: glam::Vec3::splat(
+                                        crate::engine3d::config_3d::quick_build::GHOST_OFFSCREEN,
+                                    ),
+                                    scale: glam::Vec3::splat(0.35),
+                                    ..Default::default()
+                                },
+                            );
+                            self.world
+                                .insert(ghost, crate::engine3d::ecs::NonSelectable);
+                            self.quick_build_ghost_id = Some(ghost);
+                            log::info!("[partículas] ghost de colocación activo");
+                        }
                         _ => log::warn!("Herramienta desconocida: {}", tool),
                     }
                 }
@@ -662,6 +692,9 @@ impl State {
             },
             EngineCommand::Only3d(EngineCommand3dOnly::RemoveParticleEmitter { id }) => {
                 if self.particles.remove(id) {
+                    if self.hovered_emitter == Some(id) {
+                        self.hovered_emitter = None;
+                    }
                     log::info!("[partículas] emisor {id} eliminado");
                 } else {
                     log::warn!("[partículas] emisor {id} no encontrado");
@@ -669,7 +702,29 @@ impl State {
             }
             EngineCommand::Only3d(EngineCommand3dOnly::ClearParticleEmitters) => {
                 self.particles.clear();
+                self.hovered_emitter = None;
+                self.water_clear();
                 log::info!("[partículas] emisores eliminados");
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::AddWaterSource {
+                position,
+                cell_size,
+                id,
+            }) => {
+                let id =
+                    id.unwrap_or_else(|| 0x7000_0000_0000_0000 + self.water.sources().len() as u64);
+                self.water_add_source(id, position, cell_size);
+                log::info!(
+                    "[agua] fuente {id} colocada en {position:?} (celda {cell_size:.2} m, {} celdas)",
+                    self.water.cell_count()
+                );
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::RemoveWaterSource { id }) => {
+                self.water_remove_source(id);
+                if self.hovered_emitter == Some(id) {
+                    self.hovered_emitter = None;
+                }
+                log::info!("[agua] fuente {id} eliminada");
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetParticleEnvironment {
                 kind,

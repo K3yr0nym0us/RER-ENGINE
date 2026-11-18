@@ -887,6 +887,7 @@ impl ParticleSystem {
                 friction: Some(config.friction),
                 size_end: Some(config.size_end),
                 stretch: Some(config.stretch),
+                cell_size: None,
             });
         }
         SaveParticlesSnapshot { weather, emitters }
@@ -901,6 +902,15 @@ impl ParticleSystem {
     #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.emitters.is_empty()
+    }
+
+    /// (id, origen) de los emisores de escena (sin el clima): los consume el
+    /// picking del viewport para abrir las propiedades con un click (F5).
+    pub(crate) fn pickable(&self) -> impl Iterator<Item = (u64, [f32; 3])> + '_ {
+        self.emitters
+            .iter()
+            .filter(|emitter| emitter.id != WEATHER_ID)
+            .map(|emitter| (emitter.id, emitter.config.origin))
     }
 
     /// Lotes del frame: cada emisor activo avanza su `sim_step` y su RNG aquí, así que
@@ -1149,7 +1159,34 @@ impl crate::engine3d::engine::State {
     /// Restaura partículas desde el `world.particles` del snapshot (carga de escena).
     pub(crate) fn restore_particles_from_value(&mut self, value: &serde_json::Value) {
         match serde_json::from_value::<crate::engine3d::ipc::SaveParticlesSnapshot>(value.clone()) {
-            Ok(snapshot) => self.particles.restore(&snapshot),
+            Ok(snapshot) => {
+                self.particles.restore(&snapshot);
+                // Las fuentes de agua viven en el snapshot de partículas pero no
+                // son emisores GPU: se restauran en su propio sistema.
+                let water: Vec<_> = snapshot
+                    .emitters
+                    .iter()
+                    .filter(|saved| saved.material == crate::engine3d::water::WATER_WIRE)
+                    .collect();
+                for saved in water {
+                    self.water.add_source(
+                        saved.id,
+                        saved.position,
+                        saved
+                            .cell_size
+                            .unwrap_or(crate::engine3d::water::DEFAULT_CELL_SIZE),
+                    );
+                }
+                if !snapshot
+                    .emitters
+                    .iter()
+                    .any(|saved| saved.material == crate::engine3d::water::WATER_WIRE)
+                {
+                    self.water.clear();
+                } else {
+                    self.water_step_once();
+                }
+            }
             Err(error) => log::warn!("[partículas] snapshot ilegible, se descarta: {error}"),
         }
     }

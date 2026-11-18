@@ -30,6 +30,12 @@ impl NumberDraft {
         self.text = format_number(value);
         self.last_value = value;
     }
+
+    /// Reescribe con los decimales exactos del paso de un slider (0.005 → «0.010»).
+    pub fn force_precise(&mut self, value: f32, decimals: usize) {
+        self.text = format!("{value:.decimals$}");
+        self.last_value = value;
+    }
 }
 
 pub fn format_number(value: f32) -> String {
@@ -70,5 +76,15 @@ mod tests {
         draft.force(0.0);
         assert_eq!(draft.text, "0");
         assert_eq!(draft.parsed(), Some(0.0));
+    }
+
+    #[test]
+    fn force_precise_keeps_the_step_decimals() {
+        let mut draft = NumberDraft::default();
+        draft.force_precise(0.015, 3);
+        assert_eq!(draft.text, "0.015");
+        assert_eq!(draft.parsed(), Some(0.015));
+        draft.force_precise(160.0, 0);
+        assert_eq!(draft.text, "160");
     }
 }

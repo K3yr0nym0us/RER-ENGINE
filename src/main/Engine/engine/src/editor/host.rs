@@ -154,6 +154,8 @@ struct EditorWindow {
     paused: bool,
     /// Ventana OS independiente del editor de emisores (mismo device, otra superficie).
     particle_window: Option<crate::editor::particle_window::ParticleWindow>,
+    /// `true` mientras el ghost de colocación del emisor está activo en el motor.
+    particle_placement_active: bool,
 }
 
 impl EditorWindow {
@@ -199,6 +201,7 @@ impl EditorWindow {
             app: EditorApp::new(cli),
             paused: false,
             particle_window: None,
+            particle_placement_active: false,
         })
     }
 
@@ -536,6 +539,7 @@ impl EditorWindow {
             app,
             paused: _,
             particle_window: _,
+            particle_placement_active: _,
         } = self;
 
         if let Some(engine) = engine.as_mut() {
@@ -563,15 +567,26 @@ impl EditorWindow {
     }
 
     fn sync_particle_window(&mut self, event_loop: &ActiveEventLoop) {
-        let wants = self.app.right_sidebar.particles.modal.is_some();
-        if wants && self.particle_window.is_none() {
+        let wants_window = self.app.right_sidebar.particles.modal.is_some();
+        if wants_window && self.particle_window.is_none() {
+            let particles = &self.app.right_sidebar.particles;
+            let material = particles
+                .modal
+                .as_ref()
+                .map(|draft| draft.material)
+                .unwrap_or("fire");
+            let height_hint = crate::editor::particle_window::estimated_inner_height(
+                particles.modal_is_new,
+                self.app.cli.context.is_3d(),
+                material,
+            );
             match crate::editor::particle_window::ParticleWindow::open(
                 event_loop,
                 self.gpu.shared_gpu(),
                 self.app.cli.locale,
                 self.window.as_ref(),
                 app_window_icon(),
-                self.app.right_sidebar.particles.modal_is_new,
+                height_hint,
             ) {
                 Ok(window) => self.particle_window = Some(window),
                 Err(error) => {
@@ -583,8 +598,36 @@ impl EditorWindow {
                     );
                 }
             }
-        } else if !wants {
+        } else if !wants_window && self.particle_window.is_some() {
             self.particle_window = None;
+        }
+
+        // El ghost aparece SOLO después de cerrar la modal, cuando el borrador
+        // confirmado espera la posición en el mundo.
+        let wants_ghost = self.app.right_sidebar.particles.pending_placement.is_some();
+        if wants_ghost != self.particle_placement_active && self.app.cli.context.is_3d() {
+            let tool = if wants_ghost {
+                "place_particle_emitter"
+            } else {
+                ""
+            };
+            self.app.send_engine(serde_json::json!({
+                "cmd": "set_active_tool",
+                "tool": tool,
+            }));
+            self.app.placement_hint = if wants_ghost {
+                Some(
+                    crate::editor::i18n::tr(
+                        self.app.cli.locale,
+                        "Mueve el cursor y haz click en el mundo para colocar el emisor",
+                        "Move the cursor and click in the world to place the emitter",
+                    )
+                    .to_string(),
+                )
+            } else {
+                None
+            };
+            self.particle_placement_active = wants_ghost;
         }
     }
 }
@@ -1065,15 +1108,35 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             return;
         };
 
+        // Escape cancela la colocación pendiente del emisor de partículas.
+        if matches!(
+            &event,
+            WindowEvent::KeyboardInput { event: key, .. }
+                if key.state == winit::event::ElementState::Pressed
+                    && key.physical_key == winit::keyboard::KeyCode::Escape
+        ) && (editor
+            .app
+            .right_sidebar
+            .particles
+            .pending_placement
+            .is_some()
+            || editor.app.right_sidebar.particles.awaiting_config)
+        {
+            editor.app.right_sidebar.particles.pending_placement = None;
+            editor.app.right_sidebar.particles.awaiting_config = false;
+            editor
+                .app
+                .push_log("[Partículas] Colocación cancelada", false);
+        }
+
         let response = editor
             .egui_state
             .on_window_event(editor.window.as_ref(), &event);
-        // `on_window_event` devuelve `repaint` también para `RedrawRequested`;
-        // pedir otro redraw ahí crearía un bucle de frames infinito.
-        let is_redraw = matches!(event, WindowEvent::RedrawRequested);
-        if response.repaint && !is_redraw {
-            editor.window.request_redraw();
-        }
+        // NO se pide redraw aquí: `about_to_wait` ya programa uno por frame al
+        // FPS objetivo. egui devuelve `repaint` en cada `CursorMoved`, así que
+        // pedirlo por evento lanzaba un render completo de escena por cada
+        // movimiento del mouse (CPU disparada e ignorando el límite de FPS).
+        let _ = response.repaint;
         // Al motor solo le llega lo que ocurre dentro del viewport (o todo en play).
         editor.forward_input(&event, response.consumed);
         if response.consumed {

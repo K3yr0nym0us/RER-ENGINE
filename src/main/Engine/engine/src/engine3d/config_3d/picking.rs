@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// Radio de agarre en pantalla de un emisor (el mismo para pick y resaltado).
+const EMITTER_PICK_RADIUS_PX: f32 = 28.0;
+
 impl State {
     pub(crate) fn entity_at_pixel(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
         self.ray_cast(pixel_x, pixel_y)
@@ -131,6 +134,103 @@ impl State {
         Some(((c.x / c.w + 1.0) * 0.5 * w, (1.0 - c.y / c.w) * 0.5 * h))
     }
 
+    /// Picking de emisores de partículas (F5): proyecta el origen de cada
+    /// emisor de escena al espacio de pantalla y devuelve el más cercano al
+    /// cursor dentro del radio de agarre. El clima (id reservado) no se pica.
+    pub(crate) fn emitter_at_pixel(&self, pixel_x: f32, pixel_y: f32) -> Option<u64> {
+        let radius2 = EMITTER_PICK_RADIUS_PX * EMITTER_PICK_RADIUS_PX;
+        let mut best: Option<(f32, u64)> = None;
+        for (id, origin) in self
+            .particles
+            .pickable()
+            .into_iter()
+            .chain(self.water.pickable())
+        {
+            let Some((sx, sy)) = self.project_to_screen(GlamVec3::from(origin)) else {
+                continue;
+            };
+            let dx = sx - pixel_x;
+            let dy = sy - pixel_y;
+            let d2 = dx * dx + dy * dy;
+            if d2 <= radius2 && best.is_none_or(|(best_d2, _)| d2 < best_d2) {
+                best = Some((d2, id));
+            }
+        }
+        best.map(|(_, id)| id)
+    }
+
+    /// Click IZQUIERDO del editor: solo selecciona entidades. Las propiedades
+    /// de los emisores se abren con click DERECHO (ver `host.rs`), para no
+    /// interferir con la selección/arrastre de modelos.
+    pub(crate) fn pick_editor_click(&mut self, pixel_x: f32, pixel_y: f32) {
+        self.pick_entity(pixel_x, pixel_y);
+    }
+
+    /// Anillo (en el plano de la cámara) que delimita exactamente la zona
+    /// clickeable del emisor bajo el cursor, con el azul de hover de modelos.
+    pub(crate) fn emitter_hover_overlay_verts(&self) -> Vec<crate::engine3d::gizmo::GizmoVertex> {
+        use crate::engine3d::gizmo::GizmoVertex;
+
+        let Some(id) = self.hovered_emitter else {
+            return Vec::new();
+        };
+        let Some((_, origin)) = self
+            .particles
+            .pickable()
+            .into_iter()
+            .chain(self.water.pickable())
+            .find(|(pickable_id, _)| *pickable_id == id)
+        else {
+            return Vec::new();
+        };
+        let origin = GlamVec3::from(origin);
+        let view_t = self.camera_view_matrix().transpose();
+        let right = view_t.x_axis.truncate().normalize();
+        let up = view_t.y_axis.truncate().normalize();
+        // El radio de pick es en píxeles: lo convertimos a metros a la distancia
+        // del emisor para que el anillo coincida con la zona realmente clickeable.
+        let Some((sx, _)) = self.project_to_screen(origin) else {
+            return Vec::new();
+        };
+        let Some((sx_right, _)) = self.project_to_screen(origin + right) else {
+            return Vec::new();
+        };
+        let px_per_m = (sx_right - sx).abs().max(1.0e-3);
+        let radius = (EMITTER_PICK_RADIUS_PX / px_per_m).clamp(0.05, 12.0);
+
+        const SEGMENTS: usize = 48;
+        const COLOR: [f32; 4] = [0.12, 0.60, 0.88, 0.95];
+        let mut verts = Vec::with_capacity(SEGMENTS * 2 + 8);
+        let point = |angle: f32| origin + (right * angle.cos() + up * angle.sin()) * radius;
+        for segment in 0..SEGMENTS {
+            let a = point(std::f32::consts::TAU * segment as f32 / SEGMENTS as f32);
+            let b = point(std::f32::consts::TAU * (segment + 1) as f32 / SEGMENTS as f32);
+            verts.push(GizmoVertex {
+                position: a.to_array(),
+                color: COLOR,
+            });
+            verts.push(GizmoVertex {
+                position: b.to_array(),
+                color: COLOR,
+            });
+        }
+        // Cuatro marcas cortas hacia dentro: se entiende que es un objetivo.
+        for angle in [0.0_f32, 90.0, 180.0, 270.0] {
+            let t = angle.to_radians();
+            let outer = point(t);
+            let inner = origin + (right * t.cos() + up * t.sin()) * (radius * 0.78);
+            verts.push(GizmoVertex {
+                position: outer.to_array(),
+                color: COLOR,
+            });
+            verts.push(GizmoVertex {
+                position: inner.to_array(),
+                color: COLOR,
+            });
+        }
+        verts
+    }
+
     pub fn pick_gizmo_axis(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
         if self.socket_bone_pick_entity.is_some() || self.bone_physics_pick_entity.is_some() {
             return None;
@@ -235,6 +335,7 @@ impl State {
     }
 
     pub fn update_hover(&mut self, pixel_x: f32, pixel_y: f32) {
+        self.hovered_emitter = None;
         if self.player_ui_edit_active {
             return;
         }
@@ -263,6 +364,14 @@ impl State {
         let prev_hover = self.hovered_entity;
         self.hovered_entity = self.ray_cast(pixel_x, pixel_y);
         self.hovered_gizmo_axis = self.pick_gizmo_axis(pixel_x, pixel_y);
+        // El resaltado del emisor comparte prioridad con el hover de modelos:
+        // si hay entidad bajo el cursor, manda ella (igual que en el click).
+        if self.hovered_entity.is_none()
+            && !self.is_preview_playing()
+            && !crate::engine3d::config_compat::is_editor_placement_tool(&self.active_tool)
+        {
+            self.hovered_emitter = self.emitter_at_pixel(pixel_x, pixel_y);
+        }
         match (prev_hover, self.hovered_entity) {
             (None, Some(id)) => crate::engine3d::ipc::send_event(
                 &crate::engine3d::ipc::EngineEvent::EntityHovered { id },

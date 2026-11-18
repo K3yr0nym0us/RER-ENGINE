@@ -84,6 +84,8 @@ pub struct State {
     pub selected_entity: Option<EntityId>,
     pub selected_entities: Vec<EntityId>,
     pub hovered_entity: Option<EntityId>,
+    /// Emisor de partículas bajo el cursor (resaltado del viewport, F5).
+    pub(crate) hovered_emitter: Option<u64>,
     pub hovered_gizmo_axis: Option<usize>,
     pub active_gizmo_axis: Option<usize>,
     pub transform_gizmo_mode: crate::engine3d::config_3d::transform_gizmo::TransformGizmoMode,
@@ -155,6 +157,8 @@ pub struct State {
     pub(crate) bone_index_cache: std::collections::HashMap<(EntityId, String), usize>,
     /// Sistema de partículas GPU-driven (F1: fuego) del lado CPU del motor.
     pub(crate) particles: crate::engine3d::particles::ParticleSystem,
+    /// Agua de bloques estilo Minecraft (autómata celular, independiente del GPU).
+    pub(crate) water: crate::engine3d::water::WaterSystem,
     /// Modo editor: seleccionar hueso con click para un socket.
     pub(crate) socket_bone_pick_entity: Option<EntityId>,
     pub(crate) socket_bone_pick_hovered_joint: Option<usize>,
@@ -268,6 +272,8 @@ pub struct State {
     pub(crate) play_session_body_yaw_baseline: f32,
     pub(crate) play_session_camera_yaw_baseline: f32,
     pub(crate) tool_overlay_buffer: GizmoBuffer,
+    /// Anillo que marca la zona clickeable del emisor bajo el cursor.
+    pub(crate) emitter_hover_overlay: GizmoBuffer,
     pub(crate) snap_locale: String,
     pub(crate) anim_saved_transforms: std::collections::HashMap<u32, (GlamVec3, GlamVec3)>,
     pub pivot_edit_mode: Option<(u32, String, u32, u32)>,

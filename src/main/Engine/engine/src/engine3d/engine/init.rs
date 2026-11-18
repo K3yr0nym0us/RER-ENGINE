@@ -150,6 +150,7 @@ impl State {
             selected_entity: None,
             selected_entities: Vec::new(),
             hovered_entity: None,
+            hovered_emitter: None,
             hovered_gizmo_axis: None,
             active_gizmo_axis: None,
             transform_gizmo_mode:
@@ -206,6 +207,7 @@ impl State {
                 particles.seed_default_showcase();
                 particles
             },
+            water: crate::engine3d::water::WaterSystem::default(),
             socket_bone_pick_entity: None,
             socket_bone_pick_hovered_joint: None,
             bone_physics_editor_entity: None,
@@ -266,6 +268,7 @@ impl State {
             play_session_body_yaw_baseline: 0.0,
             play_session_camera_yaw_baseline: 0.0,
             tool_overlay_buffer: tool_overlay_buffer_init,
+            emitter_hover_overlay: crate::engine3d::gizmo::build_from_vertices(&vulkan, &[]),
             snap_locale: "en".to_string(),
             anim_saved_transforms: std::collections::HashMap::new(),
             pivot_edit_mode: None,

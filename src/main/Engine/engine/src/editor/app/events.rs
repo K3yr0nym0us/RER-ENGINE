@@ -257,6 +257,61 @@ impl EditorApp {
             "quick_build_ghost_ready" => {
                 self.placement_hint = Some(placement_hint_text(self.cli.locale).to_string());
             }
+            "particle_emitter_placed" => {
+                let number =
+                    |key: &str| event.get(key).and_then(Value::as_f64).unwrap_or(0.0) as f32;
+                let position = [number("x"), number("y"), number("z")];
+                let Some(mut draft) = self.right_sidebar.particles.pending_placement.take() else {
+                    return;
+                };
+                draft.set_position(position);
+                // El click del ghost CREA el elemento (comando al motor + fila
+                // del sidebar) y DESPUÉS abre su modal de propiedades, donde
+                // «Aplicar» hace upsert sin cerrar la ventana.
+                let command = self.right_sidebar.particles.emitter_command(&draft);
+                self.send_engine(command);
+                let emitters = &mut self.right_sidebar.particles.emitters;
+                match emitters.iter_mut().find(|existing| existing.id == draft.id) {
+                    Some(existing) => *existing = draft.clone(),
+                    None => emitters.push(draft.clone()),
+                }
+                self.right_sidebar.particles.awaiting_config = false;
+                draft.pin_inapplicable_fields();
+                self.right_sidebar.particles.modal = Some(draft);
+                self.right_sidebar.particles.modal_is_new = false;
+                self.right_sidebar.particles.modal_configure = true;
+                self.push_log(
+                    format!(
+                        "[Partículas] Elemento colocado en ({:.2}, {:.2}, {:.2}). Ajusta sus propiedades y pulsa Aplicar",
+                        position[0], position[1], position[2]
+                    ),
+                    false,
+                );
+            }
+            "emitter_picked" => {
+                // Click sobre un emisor en el viewport: abrir sus propiedades
+                // directamente (sin buscarlo en la lista del sidebar).
+                let Some(id) = event.get("id").and_then(Value::as_u64) else {
+                    return;
+                };
+                let Some(row) = self
+                    .right_sidebar
+                    .particles
+                    .emitters
+                    .iter()
+                    .find(|existing| existing.id == id)
+                    .cloned()
+                else {
+                    return;
+                };
+                self.right_sidebar.particles.modal = Some(row);
+                self.right_sidebar.particles.modal_is_new = false;
+                self.right_sidebar.particles.modal_configure = false;
+                self.push_log(
+                    "[Partículas] Propiedades del emisor abiertas".to_string(),
+                    false,
+                );
+            }
             "player_ui_active_screen_changed" => {
                 self.left_sidebar.active_ui_screen = event
                     .get("screen_id")
@@ -321,6 +376,7 @@ impl EditorApp {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::ui::sidebar_right::particles::EmitterRow;
 
     #[test]
     fn placement_hint_follows_the_ghost_lifecycle() {
@@ -336,5 +392,93 @@ mod tests {
 
         app.handle_engine_event(&json!({ "event": "tool_cancelled" }));
         assert!(app.placement_hint.is_none());
+    }
+
+    #[test]
+    fn placed_after_select_only_creates_the_element_then_opens_properties() {
+        // Flujo corregido (alta nueva en 3D): el click del ghost CREA el elemento
+        // (comando + fila) y DESPUÉS abre la modal de propiedades.
+        let mut app = EditorApp::new(crate::editor::cli::Cli::default());
+        app.right_sidebar.particles.pending_placement = Some(EmitterRow::new_draft("fire"));
+        app.right_sidebar.particles.awaiting_config = true;
+
+        app.handle_engine_event(&json!({
+            "event": "particle_emitter_placed",
+            "x": 1.0,
+            "y": 0.5,
+            "z": 2.0,
+        }));
+
+        assert!(app.right_sidebar.particles.pending_placement.is_none());
+        assert!(!app.right_sidebar.particles.awaiting_config);
+        let modal = app
+            .right_sidebar
+            .particles
+            .modal
+            .as_ref()
+            .expect("la modal de configuración debe abrirse");
+        assert!(!app.right_sidebar.particles.modal_is_new);
+        assert!(app.right_sidebar.particles.modal_configure);
+        // La posición del ghost ya está en el borrador.
+        assert_eq!(modal.position[0].parsed(), Some(1.0));
+        assert_eq!(modal.position[1].parsed(), Some(0.5));
+        assert_eq!(modal.position[2].parsed(), Some(2.0));
+        // El elemento ya existe en el motor y en la lista; la modal es solo
+        // para ajustar sus propiedades con «Aplicar».
+        assert_eq!(app.right_sidebar.particles.emitters.len(), 1);
+        assert_eq!(app.pending_engine.borrow().len(), 1);
+    }
+
+    #[test]
+    fn placed_without_awaiting_config_creates_the_emitter_immediately() {
+        // Re-colocación de un emisor existente (edición en 3D): conserva el
+        // comportamiento directo — aplica al motor y actualiza la fila.
+        let mut app = EditorApp::new(crate::editor::cli::Cli::default());
+        let mut draft = EmitterRow::new_draft("smoke");
+        draft.id = 7;
+        app.right_sidebar.particles.pending_placement = Some(draft);
+        app.right_sidebar.particles.awaiting_config = false;
+
+        app.handle_engine_event(&json!({
+            "event": "particle_emitter_placed",
+            "x": -1.0,
+            "y": 0.2,
+            "z": 3.0,
+        }));
+
+        // Igual que en el alta nueva: colocar crea y abre las propiedades.
+        assert!(app.right_sidebar.particles.modal.is_some());
+        assert_eq!(app.right_sidebar.particles.emitters.len(), 1);
+        assert_eq!(app.right_sidebar.particles.emitters[0].id, 7);
+        assert_eq!(
+            app.right_sidebar.particles.emitters[0].position[0].parsed(),
+            Some(-1.0)
+        );
+        assert_eq!(app.pending_engine.borrow().len(), 1);
+    }
+
+    #[test]
+    fn emitter_picked_opens_the_emitter_properties() {
+        // Click sobre un emisor en el viewport: abre sus propiedades sin
+        // buscarlo en la lista; un id desconocido no abre nada.
+        let mut app = EditorApp::new(crate::editor::cli::Cli::default());
+        let mut row = EmitterRow::new_draft("water");
+        row.id = 42;
+        app.right_sidebar.particles.emitters.push(row.clone());
+
+        app.handle_engine_event(&json!({ "event": "emitter_picked", "id": 42 }));
+        let modal = app
+            .right_sidebar
+            .particles
+            .modal
+            .as_ref()
+            .expect("la modal debe abrirse con el emisor picado");
+        assert_eq!(modal.id, 42);
+        assert!(!app.right_sidebar.particles.modal_is_new);
+        assert!(!app.right_sidebar.particles.modal_configure);
+
+        app.right_sidebar.particles.modal = None;
+        app.handle_engine_event(&json!({ "event": "emitter_picked", "id": 999 }));
+        assert!(app.right_sidebar.particles.modal.is_none());
     }
 }

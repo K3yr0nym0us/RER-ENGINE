@@ -357,6 +357,18 @@ pub enum EngineEvent {
         fit_to_grid: bool,
         scale: [f32; 3],
     },
+    /// Click del ghost de emisor de partículas: posición elegida en el mundo.
+    ParticleEmitterPlaced {
+        x: f32,
+        y: f32,
+        #[serde(default)]
+        z: f32,
+    },
+    /// El editor hizo click (sin arrastre) sobre un emisor de partículas en el
+    /// viewport: la UI abre sus propiedades directamente.
+    EmitterPicked {
+        id: u64,
+    },
     /// Emitido cuando SetAnimation resolvió/normalizó el tamaño lógico final.
     AnimationLogicalResolved {
         id: u32,

@@ -30,14 +30,15 @@ const WEATHER_OPTIONS: [(&str, &str, &str); 4] = [
     ("fog", "Niebla", "Fog"),
 ];
 
-/// Materiales para la alta manual de emisores.
+/// Materiales para la alta manual de emisores. «Agua (bloques)» no es un
+/// emisor GPU: es el autómata celular estilo Minecraft del módulo `water`.
 pub(crate) const MATERIAL_OPTIONS: [(&str, &str, &str); 6] = [
     ("fire", "Fuego", "Fire"),
     ("smoke", "Humo", "Smoke"),
     ("fog", "Niebla", "Fog"),
     ("sand", "Arena", "Arena"),
     ("water", "Agua", "Water"),
-    ("water_cube", "Cubo de agua", "Water cube"),
+    ("water_block", "Agua (bloques)", "Water blocks"),
 ];
 
 /// Valores planos de un emisor (preset o snapshot). Los borradores de la UI se
@@ -57,6 +58,8 @@ pub(crate) struct EmitterValues {
     pub ground_collision: bool,
     pub accumulate: bool,
     pub splash: bool,
+    /// Solo agua de bloques: lado de la celda (m).
+    pub cell_size: f32,
 }
 
 /// Fila de un emisor de escena y borrador de la modal (una sola estructura: la modal
@@ -79,9 +82,18 @@ pub(crate) struct EmitterRow {
     pub(crate) ground_collision: bool,
     pub(crate) accumulate: bool,
     pub(crate) splash: bool,
+    pub(crate) cell_size: NumberDraft,
 }
 
 impl EmitterRow {
+    /// Borrador nuevo con el preset del material (botón «Añadir emisor»).
+    pub(crate) fn new_draft(material: &'static str) -> Self {
+        let mut row = Self::from_values(&preset_values(material));
+        row.material = material;
+        row.pin_inapplicable_fields();
+        row
+    }
+
     fn from_values(values: &EmitterValues) -> Self {
         let mut row = Self {
             id: 0,
@@ -103,6 +115,7 @@ impl EmitterRow {
             ground_collision: values.ground_collision,
             accumulate: values.accumulate,
             splash: values.splash,
+            cell_size: NumberDraft::default(),
         };
         row.apply_values(values);
         row
@@ -127,9 +140,18 @@ impl EmitterRow {
         self.ground_collision = values.ground_collision;
         self.accumulate = values.accumulate;
         self.splash = values.splash;
+        self.cell_size.sync(values.cell_size);
     }
 
-    /// Fija los campos que el kernel ignora para este material al valor del preset.
+    /// Aplica una posición elegida con el ghost del viewport a los drafts X/Y/Z.
+    pub(crate) fn set_position(&mut self, position: [f32; 3]) {
+        for (draft, value) in self.position.iter_mut().zip(position) {
+            draft.force(value);
+        }
+    }
+
+    /// Fija los campos que el kernel ignora para este material al valor del preset
+    /// y deja el resto dentro de los límites seguros del slider.
     pub(crate) fn pin_inapplicable_fields(&mut self) {
         let preset = preset_values(self.material);
         let mask = field_mask(self.material);
@@ -164,29 +186,67 @@ impl EmitterRow {
         if !mask.splash {
             self.splash = preset.splash;
         }
+        if !mask.cell_size {
+            self.cell_size.force(preset.cell_size);
+        }
+        self.clamp_fields();
     }
 
-    /// Valores actuales (lo escrito en los drafts, con respaldo si están vacíos).
+    /// Reajusta los drafts a los rangos seguros del material. Cubre snapshots
+    /// viejos o valores escritos antes de que existieran los sliders.
+    pub(crate) fn clamp_fields(&mut self) {
+        let ranges = field_ranges(self.material);
+        let clamp = |draft: &mut NumberDraft, range: FieldRange| {
+            let Some(value) = draft.parsed() else {
+                return;
+            };
+            let clamped = range.clamp(value);
+            if (clamped - value).abs() > 1e-6 {
+                draft.force(clamped);
+            }
+        };
+        clamp(&mut self.rate, ranges.rate);
+        clamp(&mut self.size, ranges.size);
+        clamp(&mut self.life, ranges.life);
+        clamp(&mut self.gravity, ranges.gravity);
+        clamp(&mut self.drag, ranges.drag);
+        clamp(&mut self.turbulence, ranges.turbulence);
+        clamp(&mut self.cohesion, ranges.cohesion);
+        clamp(&mut self.ground_y, ranges.ground_y);
+        clamp(&mut self.wind[0], ranges.wind);
+        clamp(&mut self.wind[1], ranges.wind);
+        clamp(&mut self.cell_size, ranges.cell_size);
+    }
+
+    /// Valores actuales (lo escrito en los drafts, con respaldo si están vacíos),
+    /// ya acotados a los rangos seguros del material.
     fn values(&self) -> EmitterValues {
-        let parse = |draft: &NumberDraft, fallback: f32| draft.parsed().unwrap_or(fallback);
+        let ranges = field_ranges(self.material);
+        let parse = |draft: &NumberDraft, fallback: f32, range: FieldRange| {
+            range.clamp(draft.parsed().unwrap_or(fallback))
+        };
         EmitterValues {
             position: [
-                parse(&self.position[0], 0.0),
-                parse(&self.position[1], 0.0),
-                parse(&self.position[2], 0.0),
+                parse(&self.position[0], 0.0, UNBOUNDED),
+                parse(&self.position[1], 0.0, UNBOUNDED),
+                parse(&self.position[2], 0.0, UNBOUNDED),
             ],
-            rate: parse(&self.rate, 100.0),
-            size: parse(&self.size, 0.3),
-            life: parse(&self.life, 3.0),
-            gravity: parse(&self.gravity, -9.8),
-            drag: parse(&self.drag, 0.5),
-            turbulence: parse(&self.turbulence, 0.0),
-            cohesion: parse(&self.cohesion, 0.0),
-            ground_y: parse(&self.ground_y, 0.0),
-            wind: [parse(&self.wind[0], 0.0), parse(&self.wind[1], 0.0)],
+            rate: parse(&self.rate, 100.0, ranges.rate),
+            size: parse(&self.size, 0.3, ranges.size),
+            life: parse(&self.life, 3.0, ranges.life),
+            gravity: parse(&self.gravity, -9.8, ranges.gravity),
+            drag: parse(&self.drag, 0.5, ranges.drag),
+            turbulence: parse(&self.turbulence, 0.0, ranges.turbulence),
+            cohesion: parse(&self.cohesion, 0.0, ranges.cohesion),
+            ground_y: parse(&self.ground_y, 0.0, ranges.ground_y),
+            wind: [
+                parse(&self.wind[0], 0.0, ranges.wind),
+                parse(&self.wind[1], 0.0, ranges.wind),
+            ],
             ground_collision: self.ground_collision,
             accumulate: self.accumulate,
             splash: self.splash,
+            cell_size: parse(&self.cell_size, 0.5, ranges.cell_size),
         }
     }
 }
@@ -208,17 +268,28 @@ pub struct ParticlesUiState {
     pub(crate) modal: Option<EmitterRow>,
     /// `true` = alta nueva; `false` = edición del emisor con ese id.
     pub(crate) modal_is_new: bool,
+    /// Borrador confirmado en la modal, esperando a elegir posición en el
+    /// viewport con el ghost. `Some` mantiene el ghost activo.
+    pub(crate) pending_placement: Option<EmitterRow>,
+    /// `true` tras confirmar la modal de SOLO selección (alta nueva en 3D):
+    /// el ghost coloca el emisor y el click abre la modal de propiedades
+    /// (que al confirmar aplica al motor) en vez de crearlo directamente.
+    pub(crate) awaiting_config: bool,
+    /// `true` cuando la modal abierta es el paso de configuración posterior a
+    /// la colocación: al confirmar se envía el comando al motor directamente
+    /// (la posición ya la puso el ghost), sin reabrir el ghost.
+    pub(crate) modal_configure: bool,
 }
 
-/// Preset de valores por material para la alta nueva (coincide con los presets del
-/// motor: `EmitterConfig::{fire_demo,smoke,fog,rain,snow,sand,water,water_cube}`).
+/// Preset de valores por material para la alta nueva. Los emisores coinciden
+/// con los presets del motor; `water_block` solo usa posición y tamaño de celda.
 pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
     let (position, rate, size, life, gravity, drag, turbulence, cohesion) = match material {
         "smoke" => ([0.0, 0.3, 0.0], 90.0, 0.9, 3.8, 1.35, 0.55, 1.2, 0.0),
         "fog" => ([0.0, 1.2, 0.0], 36.0, 2.2, 10.0, 0.0, 0.0, 0.0, 0.0),
         "sand" => ([0.0, 2.0, 0.0], 320.0, 0.05, 4.0, -9.8, 0.6, 0.3, 0.1),
         "water" => ([0.0, 2.0, 0.0], 380.0, 0.06, 3.5, -9.8, 0.35, 0.2, 0.5),
-        "water_cube" => ([0.0, 1.6, 0.0], 0.0, 0.09, 12.0, -9.8, 2.4, 0.0, 0.62),
+        "water_block" => ([0.0, 0.0, 0.0], 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0),
         // fuego
         _ => ([0.0, 0.35, 0.0], 160.0, 0.55, 1.1, -1.9, 0.9, 2.4, 0.0),
     };
@@ -237,14 +308,15 @@ pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
         } else {
             [0.0, 0.0]
         },
-        ground_collision: matches!(material, "sand" | "water" | "water_cube"),
+        ground_collision: matches!(material, "sand" | "water"),
         accumulate: false,
-        splash: matches!(material, "water" | "water_cube"),
+        splash: material == "water",
+        cell_size: 0.5,
     }
 }
 
-/// Qué campos de la modal el kernel usa de verdad para este material.
-/// El resto se muestra bloqueado en el valor del preset.
+/// Qué campos de la modal usa de verdad este material. El resto no se
+/// renderiza en la UI (queda fijado al preset del kernel).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct EmitterFieldMask {
     pub rate: bool,
@@ -257,10 +329,24 @@ pub(crate) struct EmitterFieldMask {
     pub ground_collision: bool,
     pub accumulate: bool,
     pub splash: bool,
+    pub cell_size: bool,
 }
 
 pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
     match material {
+        "water_block" => EmitterFieldMask {
+            rate: false,
+            gravity: false,
+            drag: false,
+            turbulence: false,
+            cohesion: false,
+            ground_y: false,
+            wind: false,
+            ground_collision: false,
+            accumulate: false,
+            splash: false,
+            cell_size: true,
+        },
         "fog" => EmitterFieldMask {
             rate: true,
             gravity: false,
@@ -272,6 +358,7 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             ground_collision: false,
             accumulate: false,
             splash: false,
+            cell_size: false,
         },
         "sand" => EmitterFieldMask {
             rate: true,
@@ -284,6 +371,7 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             ground_collision: true,
             accumulate: false,
             splash: false,
+            cell_size: false,
         },
         "water" => EmitterFieldMask {
             rate: true,
@@ -296,18 +384,7 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             ground_collision: true,
             accumulate: false,
             splash: true,
-        },
-        "water_cube" => EmitterFieldMask {
-            rate: false,
-            gravity: true,
-            drag: true,
-            turbulence: false,
-            cohesion: true,
-            ground_y: true,
-            wind: false,
-            ground_collision: true,
-            accumulate: false,
-            splash: true,
+            cell_size: false,
         },
         // fuego y humo: flotabilidad, drag, curl y viento. Sin suelo ni cohesión.
         _ => EmitterFieldMask {
@@ -321,6 +398,210 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             ground_collision: false,
             accumulate: false,
             splash: false,
+            cell_size: false,
+        },
+    }
+}
+
+/// Límites de un campo numérico de la modal. Los sliders no pueden salir del
+/// rango y los comandos se acotan al confirmar aunque el borrador venga de un
+/// snapshot antiguo o manipulado.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FieldRange {
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+}
+
+impl FieldRange {
+    pub(crate) fn clamp(self, value: f32) -> f32 {
+        value.clamp(self.min, self.max)
+    }
+
+    /// Decimales que muestra el slider para este paso (0.005 → 3).
+    pub(crate) fn decimals(self) -> usize {
+        if self.step >= 1.0 {
+            0
+        } else if self.step >= 0.1 {
+            1
+        } else if self.step >= 0.01 {
+            2
+        } else {
+            3
+        }
+    }
+}
+
+/// Posición del emisor: sin límites (el ghost puede colocar en cualquier sitio).
+const UNBOUNDED: FieldRange = FieldRange {
+    min: f32::NEG_INFINITY,
+    max: f32::INFINITY,
+    step: 0.0,
+};
+
+/// Rangos seguros por material para los sliders de la modal. La cantidad no
+/// sube la capacidad del pool (la fija el preset del motor), pero el tamaño sí
+/// dispara el overdraw: por eso los topes de `size` son los más estrictos.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct EmitterRanges {
+    pub rate: FieldRange,
+    pub size: FieldRange,
+    pub life: FieldRange,
+    pub gravity: FieldRange,
+    pub drag: FieldRange,
+    pub turbulence: FieldRange,
+    pub cohesion: FieldRange,
+    pub ground_y: FieldRange,
+    pub wind: FieldRange,
+    pub cell_size: FieldRange,
+}
+
+pub(crate) fn field_ranges(material: &str) -> EmitterRanges {
+    let (rate, size, life) = match material {
+        "smoke" => (
+            FieldRange {
+                min: 20.0,
+                max: 180.0,
+                step: 5.0,
+            },
+            FieldRange {
+                min: 0.3,
+                max: 1.5,
+                step: 0.05,
+            },
+            FieldRange {
+                min: 0.5,
+                max: 8.0,
+                step: 0.1,
+            },
+        ),
+        "fog" => (
+            FieldRange {
+                min: 10.0,
+                max: 70.0,
+                step: 2.0,
+            },
+            FieldRange {
+                min: 0.5,
+                max: 3.0,
+                step: 0.1,
+            },
+            FieldRange {
+                min: 2.0,
+                max: 24.0,
+                step: 0.5,
+            },
+        ),
+        "sand" => (
+            FieldRange {
+                min: 40.0,
+                max: 600.0,
+                step: 10.0,
+            },
+            FieldRange {
+                min: 0.01,
+                max: 0.1,
+                step: 0.005,
+            },
+            FieldRange {
+                min: 0.5,
+                max: 8.0,
+                step: 0.1,
+            },
+        ),
+        "water" => (
+            FieldRange {
+                min: 40.0,
+                max: 600.0,
+                step: 10.0,
+            },
+            FieldRange {
+                min: 0.01,
+                max: 0.1,
+                step: 0.005,
+            },
+            FieldRange {
+                min: 0.5,
+                max: 6.0,
+                step: 0.1,
+            },
+        ),
+        // Agua de bloques: el autómata no tiene emisión ni tamaño de partícula;
+        // sus campos se fijan al preset y solo se edita `cell_size`.
+        "water_block" => (
+            FieldRange {
+                min: 0.0,
+                max: 0.0,
+                step: 0.0,
+            },
+            FieldRange {
+                min: 0.5,
+                max: 0.5,
+                step: 0.0,
+            },
+            FieldRange {
+                min: 0.0,
+                max: 0.0,
+                step: 0.0,
+            },
+        ),
+        // fuego
+        _ => (
+            FieldRange {
+                min: 40.0,
+                max: 400.0,
+                step: 5.0,
+            },
+            FieldRange {
+                min: 0.15,
+                max: 1.0,
+                step: 0.05,
+            },
+            FieldRange {
+                min: 0.3,
+                max: 3.0,
+                step: 0.05,
+            },
+        ),
+    };
+    EmitterRanges {
+        rate,
+        size,
+        life,
+        gravity: FieldRange {
+            min: -20.0,
+            max: 10.0,
+            step: 0.1,
+        },
+        drag: FieldRange {
+            min: 0.0,
+            max: 3.0,
+            step: 0.05,
+        },
+        turbulence: FieldRange {
+            min: 0.0,
+            max: 6.0,
+            step: 0.1,
+        },
+        cohesion: FieldRange {
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
+        },
+        ground_y: FieldRange {
+            min: -10.0,
+            max: 10.0,
+            step: 0.1,
+        },
+        wind: FieldRange {
+            min: -6.0,
+            max: 6.0,
+            step: 0.1,
+        },
+        cell_size: FieldRange {
+            min: 0.25,
+            max: 2.0,
+            step: 0.05,
         },
     }
 }
@@ -425,6 +706,7 @@ impl ParticlesUiState {
                     ground_collision: get_bool("ground_collision"),
                     accumulate: get_bool("accumulate"),
                     splash: get_bool("splash"),
+                    cell_size: get_f("cell_size", 0.5),
                 });
                 row.id = saved
                     .get("id")
@@ -437,11 +719,20 @@ impl ParticlesUiState {
         }
     }
 
-    /// Valor del comando `add_particle_emitter` (upsert: alta o edición del mismo id).
+    /// Comando de alta para la fila: emisores GPU o fuente de agua de bloques
+    /// (upsert por id en ambos casos).
     pub(crate) fn emitter_command(&self, row: &EmitterRow) -> serde_json::Value {
         let mut row = row.clone();
         row.pin_inapplicable_fields();
         let values = row.values();
+        if row.material == "water_block" {
+            return json!({
+                "cmd": "add_water_source",
+                "id": row.id,
+                "position": values.position,
+                "cell_size": values.cell_size,
+            });
+        }
         json!({
             "cmd": "add_particle_emitter",
             "id": row.id,
@@ -631,31 +922,35 @@ pub(super) fn particles_body(
         ),
         theme::OUTLINE_SECONDARY,
     ) {
-        let mut row = EmitterRow::from_values(&preset_values("fire"));
-        row.material = "fire";
-        row.pin_inapplicable_fields();
-        state.modal = Some(row);
+        state.modal = Some(EmitterRow::new_draft("fire"));
         state.modal_is_new = true;
     }
 
     ui.add_space(3.0);
+    // Nombre-número estable: cada material numera sus emisores por orden de la
+    // lista («Fuego 1», «Agua 2»…). El id real es interno (botón de copiar).
+    let mut numbers: std::collections::HashMap<&'static str, u32> = Default::default();
     for row in &mut state.emitters {
         let material_label = MATERIAL_OPTIONS
             .iter()
             .find(|(wire, _, _)| *wire == row.material)
             .map(|option| tr(locale, option.1, option.2))
             .unwrap_or(row.material);
+        let number = numbers
+            .entry(row.material)
+            .and_modify(|n| *n += 1)
+            .or_insert(1);
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(8, 6))
             .corner_radius(4)
             .stroke(egui::Stroke::new(1.0, theme::BORDER))
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
-                    let name_width = (ui.available_width() - 46.0).max(0.0);
+                    let name_width = (ui.available_width() - 64.0).max(0.0);
                     ui.add_sized(
                         [name_width, 18.0],
                         egui::Label::new(
-                            RichText::new(format!("{material_label} · id {}", row.id % UI_ID_BASE))
+                            RichText::new(format!("{material_label} {number}"))
                                 .size(12.0)
                                 .color(theme::TEXT),
                         )
@@ -670,7 +965,20 @@ pub(super) fn particles_body(
                             theme::DANGER,
                             tr(locale, "Eliminar", "Remove"),
                         ) {
-                            actions.push(WorldAction::RemoveParticleEmitter(row.id));
+                            if row.material == "water_block" {
+                                actions.push(WorldAction::RemoveWaterSource(row.id));
+                            } else {
+                                actions.push(WorldAction::RemoveParticleEmitter(row.id));
+                            }
+                        }
+                        if widgets::icon_action(
+                            ui,
+                            icons::COPY,
+                            18.0,
+                            theme::INFO,
+                            tr(locale, "Copiar id", "Copy id"),
+                        ) {
+                            ui.ctx().copy_text(row.id.to_string());
                         }
                         if widgets::icon_action(
                             ui,
@@ -705,7 +1013,29 @@ pub(crate) fn next_ui_id(state: &mut ParticlesUiState) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{EmitterRow, field_mask, preset_values};
+    use super::{EmitterRow, FieldRange, field_mask, field_ranges, preset_values};
+
+    fn assert_inside(label: &str, value: f32, range: FieldRange) {
+        assert!(
+            value >= range.min && value <= range.max,
+            "{label}: {value} fuera de [{}, {}]",
+            range.min,
+            range.max
+        );
+    }
+
+    #[test]
+    fn ghost_position_overwrites_the_position_fields() {
+        let values = preset_values("smoke");
+        let mut row = EmitterRow::from_values(&values);
+        row.material = "smoke";
+        row.set_position([3.0, 0.5, -2.0]);
+        assert_eq!(row.position[0].parsed(), Some(3.0));
+        assert_eq!(row.position[1].parsed(), Some(0.5));
+        assert_eq!(row.position[2].parsed(), Some(-2.0));
+        // El resto de parámetros no se tocan.
+        assert_eq!(row.material, "smoke");
+    }
 
     #[test]
     fn fire_locks_ground_flags_and_cohesion() {
@@ -738,24 +1068,30 @@ mod tests {
     }
 
     #[test]
-    fn water_cube_is_listed_and_keeps_splash() {
+    fn water_block_replaces_the_water_cube_splasher() {
+        let options = super::MATERIAL_OPTIONS;
+        assert!(options.iter().any(|(wire, es, en)| *wire == "water_block"
+            && *es == "Agua (bloques)"
+            && *en == "Water blocks"));
+        assert!(!options.iter().any(|(wire, _, _)| *wire == "water_cube"));
+        let mask = field_mask("water_block");
+        assert!(mask.cell_size);
         assert!(
-            super::MATERIAL_OPTIONS
-                .iter()
-                .any(|(wire, es, en)| *wire == "water_cube"
-                    && *es == "Cubo de agua"
-                    && *en == "Water cube")
+            !mask.rate && !mask.gravity && !mask.splash && !mask.ground_collision && !mask.cohesion
         );
-        let mask = field_mask("water_cube");
-        assert!(mask.splash && mask.ground_collision && mask.cohesion && mask.gravity);
-        assert!(!mask.turbulence && !mask.wind && !mask.accumulate);
-        let values = preset_values("water_cube");
-        assert!(!mask.rate);
-        assert_eq!(values.position, [0.0, 1.6, 0.0]);
+        let values = preset_values("water_block");
+        assert_eq!(values.cell_size, 0.5);
         assert_eq!(values.rate, 0.0);
-        assert_eq!(values.cohesion, 0.62);
-        assert!(values.splash && values.ground_collision);
-        assert!(!values.accumulate);
+    }
+
+    #[test]
+    fn water_block_row_sends_the_water_source_command() {
+        let state = super::ParticlesUiState::default();
+        let row = EmitterRow::new_draft("water_block");
+        let command = state.emitter_command(&row);
+        assert_eq!(command["cmd"], "add_water_source");
+        assert_eq!(command["cell_size"], 0.5);
+        assert_eq!(command["position"], serde_json::json!([0.0, 0.0, 0.0]));
     }
 
     #[test]
@@ -785,5 +1121,56 @@ mod tests {
         assert_eq!(row.gravity.parsed(), Some(-4.0));
         assert!(!row.splash);
         assert_eq!(row.turbulence.parsed(), Some(0.2));
+    }
+
+    #[test]
+    fn safe_ranges_contain_every_preset() {
+        for (material, _, _) in super::MATERIAL_OPTIONS {
+            let values = preset_values(material);
+            let ranges = field_ranges(material);
+            assert_inside(material, values.rate, ranges.rate);
+            assert_inside(material, values.size, ranges.size);
+            assert_inside(material, values.life, ranges.life);
+            assert_inside(material, values.gravity, ranges.gravity);
+            assert_inside(material, values.drag, ranges.drag);
+            assert_inside(material, values.turbulence, ranges.turbulence);
+            assert_inside(material, values.cohesion, ranges.cohesion);
+            assert_inside(material, values.ground_y, ranges.ground_y);
+            assert_inside(material, values.wind[0], ranges.wind);
+            assert_inside(material, values.wind[1], ranges.wind);
+            assert_inside(material, values.cell_size, ranges.cell_size);
+        }
+    }
+
+    #[test]
+    fn command_clamps_out_of_range_drafts() {
+        let state = super::ParticlesUiState::default();
+        let mut row = EmitterRow::new_draft("smoke");
+        row.size.force(50.0);
+        row.rate.force(100_000.0);
+        row.life.force(1_000.0);
+        row.turbulence.force(-5.0);
+
+        let ranges = field_ranges("smoke");
+        let command = state.emitter_command(&row);
+        assert_eq!(command["size"].as_f64(), Some(ranges.size.max as f64));
+        assert_eq!(command["rate"].as_f64(), Some(ranges.rate.max as f64));
+        assert_eq!(command["life"].as_f64(), Some(ranges.life.max as f64));
+        assert_eq!(
+            command["turbulence"].as_f64(),
+            Some(ranges.turbulence.min as f64)
+        );
+    }
+
+    #[test]
+    fn water_block_command_clamps_cell_size() {
+        let state = super::ParticlesUiState::default();
+        let mut row = EmitterRow::new_draft("water_block");
+        row.cell_size.force(999.0);
+        let command = state.emitter_command(&row);
+        assert_eq!(
+            command["cell_size"].as_f64(),
+            Some(field_ranges("water_block").cell_size.max as f64)
+        );
     }
 }
