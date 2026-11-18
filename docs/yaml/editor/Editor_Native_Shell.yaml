@@ -9,7 +9,7 @@
 #   - docs/yaml/gameplay/Blueprints_Model_2D.yaml / _3D.yaml (quick build)
 
 version: 1
-updated: 2026-11-16
+updated: 2026-11-17
 
 window:
   single_window: true
@@ -141,17 +141,41 @@ sidebar_native:
       click sobre una flecha activa `GizmoTranslate(eje)` y no el arrastre libre
       de la entidad. `u.flags` también resalta el hover y el eje activo.
     viewport_navigation: |
-      En modo edición, mantener RMB dentro del viewport oculta y confina el
-      cursor (`CursorGrabMode::Confined` + `ClipCursor`) igual que en play; el
-      giro usa el movimiento relativo del `DeviceEvent::MouseMotion` para no
-      depender de la posición absoluta. Al soltar RMB se libera el clip y vuelve
-      a aparecer el cursor. Un click derecho sin arrastre sigue abriendo las
-      propiedades de la entidad. Si se pierde el foco con RMB pulsado, se libera
-      el cursor y se descarta el estado del botón.
+      En modo edición, mantener RMB dentro del viewport oculta el cursor y lo
+      captura con `CursorGrabMode::Locked` (no con `Confined`: en Windows,
+      `Confined` + cursor oculto hace que winit recorte a un rect 1×1 en el
+      centro de la ventana y Windows arrastre ahí el cursor, de modo que el click
+      derecho se perdía). `Locked` recorta en la posición actual y no lo mueve.
+      Si `Locked` falla se cae a `Confined` sin ocultar el cursor, para no
+      repetir el salto. El giro usa el movimiento relativo del
+      `DeviceEvent::MouseMotion`; como con `Locked` el cursor no se desplaza,
+      `handle_device_motion` acumula esos deltas para distinguir la órbita de un
+      click (mismo umbral que `CursorMoved`). Al soltar RMB se libera el clip y
+      vuelve a aparecer el cursor. Un click derecho sin arrastre abre las
+      propiedades de la entidad o del emisor bajo el cursor. Si se pierde el
+      foco con RMB pulsado, se libera el cursor y se descarta el estado del
+      botón y del click armado.
     controls_hint: |
       `frame.rs` pinta permanentemente en la parte baja del viewport (modo
       edición, no play) la ayuda: «Clic en la ventana del motor · WASD mover ·
       Espacio subir · C bajar · Botón derecho mirar» (traducida al inglés).
+    particle_emitter_ghost: |
+      La modal del emisor ya no muestra los campos X/Y/Z: su botón dice
+      «Posicionar en el mundo» / «Place in world». Al pulsarlo se guarda el
+      borrador en `pending_placement` y se cierra la ventana; entonces
+      `sync_particle_window` activa `set_active_tool / place_particle_emitter`:
+      un cubo cian semitransparente sigue el raycast del cursor por el suelo.
+      Un click emite `particle_emitter_placed` con la posición; el editor aplica
+      `EmitterRow::set_position`, envía `add_particle_emitter`, actualiza la fila
+      y retira el ghost. Escape cancela la colocación pendiente.
+    particle_emitter_sliders: |
+      Las propiedades del emisor usan sliders (`widgets::range_slider`) con
+      `field_ranges(material)` en `sidebar_right/particles.rs`: topes de emisión,
+      tamaño y vida por material para que un valor extremo no dispare el overdraw
+      de la GPU. Los campos que el kernel ignora para ese material ya no se
+      renderizan (antes aparecían bloqueados) y se quedan en el valor del preset.
+      `EmitterRow::values()` vuelve a acotar al confirmar, así que ni un snapshot
+      antiguo puede enviar valores fuera de rango.
     play_exit_hint: |
       En play, el mismo sistema de mensajes pinta abajo a la izquierda
       «ESC para salir del modo juego» / «ESC to exit play mode». Sustituye a
