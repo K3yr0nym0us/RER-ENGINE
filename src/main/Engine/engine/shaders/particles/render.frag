@@ -134,15 +134,15 @@ void main() {
         rgb = v_color.rgb * (shape + rim * 0.55);
         alpha = v_color.a * shape;
     } else if (mat == 8u) {
-        // Corona del sol: chispa con núcleo candente y borde suave; se suma al HDR.
+        // Sol: único halo con núcleo candente y caída suave; se suma al HDR.
         float d = length(v_uv);
         if (d > 1.0) {
             discard;
         }
-        float shape = smoothstep(1.0, 0.0, d);
-        float core = smoothstep(0.45, 0.0, d);
-        rgb = v_color.rgb * (shape * 0.85 + core * 0.9);
-        alpha = v_color.a * shape;
+        float glow = pow(max(1.0 - d, 0.0), 2.2);
+        float core = pow(max(1.0 - d * 2.2, 0.0), 2.0);
+        rgb = v_color.rgb * (glow * 1.15 + core * 1.45);
+        alpha = v_color.a * glow;
     } else if (mat == 1u) {
         float shape = volute_shape(v_uv, v_spin_size.x);
         if (shape <= 0.001) {

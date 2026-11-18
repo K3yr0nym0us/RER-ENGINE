@@ -481,3 +481,33 @@ pub fn write_lines(gpu: &SharedGpu, buffer: &mut GizmoBuffer, verts: &[GizmoVert
     buffer.vertex_count = verts.len() as u32;
     buffer.lines = true;
 }
+
+/// Escribe vértices en un `GizmoBuffer` reutilizable (triangle-list). Lo usa
+/// el resaltado de hover: un disco relleno en vez de un anillo de líneas.
+pub fn write_triangles(gpu: &SharedGpu, buffer: &mut GizmoBuffer, verts: &[GizmoVertex]) {
+    let empty = [0u8; std::mem::size_of::<GizmoVertex>()];
+    let data: &[u8] = if verts.is_empty() {
+        &empty
+    } else {
+        bytemuck::cast_slice(verts)
+    };
+    if buffer.vertex_buffer.size < data.len() as u64 {
+        buffer.vertex_buffer = match gpu.create_buffer_with_data(
+            data,
+            vk::BufferUsageFlags::VERTEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
+            MemoryLocation::CpuToGpu,
+            "gizmo-tris-vbo",
+        ) {
+            Ok(buffer) => buffer,
+            Err(error) => {
+                log::error!("[gizmo] no se pudo recrear el buffer de triángulos: {error}");
+                return;
+            }
+        };
+    } else if let Err(error) = buffer.vertex_buffer.write(0, data) {
+        log::error!("[gizmo] no se pudo actualizar el buffer de triángulos: {error}");
+        return;
+    }
+    buffer.vertex_count = verts.len() as u32;
+    buffer.lines = false;
+}

@@ -120,31 +120,32 @@ impl EmitterConfig {
         }
     }
 
-    /// Corona del sol: chispas que nacen en TODA la esfera y se expanden hacia
-    /// fuera. Blanco cálido (mezcla de blanco y amarillo, más cerca del primero)
-    /// que se desvanece a amarillo; se suma al HDR con blend aditivo.
+    /// Halo del sol: UNA sola partícula grande que no se recicla ni envejece.
+    /// El kernel la ancla al icono cada frame, así que sigue al sol sin crear
+    /// ni destruir chispas. Blanco cálido (mezcla de blanco y amarillo, más
+    /// cerca del primero) con blend aditivo sobre el HDR.
     pub(crate) fn sun(origin: [f32; 3], radius: f32) -> Self {
         Self {
             material: MaterialKind::Sun,
             origin,
             radius,
-            // `velocity.y` es la velocidad radial en el kernel del sol.
-            velocity: [0.0, 0.42, 0.0],
-            spread: 0.16,
-            size: 0.16,
-            size_variation: 0.5,
-            life: 1.15,
-            life_variation: 0.4,
-            rate: 150.0,
-            max_particles: 320,
-            color_start: [1.0, 0.98, 0.88, 0.85],
-            color_end: [1.0, 0.87, 0.48, 0.0],
+            velocity: [0.0, 0.0, 0.0],
+            spread: 0.0,
+            size: radius * 6.0,
+            size_variation: 0.0,
+            // Vida "infinita": el kernel no la envejece ni la descarta.
+            life: 1.0e9,
+            life_variation: 0.0,
+            rate: 0.0,
+            max_particles: 8,
+            color_start: [1.0, 0.95, 0.72, 1.0],
+            color_end: [1.0, 0.95, 0.72, 1.0],
             gravity: 0.0,
-            drag: 1.1,
-            turbulence: 0.35,
+            drag: 0.0,
+            turbulence: 0.0,
             cohesion: 0.0,
             ground_y: 0.0,
-            spin: 1.2,
+            spin: 0.0,
             wind: [0.0, 0.0],
             volume: [0.0, 0.0, 0.0],
             follow_camera: false,
@@ -156,7 +157,7 @@ impl EmitterConfig {
             splash: false,
             bounciness: 0.0,
             friction: 0.0,
-            size_end: 0.05,
+            size_end: 1.0,
             stretch: 0.0,
         }
     }
@@ -785,6 +786,7 @@ impl ParticleSystem {
         {
             emitter.config.origin = origin;
             emitter.config.radius = radius;
+            emitter.config.size = radius * 6.0;
         } else {
             let mut emitter = Emitter::new(SUN_EMITTER_ID, EmitterConfig::sun(origin, radius));
             // Si el sol se recreó tras limpiar la escena, el pool puede conservar
@@ -992,7 +994,13 @@ impl ParticleSystem {
             .map(|emitter| {
                 let config = &emitter.config;
                 let max_particles = config.max_particles.max(MIN_PARTICLES);
-                let (spawn, next_spawn, origin) = if config.material == MaterialKind::WaterCube {
+                let (spawn, next_spawn, origin) = if config.material == MaterialKind::Sun {
+                    // Un único halo persistente: se emite una vez y nunca se
+                    // recicla. El kernel lo ancla al sol y no lo envejece.
+                    let spawn = if emitter.burst_done { 0 } else { 1 };
+                    emitter.burst_done = true;
+                    (spawn, 0, config.origin)
+                } else if config.material == MaterialKind::WaterCube {
                     // Un lattice de un golpe, luego 0: no es un lanzador continuo.
                     let lattice = water_cube_lattice_count(config.radius)
                         .min(max_particles.saturating_sub(1));
@@ -1335,6 +1343,20 @@ mod tests {
         let saved = system.export();
         assert!(saved.emitters.is_empty());
         assert!(saved.weather.is_none());
+    }
+
+    #[test]
+    fn sun_emitter_spawns_one_particle_that_never_expires() {
+        let mut system = ParticleSystem::new();
+        system.sync_sun_emitter([1.0, 2.0, 3.0], 0.5);
+
+        let first = system.batches(0.016, [0.0; 3]).remove(0);
+        assert_eq!(first.spawn, 1);
+        assert!(first.params.size_life[2] > 1.0e6);
+
+        let later = system.batches(0.016, [0.0; 3]).remove(0);
+        assert_eq!(later.spawn, 0);
+        assert_eq!(later.reset, 0);
     }
 
     #[test]

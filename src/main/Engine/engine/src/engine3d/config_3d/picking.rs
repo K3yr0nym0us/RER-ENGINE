@@ -4,14 +4,98 @@ use super::*;
 
 /// Radio de agarre en pantalla de un emisor (el mismo para pick y resaltado).
 const EMITTER_PICK_RADIUS_PX: f32 = 28.0;
+/// Mínimo de píxeles para poder agarrar el sol cuando está muy lejos.
+const SUN_PICK_MIN_RADIUS_PX: f32 = 14.0;
+/// Azul del hover de modelos, con alfa para que el disco sea translúcido.
+const HOVER_FILL: [f32; 4] = [0.12, 0.60, 0.88, 0.30];
+
+/// Disco relleno en el plano de la cámara para marcar la zona clickeable.
+/// Un único color en todos los vértices: se ve como un área homogénea y no
+/// como el anillo de líneas que usábamos antes para los emisores.
+fn filled_hover_disc(
+    origin: GlamVec3,
+    right: GlamVec3,
+    up: GlamVec3,
+    radius: f32,
+) -> Vec<crate::engine3d::gizmo::GizmoVertex> {
+    use crate::engine3d::gizmo::GizmoVertex;
+
+    const SEGMENTS: usize = 48;
+    let mut verts = Vec::with_capacity(SEGMENTS * 3);
+    let point = |angle: f32| origin + (right * angle.cos() + up * angle.sin()) * radius;
+    for segment in 0..SEGMENTS {
+        let a = point(std::f32::consts::TAU * segment as f32 / SEGMENTS as f32);
+        let b = point(std::f32::consts::TAU * (segment + 1) as f32 / SEGMENTS as f32);
+        for p in [origin, a, b] {
+            verts.push(GizmoVertex {
+                position: p.to_array(),
+                color: HOVER_FILL,
+            });
+        }
+    }
+    verts
+}
 
 impl State {
     pub(crate) fn entity_at_pixel(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
         self.ray_cast(pixel_x, pixel_y)
     }
 
+    /// Círculo en mundo que coincide con el halo de la partícula del sol. Lo
+    /// comparten el pick y el resaltado de hover para que no se desalineen.
+    fn sun_hover_circle(&self) -> Option<(GlamVec3, f32)> {
+        let id = self.sun_entity?;
+        if self.world.get::<NonSelectable>(id).is_some() {
+            return None;
+        }
+        let transform = self.world.get::<Transform>(id)?;
+        let (sx, _) = self.project_to_screen(transform.position)?;
+
+        let scale = transform
+            .scale
+            .x
+            .abs()
+            .min(transform.scale.y.abs())
+            .min(transform.scale.z.abs());
+        let mut radius = ((scale * 0.5 + 0.06).max(0.1)) * 4.5;
+        let right = self
+            .camera_view_matrix()
+            .transpose()
+            .x_axis
+            .truncate()
+            .normalize();
+        let (sx_right, _) = self.project_to_screen(transform.position + right * radius)?;
+        // Si está lejos, el halo puede quedar por debajo del mínimo de agarre.
+        let px_per_m = (sx_right - sx).abs() / radius.max(1.0e-3);
+        radius = radius.max(SUN_PICK_MIN_RADIUS_PX / px_per_m.max(1.0e-3));
+        Some((transform.position, radius))
+    }
+
+    /// El sol no tiene malla: su zona clickeable es el halo de la partícula.
+    pub(crate) fn sun_at_pixel(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
+        let id = self.sun_entity?;
+        let (origin, radius) = self.sun_hover_circle()?;
+        let (sx, sy) = self.project_to_screen(origin)?;
+        let right = self
+            .camera_view_matrix()
+            .transpose()
+            .x_axis
+            .truncate()
+            .normalize();
+        let (sx_right, _) = self.project_to_screen(origin + right * radius)?;
+        let radius_px = (sx_right - sx).abs().max(SUN_PICK_MIN_RADIUS_PX);
+
+        let dx = sx - pixel_x;
+        let dy = sy - pixel_y;
+        (dx * dx + dy * dy <= radius_px * radius_px).then_some(id)
+    }
+
     pub(crate) fn ray_cast(&self, pixel_x: f32, pixel_y: f32) -> Option<EntityId> {
         use glam::Vec4;
+
+        if let Some(id) = self.sun_at_pixel(pixel_x, pixel_y) {
+            return Some(id);
+        }
 
         let w = self.size.width as f32;
         let h = self.size.height as f32;
@@ -82,7 +166,9 @@ impl State {
                         send_event(&EngineEvent::MultiSelectChanged {
                             ids: self.selected_entities.clone(),
                         });
-                        self.sync_editor_camera_focus();
+                        if self.sun_entity != Some(entity) {
+                            self.sync_editor_camera_focus();
+                        }
                         return;
                     } else {
                         self.selected_entities.push(entity);
@@ -108,16 +194,26 @@ impl State {
                         ids: self.selected_entities.clone(),
                     });
                 }
-                self.sync_editor_camera_focus();
+                // El sol es un icono lejano: seleccionarlo no debe recentrar la
+                // órbita (parece que el sol se acerca a la cámara). El gizmo es
+                // quien debe moverlo.
+                if self.sun_entity != Some(entity) {
+                    self.sync_editor_camera_focus();
+                }
             }
             None => {
                 if !self.ctrl_held
                     && (self.selected_entity.is_some() || !self.selected_entities.is_empty())
                 {
+                    let was_sun = self
+                        .sun_entity
+                        .is_some_and(|id| self.selected_entity == Some(id));
                     self.selected_entity = None;
                     self.selected_entities.clear();
                     send_event(&EngineEvent::EntityDeselected);
-                    self.sync_editor_camera_focus();
+                    if !was_sun {
+                        self.sync_editor_camera_focus();
+                    }
                 }
             }
         }
@@ -166,10 +262,24 @@ impl State {
         self.pick_entity(pixel_x, pixel_y);
     }
 
-    /// Anillo (en el plano de la cámara) que delimita exactamente la zona
-    /// clickeable del emisor bajo el cursor, con el azul de hover de modelos.
-    pub(crate) fn emitter_hover_overlay_verts(&self) -> Vec<crate::engine3d::gizmo::GizmoVertex> {
-        use crate::engine3d::gizmo::GizmoVertex;
+    /// Zona de hover del sol o del emisor bajo el cursor: un disco relleno y
+    /// translúcido del mismo azul que resalta los modelos 3D, no un anillo de
+    /// líneas. El radio es exactamente el que usa el pick.
+    pub(crate) fn hover_highlight_overlay_verts(&self) -> Vec<crate::engine3d::gizmo::GizmoVertex> {
+        if self.preview_playing || self.player_ui_edit_active {
+            return Vec::new();
+        }
+        let view_t = self.camera_view_matrix().transpose();
+        let right = view_t.x_axis.truncate().normalize();
+        let up = view_t.y_axis.truncate().normalize();
+
+        if self
+            .hovered_entity
+            .is_some_and(|id| self.sun_entity == Some(id))
+            && let Some((origin, radius)) = self.sun_hover_circle()
+        {
+            return filled_hover_disc(origin, right, up, radius);
+        }
 
         let Some(id) = self.hovered_emitter else {
             return Vec::new();
@@ -184,11 +294,6 @@ impl State {
             return Vec::new();
         };
         let origin = GlamVec3::from(origin);
-        let view_t = self.camera_view_matrix().transpose();
-        let right = view_t.x_axis.truncate().normalize();
-        let up = view_t.y_axis.truncate().normalize();
-        // El radio de pick es en píxeles: lo convertimos a metros a la distancia
-        // del emisor para que el anillo coincida con la zona realmente clickeable.
         let Some((sx, _)) = self.project_to_screen(origin) else {
             return Vec::new();
         };
@@ -197,38 +302,7 @@ impl State {
         };
         let px_per_m = (sx_right - sx).abs().max(1.0e-3);
         let radius = (EMITTER_PICK_RADIUS_PX / px_per_m).clamp(0.05, 12.0);
-
-        const SEGMENTS: usize = 48;
-        const COLOR: [f32; 4] = [0.12, 0.60, 0.88, 0.95];
-        let mut verts = Vec::with_capacity(SEGMENTS * 2 + 8);
-        let point = |angle: f32| origin + (right * angle.cos() + up * angle.sin()) * radius;
-        for segment in 0..SEGMENTS {
-            let a = point(std::f32::consts::TAU * segment as f32 / SEGMENTS as f32);
-            let b = point(std::f32::consts::TAU * (segment + 1) as f32 / SEGMENTS as f32);
-            verts.push(GizmoVertex {
-                position: a.to_array(),
-                color: COLOR,
-            });
-            verts.push(GizmoVertex {
-                position: b.to_array(),
-                color: COLOR,
-            });
-        }
-        // Cuatro marcas cortas hacia dentro: se entiende que es un objetivo.
-        for angle in [0.0_f32, 90.0, 180.0, 270.0] {
-            let t = angle.to_radians();
-            let outer = point(t);
-            let inner = origin + (right * t.cos() + up * t.sin()) * (radius * 0.78);
-            verts.push(GizmoVertex {
-                position: outer.to_array(),
-                color: COLOR,
-            });
-            verts.push(GizmoVertex {
-                position: inner.to_array(),
-                color: COLOR,
-            });
-        }
-        verts
+        filled_hover_disc(origin, right, up, radius)
     }
 
     pub fn pick_gizmo_axis(&self, pixel_x: f32, pixel_y: f32) -> Option<usize> {
@@ -384,5 +458,17 @@ impl State {
             ),
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hover_disc_is_filled_and_uses_one_uniform_color() {
+        let verts = filled_hover_disc(GlamVec3::ZERO, GlamVec3::X, GlamVec3::Y, 2.0);
+        assert_eq!(verts.len(), 48 * 3);
+        assert!(verts.iter().all(|vertex| vertex.color == HOVER_FILL));
     }
 }

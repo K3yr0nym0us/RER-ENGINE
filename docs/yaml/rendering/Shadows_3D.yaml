@@ -32,8 +32,9 @@ principle:
     (mayor = sombras más oscuras), con paso 0.001 y display de 3 decimales (0.900 → 1.000).
     El peso del IBL de sondas ya no comparte ese campo: viaja en `jitter.z`.
   caster_batches: |
-    `filter_shadow_cast_batches` excluye el suelo, el icono del sol y el fondo: solo
-    proyectan sombra las entidades de escena (el terreno sí proyecta sobre el suelo).
+    `filter_shadow_cast_batches` excluye el suelo, el icono del sol (por id o por
+    nombre) y el fondo: solo proyectan sombra las entidades de escena (el terreno
+    sí proyecta sobre el suelo).
     `prepare_uploads` sube las instancias de ese SUBCONJUNTO a su propio bloque y guarda
     `shadow_offsets`; usar los `static_offsets` del forward hacía que el shadow pass leyera
     matrices de otras entidades, con sombras gigantes y desalineadas del sol.

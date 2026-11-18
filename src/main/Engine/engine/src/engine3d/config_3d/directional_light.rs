@@ -133,11 +133,35 @@ impl State {
         );
     }
 
+    /// Tras mover el sol con el gizmo lo devuelve a la esfera del cielo: su
+    /// distancia al centro es fija, así que el arrastre solo cambia la
+    /// dirección de la luz. Evita que el sol (y su halo) se acerque a la cámara.
+    pub(crate) fn constrain_sun_to_sky(&mut self) {
+        let Some(id) = self.sun_entity else {
+            return;
+        };
+        let center = self.directional_light_scene_center();
+        let target = self.sun_orbit_distance();
+        let Some(transform) = self.world.get::<Transform>(id) else {
+            return;
+        };
+        let offset = transform.position - center;
+        let dir = if offset.length_squared() > 1e-8 {
+            offset.normalize()
+        } else {
+            DEFAULT_LIGHT_DIR.normalize()
+        };
+        if let Some(transform) = self.world.get_mut::<Transform>(id) {
+            transform.position = center + dir * target;
+        }
+        self.sync_directional_light_from_sun();
+    }
+
     /// Misma posición que `ensure_default_sun` / plantilla FP al arrancar sin `.save`.
     pub(crate) fn align_editor_sun_to_default_position(&mut self) {
         let pos = self.default_sun_position();
         if let Some(id) = self.sun_entity {
-            self.apply_sun_icon_visual(id);
+            self.clear_sun_visual(id);
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.position = pos;
                 t.scale = Vec3::splat(1.0);
@@ -295,6 +319,8 @@ impl State {
         tex_idx
     }
 
+    /// Malla de la esfera/icono: la usan las pelotas físicas. El sol ya no la
+    /// usa: su única imagen es la partícula de halo.
     fn apply_sun_icon_visual(&mut self, id: crate::engine3d::ecs::EntityId) {
         let mesh_idx = self.sun_icon_mesh_idx();
         let tex_idx = self.sun_icon_texture_idx();
@@ -306,12 +332,22 @@ impl State {
         }
     }
 
-    /// Icono del sol seleccionable con gizmo; sin física. Idempotente al recargar `.save`.
+    /// El sol es una entidad de LUZ: mantiene el `Transform` para la dirección
+    /// de la luz y para el gizmo, pero no tiene geometría. Sin malla no puede
+    /// proyectar sombra ni dibujar la esfera; el destello lo pone el emisor.
+    pub(crate) fn clear_sun_visual(&mut self, id: crate::engine3d::ecs::EntityId) {
+        self.world.remove_component::<MeshComponent>(id);
+        self.world
+            .remove_component::<crate::engine3d::ecs::MeshLocalAabb>(id);
+    }
+
+    /// Entidad de luz del sol: solo `Transform` (dirección + gizmo), sin malla.
+    /// Idempotente al recargar `.save`.
     pub(crate) fn spawn_sun(&mut self, name: &str, position: [f32; 3], scale: [f32; 3]) {
         let label = self
             .resolve_entity_display_name(name, rer_engine_core::editor_defaults::entity_label::SUN);
         if let Some(id) = self.sun_entity {
-            self.apply_sun_icon_visual(id);
+            self.clear_sun_visual(id);
             if let Some(t) = self.world.get_mut::<Transform>(id) {
                 t.position = Vec3::from_array(position);
                 let s = scale.into_iter().fold(f32::INFINITY, f32::min).max(0.15);
@@ -323,7 +359,7 @@ impl State {
         }
 
         let id = self.world.spawn(Some(&label));
-        self.apply_sun_icon_visual(id);
+        self.clear_sun_visual(id);
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);
             let s = scale.into_iter().fold(f32::INFINITY, f32::min).max(0.15);

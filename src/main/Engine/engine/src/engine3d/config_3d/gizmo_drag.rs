@@ -51,7 +51,9 @@ impl State {
         }
 
         if selected_ids.iter().any(|id| self.sun_entity == Some(*id)) {
-            self.sync_directional_light_from_sun();
+            // El sol es una luz direccional: se mantiene en la esfera del cielo
+            // y el gizmo solo cambia su dirección, no su distancia al mundo.
+            self.constrain_sun_to_sky();
         }
         if !self.is_play_controller_active() && sync_camera_focus {
             self.sync_editor_camera_focus();

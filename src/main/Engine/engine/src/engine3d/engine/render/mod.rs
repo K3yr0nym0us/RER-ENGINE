@@ -585,11 +585,11 @@ impl State {
             });
         }
 
-        // Zona clickeable del emisor de partículas bajo el cursor (F5): el mismo
-        // anillo azul de hover que usan los modelos 3D.
+        // Zona clickeable del sol o del emisor bajo el cursor: disco relleno
+        // del azul translúcido de hover, igual que el resaltado de modelos 3D.
         if !self.preview_playing && !self.player_ui_edit_active {
-            let verts = self.emitter_hover_overlay_verts();
-            crate::engine3d::gizmo::write_lines(
+            let verts = self.hover_highlight_overlay_verts();
+            crate::engine3d::gizmo::write_triangles(
                 &self.vulkan,
                 &mut self.emitter_hover_overlay,
                 &verts,
@@ -599,7 +599,7 @@ impl State {
                     vertices: &self.emitter_hover_overlay.vertex_buffer,
                     vertex_count: self.emitter_hover_overlay.vertex_count,
                     uniform: &world_uni_bytes,
-                    lines: true,
+                    lines: false,
                 });
             }
         }

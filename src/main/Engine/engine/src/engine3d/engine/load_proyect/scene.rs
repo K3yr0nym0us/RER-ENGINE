@@ -575,6 +575,9 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
                 state.spawn_sun(&entity.name, entity.position, entity.scale);
                 if let Some(id) = state.sun_entity {
                     apply_full_entity_restore(state, id, &pending, "[Sun]", true, false);
+                    // Un .save antiguo puede traer un modelo visual: el sol es
+                    // solo luz + partícula, nunca una malla 3D.
+                    state.clear_sun_visual(id);
                 }
             }
             "ground" => {

@@ -281,9 +281,15 @@ fn try_promote_left_click_to_entity_drag(
         return;
     }
 
-    if state.selected_entity_at_pixel(press.0, press.1).is_some()
-        && let Some(plane_point) = state.selection_center()
-    {
+    let Some(hit) = state.selected_entity_at_pixel(press.0, press.1) else {
+        return;
+    };
+    // El sol se mueve SOLO con el gizmo: un clic+arrastre sobre su halo no debe
+    // arrastrarlo en el plano de vista (y menos aún al hacer clic para activar).
+    if state.sun_entity == Some(hit) {
+        return;
+    }
+    if let Some(plane_point) = state.selection_center() {
         let plane_normal = state.camera.view_forward();
         if let Some(last_world) =
             state.free_drag_world_point(current.0, current.1, plane_point, plane_normal)
@@ -332,9 +338,6 @@ fn finish_entity_drag_fields(
         }
     }
     clear_entity_drag_fields(entity_drag, entity_drag_start, state);
-    if !state.is_play_controller_active() {
-        state.sync_editor_camera_focus();
-    }
 }
 
 fn try_begin_entity_grab(
@@ -394,9 +397,6 @@ fn finish_entity_grab_confirm(
         }
     }
     state.set_snap_hint_visible(false);
-    if !state.is_play_controller_active() {
-        state.sync_editor_camera_focus();
-    }
 }
 
 // ---------------------------------------------------------------------------

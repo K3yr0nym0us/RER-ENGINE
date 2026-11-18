@@ -148,7 +148,8 @@ sidebar_native:
       selección (`u.axis_start` en `shaders/raster/gizmo.vert`). El hit-test de
       `pick_translate_gizmo_axis` usa el mismo desplazamiento, de modo que el
       click sobre una flecha activa `GizmoTranslate(eje)` y no el arrastre libre
-      de la entidad. `u.flags` también resalta el hover y el eje activo.
+      de la entidad. `u.flags` también resalta el hover y el eje activo. Al soltar
+      el arrastre NO se recentra la cámara en la selección: solo se guarda el undo.
     viewport_navigation: |
       En modo edición, mantener RMB dentro del viewport oculta el cursor y lo
       captura con `CursorGrabMode::Locked` (no con `Confined`: en Windows,
@@ -193,11 +194,21 @@ sidebar_native:
       `EmitterRow::values()` vuelve a acotar al confirmar, así que ni un snapshot
       antiguo puede enviar valores fuera de rango.
     sun_particle_corona: |
-      El icono del sol lleva un emisor reservado (`SUN_EMITTER_ID`) que sigue su
-      posición y escala cada frame. Usa el material `sun` (kind 8): las chispas
-      nacen en toda la esfera —no en un disco— y salen radialmente con mezcla
-      aditiva, blanco cálido que se desvanece a amarillo. No se guarda en el
-      `.save` ni aparece en la lista F5.
+      La entidad del sol es solo un `Transform`: mantiene la dirección de la luz
+      y el gizmo, pero NO tiene malla 3D. Su imagen es un emisor reservado
+      (`SUN_EMITTER_ID`, material `sun` kind 8) con UNA sola partícula grande,
+      emitida una vez y con vida prácticamente infinita. El kernel la ancla al
+      sol y no la envejece: no hay chispas que nazcan ni mueran, solo un halo
+      aditivo blanco cálido (núcleo reforzado, más amarillo) que sigue al sol.
+      Al no tener malla, `ray_cast` lo detecta por el halo proyectado en pantalla:
+      se puede hacer hover, clic y arrastrar con el gizmo como cualquier entidad.
+      El hover dibuja un disco relleno y translúcido del azul de los modelos 3D;
+      los emisores de partículas usan el mismo disco en vez del anillo de líneas.
+      Seleccionarlo NO recentra la cámara ni permite arrastre libre. Ningún
+      arrastre con gizmo recentra la cámara al soltar (comportamiento general);
+      el sol, además, se reproyecta a la esfera del cielo: el gizmo solo cambia
+      la dirección de la luz, nunca su distancia.
+      No se guarda en el `.save` ni aparece en la lista F5.
     play_exit_hint: |
       En play, el mismo sistema de mensajes pinta abajo a la izquierda
       «ESC para salir del modo juego» / «ESC to exit play mode». Sustituye a

@@ -186,7 +186,10 @@ fn entity_skips_shadow_cast(
         || state
             .world
             .get::<crate::engine3d::ecs::NameComponent>(entity_id)
-            .is_some_and(|name| name.name.eq_ignore_ascii_case("ground"))
+            .is_some_and(|name| {
+                let lower = name.name.to_ascii_lowercase();
+                lower == "sun" || lower.starts_with("sun_") || lower == "ground"
+            })
 }
 
 /// Lotes que escriben el mapa de sombras. El checker no entra (se auto-sombrea);
