@@ -38,8 +38,12 @@ pub const WARNING: Color32 = Color32::from_rgb(0xff, 0xc1, 0x07);
 
 // Bootstrap: success / info / danger / warning usados por los botones del sidebar.
 pub const SUCCESS: Color32 = Color32::from_rgb(0x19, 0x87, 0x54);
+/// Hover de los botones de acción verde (Bootstrap `.btn-success:hover`).
+pub const SUCCESS_HOVER: Color32 = Color32::from_rgb(0x15, 0x73, 0x47);
 pub const INFO: Color32 = Color32::from_rgb(0x0d, 0xca, 0xf0);
 pub const DANGER: Color32 = Color32::from_rgb(0xdc, 0x35, 0x45);
+/// Hover de los botones destructivos (Bootstrap `.btn-danger:hover`).
+pub const DANGER_HOVER: Color32 = Color32::from_rgb(0xbb, 0x2d, 0x3b);
 pub const WARNING_BADGE: Color32 = Color32::from_rgb(0xff, 0xc1, 0x07);
 pub const WARNING_TEXT: Color32 = Color32::from_rgb(0x0d, 0x0d, 0x1a);
 pub const OUTLINE_SECONDARY: Color32 = Color32::from_rgb(0x6c, 0x75, 0x7d);

@@ -5,6 +5,7 @@
 //! de duplicarse por escena y pasa a la biblioteca global, disponible en todas.
 
 use egui::RichText;
+use egui_phosphor::regular as icons;
 
 use crate::editor::app::EditorApp;
 use crate::editor::i18n::tr;
@@ -128,11 +129,14 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let close_button = egui::Button::new(
-                        RichText::new(tr(locale, "Cerrar", "Close")).color(theme::TEXT_MUTED),
-                    )
-                    .min_size(egui::vec2(100.0, 28.0));
-                    if ui.add(close_button).clicked() {
+                    if widgets::modal_button(
+                        ui,
+                        icons::X,
+                        tr(locale, "Cerrar", "Close"),
+                        widgets::ModalButtonStyle::Secondary,
+                        100.0,
+                        true,
+                    ) {
                         close = true;
                     }
                 });

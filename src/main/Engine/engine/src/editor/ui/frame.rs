@@ -9,7 +9,7 @@
 
 use crate::editor::app::EditorApp;
 
-use super::{bottom_bar, sidebar_left, sidebar_right, top_bar};
+use super::{bottom_bar, sidebar_left, sidebar_right, top_bar, widgets};
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let text = app.text();
@@ -85,16 +85,11 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             } else if let Some(hint) = app.placement_hint.as_deref() {
                 // Aviso flotante mientras una herramienta de colocación está
                 // activa: el motor espera un click en el viewport, no en el sidebar.
-                let center = rect.center() - egui::vec2(0.0, rect.height() * 0.28);
-                let background = egui::Rect::from_center_size(
-                    center,
-                    egui::vec2(hint.chars().count() as f32 * 8.0 + 28.0, 34.0),
-                );
-                ui.painter()
-                    .rect_filled(background, 6.0, egui::Color32::from_black_alpha(150));
-                ui.painter().text(
-                    center,
+                widgets::viewport_notification(
+                    ui,
                     egui::Align2::CENTER_CENTER,
+                    rect.center() - egui::vec2(0.0, rect.height() * 0.28),
+                    rect.width() - 16.0,
                     hint,
                     egui::FontId::proportional(15.0),
                     crate::editor::theme::INFO,
@@ -105,23 +100,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             if !app.engine_loading && app.engine_error.is_none() && app.preview_playing {
                 let esc_hint = crate::editor::i18n::tr(
                     app.cli.locale,
-                    "ESC para salir del modo juego",
-                    "ESC to exit play mode",
+                    "[ESC] para salir del modo juego",
+                    "[ESC] to exit play mode",
                 );
-                let width = esc_hint.chars().count() as f32 * 8.0 + 28.0;
-                let center = egui::pos2(
-                    rect.min.x + 12.0 + width * 0.5,
-                    rect.max.y - 20.0,
-                );
-                let background = egui::Rect::from_center_size(
-                    center,
-                    egui::vec2(width.min(rect.width() - 16.0), 34.0),
-                );
-                ui.painter()
-                    .rect_filled(background, 6.0, egui::Color32::from_black_alpha(150));
-                ui.painter().text(
-                    background.center(),
-                    egui::Align2::CENTER_CENTER,
+                widgets::viewport_notification(
+                    ui,
+                    egui::Align2::LEFT_CENTER,
+                    egui::pos2(rect.min.x + 12.0, rect.max.y - 20.0),
+                    rect.width() - 16.0,
                     esc_hint,
                     egui::FontId::new(13.0, egui::FontFamily::Name("rer-bold".into())),
                     crate::editor::theme::TEXT,
@@ -134,24 +120,17 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             if !app.engine_loading && app.engine_error.is_none() && !app.preview_playing {
                 let nav_hint = crate::editor::i18n::tr(
                     app.cli.locale,
-                    "Clic en la ventana del motor · WASD mover · Espacio subir · C bajar · Botón derecho mirar",
-                    "Click the engine window · WASD move · Space up · C down · Right mouse look",
+                    "Clic en la ventana del motor · [WASD] mover · [Espacio] subir · [C] bajar · Botón derecho mirar",
+                    "Click the engine window · [WASD] move · [Space] up · [C] down · Right mouse look",
                 );
-                let center = egui::pos2(
-                    rect.center().x,
-                    (rect.max.y - 20.0).min(rect.center().y + rect.height() * 0.38),
-                );
-                let width = (nav_hint.chars().count() as f32 * 8.0 + 28.0)
-                    .min(rect.width() - 16.0);
-                let background = egui::Rect::from_center_size(
-                    center,
-                    egui::vec2(width.max(1.0), 34.0),
-                );
-                ui.painter()
-                    .rect_filled(background, 6.0, egui::Color32::from_black_alpha(150));
-                ui.painter().text(
-                    center,
+                widgets::viewport_notification(
+                    ui,
                     egui::Align2::CENTER_CENTER,
+                    egui::pos2(
+                        rect.center().x,
+                        (rect.max.y - 20.0).min(rect.center().y + rect.height() * 0.38),
+                    ),
+                    rect.width() - 16.0,
                     nav_hint,
                     // Familia bold registrada en `theme::install_fonts`.
                     egui::FontId::new(13.0, egui::FontFamily::Name("rer-bold".into())),

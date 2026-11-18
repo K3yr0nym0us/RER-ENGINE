@@ -6,7 +6,8 @@
 //! `[MatVal]`, `[MatComparison]`, `[ParticleDemoLabel]` y la fila de partículas)
 //! y conserva suelo, sol, jugador y cámaras.
 
-use egui::{Color32, RichText};
+use egui::RichText;
+use egui_phosphor::regular as icons;
 use serde_json::json;
 
 use crate::editor::app::EditorApp;
@@ -66,20 +67,25 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
 
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let confirm_button = egui::Button::new(
-                        RichText::new(tr(locale, "Limpiar", "Clear")).color(Color32::WHITE),
-                    )
-                    .fill(theme::DANGER)
-                    .min_size(egui::vec2(110.0, 28.0));
-                    if ui.add(confirm_button).clicked() {
+                    if widgets::modal_button(
+                        ui,
+                        icons::TRASH,
+                        tr(locale, "Limpiar", "Clear"),
+                        widgets::ModalButtonStyle::Danger,
+                        110.0,
+                        true,
+                    ) {
                         confirm = true;
                     }
 
-                    let cancel_button = egui::Button::new(
-                        RichText::new(tr(locale, "Cancelar", "Cancel")).color(theme::TEXT_MUTED),
-                    )
-                    .min_size(egui::vec2(100.0, 28.0));
-                    if ui.add(cancel_button).clicked() {
+                    if widgets::modal_button(
+                        ui,
+                        icons::X,
+                        tr(locale, "Cancelar", "Cancel"),
+                        widgets::ModalButtonStyle::Secondary,
+                        100.0,
+                        true,
+                    ) {
                         cancel = true;
                     }
                 });

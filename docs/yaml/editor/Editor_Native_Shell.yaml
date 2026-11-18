@@ -159,6 +159,13 @@ sidebar_native:
       `frame.rs` pinta permanentemente en la parte baja del viewport (modo
       edición, no play) la ayuda: «Clic en la ventana del motor · WASD mover ·
       Espacio subir · C bajar · Botón derecho mirar» (traducida al inglés).
+    keycap_hints: |
+      Los avisos flotantes de `frame.rs` usan `widgets::viewport_notification`,
+      que marca las teclas entre corchetes en el texto localizado (p. ej.
+      `[ESC] para salir del modo juego` o `[WASD] mover`). Cada tecla se pinta
+      como una tecla física: caja negra redondeada, borde tenue y leyenda en
+      negrita. El ancho del aviso se mide con los segmentos reales, de modo que
+      los corchetes son solo marcadores y nunca se ven en pantalla.
     particle_emitter_ghost: |
       La modal del emisor ya no muestra los campos X/Y/Z: su botón dice
       «Posicionar en el mundo» / «Place in world». Al pulsarlo se guarda el

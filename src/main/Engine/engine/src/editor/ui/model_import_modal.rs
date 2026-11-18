@@ -6,7 +6,8 @@
 //! registra el modelo con `category: None` y no aparece en los selectores
 //! filtrados por categoría (p. ej. «cambiar modelo» de un personaje).
 
-use egui::{Color32, RichText};
+use egui::RichText;
+use egui_phosphor::regular as icons;
 use serde_json::json;
 
 use crate::editor::app::EditorApp;
@@ -93,21 +94,26 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
 
             ui.horizontal(|ui| {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let import = egui::Button::new(
-                        RichText::new(tr(locale, "Importar", "Import")).color(Color32::WHITE),
-                    )
-                    .fill(theme::ACCENT)
-                    .min_size(egui::vec2(100.0, 28.0));
                     let can_import = !draft.name.trim().is_empty();
-                    if ui.add_enabled(can_import, import).clicked() {
+                    if widgets::modal_button(
+                        ui,
+                        icons::DOWNLOAD_SIMPLE,
+                        tr(locale, "Importar", "Import"),
+                        widgets::ModalButtonStyle::Primary,
+                        110.0,
+                        can_import,
+                    ) {
                         confirm = true;
                     }
 
-                    let cancel_button = egui::Button::new(
-                        RichText::new(tr(locale, "Cancelar", "Cancel")).color(theme::TEXT_MUTED),
-                    )
-                    .min_size(egui::vec2(100.0, 28.0));
-                    if ui.add(cancel_button).clicked() {
+                    if widgets::modal_button(
+                        ui,
+                        icons::X,
+                        tr(locale, "Cancelar", "Cancel"),
+                        widgets::ModalButtonStyle::Secondary,
+                        100.0,
+                        true,
+                    ) {
                         cancel = true;
                     }
                 });

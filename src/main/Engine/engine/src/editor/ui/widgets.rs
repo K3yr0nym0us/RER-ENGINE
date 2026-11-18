@@ -484,6 +484,206 @@ pub fn wide_button_click_sized(
     clicked
 }
 
+/// Color de un botón de modal según la acción que ejecuta.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ModalButtonStyle {
+    /// Acción principal (aplicar, confirmar, importar): verde.
+    Primary,
+    /// Acción destructiva (limpiar): rojo.
+    Danger,
+    /// Descartar o cerrar: sin relleno.
+    Secondary,
+}
+
+/// Botón de modal con icono y color por acción. Devuelve `true` si se pulsó.
+///
+/// Se pinta a mano (como el resto de botones anchos) para centrar icono + texto
+/// y controlar el relleno de hover; `egui::Button` alinea a la izquierda al
+/// estirarse y no cambia el `fill` personalizado al pasar el ratón.
+pub fn modal_button(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    style: ModalButtonStyle,
+    width: f32,
+    enabled: bool,
+) -> bool {
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), sense);
+    let response = if enabled {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    };
+    let hovered = enabled && response.hovered();
+    let alpha = if enabled { 1.0 } else { 0.45 };
+
+    let (fill, stroke, text_color) = match style {
+        ModalButtonStyle::Primary => {
+            let fill = if hovered {
+                crate::editor::theme::SUCCESS_HOVER
+            } else {
+                crate::editor::theme::SUCCESS
+            };
+            (fill, fill, Color32::WHITE)
+        }
+        ModalButtonStyle::Danger => {
+            let fill = if hovered {
+                crate::editor::theme::DANGER_HOVER
+            } else {
+                crate::editor::theme::DANGER
+            };
+            (fill, fill, Color32::WHITE)
+        }
+        ModalButtonStyle::Secondary => (
+            if hovered {
+                Color32::from_rgba_unmultiplied(255, 255, 255, 12)
+            } else {
+                Color32::TRANSPARENT
+            },
+            crate::editor::theme::OUTLINE_SECONDARY,
+            crate::editor::theme::TEXT_MUTED,
+        ),
+    };
+
+    let text = if icon.is_empty() {
+        label.to_owned()
+    } else {
+        format!("{icon}  {label}")
+    };
+    let painter = ui.painter().with_clip_rect(rect);
+    painter.rect(
+        rect,
+        egui::CornerRadius::same(6),
+        fill.linear_multiply(alpha),
+        Stroke::new(1.0, stroke.linear_multiply(alpha)),
+        StrokeKind::Inside,
+    );
+    painter.text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        text,
+        FontId::proportional(13.0),
+        text_color.linear_multiply(alpha),
+    );
+
+    enabled && response.clicked()
+}
+
+/// Separación entre el texto y una tecla resaltada (egui recorta los espacios
+/// de extremo al maquetar cada segmento).
+const KEY_HINT_GAP: f32 = 5.0;
+/// Margen horizontal dentro de la caja de una tecla.
+const KEY_CAP_PADDING: f32 = 7.0;
+
+/// Divide un mensaje en texto y teclas. Las teclas se marcan entre corchetes,
+/// p. ej. `"[ESC] para salir"`; un `[` sin `]` se deja como texto literal.
+fn key_hint_spans(text: &str) -> Vec<(String, bool)> {
+    let mut spans = Vec::new();
+    let mut rest = text;
+    while let Some((before, after)) = rest.split_once('[') {
+        if !before.is_empty() {
+            spans.push((before.to_owned(), false));
+        }
+        match after.split_once(']') {
+            Some((key, tail)) => {
+                if !key.is_empty() {
+                    spans.push((key.to_owned(), true));
+                }
+                rest = tail;
+            }
+            None => {
+                spans.push((format!("[{after}"), false));
+                rest = "";
+            }
+        }
+    }
+    if !rest.is_empty() {
+        spans.push((rest.to_owned(), false));
+    }
+    spans
+}
+
+/// Aviso flotante sobre el viewport. El texto puede marcar teclas entre
+/// corchetes (`"[ESC] para salir"`): cada tecla se pinta como una tecla física,
+/// con caja negra redondeada, borde tenue y leyenda en negrita.
+pub fn viewport_notification(
+    ui: &mut egui::Ui,
+    anchor: egui::Align2,
+    pos: egui::Pos2,
+    max_width: f32,
+    text: &str,
+    font: FontId,
+    color: Color32,
+) {
+    let key_font = FontId::new(font.size - 1.0, egui::FontFamily::Name("rer-bold".into()));
+    let spans = key_hint_spans(text);
+    let painter = ui.painter();
+
+    let galley_for = |s: &str, is_key: bool| {
+        let f = if is_key { &key_font } else { &font };
+        painter.layout_no_wrap(s.to_owned(), f.clone(), color)
+    };
+    let text_width: f32 = spans
+        .iter()
+        .enumerate()
+        .map(|(i, (s, is_key))| {
+            galley_for(s, *is_key).size().x
+                + if *is_key { KEY_CAP_PADDING * 2.0 } else { 0.0 }
+                + if i > 0 { KEY_HINT_GAP } else { 0.0 }
+        })
+        .sum();
+
+    let width = (text_width + 28.0).min(max_width).max(1.0);
+    let background = anchor.anchor_size(pos, egui::vec2(width, 34.0));
+    painter.rect_filled(
+        background,
+        egui::CornerRadius::same(6),
+        egui::Color32::from_black_alpha(150),
+    );
+
+    let mut x = background.center().x - text_width * 0.5;
+    for (i, (s, is_key)) in spans.iter().enumerate() {
+        if i > 0 {
+            x += KEY_HINT_GAP;
+        }
+        let galley = galley_for(s, *is_key);
+        if *is_key {
+            let cap = egui::Rect::from_center_size(
+                egui::pos2(
+                    x + galley.size().x * 0.5 + KEY_CAP_PADDING,
+                    background.center().y,
+                ),
+                egui::vec2(galley.size().x + KEY_CAP_PADDING * 2.0, font.size + 9.0),
+            );
+            painter.rect_filled(
+                cap,
+                egui::CornerRadius::same(4),
+                egui::Color32::from_black_alpha(235),
+            );
+            painter.rect_stroke(
+                cap,
+                egui::CornerRadius::same(4),
+                Stroke::new(1.0, Color32::from_white_alpha(45)),
+                StrokeKind::Inside,
+            );
+            painter.galley(cap.center() - galley.size() * 0.5, galley, color);
+            x = cap.max.x;
+        } else {
+            painter.galley(
+                egui::pos2(x, background.center().y - galley.size().y * 0.5),
+                galley.clone(),
+                color,
+            );
+            x += galley.size().x;
+        }
+    }
+}
+
 /// Input numérico. Devuelve `true` al confirmar con Enter o al perder el foco.
 pub fn number_input(ui: &mut egui::Ui, width: f32, text: &mut String) -> bool {
     let response = ui.add(egui::TextEdit::singleline(text).desired_width(width));
@@ -676,4 +876,34 @@ pub fn tool_card_click(
     let clicked = enabled && response.clicked();
     let _ = response.on_hover_text(format!("{label} — {hint}"));
     clicked
+}
+
+#[cfg(test)]
+mod tests {
+    use super::key_hint_spans;
+
+    #[test]
+    fn key_hint_spans_marks_only_bracketed_keys() {
+        assert_eq!(
+            key_hint_spans("Clic · [WASD] mover · [C] bajar"),
+            vec![
+                ("Clic · ".to_owned(), false),
+                ("WASD".to_owned(), true),
+                (" mover · ".to_owned(), false),
+                ("C".to_owned(), true),
+                (" bajar".to_owned(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn key_hint_spans_keeps_an_unclosed_bracket_as_text() {
+        assert_eq!(
+            key_hint_spans("aviso [sin cerrar"),
+            vec![
+                ("aviso ".to_owned(), false),
+                ("[sin cerrar".to_owned(), false),
+            ]
+        );
+    }
 }

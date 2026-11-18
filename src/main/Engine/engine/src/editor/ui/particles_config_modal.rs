@@ -10,6 +10,7 @@
 //!   upsert— y deja la ventana abierta. No hay botón cancelar.
 
 use egui::RichText;
+use egui_phosphor::regular as icons;
 
 use crate::editor::app::EditorApp;
 use crate::editor::cli::Locale;
@@ -243,44 +244,52 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
     }
 
     ui.horizontal(|ui| {
-        if !is_new {
-            // Modal de propiedades: aplicar SIN cerrar, sin cancelar.
-            if ui
-                .add(egui::Button::new(
-                    RichText::new(tr(locale, "Aplicar", "Apply"))
-                        .size(13.0)
-                        .color(theme::TEXT),
-                ))
-                .clicked()
-            {
-                apply = true;
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if !is_new {
+                // Modal de propiedades: aplicar SIN cerrar, sin cancelar.
+                if widgets::modal_button(
+                    ui,
+                    icons::CHECK,
+                    tr(locale, "Aplicar", "Apply"),
+                    widgets::ModalButtonStyle::Primary,
+                    110.0,
+                    true,
+                ) {
+                    apply = true;
+                }
+            } else {
+                let confirm_label = if is_3d {
+                    tr(locale, "Posicionar en el mundo", "Place in world")
+                } else {
+                    tr(locale, "Confirmar", "Confirm")
+                };
+                let confirm_icon = if is_3d {
+                    icons::CROSSHAIR
+                } else {
+                    icons::CHECK
+                };
+                if widgets::modal_button(
+                    ui,
+                    confirm_icon,
+                    confirm_label,
+                    widgets::ModalButtonStyle::Primary,
+                    if is_3d { 186.0 } else { 110.0 },
+                    true,
+                ) {
+                    confirm = true;
+                }
+                if widgets::modal_button(
+                    ui,
+                    icons::X,
+                    tr(locale, "Cancelar", "Cancel"),
+                    widgets::ModalButtonStyle::Secondary,
+                    100.0,
+                    true,
+                ) {
+                    cancel = true;
+                }
             }
-        } else {
-            if ui
-                .add(egui::Button::new(
-                    RichText::new(if is_3d {
-                        tr(locale, "Posicionar en el mundo", "Place in world")
-                    } else {
-                        tr(locale, "Confirmar", "Confirm")
-                    })
-                    .size(13.0)
-                    .color(theme::TEXT),
-                ))
-                .clicked()
-            {
-                confirm = true;
-            }
-            if ui
-                .add(egui::Button::new(
-                    RichText::new(tr(locale, "Cancelar", "Cancel"))
-                        .size(13.0)
-                        .color(theme::TEXT_MUTED),
-                ))
-                .clicked()
-            {
-                cancel = true;
-            }
-        }
+        });
     });
     ui.add_space(6.0);
 
