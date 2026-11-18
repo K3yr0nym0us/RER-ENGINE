@@ -126,6 +126,9 @@ pub(crate) enum MaterialKind {
     /// resto se asienta como charco en el plano (`ground_y`). Referencia física:
     /// solver PBF/XPBD de KawaiiFluid (ver `fluid.rs` para el port CPU completo).
     WaterCube,
+    /// Corona del sol: chispas blancas cálidas que nacen en toda la esfera y se
+    /// expanden hacia fuera. Emisor interno reservado; no aparece en la UI F5.
+    Sun,
 }
 
 impl MaterialKind {
@@ -139,6 +142,7 @@ impl MaterialKind {
             Self::Sand => 5,
             Self::Water => 6,
             Self::WaterCube => 7,
+            Self::Sun => 8,
         }
     }
 
@@ -153,6 +157,7 @@ impl MaterialKind {
             Self::Sand => "sand",
             Self::Water => "water",
             Self::WaterCube => "water_cube",
+            Self::Sun => "sun",
         }
     }
 
@@ -166,6 +171,7 @@ impl MaterialKind {
             "sand" => Some(Self::Sand),
             "water" => Some(Self::Water),
             "water_cube" => Some(Self::WaterCube),
+            "sun" => Some(Self::Sun),
             _ => None,
         }
     }
@@ -174,7 +180,8 @@ impl MaterialKind {
     /// fuego (y F4 arena) aditivo.
     pub(crate) fn alpha_blend(self) -> u32 {
         match self {
-            Self::Fire => 0,
+            // Sol y fuego suman luz: el blanco cálido del sol se compone con HDR.
+            Self::Fire | Self::Sun => 0,
             Self::Smoke
             | Self::Fog
             | Self::Rain

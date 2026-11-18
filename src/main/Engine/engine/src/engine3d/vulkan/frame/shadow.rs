@@ -73,7 +73,7 @@ impl FrameRenderer {
                     batch.instance_count,
                 )
             }),
-            &self.static_offsets,
+            &self.shadow_offsets,
             device,
             cmd,
         );

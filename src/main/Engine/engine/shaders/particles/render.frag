@@ -133,6 +133,16 @@ void main() {
         float rim = smoothstep(0.5, 0.9, d) * shape;
         rgb = v_color.rgb * (shape + rim * 0.55);
         alpha = v_color.a * shape;
+    } else if (mat == 8u) {
+        // Corona del sol: chispa con núcleo candente y borde suave; se suma al HDR.
+        float d = length(v_uv);
+        if (d > 1.0) {
+            discard;
+        }
+        float shape = smoothstep(1.0, 0.0, d);
+        float core = smoothstep(0.45, 0.0, d);
+        rgb = v_color.rgb * (shape * 0.85 + core * 0.9);
+        alpha = v_color.a * shape;
     } else if (mat == 1u) {
         float shape = volute_shape(v_uv, v_spin_size.x);
         if (shape <= 0.001) {

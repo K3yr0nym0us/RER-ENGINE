@@ -179,10 +179,14 @@ fn entity_skips_shadow_cast(
     state: &super::State,
     entity_id: crate::engine3d::ecs::EntityId,
 ) -> bool {
-    state
-        .world
-        .get::<crate::engine3d::ecs::NameComponent>(entity_id)
-        .is_some_and(|name| name.name.eq_ignore_ascii_case("ground"))
+    // El suelo no se auto-sombrea; el icono del sol es la luz (no un objeto que
+    // proyecte sombra) y el fondo es solo decoración.
+    state.sun_entity == Some(entity_id)
+        || state.background_entity == Some(entity_id)
+        || state
+            .world
+            .get::<crate::engine3d::ecs::NameComponent>(entity_id)
+            .is_some_and(|name| name.name.eq_ignore_ascii_case("ground"))
 }
 
 /// Lotes que escriben el mapa de sombras. El checker no entra (se auto-sombrea);

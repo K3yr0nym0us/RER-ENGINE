@@ -45,6 +45,28 @@ const SUN_ORBIT_RADIUS_FRACTION: f32 = 0.78;
 /// Nunca sale de la esfera: si se sale, el editor lo recorta y desaparece.
 const SUN_ORBIT_INSIDE_FRACTION: f32 = 0.92;
 
+/// Matriz vista-proyección de la luz. Separada de [`State`] para poder comprobar
+/// que cambia con la dirección del sol sin necesidad de un `State` con Vulkan.
+fn light_view_proj_from(center: Vec3, dir: Vec3, extent: f32, map_size: u32) -> [[f32; 4]; 4] {
+    let dir = dir.normalize();
+    let up = if dir.y.abs() > 0.95 { Vec3::X } else { Vec3::Y };
+    let eye = center + dir * extent * 2.5;
+    let view = Mat4::look_at_rh(eye, center, up);
+    let center_ls = view.transform_point3(center);
+    let texel = (2.0 * extent) / map_size.max(1) as f32;
+    let cx = (center_ls.x / texel).floor() * texel + texel * 0.5;
+    let cy = (center_ls.y / texel).floor() * texel + texel * 0.5;
+    let proj = Mat4::orthographic_rh(
+        cx - extent,
+        cx + extent,
+        cy - extent,
+        cy + extent,
+        0.5,
+        extent * 8.0,
+    );
+    (proj * view).to_cols_array_2d()
+}
+
 impl State {
     /// Distancia del icono: dentro de la esfera, cerca del cielo.
     pub(crate) fn sun_orbit_distance(&self) -> f32 {
@@ -212,25 +234,12 @@ impl State {
 
     /// Proyección ortográfica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
-        let center = self.directional_light_scene_center();
-        let dir = self.directional_light_dir.normalize();
-        let extent = self.light_shadow_extent_m();
-        let up = if dir.y.abs() > 0.95 { Vec3::X } else { Vec3::Y };
-        let eye = center + dir * extent * 2.5;
-        let view = Mat4::look_at_rh(eye, center, up);
-        let center_ls = view.transform_point3(center);
-        let texel = (2.0 * extent) / self.active_shadow_map_size() as f32;
-        let cx = (center_ls.x / texel).floor() * texel + texel * 0.5;
-        let cy = (center_ls.y / texel).floor() * texel + texel * 0.5;
-        let proj = Mat4::orthographic_rh(
-            cx - extent,
-            cx + extent,
-            cy - extent,
-            cy + extent,
-            0.5,
-            extent * 8.0,
-        );
-        (proj * view).to_cols_array_2d()
+        light_view_proj_from(
+            self.directional_light_scene_center(),
+            self.directional_light_dir,
+            self.light_shadow_extent_m(),
+            self.active_shadow_map_size(),
+        )
     }
 
     pub(crate) fn apply_directional_light_settings(
@@ -341,6 +350,31 @@ impl State {
         }
         let pos = self.default_sun_position();
         self.spawn_sun("", pos.to_array(), [1.0, 1.0, 1.0]);
+    }
+
+    /// La corona de partículas sigue al icono del sol: se recalcula cada frame
+    /// porque el gizmo puede moverlo o cambiar su escala. El radio de emisión es
+    /// la superficie de la esfera visual (radio 0.5 × escala) más un pequeño halo.
+    pub(crate) fn sync_sun_particles(&mut self) {
+        use crate::engine3d::particles::SUN_EMITTER_ID;
+
+        let Some(id) = self.sun_entity else {
+            self.particles.remove(SUN_EMITTER_ID);
+            return;
+        };
+        let Some(transform) = self.world.get::<Transform>(id) else {
+            self.particles.remove(SUN_EMITTER_ID);
+            return;
+        };
+        let scale = transform
+            .scale
+            .x
+            .abs()
+            .min(transform.scale.y.abs())
+            .min(transform.scale.z.abs());
+        let radius = (scale * 0.5 + 0.06).max(0.1);
+        self.particles
+            .sync_sun_emitter(transform.position.to_array(), radius);
     }
 
     /// Esfera visual como el sol (malla UV + textura) sin luz direccional; física esférica.
@@ -458,7 +492,8 @@ impl State {
 
 #[cfg(test)]
 mod tests {
-    use super::{shadow_ortho_extent_m, shadow_world_texel_from};
+    use super::{light_view_proj_from, shadow_ortho_extent_m, shadow_world_texel_from};
+    use glam::Vec3;
 
     #[test]
     fn shadow_ortho_matches_world_aabb_diagonal() {
@@ -475,5 +510,20 @@ mod tests {
         assert!(large > small);
         assert!(fine < large);
         assert!(small > 0.05 && small < 1.0);
+    }
+
+    #[test]
+    fn light_view_proj_follows_the_sun_direction() {
+        let center = Vec3::new(0.0, 10.0, 0.0);
+        let east = light_view_proj_from(center, Vec3::X, 100.0, 1024);
+        let west = light_view_proj_from(center, Vec3::NEG_X, 100.0, 1024);
+        let zenith = light_view_proj_from(center, Vec3::Y, 100.0, 1024);
+
+        assert_ne!(
+            east, west,
+            "la matriz debe cambiar al mover el sol al otro lado"
+        );
+        assert_ne!(east, zenith);
+        assert_ne!(west, zenith);
     }
 }

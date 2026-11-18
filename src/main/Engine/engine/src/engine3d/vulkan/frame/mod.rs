@@ -254,6 +254,9 @@ pub struct FrameRenderer {
     /// Último estado de `reflections`; al cambiar se invalida el historial TAA.
     last_reflections: bool,
     static_offsets: Vec<u64>,
+    /// Offsets de los lotes que escriben el shadow map. Es un SUBCONJUNTO filtrado
+    /// de `static_batches`, así que no puede usar `static_offsets` (índice distinto).
+    shadow_offsets: Vec<u64>,
     static_transparent_offsets: Vec<u64>,
     skinned_offsets: Vec<u64>,
     skinned_transparent_offsets: Vec<u64>,
@@ -831,6 +834,7 @@ impl FrameRenderer {
             taa_history_valid: false,
             last_reflections: false,
             static_offsets: Vec::new(),
+            shadow_offsets: Vec::new(),
             static_transparent_offsets: Vec::new(),
             skinned_offsets: Vec::new(),
             skinned_transparent_offsets: Vec::new(),

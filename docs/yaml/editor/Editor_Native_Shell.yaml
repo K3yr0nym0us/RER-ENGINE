@@ -183,6 +183,12 @@ sidebar_native:
       renderizan (antes aparecían bloqueados) y se quedan en el valor del preset.
       `EmitterRow::values()` vuelve a acotar al confirmar, así que ni un snapshot
       antiguo puede enviar valores fuera de rango.
+    sun_particle_corona: |
+      El icono del sol lleva un emisor reservado (`SUN_EMITTER_ID`) que sigue su
+      posición y escala cada frame. Usa el material `sun` (kind 8): las chispas
+      nacen en toda la esfera —no en un disco— y salen radialmente con mezcla
+      aditiva, blanco cálido que se desvanece a amarillo. No se guarda en el
+      `.save` ni aparece en la lista F5.
     play_exit_hint: |
       En play, el mismo sistema de mensajes pinta abajo a la izquierda
       «ESC para salir del modo juego» / «ESC to exit play mode». Sustituye a

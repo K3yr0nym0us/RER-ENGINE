@@ -200,6 +200,7 @@ impl State {
             cam_up: [view_t.y_axis.x, view_t.y_axis.y, view_t.y_axis.z, 0.0],
             near_far: [self.camera.near, self.camera.far],
         };
+        self.sync_sun_particles();
         let particle_batches: Vec<crate::engine3d::vulkan::ParticleBatch> = self
             .particles
             .batches(self.delta_time, [eye.x, eye.y, eye.z])

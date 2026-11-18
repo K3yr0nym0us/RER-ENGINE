@@ -59,6 +59,15 @@ impl FrameRenderer {
             bytes.extend(std::iter::repeat_n(0, pad));
             bytes.extend_from_slice(batch.instances);
         }
+        // Los lotes del shadow map son un subconjunto de `static_batches`: sus
+        // instancias se suben por separado para que sus offsets no se mezclen.
+        let mut shadow_offsets = Vec::new();
+        for batch in input.shadow_static_batches {
+            shadow_offsets.push(align_up(bytes.len() as u32, 256) as u64);
+            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
+            bytes.extend(std::iter::repeat_n(0, pad));
+            bytes.extend_from_slice(batch.instances);
+        }
         let mut static_transparent_offsets = Vec::new();
         for batch in input.static_transparent_batches {
             static_transparent_offsets.push(align_up(bytes.len() as u32, 256) as u64);
@@ -121,6 +130,7 @@ impl FrameRenderer {
             &self.joints[slot],
         )?;
         self.static_offsets = static_offsets;
+        self.shadow_offsets = shadow_offsets;
         self.static_transparent_offsets = static_transparent_offsets;
         self.skinned_offsets = skinned_offsets;
         self.skinned_transparent_offsets = skinned_transparent_offsets;

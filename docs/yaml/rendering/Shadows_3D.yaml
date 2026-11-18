@@ -31,6 +31,12 @@ principle:
     (`shadow_factor = 1 - darkness * (1 - shadow)`). Default 0.9; rango de UI 0.9–1.0
     (mayor = sombras más oscuras), con paso 0.001 y display de 3 decimales (0.900 → 1.000).
     El peso del IBL de sondas ya no comparte ese campo: viaja en `jitter.z`.
+  caster_batches: |
+    `filter_shadow_cast_batches` excluye el suelo, el icono del sol y el fondo: solo
+    proyectan sombra las entidades de escena (el terreno sí proyecta sobre el suelo).
+    `prepare_uploads` sube las instancias de ese SUBCONJUNTO a su propio bloque y guarda
+    `shadow_offsets`; usar los `static_offsets` del forward hacía que el shadow pass leyera
+    matrices de otras entidades, con sombras gigantes y desalineadas del sol.
   rt_shadows: |
     No hay sombras por ray tracing en el renderizador Ash: los shaders de trazado
     (`shaders/rt/primary.rchit`, `shaders/bvh/trace.comp`) iluminan con N·L y un ambiente,

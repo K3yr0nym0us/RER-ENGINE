@@ -120,6 +120,47 @@ impl EmitterConfig {
         }
     }
 
+    /// Corona del sol: chispas que nacen en TODA la esfera y se expanden hacia
+    /// fuera. Blanco cálido (mezcla de blanco y amarillo, más cerca del primero)
+    /// que se desvanece a amarillo; se suma al HDR con blend aditivo.
+    pub(crate) fn sun(origin: [f32; 3], radius: f32) -> Self {
+        Self {
+            material: MaterialKind::Sun,
+            origin,
+            radius,
+            // `velocity.y` es la velocidad radial en el kernel del sol.
+            velocity: [0.0, 0.42, 0.0],
+            spread: 0.16,
+            size: 0.16,
+            size_variation: 0.5,
+            life: 1.15,
+            life_variation: 0.4,
+            rate: 150.0,
+            max_particles: 320,
+            color_start: [1.0, 0.98, 0.88, 0.85],
+            color_end: [1.0, 0.87, 0.48, 0.0],
+            gravity: 0.0,
+            drag: 1.1,
+            turbulence: 0.35,
+            cohesion: 0.0,
+            ground_y: 0.0,
+            spin: 1.2,
+            wind: [0.0, 0.0],
+            volume: [0.0, 0.0, 0.0],
+            follow_camera: false,
+            billboard_mode: BILLBOARD_CAMERA,
+            intensity: 1.0,
+            soft: false,
+            ground_collision: false,
+            accumulate: false,
+            splash: false,
+            bounciness: 0.0,
+            friction: 0.0,
+            size_end: 0.05,
+            stretch: 0.0,
+        }
+    }
+
     /// Preset de humo (F3): gris oscuro, sube lento, crece con la edad y se desvanece.
     /// Renderiza por WBOIT con soft particles.
     pub(crate) fn smoke() -> Self {
@@ -617,6 +658,7 @@ fn config_from_saved(
         MaterialKind::Sand => EmitterConfig::sand(),
         MaterialKind::Water => EmitterConfig::water(),
         MaterialKind::WaterCube => EmitterConfig::water_cube(),
+        MaterialKind::Sun => EmitterConfig::sun([0.0; 3], 0.5),
     };
     config.follow_camera = false; // lo guardado usa posición fija
     config.origin = saved.position;
@@ -661,6 +703,9 @@ const MAX_DT: f32 = 0.05;
 
 /// Id reservado del emisor de clima (único por sistema: lluvia o nieve, F2).
 const WEATHER_ID: u64 = u64::MAX;
+/// Corona del sol: emisor interno que sigue al icono, no se guarda ni se edita.
+/// Queda fuera del rango de la UI (`0x6000…`) y del de la demo (`0x00D0…`).
+pub(crate) const SUN_EMITTER_ID: u64 = 0x7000_0000_0000_0000;
 
 #[derive(Default)]
 pub(crate) struct ParticleSystem {
@@ -730,6 +775,25 @@ impl ParticleSystem {
         }
     }
 
+    /// Mantiene la corona del sol pegada al icono y al tamaño de su esfera. Si el
+    /// emisor no existe (escena recién cargada o `clear`), lo recrea.
+    pub(crate) fn sync_sun_emitter(&mut self, origin: [f32; 3], radius: f32) {
+        if let Some(emitter) = self
+            .emitters
+            .iter_mut()
+            .find(|emitter| emitter.id == SUN_EMITTER_ID)
+        {
+            emitter.config.origin = origin;
+            emitter.config.radius = radius;
+        } else {
+            let mut emitter = Emitter::new(SUN_EMITTER_ID, EmitterConfig::sun(origin, radius));
+            // Si el sol se recreó tras limpiar la escena, el pool puede conservar
+            // chispas de la posición anterior: las descarta en el primer lote.
+            emitter.reset = true;
+            self.emitters.push(emitter);
+        }
+    }
+
     pub(crate) fn contains(&self, id: u64) -> bool {
         self.emitters.iter().any(|emitter| emitter.id == id)
     }
@@ -780,7 +844,8 @@ impl ParticleSystem {
             | MaterialKind::Smoke
             | MaterialKind::Sand
             | MaterialKind::Water
-            | MaterialKind::WaterCube => {
+            | MaterialKind::WaterCube
+            | MaterialKind::Sun => {
                 return;
             }
         };
@@ -841,6 +906,10 @@ impl ParticleSystem {
         let mut weather = None;
         let mut emitters = Vec::new();
         for emitter in &self.emitters {
+            // La corona del sol se regenera desde la posición del icono al cargar.
+            if emitter.id == SUN_EMITTER_ID {
+                continue;
+            }
             let config = &emitter.config;
             if emitter.id == WEATHER_ID {
                 // El multiplicador de caída se recalcula contra la base del material
@@ -909,7 +978,7 @@ impl ParticleSystem {
     pub(crate) fn pickable(&self) -> impl Iterator<Item = (u64, [f32; 3])> + '_ {
         self.emitters
             .iter()
-            .filter(|emitter| emitter.id != WEATHER_ID)
+            .filter(|emitter| emitter.id != WEATHER_ID && emitter.id != SUN_EMITTER_ID)
             .map(|emitter| (emitter.id, emitter.config.origin))
     }
 
@@ -1102,6 +1171,7 @@ impl crate::engine3d::engine::State {
             MaterialKind::Sand => EmitterConfig::sand(),
             MaterialKind::Water => EmitterConfig::water(),
             MaterialKind::WaterCube => EmitterConfig::water_cube(),
+            MaterialKind::Sun => EmitterConfig::sun(position, 0.5),
         };
         config.material = material;
         config.origin = position;
@@ -1237,6 +1307,34 @@ mod tests {
         assert_eq!(system.emitters[4].config.origin[2], 7.0);
         assert_eq!(system.emitters[0].id, DEMO_EMITTER_ID_BASE);
         assert_eq!(system.demo_showcase_count(), 5);
+    }
+
+    #[test]
+    fn sun_emitter_follows_the_icon_and_stays_reserved() {
+        let mut system = ParticleSystem::new();
+        system.sync_sun_emitter([1.0, 2.0, 3.0], 0.5);
+        system.sync_sun_emitter([9.0, 8.0, 7.0], 1.25);
+
+        assert_eq!(system.len(), 1);
+        let emitter = &system.emitters[0];
+        assert_eq!(emitter.id, SUN_EMITTER_ID);
+        assert_eq!(emitter.config.origin, [9.0, 8.0, 7.0]);
+        assert_eq!(emitter.config.radius, 1.25);
+        assert_eq!(emitter.config.material.as_u32(), 8);
+        assert_eq!(emitter.config.material.alpha_blend(), 0);
+        assert!(!emitter.config.material.uses_wboit());
+    }
+
+    #[test]
+    fn sun_emitter_is_not_saved_or_pickable() {
+        let mut system = ParticleSystem::new();
+        system.sync_sun_emitter([3.0, 4.0, 5.0], 0.75);
+
+        assert!(system.contains(SUN_EMITTER_ID));
+        assert_eq!(system.pickable().count(), 0);
+        let saved = system.export();
+        assert!(saved.emitters.is_empty());
+        assert!(saved.weather.is_none());
     }
 
     #[test]

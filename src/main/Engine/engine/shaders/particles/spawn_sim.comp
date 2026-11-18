@@ -268,6 +268,12 @@ vec4 color_over_life(uint mat, float k) {
         float alpha = mix(emitter.color_start.a, emitter.color_end.a, k);
         return vec4(rgb, alpha);
     }
+    if (mat == 8u) {
+        // Sol: blanco cálido → amarillo, con desvanecido suave (más blanco que amarillo).
+        vec3 rgb = mix(emitter.color_start.rgb, emitter.color_end.rgb, k);
+        float alpha = mix(emitter.color_start.a, emitter.color_end.a, pow(k, 0.7));
+        return vec4(rgb, alpha);
+    }
     if (mat == 1u) {
         // Humo: RGB lineal; alfa con fade-in corto y caída pow para no cortar al morir.
         vec3 rgb = mix(emitter.color_start.rgb, emitter.color_end.rgb, k);
@@ -308,6 +314,15 @@ bool integrate(inout Particle p) {
         // HUMO: flotabilidad suave, viento constante, swirl lento, se dispersa.
         apply_wind_and_swirl(vel, p.pos_life.xyz, age, seed, emitter.phys.z);
         vel.y += emitter.phys.x * pc.dt;
+        vel *= exp(-emitter.phys.y * pc.dt);
+    } else if (mat == 8u) {
+        // CORONA DEL SOL: las chispas salen radialmente de la superficie, sin
+        // gravedad. Un empuje suave mantiene el halo separado de la esfera.
+        vec3 radial = p.pos_life.xyz - emitter.origin_radius.xyz;
+        float dist = length(radial);
+        vec3 dir = dist > 1e-4 ? radial / dist : vec3(0.0, 1.0, 0.0);
+        vel += dir * 0.12 * pc.dt;
+        apply_wind_and_swirl(vel, p.pos_life.xyz, age, seed, emitter.phys.z);
         vel *= exp(-emitter.phys.y * pc.dt);
     } else if (emitter.misc.x == 2u) {
         // NIEBLA (F3): deriva mínima con viento; el reciclado por volumen la mantiene
@@ -458,6 +473,16 @@ Particle spawn_particle() {
             fall,
             emitter.env.w + (r2 * 2.0 - 1.0) * emitter.velocity_spread.w
         );
+    } else if (emitter.misc.x == 8u) {
+        // Corona del sol: punto uniforme sobre la ESFERA (no el disco horizontal
+        // de los emisores puntuales) y velocidad radial hacia fuera.
+        float z = r1 * 2.0 - 1.0;
+        float a = r3 * TAU;
+        float s = sqrt(max(1.0 - z * z, 0.0));
+        vec3 dir = vec3(s * cos(a), z, s * sin(a));
+        pos = emitter.origin_radius.xyz + dir * emitter.origin_radius.w;
+        vec3 jitter = vec3(r3, r4, r5) * 2.0 - 1.0;
+        vel = dir * emitter.velocity_spread.y + jitter * emitter.velocity_spread.w;
     } else if (emitter.misc.x == 7u) {
         // Cubo de agua: lattice regular que llena el cubo (no un spray aleatorio).
         // `volume.w` = n (lado); el índice de hilo mapea a la celda.
