@@ -435,6 +435,10 @@ pub struct App {
     cursor_captured: bool,
     /// `true` mientras RMB mantiene capturado el cursor en modo editor (mirar).
     editor_fly_capture: bool,
+    /// Desplazamiento relativo acumulado desde el press derecho (px aproximados).
+    /// Con `CursorGrabMode::Locked` el cursor no se mueve, así que `CursorMoved`
+    /// no puede distinguir órbita de click; esto lo suple.
+    right_click_motion: (f32, f32),
     /// Rect físico del viewport con `ClipCursor` aplicado (editor).
     clip_rect: Option<(i32, i32, u32, u32)>,
 }
@@ -464,6 +468,7 @@ impl App {
             target_fps: 60,
             cursor_captured: false,
             editor_fly_capture: false,
+            right_click_motion: (0.0, 0.0),
             clip_rect: None,
         }
     }
@@ -505,9 +510,20 @@ impl App {
             if state.is_play_controller_active() {
                 state.apply_fps_mouse_look(delta_x, delta_y);
             } else if self.editor_fly_capture && self.mouse_right && !state.is_preview_playing() {
-                // Con el cursor confinado usamos el movimiento relativo, como
-                // en play: el cursor se recentra cada frame y nunca llega al borde.
+                // Con el cursor capturado usamos el movimiento relativo, como
+                // en play: el cursor se mantiene fijo y nunca llega al borde.
                 state.editor_fly_look(delta_x, delta_y);
+                // `CursorGrabMode::Locked` inmoviliza el cursor, así que
+                // `CursorMoved` no puede ver la órbita: acumulamos el
+                // movimiento relativo para descartar el click derecho al
+                // arrastrar (igual que el umbral de `CursorMoved`).
+                self.right_click_motion.0 += delta_x;
+                self.right_click_motion.1 += delta_y;
+                if self.right_click_motion.0.abs() >= ENTITY_CLICK_DRAG_THRESHOLD_PX
+                    || self.right_click_motion.1.abs() >= ENTITY_CLICK_DRAG_THRESHOLD_PX
+                {
+                    self.right_click_pos = None;
+                }
             }
         }
     }
@@ -649,6 +665,10 @@ impl App {
         // Si se perdió el foco con RMB pulsado, el KeyUp/MouseUp puede no
         // llegar: sin esto el view seguiría girando con el cursor libre.
         self.mouse_right = false;
+        // Tampoco debe quedar armado un click derecho que abriría una modal
+        // con una posición vieja al recuperar el foco.
+        self.right_click_pos = None;
+        self.right_click_motion = (0.0, 0.0);
     }
 
     /// Aplica `ClipCursor` al rect físico del viewport del editor.
@@ -1010,18 +1030,42 @@ impl App {
                                     && !state.player_ui_edit_active
                                     && self.entity_grab.is_none();
                                 self.right_click_pos = if arm { self.last_cursor } else { None };
+                                self.right_click_motion = (0.0, 0.0);
                                 if arm {
-                                    // Igual que en play: ocultar y confinar el cursor
-                                    // al viewport mientras se mantiene RMB.
+                                    // En Windows, `Confined` con el cursor oculto hace
+                                    // que winit recorte el cursor a un rect 1×1 en el
+                                    // centro de la ventana, y Windows lo arrastra hasta
+                                    // ahí: el cursor salta y el click derecho se pierde.
+                                    // `Locked` recorta en la posición actual, sin moverlo.
                                     let window = state.window();
-                                    window.set_cursor_visible(false);
-                                    if let Err(err) =
-                                        window.set_cursor_grab(CursorGrabMode::Confined)
-                                    {
-                                        log::warn!("[editor] no se pudo confinar el cursor: {err}");
+                                    match window.set_cursor_grab(CursorGrabMode::Locked) {
+                                        Ok(()) => {
+                                            window.set_cursor_visible(false);
+                                            self.cursor_captured = true;
+                                            self.editor_fly_capture = true;
+                                        }
+                                        Err(err) => {
+                                            // Sin `Locked` no ocultamos el cursor:
+                                            // `Confined` + oculto repetiría el salto.
+                                            log::warn!(
+                                                "[editor] CursorGrabMode::Locked no disponible: {err}; confinando sin ocultar el cursor"
+                                            );
+                                            window.set_cursor_visible(true);
+                                            match window.set_cursor_grab(CursorGrabMode::Confined) {
+                                                Ok(()) => {
+                                                    self.cursor_captured = true;
+                                                    self.editor_fly_capture = true;
+                                                }
+                                                Err(err) => {
+                                                    log::warn!(
+                                                        "[editor] no se pudo confinar el cursor: {err}"
+                                                    );
+                                                    self.cursor_captured = false;
+                                                    self.editor_fly_capture = false;
+                                                }
+                                            }
+                                        }
                                     }
-                                    self.cursor_captured = true;
-                                    self.editor_fly_capture = true;
                                 }
                             }
                             self.mouse_right = pressed;
@@ -1637,6 +1681,7 @@ pub fn run() {
         target_fps: 60,
         cursor_captured: false,
         editor_fly_capture: false,
+        right_click_motion: (0.0, 0.0),
         clip_rect: None,
     };
     event_loop
