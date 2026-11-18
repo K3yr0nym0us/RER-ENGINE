@@ -247,7 +247,7 @@ function getOrCreateModalWindow(wantsNativeModal: boolean): BrowserWindow {
 export function preloadModalElectronWindow(): void {
   if (modalWindow && !modalWindow.isDestroyed()) return
   getOrCreateModalWindow(false)
-  console.log('[modal] ventana precargada')
+  if (process.env.RER_VERBOSE_ELECTRON === '1') console.log('[modal] ventana precargada')
 }
 
 function sendRenderToModal(payload: ModalElectronOpenRequest | null): void {

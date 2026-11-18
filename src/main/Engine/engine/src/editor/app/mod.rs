@@ -206,6 +206,9 @@ mod tests {
         assert!(app.log[0].is_error);
         assert!(app.log[0].text.contains("boom"));
 
+        // Carga arranca apagada por defecto: la activamos para probar el formato.
+        app.log_layers
+            .set(rer_engine_core::logging::LogLayer::Loading, true);
         app.log_engine_event(&json!({
             "event": "load_progress",
             "message": "cargando",

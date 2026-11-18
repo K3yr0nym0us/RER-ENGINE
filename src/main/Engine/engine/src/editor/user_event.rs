@@ -20,4 +20,12 @@ pub enum UserEvent {
     Engine2dReady(Box<crate::engine2d::engine::State>),
     /// El motor no pudo arrancar.
     EngineFailed(String),
+    /// Línea de `log` del motor (o del editor) para la consola inferior.
+    Log(LogEvent),
+}
+
+/// Versión editor de `rer_engine_core::logging::LogLine`, ya filtrada por capa.
+pub struct LogEvent {
+    pub text: String,
+    pub is_error: bool,
 }

@@ -77,22 +77,31 @@ devtools:
 log_console:
   file: src/main/Engine/engine/src/editor/ui/bottom_bar.rs
   layers:
-    default: [engine, editor, loading, 3d, 2d, physics, worldgen]
-    off_by_default: [assets, runtime]
+    default: [engine, editor, 3d, 2d]
+    off_by_default: [loading, physics, worldgen, assets, runtime, vulkan]
     scene_check: |
       La franja muestra un solo check de escena: «Escena 3D» en proyectos 3D o
       «Escena 2D» en proyectos 2D; la capa del otro motor no se ofrece.
     toggles: |
       Franja de checks encima de las líneas. Cambia a la vez la consola y el
-      filtro de stderr del motor in-process (capas `RER_LOG_LAYERS`).
+      filtro del logger del motor in-process (capas `RER_LOG_LAYERS`).
   engine_logger:
     file: src/main/Engine/core/src/logging.rs
     env: RER_LOG_LAYERS
-    values: "all | none | lista (3d, 2d, physics, worldgen, assets, runtime...)"
+    values: "all | none | lista (3d, 2d, physics, worldgen, assets, runtime, vulkan...)"
     note: |
-      Los avisos y errores (`warn`/`error`) se emiten siempre; las capas solo
-      controlan info/debug/trace. Sin editor, el motor autónomo usa el valor
-      por defecto o `RER_LOG_LAYERS`.
+      Los errores se emiten siempre; los avisos respetan su capa, así que el
+      check de Vulkan silencia también la validación. Sin editor, el motor
+      autónomo escribe en stderr con el valor por defecto o `RER_LOG_LAYERS`.
+    editor_sink: |
+      El editor instala `set_sink`: las líneas ya filtradas llegan como
+      `UserEvent::Log` a la consola inferior en vez de al stderr de Electron.
+      Las líneas anteriores a crear la ventana se amortiguan y se vuelcan al
+      abrirla. El logger sin sink (motor standalone) sigue escribiendo en stderr.
+    electron_verbosity: |
+      Los `console.log` informativos del host Electron (workspace, argv, ventana
+      precargada, cierre) se silencian salvo con `RER_VERBOSE_ELECTRON=1`; los
+      errores y avisos siguen en consola.
 
 sidebar_native:
   sections:

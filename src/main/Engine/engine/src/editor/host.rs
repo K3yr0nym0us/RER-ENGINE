@@ -17,7 +17,7 @@ use winit::{
 
 use crate::editor::app::{EditorApp, EditorStatus};
 use crate::editor::cli::Cli;
-use crate::editor::user_event::UserEvent;
+use crate::editor::user_event::{LogEvent, UserEvent};
 use rer_engine_core::vulkan::VulkanOptions;
 
 /// Motor in-process del editor: 3D o 2D según el tipo de proyecto.
@@ -644,6 +644,8 @@ struct EditorApplication {
     exit_request_pending: bool,
     /// Sincronización de pantallas UI recibida antes de crear la ventana.
     pending_ui_screens: Option<Value>,
+    /// Logs recibidos antes de que exista la ventana (arranque del editor).
+    pending_logs: Vec<LogEvent>,
 }
 
 impl EditorApplication {
@@ -937,6 +939,14 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 self.editor = Some(editor);
                 window.focus_window();
 
+                // Las líneas de arranque llegaron antes de crear la ventana.
+                let pending = std::mem::take(&mut self.pending_logs);
+                if let Some(editor) = self.editor.as_mut() {
+                    for entry in pending {
+                        editor.app.push_log(entry.text, entry.is_error);
+                    }
+                }
+
                 if let Some(pending) = self.pending_ui_screens.take()
                     && let Some(editor) = self.editor.as_mut()
                 {
@@ -1030,6 +1040,14 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             UserEvent::EngineFailed(message) => {
                 if let Some(editor) = self.editor.as_mut() {
                     editor.fail_engine(message);
+                }
+            }
+            UserEvent::Log(entry) => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.app.push_log(entry.text, entry.is_error);
+                    editor.window.request_redraw();
+                } else {
+                    self.pending_logs.push(entry);
                 }
             }
         }
@@ -1228,17 +1246,32 @@ fn spawn_electron_reader(proxy: EventLoopProxy<UserEvent>) {
         .expect("No se pudo crear el hilo de lectura de Electron");
 }
 
-pub fn run() {
-    rer_engine_core::logging::init(rer_engine_core::logging::LogLayers::default());
+/// Las líneas del logger llegan desde cualquier hilo: las reenviamos al event
+/// loop para que las añada a la consola del editor en el hilo principal.
+fn install_log_sink(proxy: EventLoopProxy<UserEvent>) {
+    use rer_engine_core::logging::LogLine;
 
+    rer_engine_core::logging::set_sink(Some(Arc::new(move |line: LogLine| {
+        let _ = proxy.send_event(UserEvent::Log(LogEvent {
+            text: format!("[{}] {}", line.module, line.text),
+            is_error: line.level <= log::Level::Warn,
+        }));
+    })));
+}
+
+pub fn run() {
     let cli = Cli::parse_from(std::env::args());
-    log::info!("[editor] {}", Cli::usage());
 
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()
         .expect("No se pudo crear el EventLoop del editor");
 
     let proxy = event_loop.create_proxy();
+    install_log_sink(proxy.clone());
+    rer_engine_core::logging::init(rer_engine_core::logging::LogLayers::default());
+
+    log::info!("[editor] {}", Cli::usage());
+
     spawn_electron_reader(proxy.clone());
 
     let mut application = EditorApplication {
@@ -1250,6 +1283,7 @@ pub fn run() {
         exit_after_save: false,
         exit_request_pending: false,
         pending_ui_screens: None,
+        pending_logs: Vec::new(),
     };
     event_loop
         .run_app(&mut application)

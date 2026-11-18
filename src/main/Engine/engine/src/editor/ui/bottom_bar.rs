@@ -129,6 +129,7 @@ fn layer_label(locale: crate::editor::cli::Locale, layer: LogLayer) -> &'static 
         LogLayer::Worldgen => tr(locale, "Generación", "Worldgen"),
         LogLayer::Assets => tr(locale, "Recursos", "Assets"),
         LogLayer::Runtime => tr(locale, "Depuración", "Debug"),
+        LogLayer::Vulkan => tr(locale, "Vulkan", "Vulkan"),
     }
 }
 
@@ -178,6 +179,11 @@ fn layer_hint(locale: crate::editor::cli::Locale, layer: LogLayer) -> &'static s
             locale,
             "Depuración: métricas, selección, play y eventos internos (ruidoso)",
             "Debug: metrics, selection, play and internal events (noisy)",
+        ),
+        LogLayer::Vulkan => tr(
+            locale,
+            "Vulkan: validación, dispositivo, pipelines y asignaciones (ruidoso)",
+            "Vulkan: validation, device, pipelines and allocations (noisy)",
         ),
     }
 }

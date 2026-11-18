@@ -38,6 +38,12 @@ import { resolveAppWindowIcon } from './appWindowIcon';
 import { registerDevToolsShortcut } from './devToolsShortcut';
 import { engineWindowRectToDip } from './modalElectronSizes';
 import { registerEngineCmdIpc } from './Engine/registerEngineCmdIpc';
+
+/** Logs informativos del host Electron: solo con RER_VERBOSE_ELECTRON=1. */
+const verboseElectronLogs = process.env.RER_VERBOSE_ELECTRON === '1';
+function electronLog(...args: unknown[]): void {
+  if (verboseElectronLogs) console.log(...args);
+}
 import { sendEngineStartupScene } from './Engine/engineStartupScene';
 import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
 import { stopOpenCodeServer } from './plugins/local-ai-assistant/openCodeRuntime'
@@ -249,7 +255,7 @@ function hideMainWindowForEditor(): void {
   if (!mainWindow || mainWindow.isDestroyed()) return
   mainWindow.hide()
   mainWindow.setSkipTaskbar(true)
-  console.log('[editor] ventana React oculta; Electron sigue como host de ventanas legacy')
+  electronLog('[editor] ventana React oculta; Electron sigue como host de ventanas legacy')
 }
 
 /** Informa de un fallo del editor Rust y termina Electron (ya no hay UI editor). */
@@ -426,8 +432,8 @@ function startEditorFrame(): void {
     env: { ...process.env },
   })
 
-  console.log(`[editor] ventana egui: ${editorPath}`)
-  console.log(`[editor] args: ${args.join(' ')}`)
+  electronLog(`[editor] ventana egui: ${editorPath}`)
+  electronLog(`[editor] args: ${args.join(' ')}`)
 
   // stdout: eventos del motor reenviados por el editor + mensajes del editor.
   editorFrameProcess.stdout?.on('data', (data: Buffer) => {
@@ -446,7 +452,7 @@ function startEditorFrame(): void {
   })
 
   editorFrameProcess.on('close', (code) => {
-    console.log(`[editor] proceso terminado con código ${code}`)
+    electronLog(`[editor] proceso terminado con código ${code}`)
     editorFrameProcess = null
 
     if (editorFrameStopping) {
@@ -988,7 +994,7 @@ function ensureProjectSessionDir(): string {
   fs.mkdirSync(path.join(sessionDir, 'source', 'models'), { recursive: true })
   extractedProjectDirs.add(sessionDir)
   currentProjectSessionDir = sessionDir
-  console.log('[editor] workspace de sesión 3D:', sessionDir)
+  electronLog('[editor] workspace de sesión 3D:', sessionDir)
   return sessionDir
 }
 

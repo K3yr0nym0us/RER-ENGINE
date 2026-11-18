@@ -1,16 +1,17 @@
-//! Logs compactos del motor: `[módulo] mensaje` en stderr.
+//! Logs compactos del motor: `[módulo] mensaje`.
 //!
-//! El filtro es dinámico por capas: la consola inferior del editor puede
-//! activar/desactivar `3D`, `2D`, `física`, `worldgen`, etc. en caliente. Los
-//! avisos y errores (`warn`/`error`) se emiten siempre, aunque su capa esté
-//! apagada.
+//! Sin editor se escriben en stderr. El editor instala un `set_sink` para que
+//! esas mismas líneas lleguen a su consola inferior en vez de ensuciar el
+//! terminal de Electron: el filtro dinámico por capas (`3D`, `Vulkan`, `Assets`,
+//! …) se aplica en ambos destinos. Los errores se emiten siempre; los avisos
+//! respetan su capa para poder silenciar, p. ej., la validación de Vulkan.
 //!
 //! Para el motor sin editor se puede fijar el filtro inicial con
 //! `RER_LOG_LAYERS` (p. ej. `engine,world3d,physics` o `all`).
 
 use std::io::Write;
-use std::sync::Once;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, Once};
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 
@@ -36,10 +37,12 @@ pub enum LogLayer {
     Assets = 7,
     /// Métricas, selección, play y eventos internos (ruidoso).
     Runtime = 8,
+    /// Vulkan: validación, adaptador, pipelines y asignaciones (ruidoso).
+    Vulkan = 9,
 }
 
 impl LogLayer {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Engine,
         Self::Editor,
         Self::Loading,
@@ -49,6 +52,7 @@ impl LogLayer {
         Self::Worldgen,
         Self::Assets,
         Self::Runtime,
+        Self::Vulkan,
     ];
 
     #[must_use]
@@ -69,6 +73,7 @@ impl LogLayer {
             Self::Worldgen => "worldgen",
             Self::Assets => "assets",
             Self::Runtime => "runtime",
+            Self::Vulkan => "vulkan",
         }
     }
 
@@ -84,6 +89,7 @@ impl LogLayer {
             "worldgen" | "world-gen" => Some(Self::Worldgen),
             "assets" => Some(Self::Assets),
             "runtime" | "ruido" => Some(Self::Runtime),
+            "vulkan" | "gpu" => Some(Self::Vulkan),
             _ => None,
         }
     }
@@ -95,14 +101,12 @@ pub struct LogLayers(u32);
 
 impl LogLayers {
     const ALL_MASK: u32 = (1 << LogLayer::ALL.len()) - 1;
-    /// Arranque por defecto de los motores: las capas ruidosas quedan apagadas.
+    /// Arranque por defecto: solo el núcleo, el editor y la escena activa.
+    /// Carga, física, worldgen, recursos, debug y Vulkan arrancan apagados.
     pub const DEFAULT_MASK: u32 = LogLayer::Engine.bit()
         | LogLayer::Editor.bit()
-        | LogLayer::Loading.bit()
         | LogLayer::World3d.bit()
-        | LogLayer::World2d.bit()
-        | LogLayer::Physics.bit()
-        | LogLayer::Worldgen.bit();
+        | LogLayer::World2d.bit();
 
     #[must_use]
     pub const fn none() -> Self {
@@ -181,29 +185,57 @@ static LAYERS: AtomicU32 = AtomicU32::new(LogLayers::DEFAULT_MASK);
 static INIT: Once = Once::new();
 static LOGGER: EngineLogger = EngineLogger;
 
+/// Línea ya filtrada que el editor muestra en su consola inferior.
+#[derive(Clone, Debug)]
+pub struct LogLine {
+    pub level: Level,
+    pub module: String,
+    pub text: String,
+}
+
+type LogSink = Arc<dyn Fn(LogLine) + Send + Sync>;
+static SINK: Mutex<Option<LogSink>> = Mutex::new(None);
+
+/// Instala (o quita, con `None`) el destino de los logs. El editor lo usa para
+/// llevarlos a su consola en vez de al stderr del proceso Electron.
+pub fn set_sink(sink: Option<LogSink>) {
+    if let Ok(mut current) = SINK.lock() {
+        *current = sink;
+    }
+}
+
 struct EngineLogger;
 
 impl Log for EngineLogger {
     fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-        // Nunca silenciar avisos/errores: las capas controlan info/debug/trace.
-        if metadata.level() <= Level::Warn {
+        // Los errores nunca se silencian; los avisos sí respetan su capa (así se
+        // puede apagar la validación de Vulkan). Sin capa, solo avisos/errores.
+        if metadata.level() == Level::Error {
             return true;
         }
-        layer_for_target(metadata.target()).is_some_and(|layer| layers().contains(layer))
+        match layer_for_target(metadata.target()) {
+            Some(layer) => layers().contains(layer),
+            None => metadata.level() <= Level::Warn,
+        }
     }
 
     fn log(&self, record: &Record<'_>) {
         if !self.enabled(record.metadata()) {
             return;
         }
+        let line = LogLine {
+            level: record.level(),
+            module: record.module_path().unwrap_or(record.target()).to_owned(),
+            text: record.args().to_string(),
+        };
+        let sink = SINK.lock().ok().and_then(|current| current.clone());
+        if let Some(sink) = sink {
+            sink(line);
+            return;
+        }
         let stderr = std::io::stderr();
         let mut handle = stderr.lock();
-        let _ = writeln!(
-            handle,
-            "[{}] {}",
-            record.module_path().unwrap_or(record.target()),
-            record.args(),
-        );
+        let _ = writeln!(handle, "[{}] {}", line.module, line.text);
     }
 
     fn flush(&self) {
@@ -250,16 +282,20 @@ fn layer_for_target(target: &str) -> Option<LogLayer> {
     if target.contains("model_asset") || target.contains("static_model_cache") {
         return Some(LogLayer::Assets);
     }
+    if target.contains("vulkan") {
+        return Some(LogLayer::Vulkan);
+    }
     if target.contains("play_character")
         || target.contains("play_controller")
         || target.contains("fps_camera")
         || target.contains("animation")
         || target.contains("metrics")
         || target.contains("tick")
+        || target.contains("_dbg")
     {
         return Some(LogLayer::Runtime);
     }
-    if target.starts_with("rer_engine::engine3d") || target.starts_with("rer_engine_core::vulkan") {
+    if target.starts_with("rer_engine::engine3d") {
         return Some(LogLayer::World3d);
     }
     if target.starts_with("rer_engine::engine2d") {
@@ -279,13 +315,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_layers_include_engine_but_not_noise() {
+    fn default_layers_only_include_core_editor_and_scene() {
         let layers = LogLayers::default();
         assert!(layers.contains(LogLayer::Engine));
+        assert!(layers.contains(LogLayer::Editor));
         assert!(layers.contains(LogLayer::World3d));
-        assert!(layers.contains(LogLayer::Worldgen));
+        assert!(layers.contains(LogLayer::World2d));
+        assert!(!layers.contains(LogLayer::Loading));
+        assert!(!layers.contains(LogLayer::Physics));
+        assert!(!layers.contains(LogLayer::Worldgen));
         assert!(!layers.contains(LogLayer::Assets));
         assert!(!layers.contains(LogLayer::Runtime));
+        assert!(!layers.contains(LogLayer::Vulkan));
     }
 
     #[test]
@@ -297,6 +338,11 @@ mod tests {
         assert!(layers.contains(LogLayer::Runtime));
         assert!(!layers.contains(LogLayer::World2d));
 
+        assert!(
+            LogLayers::parse("vulkan,gpu")
+                .unwrap()
+                .contains(LogLayer::Vulkan)
+        );
         assert_eq!(LogLayers::parse("all"), Some(LogLayers::all()));
         assert_eq!(LogLayers::parse("none"), Some(LogLayers::none()));
         assert_eq!(LogLayers::parse("  "), None);
@@ -321,8 +367,13 @@ mod tests {
             Some(LogLayer::Editor)
         );
         assert_eq!(
-            layer_for_target("rer_engine_core::vulkan"),
-            Some(LogLayer::World3d)
+            layer_for_target("rer_engine_core::vulkan::gpu::context"),
+            Some(LogLayer::Vulkan)
         );
+        assert_eq!(
+            layer_for_target("rer_engine::engine3d::config_3d::plane_tool_rotate_dbg"),
+            Some(LogLayer::Runtime)
+        );
+        assert_eq!(LogLayer::Vulkan.key(), "vulkan");
     }
 }
