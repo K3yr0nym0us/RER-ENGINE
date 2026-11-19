@@ -68,8 +68,8 @@ pub(super) fn scenes_body(
             crate::editor::i18n::tr(locale, "Limpiar escena", "Clear scene"),
             crate::editor::i18n::tr(
                 locale,
-                "Elimina los elementos DEMO (incluye la fila de partículas); conserva suelo, jugador y cámaras",
-                "Removes DEMO elements (including the particle row); keeps ground, player and cameras",
+                "Elimina los elementos DEMO (filas de partículas e interacción, con sus tooltips); conserva suelo, jugador y cámaras",
+                "Removes DEMO elements (particle and interaction rows, with their tooltips); keeps ground, player and cameras",
             ),
             crate::editor::theme::DANGER,
         ) {

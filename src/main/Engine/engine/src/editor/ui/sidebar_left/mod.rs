@@ -306,7 +306,8 @@ use self::resources::*;
 use self::scenes::*;
 use self::tools::*;
 pub(crate) use interaction_tooltips::{
-    DeleteInteractionTooltipDraft, TooltipDraft, demo_tooltips, sync_command,
+    DEMO_TOOLTIP_IDS, DeleteInteractionTooltipDraft, TooltipDraft, demo_tooltips,
+    is_demo_tooltip, sync_command,
 };
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {

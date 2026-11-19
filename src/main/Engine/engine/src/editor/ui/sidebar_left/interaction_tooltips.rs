@@ -155,6 +155,19 @@ pub(crate) fn sync_command(app: &crate::editor::app::EditorApp) -> Value {
     })
 }
 
+/// IDs de los tooltips sembrados con la fila demo de interacción. «Limpiar
+/// escena» los retira junto a las entidades `[InteractDemo]`.
+pub(crate) const DEMO_TOOLTIP_IDS: &[&str] =
+    &["demo_move", "demo_vanish", "demo_drop", "demo_hold"];
+
+/// `true` si el tooltip pertenece a la fila demo de interacción.
+pub(crate) fn is_demo_tooltip(tooltip: &Value) -> bool {
+    tooltip
+        .get("id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| DEMO_TOOLTIP_IDS.contains(&id))
+}
+
 /// Tooltips de la fila demo, disponibles desde el primer arranque de un proyecto 3D.
 /// Cada uno lleva su script Rhai en la definición, así que se puede editar o
 /// quitar desde el formulario igual que cualquier otro tooltip (sin código en duro).
@@ -307,5 +320,21 @@ pub(crate) fn body(
                 });
             });
         ui.add_space(4.0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clear_scene_identifies_demo_tooltips_only() {
+        let demos = demo_tooltips();
+        assert_eq!(demos.len(), DEMO_TOOLTIP_IDS.len());
+        assert!(demos.iter().all(is_demo_tooltip));
+
+        let custom = json!({ "id": "my_tooltip", "name": "Custom" });
+        assert!(!is_demo_tooltip(&custom));
+        assert!(!is_demo_tooltip(&json!({ "name": "sin id" })));
     }
 }

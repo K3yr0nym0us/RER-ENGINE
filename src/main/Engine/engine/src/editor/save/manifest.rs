@@ -31,6 +31,55 @@ pub struct ManifestInput<'a> {
     pub game_style: &'a str,
 }
 
+/// `true` si una entidad del snapshot/manifiesto es contenido DEMO de la
+/// plantilla 3D. Usa el mismo criterio que el motor en «Limpiar escena».
+fn is_demo_manifest_entity(entity: &Value) -> bool {
+    let path = entity
+        .get("model")
+        .and_then(Value::as_str)
+        .or_else(|| entity.get("path").and_then(Value::as_str))
+        .unwrap_or_default();
+    crate::engine3d::is_demo_entity_path(path)
+}
+
+/// `true` si un emisor serializado pertenece a la fila demo de partículas.
+fn is_demo_manifest_emitter(emitter: &Value) -> bool {
+    let id = emitter.get("id").and_then(Value::as_u64).unwrap_or(0);
+    let material = emitter.get("material").and_then(Value::as_str).unwrap_or("");
+    let position = emitter.get("position").and_then(Value::as_array);
+    let at = |i: usize| {
+        position
+            .and_then(|p| p.get(i))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0) as f32
+    };
+    crate::engine3d::particles::is_demo_showcase_wire(material, [at(0), at(1), at(2)], id)
+}
+
+/// Blindaje de guardado: el contenido DEMO nunca se escribe en un `.save`,
+/// aunque esté presente en la escena del motor (p. ej. guardar la demo sin
+/// haber pulsado «Limpiar escena»). Aplica a la escena activa y a las pestañas.
+fn strip_demo_from_scenes(scenes: &mut [Value]) -> usize {
+    let mut removed = 0usize;
+    for scene in scenes {
+        if let Some(entities) = scene.get_mut("entities").and_then(Value::as_array_mut) {
+            let before = entities.len();
+            entities.retain(|entity| !is_demo_manifest_entity(entity));
+            removed += before - entities.len();
+        }
+        if let Some(particles) = scene
+            .get_mut("world")
+            .and_then(|world| world.get_mut("particles"))
+            && let Some(emitters) = particles.get_mut("emitters").and_then(Value::as_array_mut)
+        {
+            let before = emitters.len();
+            emitters.retain(|emitter| !is_demo_manifest_emitter(emitter));
+            removed += before - emitters.len();
+        }
+    }
+    removed
+}
+
 /// Construye el manifiesto completo listo para empaquetar.
 pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
     let state = input.state;
@@ -58,6 +107,13 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
             .map(|tab| merge_scene(tab, &active_scene, active_scene_id))
             .collect()
     };
+
+    if input.project_type == "3D" {
+        let removed = strip_demo_from_scenes(&mut scenes);
+        if removed > 0 {
+            log::info!("[save] {removed} elementos DEMO excluidos del .save");
+        }
+    }
 
     let merged_models = merged_models(&state.models, engine_scene);
 
@@ -144,10 +200,16 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
         "menuUiScreens".into(),
         Value::Array(state.menu_ui_screens.clone()),
     );
-    root.insert(
-        "interactionTooltips".into(),
-        Value::Array(state.interaction_tooltips.clone()),
-    );
+    let tooltips = state
+        .interaction_tooltips
+        .iter()
+        .filter(|tooltip| {
+            !(input.project_type == "3D"
+                && crate::editor::ui::sidebar_left::is_demo_tooltip(tooltip))
+        })
+        .cloned()
+        .collect();
+    root.insert("interactionTooltips".into(), Value::Array(tooltips));
 
     copy_engine_list(
         &mut root,
@@ -1274,5 +1336,132 @@ mod tests {
         assert_eq!(entity["colision"], json!(true));
         assert_eq!(entity["controls"]["keyboard_mouse"], json!({}));
         assert!(manifest.get("resources").is_none());
+    }
+
+    #[test]
+    fn demo_entities_never_reach_the_manifest() {
+        let mut scene = engine_scene();
+        let demo_paths = [
+            "[EditorBox]", "[Ball]", "[MatComparison]", "[MatVal]", "[MatValLabel]",
+            "[ReflectionProbe]", "[ParticleDemoLabel]", "[InteractDemo]", "[InteractDemoLabel]",
+        ];
+        let mut entities = Vec::new();
+        for (index, path) in demo_paths.iter().enumerate() {
+            entities.push(json!({
+                "id": 100 + index,
+                "name": path,
+                "model": path,
+                "position": [0.0, 0.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0, 1.0],
+                "scale": [1.0, 1.0, 1.0],
+            }));
+        }
+        entities.push(json!({
+            "id": 200,
+            "name": "Roca",
+            "model": "model_rock",
+            "position": [1.0, 0.0, 2.0],
+            "rotation": [0.0, 0.0, 0.0, 1.0],
+            "scale": [1.0, 1.0, 1.0],
+        }));
+        scene["entities"] = json!(entities);
+
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &scene,
+            state: &state(),
+            project_type: "3D",
+            game_style: "first-person",
+        });
+        let saved = manifest["scenes"][0]["entities"].as_array().unwrap();
+        assert_eq!(saved.len(), 1, "solo la entidad del usuario debe persistirse");
+        assert_eq!(saved[0]["model"], json!("model_rock"));
+    }
+
+    #[test]
+    fn demo_particle_emitters_never_reach_the_manifest() {
+        let mut scene = engine_scene();
+        let mut emitters = Vec::new();
+        for index in 0..5 {
+            emitters.push(json!({
+                "id": crate::engine3d::particles::demo_emitter_id(index),
+                "material": "fire",
+                "position": [10.0, 0.35, -1.0 + index as f32 * 2.0],
+            }));
+        }
+        // Id de usuario pero pose de la fila demo: también debe descartarse.
+        emitters.push(json!({
+            "id": 9000,
+            "material": "fire",
+            "position": [10.0, 0.35, -1.0],
+        }));
+        emitters.push(json!({
+            "id": 9001,
+            "material": "smoke",
+            "position": [2.0, 0.5, 3.0],
+        }));
+        scene["world"]["particles"] = json!({
+            "weather": { "kind": "rain", "intensity": 0.5, "fall_speed": 1.0, "wind_x": 0.0 },
+            "emitters": emitters,
+        });
+
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &scene,
+            state: &state(),
+            project_type: "3D",
+            game_style: "first-person",
+        });
+        let particles = &manifest["scenes"][0]["world"]["particles"];
+        let saved = particles["emitters"].as_array().unwrap();
+        assert_eq!(saved.len(), 1, "solo el emisor del usuario debe persistirse");
+        assert_eq!(saved[0]["id"], json!(9001));
+        assert!(particles["weather"].is_object());
+    }
+
+    #[test]
+    fn demo_entities_in_inactive_scene_tabs_are_stripped() {
+        let mut s = state();
+        s.scenes.push(json!({
+            "id": 2,
+            "name": "Nivel 2",
+            "world": { "worldWidth": 10 },
+            "entities": [
+                { "id": 1, "name": "Demo", "model": "[EditorBox]",
+                  "position": [0,0,0], "rotation": [0,0,0,1], "scale": [1,1,1] },
+                { "id": 2, "name": "Roca", "model": "model_rock",
+                  "position": [0,0,0], "rotation": [0,0,0,1], "scale": [1,1,1] },
+            ],
+            "player": null,
+            "sprites": [],
+            "models": [],
+        }));
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &engine_scene(),
+            state: &s,
+            project_type: "3D",
+            game_style: "third-person",
+        });
+        let scenes = manifest["scenes"].as_array().unwrap();
+        let scene2 = scenes.iter().find(|scene| scene["id"] == 2).unwrap();
+        let saved = scene2["entities"].as_array().unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0]["model"], json!("model_rock"));
+    }
+
+    #[test]
+    fn demo_interaction_tooltips_never_reach_the_manifest() {
+        let mut s = state();
+        s.interaction_tooltips = crate::editor::ui::sidebar_left::demo_tooltips();
+        s.interaction_tooltips
+            .push(json!({ "id": "my_tooltip", "name": "Custom" }));
+
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &engine_scene(),
+            state: &s,
+            project_type: "3D",
+            game_style: "first-person",
+        });
+        let saved = manifest["interactionTooltips"].as_array().unwrap();
+        assert_eq!(saved.len(), 1, "solo el tooltip del usuario debe persistirse");
+        assert_eq!(saved[0]["id"], json!("my_tooltip"));
     }
 }

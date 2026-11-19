@@ -997,9 +997,10 @@ impl State {
 impl State {
     /// «Limpiar escena»: elimina los elementos DEMO de la plantilla (muros y
     /// cubos `[EditorBox]`, esfera de física `[Ball]`, sondas `[ReflectionProbe]`,
-    /// pruebas `[MatVal]`, `[MatComparison]`, letreros `[ParticleDemoLabel]` y la fila de partículas).
-    /// Conserva suelo, sol, jugador y cámaras. Cada entidad pasa por el borrado
-    /// normal (eventos, meta, física) y deja undo.
+    /// pruebas `[MatVal]`, `[MatComparison]`, letreros `[ParticleDemoLabel]`, la
+    /// fila de partículas y la fila de interacción `[InteractDemo]` con sus
+    /// letreros). Conserva suelo, sol, jugador y cámaras. Cada entidad pasa por
+    /// el borrado normal (eventos, meta, física) y deja undo.
     pub(crate) fn clear_scene_content(&mut self) {
         let demo_ids: Vec<u32> = self
             .save_registry

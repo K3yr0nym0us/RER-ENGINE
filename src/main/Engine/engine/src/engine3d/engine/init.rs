@@ -116,7 +116,7 @@ impl State {
 
         let (model_preload_tx, model_preload_rx) =
             crate::engine3d::config_3d::static_model_cache::create_model_preload_channel();
-        let mut state = Self {
+        let state = Self {
             window,
             vulkan: vulkan.clone(),
             size,
@@ -204,11 +204,10 @@ impl State {
             entity_attachments: HashMap::new(),
             entity_sockets: HashMap::new(),
             bone_index_cache: HashMap::new(),
-            particles: {
-                let mut particles = crate::engine3d::particles::ParticleSystem::new();
-                particles.seed_default_showcase();
-                particles
-            },
+            // La fila demo de partículas NO se siembra aquí: solo pertenece a
+            // la plantilla que arranca sin `.save` (setup_default_3d_scene).
+            // En proyectos `.save` los emisores se restauran del manifest.
+            particles: crate::engine3d::particles::ParticleSystem::new(),
             water: crate::engine3d::water::WaterSystem::default(),
             splash: crate::engine3d::water::SplashLayer::default(),
             socket_bone_pick_entity: None,
@@ -409,7 +408,6 @@ impl State {
             fp_baseline_defer_frames: 0,
             editor_scenes: crate::engine3d::engine::editor_scenes::EditorSceneStore::new(),
         };
-        state.ensure_particle_demo_row();
         Ok(state)
     }
 }

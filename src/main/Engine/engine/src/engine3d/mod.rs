@@ -37,6 +37,8 @@ pub(crate) use config_3d::world_bounds::{
     MAX_WORLD_FACE_3D, MAX_WORLD_RADIUS_3D, MIN_WORLD_FACE_3D, MIN_WORLD_RADIUS_3D,
 };
 pub(crate) use config_3d::world_bounds::{MAX_WORLD_HEIGHT_3D, MIN_WORLD_HEIGHT_3D};
+#[cfg(feature = "editor")]
+pub(crate) use entity_save_meta::is_demo_entity_path;
 mod config_base;
 #[path = "config_compat/mod.rs"]
 mod config_compat;

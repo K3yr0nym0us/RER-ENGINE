@@ -420,6 +420,9 @@ impl State {
         send_load_progress("Insertando Character (Player)", None, None);
         let _ = crate::engine3d::assets::bundled::ensure_bundled_default_player_model(self);
         self.apply_3d_placeholder_sun_and_player();
+        // Solo la demo que arranca sin `.save` siembra la fila de partículas.
+        // Los proyectos `.save` restauran sus emisores desde el manifest.
+        self.ensure_particle_demo_row();
 
         send_load_progress("Plantilla 3D lista", None, None);
         log::info!("Plantilla 3D por defecto lista");
@@ -458,7 +461,6 @@ impl State {
         self.ensure_default_sun();
         self.ensure_default_physics_ball();
         self.ensure_material_validation_demo();
-        self.ensure_particle_demo_row();
         crate::engine3d::config_3d::interaction_demo::ensure_interaction_demo(self);
         if self.play_character_entity.is_none() {
             self.spawn_play_character();

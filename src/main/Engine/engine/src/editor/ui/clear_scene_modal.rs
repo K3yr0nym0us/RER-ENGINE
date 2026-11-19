@@ -3,8 +3,9 @@
 //! El botón de Escenas (visible solo mientras queden elementos DEMO) marca
 //! `SidebarLeftState::pending_clear_scene`. Confirmar envía `clear_scene_content`:
 //! elimina los elementos DEMO (`[EditorBox]`, `[Ball]`, `[ReflectionProbe]`,
-//! `[MatVal]`, `[MatComparison]`, `[ParticleDemoLabel]` y la fila de partículas)
-//! y conserva suelo, sol, jugador y cámaras.
+//! `[MatVal]`, `[MatComparison]`, `[ParticleDemoLabel]`, la fila de partículas y
+//! la fila de interacción `[InteractDemo]`/`[InteractDemoLabel]` con sus
+//! tooltips) y conserva suelo, sol, jugador y cámaras.
 
 use egui::RichText;
 use egui_phosphor::regular as icons;
@@ -46,8 +47,8 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
             ui.label(
                 RichText::new(tr(
                     locale,
-                    "Se eliminarán todos los elementos DEMO de la escena (muros, cubos, esfera de física, sondas, las pruebas de materiales y la fila de partículas con sus letreros). El suelo, el sol, el jugador y las cámaras se conservan.",
-                    "All DEMO elements in the scene will be removed (walls, cubes, physics ball, probes, the material tests and the particle row with its labels). The ground, sun, player and cameras are kept.",
+                    "Se eliminarán todos los elementos DEMO de la escena (muros, cubos, esfera de física, sondas, las pruebas de materiales, la fila de partículas con sus letreros y la fila de interacción con sus tooltips). El suelo, el sol, el jugador y las cámaras se conservan.",
+                    "All DEMO elements in the scene will be removed (walls, cubes, physics ball, probes, the material tests, the particle row with its labels and the interaction row with its tooltips). The ground, sun, player and cameras are kept.",
                 ))
                 .size(13.0)
                 .color(theme::TEXT),
@@ -100,9 +101,21 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
     if confirm {
         app.left_sidebar.pending_clear_scene = false;
         app.right_sidebar.particles.remove_demo_showcase();
+        // La fila demo de interacción también se limpia: el motor retira sus
+        // entidades con `clear_scene_content` y aquí retiramos sus tooltips.
+        app.project_state
+            .interaction_tooltips
+            .retain(|tooltip| !crate::editor::ui::sidebar_left::is_demo_tooltip(tooltip));
+        if crate::editor::ui::sidebar_left::DEMO_TOOLTIP_IDS
+            .contains(&app.left_sidebar.tooltip_draft.id.as_str())
+        {
+            app.left_sidebar.tooltip_draft = Default::default();
+        }
+        app.send_engine(crate::editor::ui::sidebar_left::sync_command(app));
         app.send_engine(json!({ "cmd": "clear_scene_content" }));
         app.push_log(
-            "[Escenas] Limpiando elementos DEMO de la escena…".to_string(),
+            "[Escenas] Limpiando elementos DEMO de la escena (incluida la fila de interacción)…"
+                .to_string(),
             false,
         );
     } else if cancel {

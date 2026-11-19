@@ -1347,6 +1347,13 @@ mod tests {
     }
 
     #[test]
+    fn new_system_starts_empty_until_the_no_save_demo_seeds_it() {
+        let system = ParticleSystem::new();
+        assert!(system.is_empty());
+        assert_eq!(system.demo_showcase_count(), 0);
+    }
+
+    #[test]
     fn seed_default_showcase_adds_five_emitters() {
         let mut system = ParticleSystem::new();
         system.seed_default_showcase();
