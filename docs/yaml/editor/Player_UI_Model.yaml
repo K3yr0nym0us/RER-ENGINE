@@ -6,7 +6,7 @@
 #
 # Relacionado con:
 #   - docs/yaml/persistence/Save_Proyect_Model.yaml (referencias player_ui_*)
-#   - docs/yaml/editor/MODAL_ELECTRON.yaml (PlayerUiEditorElectronHost)
+#   - docs/yaml/editor/MODAL_ELECTRON.yaml (ventana nativa del editor HUD)
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
 version: 2
@@ -30,14 +30,13 @@ screens:
     2d: default2dPlayerUiScreens()
 
 native_sidebar:
-  sync:
-    channel: ui_screens_sync (React -> main -> stdin del editor)
-    payload: player[] y menu[] con { id, name, active }
+  source_of_truth: editor nativo (editor/ui_screens.rs); sin puente React -> main
+  commands: sync_player_ui_screens / set_active_player_ui_screen enviados por Rust
   player:
-    - Nuevo HUD
-    - Lista con switch de activo, editar (abre PlayerUiEditorElectronHost) y eliminar
+    - Nuevo HUD (create_ui_screen_modal.rs; abre el editor React aun no migrado)
+    - Lista con switch de activo (accion Rust), editar (ventana nativa HUD) y eliminar
   menu:
-    - Nuevo menu, renombrar y eliminar
+    - Nuevo menu (create_ui_screen_modal.rs), renombrar (rename_ui_screen_modal.rs) y eliminar
     - status: las pantallas menu se persisten y listan, pero el motor no renderiza menus en play
   overlay_rebuild: |
     Al entrar, cambiar o salir de edicion se llama a rebuild_player_ui_overlay().
@@ -69,9 +68,9 @@ edit_mode:
     En preview pausado o play segÃºn motor: muestra handles, permite crear/mover
     elementos; emite player_ui_* events al sidebar y al modal editor.
   modal:
-    host: PlayerUiEditorElectronHost
-    session: playerUiEditorSessions.ts
-    patch: pushPlayerUiEditorPatch (igual patrÃ³n que Entity Properties)
+    native: editor/ui/hud_editor_modal.rs + editor/hud_editor.rs
+    state: HudEditorState + HudElements (evento player_ui_text_boxes_list)
+    note: MIGRADA a ventana nativa; sin host Electron, sesiones ni patches IPC.
 
 persistence:
   manifest_fields:
@@ -97,7 +96,7 @@ key_files:
   native_sync: src/main/Engine/engine/src/editor/ui_screens.rs
   native_sidebar: src/main/Engine/engine/src/editor/ui/sidebar_left/interface.rs
   react_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (UiScreensSync)
-  modal: src/renderer/src/modal-electron/playerUiEditorSessions.ts
+  modal: src/main/Engine/engine/src/editor/ui/hud_editor_modal.rs (ventana nativa)
   hook_draw: src/renderer/src/hooks/usePlayerUiObjectDrawing.ts
   save_build: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
   sidebar: src/renderer/src/pages/EngineView/components/sidebar/UIAccordion/

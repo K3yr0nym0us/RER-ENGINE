@@ -99,7 +99,7 @@ key_files:
     - src/main/Engine/engine/src/engine3d/config_3d/model_animation.rs
     - src/main/Engine/engine/src/engine3d/engine/undo_bone_physics.rs
   ts:
-    - src/renderer/src/modal-electron/entityPropertiesBonePhysics.ts
+    - src/main/Engine/engine/src/editor/ui/entity_properties_modal.rs (pestaña huesos nativa)
     - src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/EntityPropertiesBonesPanel.tsx
 
 do_not:

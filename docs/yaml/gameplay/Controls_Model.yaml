@@ -17,18 +17,16 @@ principle:
   owner_ui: acordeón Controls del sidebar
 
 ui:
-  accordion: ControlsAccordion.tsx
-  modal: ControlBindingsModalBody.tsx
-  hook: useControlBindings (selección de personaje, contadores, abrir modal)
-  runtime_hook: useControlBindingsRuntime.ts (envía bindings al motor en play)
   native_editor:
     accordion: Controles (egui)
     buttons: Configurar teclado + ratón / Configurar mandos
-    legacy_kind: control_bindings; mode keyboard_mouse | gamepad
-    modal: ControlBindingsModalBody
+    modal: MIGRADA a ventana nativa editor/ui/control_bindings_modal.rs
     effect: |
-      Abre la modal de bindings con el personaje efectivo (jugador primero) y los
-      scripts existentes; los cambios se guardan en el proyecto y se aplican en play.
+      Abre la ventana nativa con el personaje efectivo (jugador primero) y los
+      scripts existentes. Reproduce el diseño React: cabecera + badge, teclado
+      8/12 y mouse 4/12 o mando, aviso sin asignaciones y pie de información.
+      Doble click en una tecla abre el editor Rhai anidado; al guardar se envía
+      set_control_bindings desde Rust. No queda legacy_kind ni hook React.
 
 binding_kinds:
   keyboard_mouse:
@@ -57,10 +55,9 @@ defaults:
   file: src/renderer/src/defaults/playCharacterControlBindings.ts
 
 key_files:
-  ui: src/renderer/src/pages/EngineView/components/sidebar/ControlsAccordion/
   native_ui: src/main/Engine/engine/src/editor/ui/sidebar_left/controls.rs
-  native_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (control_bindings)
-  hooks: src/renderer/src/hooks/useControlBindings*.ts
+  native_modal: src/main/Engine/engine/src/editor/ui/control_bindings_modal.rs
+  native_state: src/main/Engine/engine/src/editor/control_bindings.rs
   scripting: src/main/Engine/core/src/scripting/
 
 do_not:

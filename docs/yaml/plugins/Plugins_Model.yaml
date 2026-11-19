@@ -13,7 +13,7 @@ summary: |
 principles:
   - Lógica de mundo/terreno en Rust (DLL); el editor solo envía intent y muestra estado
   - Descarga on-demand tras confirmación del usuario
-  - IPC plugins:* en Electron main; worldgen usa además engine:cmd / engine:event 3D
+  - La modal y toda su gestión son 100% Rust (editor/ui/plugins_modal.rs + editor/plugin_runtime.rs): state.json, descargas, unzip, SHA-256 y servidor OpenCode. Sin Electron ni React.
 
 catalog:
   - id: local-ai-assistant
@@ -28,7 +28,7 @@ catalog:
     version: "1.0.0"
     crate: src/main/Engine/worldgen
     docs: src/main/Engine/worldgen/README.md
-    modal: src/renderer/src/plugins/worldgen/WorldGenModalBody.tsx
+    modal: src/main/Engine/engine/src/editor/ui/worldgen_modal.rs (MIGRADA a ventana nativa)
     engine: src/main/Engine/engine/src/engine3d/config_3d/worldgen
     install_dir: "{userData}/plugins/world-gen/rer_worldgen.dll"
     notes: |

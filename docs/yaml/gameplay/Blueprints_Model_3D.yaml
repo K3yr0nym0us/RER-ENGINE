@@ -11,7 +11,7 @@
 #   - docs/yaml/gameplay/Physics_Model.yaml          (setEntityPhysics + propagación)
 #   - docs/yaml/gameplay/Animation_Model.yaml        (animaciones + propagación)
 #   - docs/yaml/editor/Entity_Properties_Modal.yaml (convertToBlueprint, replaceModel)
-#   - docs/yaml/editor/MODAL_ELECTRON.yaml        (BluePrintModalElectronHost)
+#   - docs/yaml/editor/MODAL_ELECTRON.yaml        (selector nativo de blueprints, migrado)
 #
 # Última revisión: junio 2026
 
@@ -99,19 +99,19 @@ create:
 
 quick_build:
   ui:
-    - Herramientas → Construcción → modal Blueprint → categoría → elegir plantilla
+    - Herramientas → Construcción rápida → ventana nativa de blueprints → categoría → elegir plantilla
     - Click en viewport coloca instancia (ghost semitransparente previo)
   native_editor:
     entry: tarjeta Construcción rápida del editor egui (Herramientas)
-    modal: legacy quick_build (action open | toggle) -> BluePrintModalBody
+    modal: MIGRADA a ventana nativa editor/ui/quick_build_modal.rs (open | toggle)
     activation: |
-      QuickBuildBridge (HeadlessEditorHost) envía `set_active_tool quick_build_place`
-      con preview_path/preview_blueprint/scale/física al seleccionar el blueprint.
+      El editor nativo envía `set_active_tool quick_build_place` desde
+      editor/ui/quick_build_modal.rs::placement_command con preview_blueprint,
+      escala, rotación y física; sin QuickBuildBridge ni React.
     toggle: |
-      Con un blueprint activo, la tarjeta emite `quick_build action: toggle`; React
-      limpia el blueprint y el bridge envía `set_active_tool` vacío.
-    state_sync: |
-      React → main → stdin (`quick_build_state`) mantiene el estado activo en la tarjeta. 
+      Con un blueprint activo, sidebar_left limpia app.quick_build_active y envía
+      `set_active_tool` vacío directamente al motor.
+    state_sync: eliminado; app.quick_build_active resalta la tarjeta en Rust.
     placement: el viewport nativo (winit) recibe el clic y el motor coloca la instancia.
   ipc:
     set_active_tool:
@@ -168,14 +168,12 @@ propagation:
 # ---------------------------------------------------------------------------
 
 delete:
-  modal: BluePrintModalBody → InlineNestedDialog
+  ui: dialogo anidado en la ventana nativa de blueprints (papelera en cada tarjeta)
+  native: "editor/ui/quick_build_modal.rs: dialogo anidado; with_entities envia remove_entity, keep_entities actualiza entity_meta"
+  note: Logica recuperada de bluePrintModalActions.ts y portada a Rust. Sin IPC ni React.
   options:
-    deleteWithEntities:
-      file: bluePrintModalActions.ts
-      action: removeEntity en todas las instancias con meta.blueprintId
-    deleteKeepEntities:
-      action: quita blueprintId; conserva física/scripts/animaciones en cada entidad
-  ipc: delegateModalElectron (ventana modal Electron)
+    deleteWithEntities: removeEntity en todas las instancias con meta.blueprintId
+    deleteKeepEntities: quita blueprintId; conserva física/scripts/animaciones en cada entidad
 
 # ---------------------------------------------------------------------------
 # Persistencia `.save`
@@ -215,7 +213,7 @@ key_files:
   actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
   native_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (QuickBuildBridge)
-  modal: src/renderer/src/pages/EngineView/components/sidebar/ToolsAccordion/components/BluePrintModalBody.tsx
+  modal: engine/src/editor/ui/quick_build_modal.rs (ventana nativa)
   motor_registry: src/main/Engine/engine/src/engine3d/engine/commands.rs (RegisterBlueprint)
   motor_placement: src/main/Engine/engine/src/engine3d/config_3d/quick_build.rs
   motor_load: src/main/Engine/engine/src/engine3d/engine/load_proyect.rs

@@ -150,12 +150,10 @@ archivos_clave:
     - "engine/src/engine3d/engine/editor_scenes.rs"
     - "engine/src/engine3d/engine/load_proyect.rs"
     - "engine/src/engine3d/engine/commands.rs (undo + clear_editor_undo_redo)"
-  renderer:
-    - "pages/EngineView/hooks/useSceneManager.tsx"
-    - "pages/EngineView/hooks/sceneManagerModalBodies.tsx"
-    - "pages/EngineView/components/sidebar/ScenesAccordion.tsx"
-    - "pages/EngineView/components/sidebar/CameraAccordion.tsx"
-    - "modal-electron/modalElectronRegistry.tsx"
+  native:
+    - "editor/scenes.rs"
+    - "editor/ui/sidebar_left/scenes.rs"
+    - "editor/modal_window.rs (modales de escena nativas)"
 
 scope_v1:
   in: "Proyectos 3D (multi-escena en motor; manifest.gameStyle = modo de cámara, p. ej. first-person)"

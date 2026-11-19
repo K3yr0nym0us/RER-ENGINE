@@ -46,16 +46,11 @@ modal_electron:
     El canvas de nodos abre en una ventana Electron hija (modalElectronWindow).
     Esa ventana NO tiene EngineProvider; VisualScriptingModalBody no usa useContextEngine.
   data_flow:
-    - La ventana principal resuelve sceneEntities con resolveSceneEntitiesForVisualScript
-    - sanitizeSceneEntitiesForModal elimina campos undefined (IPC JSON estricto)
-    - Se pasan por ModalElectronOpenRequest.sceneEntities y props del modal
+    - El editor nativo lee el visualGraph del project_state cargado del manifest.json
+    - No hay serialización IPC ni ventana Electron: todo ocurre en Rust
   files:
-    modal_body: src/renderer/src/visualScripting/components/VisualScriptingModalBody.tsx
-    resolve: src/renderer/src/visualScripting/resolveSceneEntities.ts
-    serialize: src/renderer/src/modal-electron/modalElectronSerialize.ts
-    snapshot: src/renderer/src/modal-electron/buildEngineSnapshot.ts
-    callbacks: src/renderer/src/modal-electron/modalElectronCallbacks.ts
-    types: src/shared-types/types.ts (ModalElectronOpenRequest.sceneEntities)
+    state: src/main/Engine/engine/src/editor/visual_script.rs
+    modal: src/main/Engine/engine/src/editor/ui/visual_script_modal.rs
   merge_sources:
     - entityMeta del motor (fuente principal en runtime)
     - savedEntities del manifest / sceneStateStore
@@ -244,7 +239,7 @@ files:
     - src/renderer/src/visualScripting/components/VisualScriptNode.tsx
     - src/renderer/src/visualScripting/components/VisualScriptVariablesPanel.tsx
     - src/renderer/src/visualScripting/components/VisualScriptingModalBody.tsx
-    - src/renderer/src/visualScripting/components/SceneScriptEditorModalBody.tsx
+    - engine/src/editor/ui/scene_script_modal.rs  # editor Rhai nativo (egui_code_editor); sustituye al modal Monaco
   sidebar:
     - src/renderer/src/pages/EngineView/components/sidebar/ScenesAccordion.tsx
     - src/renderer/src/pages/EngineView/components/sidebar/ProgrammingAccordion/ProgrammingAccordion.tsx

@@ -1,151 +1,43 @@
-# Modales Electron (ventana hija)
+# Modales Electron (ventana hija) — ELIMINADAS
 #
-# En RER-ENGINE no hay modales React Bootstrap in-process en el editor principal.
-# useModal() abre una ventana Electron separada para que el viewport del motor (winit)
-# siga visible debajo.
+# Ya no existe la ventana modal Electron ni su registro de componentes. Todas
+# las modales del editor son ventanas winit nativas independientes, creadas por
+# `src/main/Engine/engine/src/editor/modal_window.rs`.
 
-principle: |
-  openModal({ body: <Foo /> }) no renderiza en el DOM del editor; serializa el componente
-  por nombre (componentKey) y lo monta en la ventana modal hija vía IPC.
+status:
+  modal_electron_window: eliminada
+  registry: eliminado (antes 22 componentes)
+  ipc: eliminados (modal-electron:open/close/render/ready/resize/patch/result)
+  renderer: reducido a la ventana de selección de proyecto y al overlay del asistente
 
-flow: |
-  Editor (React)                    Ventana modal (React)
-  ─────────────────                 ─────────────────────
-  openModal({ body: <Foo /> })
-    → useModalElectron
-    → getComponentKey(Foo) = "Foo"
-    → serializa props + callbackKeys
-    → IPC openModalElectron ──────→ ModalElectronApp
-                                      → MODAL_ELECTRON_REGISTRY["Foo"]
-                                      → render <Foo {...wiredProps} />
-    ← completeModalElectron ─────── onConfirm(result)
-    → dispatchModalElectronResult
-    → callback en el editor
+native_windows:
+  host: src/main/Engine/engine/src/editor/modal_window.rs
+  patron: |
+    AlwaysOnTop sobre el editor, X nativa como único "Cancelar" (sin botones
+    Cancelar ni atajo Esc), fondo #1f2237 y pestañas con widgets::modal_tab.
+  estado: 100% Rust; las acciones las ejecuta el editor en proceso.
 
-exit_confirm:
-  note: |
-    El editor Rust emite `exit_request` con el rect físico de su ventana (posición,
-    tamaño y escala); main lo convierte a DIP y centra la modal sobre el motor.
-    La modal React `ExitConfirmBody` (Guardar y salir / Salir sin guardar / Cancelar)
-    se abre vía `legacy-window:open` como ventana `modal-electron` sin parent visible
-    y con `alwaysOnTop`, para quedar por encima del editor nativo. Sus acciones envían
-    `editor:exit-action` a main; cerrar con X equivale a Cancelar.
-
-legacy_window_kinds:
-  note: |
-    La UI nativa egui pide ventanas React con `request_legacy_window(kind, payload)`.
-    `HeadlessEditorHost` escucha `legacy-window:open` y llama a `openModal`.
-    Al añadir un botón nativo que abra React, hay que registrar el `kind` aquí y en
-    `HeadlessEditorHost.tsx`.
+legacy_kinds:
+  note: Referencia histórica de los `kind` que antes se delegaban a React. Ya no se usan.
   kinds:
-    plugins: Footer izquierdo → `PluginsModalBody`
-    user_guide: Footer izquierdo → `UserGuide`
-    create_scene: Escenas → crear escena
-    delete_scene: Escenas → eliminar escena
-    scene_script: Escenas → script de escena
-    scene_visual_script: Escenas → lógica de nodos
-    remove_asset: Recursos → confirmar borrado de asset
-    socket_config: Herramientas → configuración de sockets
-    entity_properties: Selección en viewport → propiedades de entidad
-    control_bindings: Controles -> modal de bindings; mode keyboard_mouse | gamepad
-    quick_build: Herramientas -> modal de Blueprints; action open | toggle
-    ui_create_screen: Interfaz de usuario -> nueva pantalla; scope player | menu
-    ui_edit_screen: Interfaz de usuario → editar HUD o renombrar menú
-    ui_delete_screen: Interfaz de usuario → eliminar pantalla con confirmación
-    ui_set_active_screen: Interfaz de usuario → activar/desactivar HUD de play
-
-native_state_bridges:
-  note: |
-    Mensajes React → main → stdin del editor para mantener la UI egui sincronizada.
-    No son comandos del motor; el editor los consume en `handle_electron_message`.
-  channels:
-    ui_screens_sync:
-      ipc: ui-screens:sync
-      payload: '{ player: [{id,name,active}], menu: [{id,name,active}] }'
-      effect: actualiza las listas del dropdown nativo Interfaz de usuario.
-    quick_build_state:
-      ipc: quick-build:state
-      payload: '{ active: bool, name?: string }'
-      effect: resalta la tarjeta Quick build y decide si el clic abre o desactiva.
-
-preload:
-  note: |
-    Tras `editor_ready`, main crea la ventana modal oculta (`preloadModalElectronWindow`)
-    y carga `#/modal-electron` con `backgroundThrottling: false`. Así la primera
-    apertura no paga la creación del BrowserWindow ni la carga del bundle de React;
-    `openModalElectronWindow` reutiliza esa instancia y solo envía el payload.
-
-key_files:
-  - path: src/renderer/src/context/ModalContext.tsx
-    role: useModal() delega en Electron
-  - path: src/renderer/src/hooks/useModalElectron.ts
-    role: Serializa, registra callbacks, abre IPC
-  - path: src/renderer/src/modal-electron/modalElectronRegistry.tsx
-    role: Mapa nombre → componente (registro obligatorio)
-  - path: src/renderer/src/modal-electron/ModalElectronGenericBody.tsx
-    role: Resuelve componente o host especial
-  - path: src/renderer/src/modal-electron/modalElectronCallbacks.ts
-    role: Puente de callbacks (onConfirm, …)
-  - path: src/main/modalElectronWindow.ts
-    role: Ventana nativa Electron
-
-frequent_error:
-  message: "Componente modal no soportado: MiModalBody"
-  cause: |
-    El componente no está registrado en MODAL_ELECTRON_REGISTRY.
-    componentKey = nombre de la función exportada (MiModalBody), no el nombre del archivo.
-
-checklist_new_modal:
-  - step: 1
-    action: Crear cuerpo con nombre de función explícito
-    example: |
-      export function MiModalBody({ onConfirm }: { onConfirm: (data: MiResult) => void }) {
-        const closeModal = useModalClose() // modal-electron, NO @hooks
-        // ...
-      }
-  - step: 2
-    action: Registrar en MODAL_ELECTRON_REGISTRY
-    example: |
-      import { MiModalBody } from '../pages/.../MiModalBody'
-      MiModalBody: modalEntry(MiModalBody),
-    note: La clave del mapa debe coincidir con MiModalBody.name
-  - step: 3
-    action: Props serializables únicamente
-    note: |
-      strings, numbers, booleans, arrays/objetos planos.
-      No JSX, refs ni funciones salvo callbacks conocidos.
-  - step: 4
-    action: Callbacks al padre vía MODAL_CALLBACK_KEYS
-    keys: [onConfirm, onSelect, onCreate, onRename, onCancel, onSave]
-    editor: 'openModal({ body: <MiModalBody onConfirm={(r) => { ... }} /> })'
-    child: onConfirm(result) en el modal; IPC devuelve resultado al padre
-  - step: 5
-    action: Cerrar ventana
-    use: modal-electron/useModalClose.ts
-  - step: 6
-    action: Datos del engine en el modal
-    note: Revisar buildEngineSnapshot.ts; añadir case para componentKey si hace falta
-
-dedicated_hosts:
-  description: |
-    Modales con delegación bidireccional compleja; host propio en ModalElectronGenericBody.tsx
-    (no basta el registro simple).
-  entries:
-    - componentKey: BluePrintModalBody
-      host: BluePrintModalElectronHost
-      extra: delegate IPC en useModalElectron.ts
-    - componentKey: PlayerUiEditorModalBody
-      host: PlayerUiEditorElectronHost
-      extra: sesiones en playerUiEditorSessions.ts
-    - componentKey: EntityPropertiesModalBody
-      host: EntityPropertiesElectronHost
-      extra: sesiones en entityPropertiesModalSessions.ts; ver docs/yaml/editor/Entity_Properties_Modal.yaml
-    - componentKey: SocketConfigModalBody
-      host: SocketConfigModalElectronHost
-      extra: sesiones en socketConfigModalSessions.ts; ver docs/yaml/editor/Sockets_3D.yaml
+    - exit_confirm
+    - remove_asset
+    - delete_scene
+    - create_scene
+    - scene_script
+    - scene_visual_script
+    - socket_config
+    - entity_properties
+    - control_bindings
+    - quick_build
+    - plugins
+    - worldgen
+    - ui_create_screen
+    - ui_edit_screen
+    - ui_delete_screen
+    - ui_set_active_screen
 
 do_not:
-  - Asumir que Modal de react-bootstrap en el editor funcionará encima del motor winit
-  - Olvidar el registro y depender solo de openModal({ body: <X /> })
-  - Usar useContextEngine() dentro del modal hijo (no hay EngineProvider)
-  - Pasar funciones con nombres arbitrarios; solo MODAL_CALLBACK_KEYS cruzan IPC
+  - Reintroducir openModal/useModal o un componentKey en React
+  - Reabrir la ventana modalElectron o sus canales IPC
+  - Delegar acciones de una modal nativa a Electron/React

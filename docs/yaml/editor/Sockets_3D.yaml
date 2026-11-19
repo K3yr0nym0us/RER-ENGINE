@@ -15,7 +15,7 @@ concept: |
 
 editor:
   entry: Herramientas → botón Socket / Config ("Configuración de sockets")
-  modal: SocketConfigModalBody (modal Electron; ver docs/yaml/editor/MODAL_ELECTRON.yaml)
+  modal: MIGRADA a ventana nativa (editor/ui/socket_config_modal.rs + editor/socket_config.rs), AlwaysOnTop sobre el motor; ver docs/yaml/editor/MODAL_ELECTRON.yaml
   tabs:
     create:
       title: Crear sockets
@@ -109,15 +109,18 @@ undo:
   scene_dirty: ambas operaciones marcan escena para guardar antes de cambiar de escena
 
 frontend:
-  session: src/renderer/src/modal-electron/socketConfigModalSessions.ts
+  state: >-
+    editor/socket_config.rs (SocketConfigState en EditorApp), alimentado por eventos del motor
+    entity_sockets_list / entity_sockets_changed / entity_bones_list / socket_bone_picked
   ui:
-    - ToolsAccordion/components/SocketConfigToolButton.tsx
-    - ToolsAccordion/components/SocketConfigModalContent.tsx
-    - ToolsAccordion/components/SocketsModalContent.tsx   # pestaña crear
-    - ToolsAccordion/components/SocketLinksModalContent.tsx  # pestaña vínculos
-    - PropertiesAccordion/SocketsPanel.tsx                # formulario socket
-  meta_sync: createEngineEventHandler.ts actualiza entityMetaRef (sockets, attachSocketHostId)
-  block_properties: useEntityPropertiesModal no abre propiedades si SocketConfigModal está activa
+    - engine/src/editor/ui/socket_config_modal.rs          # ventana nativa (pestañas + formulario + aviso de flujo)
+    - engine/src/editor/modal_window.rs                    # ciclo de vida de la ventana winit
+  commands: >-
+    list_entity_sockets, list_entity_bones, upsert/remove_entity_socket,
+    set_socket_bone_pick_mode, attach_to_socket, detach_from_socket
+  note: >-
+    La X nativa cierra la ventana y desactiva el modo pick del viewport. No hay
+    boton Cancelar en la modal. El codigo React del modal de sockets fue eliminado.
 
 logs:
   panel_human:

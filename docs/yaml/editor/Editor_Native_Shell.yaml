@@ -4,7 +4,7 @@
 # su ventana React oculta como host de modales legacy.
 #
 # Relacionado con:
-#   - docs/yaml/editor/MODAL_ELECTRON.yaml (ventana modal, exit_confirm centrada)
+#   - docs/yaml/editor/MODAL_ELECTRON.yaml (ventanas modales legacy restantes)
 #   - docs/yaml/editor/Player_UI_Model.yaml (dropdown Interfaz de usuario)
 #   - docs/yaml/gameplay/Blueprints_Model_2D.yaml / _3D.yaml (quick build)
 
@@ -221,11 +221,38 @@ sidebar_native:
       desaparece de Recursos y del combo «Crear entidad» aunque esté listada con
       la ruta fuente del GLB/FBX y el evento llegue con la clave canónica.
   legacy_bridges:
-    controls: control_bindings -> ControlBindingsModalBody
-    plugins: plugins -> PluginsModalBody
-    user_guide: user_guide -> UserGuide
-    ui: ui_create_screen / ui_edit_screen / ui_delete_screen / ui_set_active_screen
-    quick_build: quick_build (open | toggle)
+    controls: control_bindings -> ventana nativa (sin puente React)
+    plugins: plugins -> ventana nativa 100% Rust (sin Electron ni React)
+    ui: sin legado (alta, rename, activación y editor HUD son nativos)
+    scene_visual_script: Escenas -> ventana nativa (sin puente React)
+    entity_properties: Selección -> ventana nativa (sin puente React)
+  migrated_windows:
+    note: |
+      Ventanas winit nativas independientes, AlwaysOnTop sobre el editor. Se cierran
+      con la X nativa (equivale a Cancelar); no tienen boton Cancelar ni atajo Esc.
+      El fondo es #1f2237 y las pestanas usan widgets::modal_tab.
+      Cero delegacion: las ventanas migradas poseen su estado y envian comandos al motor.
+      El guardado incluye pantallas UI, blueprints, entity_meta y scripts desde el editor.
+      ui_set_active_screen no es ventana: accion 100% Rust en sidebar_left (sync + set_active).
+    host: src/main/Engine/engine/src/editor/modal_window.rs
+    modals:
+      - editor/ui/exit_confirm_modal.rs      # salida: Guardar y salir / Salir sin guardar (X cancela)
+      - editor/ui/remove_asset_modal.rs      # confirmar borrado de recurso
+      - editor/ui/delete_scene_modal.rs      # confirmar borrado de escena (o aviso de unica escena)
+      - editor/ui/create_scene_modal.rs      # nombre de escena nueva
+      - editor/ui/delete_ui_screen_modal.rs  # confirmar borrado de pantalla UI
+      - editor/ui/create_ui_screen_modal.rs  # alta de HUD/menu; id y sync en Rust
+      - editor/ui/rename_ui_screen_modal.rs  # renombrar menu UI
+      - editor/ui/control_bindings_modal.rs  # teclado/mouse y mando; editor Rhai anidado
+      - editor/ui/worldgen_modal.rs          # terreno, biomas y scatter; DLL leida por Rust
+      - editor/ui/plugins_modal.rs           # tarjetas, progreso y asistente; 100% Rust
+      - editor/ui/hud_editor_modal.rs        # editor HUD: textos, imágenes, objetos y texturas
+      - editor/ui/user_guide_modal.rs        # guia estatica con scroll
+      - editor/ui/quick_build_modal.rs       # selector de blueprints: coloca y borra sin React
+      - editor/ui/socket_config_modal.rs     # sockets: edicion en viewport con la ventana encima
+      - editor/ui/scene_script_modal.rs      # script Rhai con egui_code_editor (=0.3.7)
+      - editor/ui/visual_script_modal.rs     # editor de nodos (grafo) nativo
+      - editor/ui/entity_properties_modal.rs # propiedades de entidad; submodales nativos
   native_modals:
     model_import:
       file: src/main/Engine/engine/src/editor/ui/model_import_modal.rs
