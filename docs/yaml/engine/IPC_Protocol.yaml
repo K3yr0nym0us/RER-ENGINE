@@ -17,9 +17,14 @@ summary: |
   lanza `rer_engine_editor`. El editor egui hospeda el motor in-process y usa sus
   comandos/eventos directamente, sin pasar por Electron.
 
-  El canal `engine:cmd` sigue vivo **solo** para comandos iniciados desde
-  Electron: `set_locale` (selector de idioma) y comandos de plugins (world-gen,
-  asistente). Main valida contra el catálogo y reenvía por stdin del editor.
+  Al abrir un `.save`, el launcher solo entrega la ruta (`projectType: 'save'`).
+  Rust extrae el ZIP, lee el `manifest.json` y decide si arranca 2D o 3D;
+  Electron no abre, descomprime ni parsea el archivo.
+
+  El único mensaje del launcher además del arranque es `set-locale` (selector de
+  idioma): main lo guarda y lo pasa al editor como `--locale`. Electron no envía
+  comandos al motor ni interpreta eventos: solo mantiene el proceso hijo para
+  capturar su consola en desarrollo. Rust gestiona plugins en `editor/plugin_runtime.rs`.
 
   **Regla:** un cambio en Rust nunca debe agregar tipos a `src/shared-types/`.
   Los contratos del motor viven en `engine/src/**/ipc/`. Ver `.cursor/rules/shared-types.mdc`.
@@ -33,12 +38,13 @@ principle:
       - `Common(EngineCommandCommon)` — crate rer-engine-core (stdin JSON `cmd`)
       - `Only2d` / `Only3d` — variantes exclusivas del motor
   main_gate: |
-    `src/shared-types/engineCommandCatalog.ts` valida únicamente los comandos que
-    Electron todavía envía (plugins / `set_locale`). **No** es un contrato que
-    debas sincronizar desde Rust: el editor egui no pasa por este catálogo.
+    No existe catálogo de comandos en TypeScript. El launcher solo envía
+    `set-game-style` (arranque) y `set-locale` (idioma inicial, como `--locale`).
+    Los comandos del motor se definen y validan en Rust (`engine/src/**/ipc/`).
   types_mirror: |
-    `src/shared-types/` contiene tipos del shell (launcher, plugins, manifest de
-    `.save`) y el catálogo de validación de main. No ampliarlo por cambios en Rust.
+    `src/shared-types/` contiene solo los tipos del launcher (selector, `.save`,
+    idioma). Ni contrato del motor, ni catálogo, ni tipos de plugins: Rust posee
+    su propio catálogo y runtime de plugins (`editor/plugin_runtime.rs`).
 
 core_crate:
   role: biblioteca Rust (rer-engine-core), dependencia de los motores 2D/3D y del editor
@@ -56,14 +62,17 @@ core_crate:
 transport:
   launcher_to_main:
     channel: set-game-style
-    payload: '{ projectType, mode, save_path, extract_dir }'
+    payload: '{ projectType: "2D"|"3D", save_path } | { projectType: "save", save_path }'
     effect: spawn de `rer_engine_editor` con los argumentos de arranque
-  shell_to_engine:
-    channel: engine:cmd
-    used_for: set_locale y comandos iniciados por plugins de Electron
-    preload: src/preload/engineBridge.ts
-    format: JSON.stringify(cmd) + '\n' por stdin
-    validation: isCommandAllowedForMotor (engineIpcRegistry.ts)
+    note: |
+      Con projectType "save" no se pasa tipo: Rust lo deduce del manifest y extrae el ZIP.
+      Electron no envía estilos de cámara; Rust los decide (manifest o default por tipo).
+  locale_to_engine:
+    channel: set-locale
+    preload: src/preload/index.ts (window.electronAPI.setLocale)
+    main: ipcMain.on('set-locale') → currentLocale → argumento --locale del spawn
+  console_capture:
+    note: Electron permanece como proceso padre y reenvía stdout/stderr del editor a la terminal (yarn dev)
   editor_engine:
     note: el editor egui consume el motor en proceso; no hay transporte IPC entre ellos
 
@@ -74,17 +83,16 @@ flow: |
                             spawn rer_engine_editor ──→  editor con el motor in-process
                                                         (comandos/eventos directos)
 
-  LanguageToggle        → window.engine2d.send
-                            ipcMain.on('engine:cmd') ──→  stdin: {cmd:'set_locale'}
-                            handleEngineCommand:
-                              · catálogo 2D|3D
-                              · side-effects 2D (watchers PNG)
+  LanguageToggle        → electronAPI.setLocale(locale)
+                            ipc: set-locale ───────────→ stdin: {cmd:'set_locale', locale}
 
 lifecycle:
   spawn:
     binary: rer_engine_editor
-    args: --project-type <2D|3D> [--game-style <estilo>] [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] [--electron-host]
-    note: El editor construye el motor in-process; no hay overlay ni proceso de motor separado.
+    args: '[--project-type <2D|3D>] [--save-path <ruta>] [--locale <en|es>] [--electron-host]'
+    note: |
+      El editor construye el motor in-process; no hay overlay ni proceso de motor separado.
+      El launcher no envía --game-style ni --extract-dir; el editor los acepta solo para uso standalone/debug.
   editor_control:
     note: La confirmación de salida es una ventana winit nativa; ya no se envia exit_request.
     exit_after_save: Electron → editor (guardar y salir; camino legacy conservado)
@@ -94,11 +102,13 @@ lifecycle:
     trigger: editor listo (motor 2D in-process)
     cmd: 'set_scene { scene: "2D", save_path: extract_dir }'
   startup_3d:
-    trigger: proyecto con extract_dir (o plantilla si proyecto nuevo)
+    trigger: proyecto nuevo (el editor monta la plantilla por defecto)
     cmd: 'set_scene { scene: gameStyle | "3D" | DEFAULT, save_path: extract_dir }'
     note: |
-      gameStyle en manifest = modo de cámara 3D (p. ej. first-person). Proyecto nuevo 3D
-      abre el editor directo; el usuario cambia la cámara en acordeón Camera (sidebar).
+      Con un .save, Electron NO envía set_scene: el editor Rust lo dispara él mismo
+      (cli::saved_scene_command) con el directorio que extrajo, usando gameStyle del
+      manifest. setup_empty_3d deja el mundo vacío hasta ese comando.
+      Proyecto nuevo 3D: el usuario cambia la cámara en el sidebar del editor egui.
   shutdown:
     cmd: shutdown
     fallback: cierre del editor; el motor se libera con el process
@@ -247,27 +257,23 @@ key_files:
   contract_2d: src/main/Engine/engine/src/engine2d/ipc.rs
   dispatch_3d: src/main/Engine/engine/src/engine3d/engine/commands.rs
   dispatch_2d: src/main/Engine/engine/src/engine2d/engine/commands.rs
-  main_catalog: src/main/engine/engineCommandCatalog.ts
-  main_registry: src/main/engine/registerEngineCmdIpc.ts
-  main_startup_scene: src/main/engine/engineStartupScene.ts
+  editor_cli: src/main/Engine/engine/src/editor/cli.rs
+  editor_save_open: src/main/Engine/engine/src/editor/save_open.rs
   main_bridge: src/main/index.ts
+  console_capture: stdout/stderr del editor reenviados desde main/index.ts
   preload: src/preload/index.ts
   shared_library: src/main/Engine/core/   # sin IPC stdin
-  ts_types: src/shared-types/types.ts
-  ts_command_catalog: src/shared-types/engineCommandCatalog.ts
-  ts_command_types: src/shared-types/engineCommands.ts
-  renderer_send: src/renderer/src/engine/engineSend.ts
-  renderer_receive: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
+  ts_types: src/shared-types/types.ts     # solo launcher; sin comandos
 
 adding_a_command:
   steps:
     - Decidir motor: 2D, 3D o ambos (si ambos, añadir a los dos ipc.rs con misma semántica JSON).
     - Añadir variante en engine_{2d|3d}/src/ipc.rs y brazo en engine/commands.rs.
-    - Actualizar ENGINE_COMMANDS_*_ONLY o SHARED en engineCommandCatalog.ts.
-    - Ampliar types.ts y handlers del renderer si el front debe usarlo.
+    - El editor egui lo consume directamente: no hay catálogo TS que actualizar.
   do_not: |
     Añadir la variante solo en un ipc.rs y confiar en stubs/no-op en el otro binario.
-    Ese patrón está eliminado.
+    Tampoco agregar tipos/catálogos en src/shared-types/ por un cambio en Rust
+    (ver .cursor/rules/shared-types.mdc). Ambos patrones están eliminados.
 
 patterns:
   track_undo:

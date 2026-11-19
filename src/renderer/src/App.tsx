@@ -1,5 +1,4 @@
-import type { EngineStartPayload, GameStyle, OpenProjectResult, ProjectType } from '@shared-types';
-import { DEFAULT_3D_CAMERA_MODE } from '@shared-types';
+import type { EngineStartPayload, OpenProjectResult, ProjectType } from '@shared-types';
 import { useTraslate } from '@hooks';
 import { LanguageToggleButton } from './components/LanguageToggleButton';
 import { THEME_PRIMARY } from './styles/theme';
@@ -44,20 +43,19 @@ export default function App() {
   const { t } = useTraslate()
   const options = getOptions(t)
 
-  const start = (projectType: ProjectType, gameStyle: GameStyle, savePath: string | false = false, extractDir?: string) => {
-    const payload: EngineStartPayload = {
-      projectType,
-      mode: projectType === '2D' ? false : gameStyle,
-      save_path: savePath,
-      ...(extractDir ? { extract_dir: extractDir } : {}),
-    }
+  const start = (projectType: ProjectType | 'save', savePath?: string) => {
+    // Al abrir un `.save`, Electron entrega solo la ruta: Rust extrae el ZIP
+    // y decide 2D/3D y el estilo de cámara leyendo el manifest.
+    const payload: EngineStartPayload = projectType === 'save'
+      ? { projectType: 'save', save_path: savePath ?? false }
+      : { projectType, save_path: false }
     window.electronAPI.setGameStyle(payload)
   }
 
   const handleLoad = async () => {
     const result: OpenProjectResult | null = await window.electronAPI.openProjectDialog()
     if (!result) return
-    start(result.project.type, result.project.gameStyle, result.filePath, result.extractDir)
+    start('save', result.filePath)
   }
 
   const hoverOn = (color: string) => (e: React.MouseEvent<HTMLButtonElement>) => {
@@ -120,7 +118,7 @@ export default function App() {
         {options.map((opt) => (
           <div key={opt.type} style={{ position: 'relative' }}>
             <button
-              onClick={() => start(opt.type, opt.type === '2D' ? 'top-down' : DEFAULT_3D_CAMERA_MODE)}
+              onClick={() => start(opt.type)}
               className="selector-card"
               style={{ height: '100%' }}
               onMouseEnter={hoverOn(opt.badgeColor)}

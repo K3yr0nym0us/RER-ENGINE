@@ -140,4 +140,4 @@ powershell -File scripts\publish-worldgen.ps1 -Version "1.0.0"
 ```
 
 Empaqueta `rer_worldgen.dll` en `rer-worldgen-<versión>-win-x64.zip` y el
-SHA-256 para `src/main/plugins/pluginCatalog.ts`.
+SHA-256 para el catálogo Rust (`editor/plugins.rs`).

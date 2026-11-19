@@ -82,7 +82,8 @@ textures_glb_editor:
 
 electron_main:
   stderr: reenvío líneas [load_proyect] al panel del editor
-  spawn_args: extract_dir + save_path al proceso rer_engine_3d
+  spawn_args: solo save_path al editor Rust (este extrae el ZIP y decide 2D/3D desde el manifest)
+  note: extract_dir lo crea Rust en editor/save_open.rs; Electron no descomprime el .save
 
 events:
   project_loaded_3d:

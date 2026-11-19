@@ -13,9 +13,9 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
 
 - `rer_engine_3d` y `rer_engine_2d` son **binarios distintos** con runtimes distintos
   (features `engine3d` / `engine2d` del mismo paquete `rer-engine`).
-- Lo comun con Electron es el **canal** IPC (`engine:cmd` / `engine:event`) y el crate de
-  utilidades (`rer-engine-core`), no un enum de comandos unico ni la logica de juego.
-- Contrato por motor: `engine/src/engine3d/ipc/` y `engine/src/engine2d/ipc.rs`; validacion en main (`engineCommandCatalog.ts`). Ver `docs/yaml/engine/IPC_Protocol.yaml`.
+- Electron solo lanza el editor y entrega la ruta del `.save`; no hay canal de comandos
+  del motor en TypeScript. El crate de utilidades es `rer-engine-core`.
+- Contrato por motor: `engine/src/engine3d/ipc/` y `engine/src/engine2d/ipc.rs`; validación en Rust. Ver `docs/yaml/engine/IPC_Protocol.yaml`.
 - **No se copia runtime entre motores**: cada motor conserva su pila (`config_3d/` vs
   `config_2d/`). Nuevas funciones 3D se implementan solo aqui.
 - Herramientas de editor 2D (colliders dibujados, execution areas, escenarios sprite, fisica XY, etc.) **no aplican** a este binario y no deben documentarse como deuda de portado.

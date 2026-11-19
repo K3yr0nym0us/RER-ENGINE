@@ -154,6 +154,8 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine::engine2d=debu
 
 Los proyectos se guardan como ZIP portable (`manifest.json`, `assets/`, `sounds/`, `scripting/`) para moverlos entre máquinas sin romper rutas.
 
+El launcher Electron **no abre** el `.save`: solo entrega la ruta al editor Rust. `rer_engine_editor` descomprime el archivo (`editor/save_open.rs`), lee `type` / `gameStyle` del manifest y arranca el motor 2D o 3D correspondiente.
+
 ---
 
 ## Licencia

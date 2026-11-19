@@ -9,9 +9,9 @@
 Electron/React es el *shell* que:
 
 1. Muestra el selector de tipo de proyecto (2D/3D).
-2. Abre un diálogo para elegir un `.save` (extrae el ZIP y lee solo `type` y `gameStyle` del manifest).
+2. Abre un diálogo para elegir un `.save` y entrega **solo la ruta**; Rust extrae el ZIP y decide 2D/3D desde el manifest.
 3. Envía `setGameStyle` por IPC y lanza `rer_engine_editor` con el tipo, cámara y rutas.
-4. Mantiene el idioma de la UI y lo reenvía como `set_locale` al editor.
+4. Mantiene el idioma elegido en el launcher y lo pasa al editor como `--locale` al arrancar.
 
 Todo lo demás —escenas, entidades, transforms, física, cámaras, colisiones, HUD,
 programación visual, propiedades y guardado— vive en **Rust egui**, en proceso con el motor.
@@ -21,14 +21,13 @@ programación visual, propiedades y guardado— vive en **Rust egui**, en proces
 | Archivo | Rol |
 |---------|-----|
 | `src/App.tsx` | Única pantalla: selector de proyecto / apertura de `.save`. |
-| `src/context/LanguageContext.tsx` | Idioma de la UI; envía `set_locale` al motor. |
-| `src/hooks/useEngineSend.ts` | Envío de `set_locale` vía `window.engine2d.send`. |
+| `src/context/LanguageContext.tsx` | Idioma de la UI; `window.electronAPI.setLocale()`. |
 | `src/components/LanguageToggleButton.tsx` | Botón de idioma. |
 
 ## Regla sobre `src/shared-types/`
 
-`src/shared-types/` contiene tipos del **shell**: launcher, plugins, manifest de `.save`
-y catálogo de validación para main. **No es el contrato del editor.**
+`src/shared-types/` contiene **únicamente** los tipos del launcher: selector de proyecto,
+diálogo de `.save` e idioma. **No es el contrato del editor, ni de plugins, ni un catálogo de comandos.**
 
 - Un cambio en Rust **nunca** debe agregar ni modificar tipos ahí.
 - Los comandos/eventos del motor se definen en Rust (`engine/src/**/ipc/`).

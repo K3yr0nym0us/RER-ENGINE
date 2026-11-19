@@ -19,7 +19,7 @@ catalog:
   - id: local-ai-assistant
     name: RER-AI (OpenCode)
     version: "2.0.0"
-    manifest_code: src/main/plugins/pluginCatalog.ts
+    manifest_code: src/main/Engine/engine/src/editor/plugins.rs (catálogo Rust)
     system_requirements:
       - Windows x64
       - Microsoft Visual C++ 2015–2022 Redistributable (x64); requisito del runtime Rust del motor, no se instala desde el plugin

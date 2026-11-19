@@ -1,7 +1,9 @@
-# Engine context (useContextEngine) — hub del editor
+# Engine context (useContextEngine) — DOCUMENTO HISTÓRICO
 #
-# Estado React + refs imperativas que reflejan el motor. El renderer no es
-# fuente de verdad del mundo; solo cachea eventos y expone acciones IPC.
+# Describe el renderer React anterior a la migración a egui. `useContextEngine`,
+# `EngineProvider` y `engine:cmd` ya no existen: el editor es Rust
+# (`rer_engine_editor`) y posee el estado del motor en proceso.
+# Para el flujo vigente consulta docs/yaml/engine/IPC_Protocol.yaml.
 #
 # Relacionado con:
 #   - docs/yaml/engine/IPC_Protocol.yaml
@@ -27,12 +29,9 @@ architecture:
   effects: src/renderer/src/context/useContextEngine/hooks/useEngineEffects.ts
 
 data_flow: |
-  Motor emite engine:event
-    → createEngineEventHandler actualiza dispatch + refs
-    → componentes leen useContextEngine()
-  Usuario en UI
-    → createEngineActions.send({ cmd: … })
-    → preload engine:cmd → main → motor
+  Vigente (egui): el editor Rust posee el estado del motor en proceso y consume
+  sus comandos/eventos directamente; Electron solo lanza el editor y reenvía
+  `set-locale` por stdin. El flujo React de abajo es histórico, no vigente.
 
 critical_refs:
   entityTransformsRef: "id → { position, rotation, scale }"

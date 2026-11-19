@@ -1,5 +1,7 @@
 //! Parseo de los argumentos con los que Electron lanza el editor.
 
+use std::path::PathBuf;
+
 use crate::editor::context::{ProjectContext, ProjectType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +36,8 @@ pub struct Cli {
     pub locale: Locale,
     /// Lanzado por Electron: el cierre pide confirmación antes de salir.
     pub electron_host: bool,
+    /// Carpeta temporal creada por Rust al abrir un `.save`; se borra al salir.
+    pub temp_extract_dir: Option<PathBuf>,
 }
 
 impl Default for Cli {
@@ -44,6 +48,7 @@ impl Default for Cli {
             extract_dir: None,
             locale: Locale::En,
             electron_host: false,
+            temp_extract_dir: None,
         }
     }
 }
@@ -125,13 +130,56 @@ impl Cli {
             extract_dir,
             locale,
             electron_host,
+            temp_extract_dir: None,
         }
     }
 
-    pub fn usage() -> &'static str {
-        "rer_engine_editor --project-type <2D|3D> [--game-style <estilo>] \
-[--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] [--electron-host]"
+    /// Si Electron entregó solo un `--save-path`, extrae el archivo en Rust y
+    /// decide el tipo de proyecto leyendo su `manifest.json`.
+    ///
+    /// Los proyectos nuevos siguen pasando `--project-type` y no llegan aquí.
+    pub fn resolve_save(&mut self) -> Result<(), String> {
+        let Some(save_path) = self.save_path.clone() else {
+            return Ok(());
+        };
+        if self.extract_dir.is_some() {
+            // Ruta legacy: alguien ya extrajo el save; respetar la carpeta.
+            return Ok(());
+        }
+        let opened = crate::editor::save_open::open_save(std::path::Path::new(&save_path))?;
+        let game_style = opened.game_style.map(|style| style.as_str().to_string());
+        self.context = ProjectContext::new(opened.project_type, game_style.as_deref());
+        self.extract_dir = Some(opened.extract_dir.to_string_lossy().into_owned());
+        self.temp_extract_dir = Some(opened.extract_dir);
+        Ok(())
     }
+
+    pub fn usage() -> &'static str {
+        "rer_engine_editor [--project-type <2D|3D>] [--game-style <estilo>] \
+[--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] [--electron-host]\n\
+Con solo --save-path, el editor extrae el archivo y decide 2D/3D desde su manifest."
+    }
+}
+
+/// Comando `set_scene` que el editor debe disparar al motor al abrir un `.save`.
+///
+/// `setup_empty_3d()` deja el mundo vacío esperando este comando; antes lo
+/// enviaba Electron tras `ready`, pero ahora es el editor quien lo produce.
+pub fn saved_scene_command(cli: &Cli) -> Option<serde_json::Value> {
+    if cli.save_path.is_none() {
+        return None;
+    }
+    let extract_dir = cli.extract_dir.as_deref()?;
+    let scene = if cli.context.is_3d() {
+        cli.context.game_style.as_str().to_string()
+    } else {
+        "2D".to_string()
+    };
+    Some(serde_json::json!({
+        "cmd": "set_scene",
+        "scene": scene,
+        "save_path": extract_dir,
+    }))
 }
 
 #[cfg(test)]
@@ -220,5 +268,48 @@ mod tests {
         assert_eq!(Locale::parse("en"), Locale::En);
         assert_eq!(Locale::parse("ES"), Locale::Es);
         assert_eq!(Locale::parse("fr"), Locale::En);
+    }
+
+    #[test]
+    fn saved_scene_mounts_3d_from_the_extract_dir() {
+        let cli = Cli::parse_from([
+            "rer_engine_editor",
+            "--project-type",
+            "3D",
+            "--game-style",
+            "first-person",
+            "--save-path",
+            "C:/projects/game.save",
+            "--extract-dir",
+            "C:/tmp/game",
+        ]);
+
+        let command = saved_scene_command(&cli).expect("debe montar la escena guardada");
+        assert_eq!(command["cmd"], "set_scene");
+        assert_eq!(command["scene"], "first-person");
+        assert_eq!(command["save_path"], "C:/tmp/game");
+    }
+
+    #[test]
+    fn saved_scene_mounts_2d_from_the_extract_dir() {
+        let cli = Cli::parse_from([
+            "rer_engine_editor",
+            "--project-type",
+            "2D",
+            "--save-path",
+            "C:/projects/game.save",
+            "--extract-dir",
+            "C:/tmp/game",
+        ]);
+
+        let command = saved_scene_command(&cli).expect("debe montar la escena guardada");
+        assert_eq!(command["cmd"], "set_scene");
+        assert_eq!(command["scene"], "2D");
+    }
+
+    #[test]
+    fn no_saved_scene_without_a_save_file() {
+        let cli = Cli::parse_from(["rer_engine_editor", "--project-type", "3D"]);
+        assert!(saved_scene_command(&cli).is_none());
     }
 }

@@ -58,7 +58,7 @@ engine:
   gizmos: sockets visibles en editor al seleccionar host (módulo de gizmos asociado)
 
 ipc_commands:
-  catalog: engine_3d only (EngineCommand3dOnly)
+  catalog: engine_3d only (definido en Rust, engine3d/ipc)
   list:
     - cmd: list_entity_sockets
       args: { entity_id }

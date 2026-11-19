@@ -6,7 +6,8 @@
 #
 # Relacionado con:
 #   - src/renderer/.../ResourcesAccordion/   (UI de bibliotecas)
-#   - src/main/index.ts                        (empaquetar / extraer .save)
+#   - src/main/index.ts                        (solo diálogo: entrega la ruta del .save)
+#   - engine/src/editor/save_open.rs           (extrae el .save y decide 2D/3D)
 #   - engine/src/{engine2d,engine3d}/.../load_proyect.rs         (carga en stores del motor)
 #   - src/renderer/src/defaults/buildProjectSaveFromEngine.ts
 
@@ -18,10 +19,11 @@ principle:
        store en memoria (path absoluto en disco mientras no hay .save).
     2. El resto del editor (entidades, HUD, animaciones) **referencia** esos paths;
        no vuelve a importar el archivo ni lo duplica en el manifest como asset propio.
-    3. Al guardar .save, Electron copia cada archivo **una sola vez** a carpetas
-       por categoría y escribe rutas relativas en manifest.json.
-    4. Al abrir .save, se resuelven rutas relativas → extract_dir y se registran
-       otra vez en los stores del motor; los consumidores usan el mismo path resuelto.
+    3. Al guardar .save, el editor Rust empaqueta cada archivo **una sola vez** a
+       carpetas por categoría y escribe rutas relativas en manifest.json.
+    4. Al abrir .save, Rust extrae el ZIP, lee el manifest, decide 2D/3D y resuelve
+       las rutas relativas → extract_dir antes de registrarlas en los stores del motor.
+       Electron solo entrega la ruta del archivo.
 
 # ---------------------------------------------------------------------------
 # Bibliotecas (Resources accordion ↔ manifest ↔ store del motor)
@@ -330,12 +332,17 @@ load_flow:
     references: |
       playerUi*.font_path / texture_path / image_path deben coincidir exactamente con
       el path relativo del ítem en fonts[] / hudImages[] (misma cadena tras remap).
-  electron:
+  launcher:
     file: src/main/index.ts
     steps:
-      - extractSaveArchive → extract_dir
-      - resolveLoadedPaths: relativas → absolutas bajo extract_dir (sin passthrough absoluto)
-      - RER_PROJECT_EXTRACT_DIR / RER_PROJECT_SAVE_PATH al arrancar motor
+      - showOpenDialog → filePath (no abre ni parsea el .save)
+      - 'set-game-style con projectType save y save_path'
+  editor_rust:
+    file: engine/src/editor/save_open.rs
+    steps:
+      - open_save: extrae el ZIP a un directorio temporal
+      - lee type / gameStyle del manifest.json y decide el motor
+      - RER_PROJECT_EXTRACT_DIR / RER_PROJECT_SAVE_PATH al arrancar el motor in-process
   motor_3d:
     file: engine_3d/.../load_proyect.rs
     detail: docs/yaml/persistence/Project_Load_3D.yaml

@@ -1,6 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useEngineSend } from '../hooks/useEngineSend'
 
 export type Locale = 'en' | 'es'
 
@@ -26,7 +25,6 @@ export function LanguageProvider({
   children: ReactNode
   initialLocale?: Locale
 }) {
-  const { send2d } = useEngineSend()
   const [locale, setLocaleState] = useState<Locale>(initialLocale)
 
   useEffect(() => {
@@ -36,8 +34,8 @@ export function LanguageProvider({
   const setLocale = useCallback((next: Locale) => {
     if (next === locale) return
     setLocaleState(next)
-    try { send2d({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
-  }, [locale, send2d])
+    window.electronAPI.setLocale(next)
+  }, [locale])
 
   const syncLocale = useCallback((next: Locale) => {
     setLocaleState(next)
@@ -46,8 +44,8 @@ export function LanguageProvider({
   const toggleLocale = useCallback(() => {
     const next: Locale = locale === 'en' ? 'es' : 'en'
     setLocaleState(next)
-    try { send2d({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
-  }, [locale, send2d])
+    window.electronAPI.setLocale(next)
+  }, [locale])
 
   return (
     <LanguageContext.Provider value={{ locale, setLocale, syncLocale, toggleLocale }}>

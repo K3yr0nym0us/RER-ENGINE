@@ -1,5 +1,9 @@
 # RER-ENGINE — Plugin Asistente RER-AI (OpenCode)
 # Noviembre 2026 — v2 (reemplaza la IA local Qwen3 + llama.cpp)
+#
+# NOTA: la instalación, el servidor OpenCode y la UI son 100% Rust
+# (`editor/plugin_runtime.rs` + `editor/ui/plugins_modal.rs`). Las rutas
+# `src/main/plugins/...` que aparecían en versiones anteriores ya no existen.
 
 version: 2
 plugin_id: local-ai-assistant
@@ -22,8 +26,8 @@ runtime:
     El modo --service escribe {xdg-state}/opencode/service.json con url + password.
     La API usa Basic auth: usuario fijo `opencode`, password del service.json.
     Sin header → 401. spawn + lectura del service.json en
-    src/main/plugins/local-ai-assistant/openCodeRuntime.ts
-  spawn_from: Electron main (src/main/plugins/local-ai-assistant/openCodeRuntime.ts)
+    src/main/Engine/engine/src/editor/plugin_runtime.rs
+  spawn_from: Editor nativo (editor/plugin_runtime.rs), no Electron
   system_requirements:
     os: Windows x64 only (v1)
 
@@ -50,7 +54,7 @@ sandbox:
     Empaquetadas con electron-builder extraResources docs/ai → resources/docs/ai.
     Dev fallback: repo docs/ai. Copia al sandbox en install/arranque
     (stamp de versión por re-preparar).
-  module: src/main/plugins/local-ai-assistant/openCodeSandbox.ts
+  module: src/main/Engine/engine/src/editor/plugin_runtime.rs
 
 models:
   default: primer modelo free disponible (GET /api/model, coste 0, provider opencode)
@@ -106,24 +110,8 @@ ui:
     native:
       - src/main/Engine/engine/src/editor/plugin_runtime.rs
       - src/main/Engine/engine/src/editor/ui/plugins_modal.rs
-    main_shared:
-      - src/main/plugins/pluginCatalog.ts
-      - src/main/plugins/pluginState.ts
-      - src/main/plugins/pluginInstall.ts
-      - src/main/plugins/fileDownload.ts
-      - src/main/plugins/pluginProgressBroadcast.ts
-      - src/main/plugins/registerPluginIpc.ts
-    main_local_ai_assistant:
-      - src/main/plugins/local-ai-assistant/install.ts
-      - src/main/plugins/local-ai-assistant/openCodePaths.ts
-      - src/main/plugins/local-ai-assistant/openCodeSandbox.ts
-      - src/main/plugins/local-ai-assistant/openCodeRuntime.ts
-      - src/main/plugins/local-ai-assistant/openCodeClient.ts
-      - src/main/plugins/local-ai-assistant/assistantChat.ts
-      - src/main/plugins/local-ai-assistant/assistantReplyFormat.ts
-      - src/main/plugins/local-ai-assistant/assistantChatLog.ts
-      - src/main/plugins/local-ai-assistant/ipc.ts
-    note: Sin overlay_window; la configuración vive en la ventana nativa de plugins.
+      - src/main/Engine/engine/src/editor/plugins.rs
+    note: Toda la gestión del plugin es Rust; no hay módulos en Electron main ni overlay React.
 
 ipc:
   note: Eliminados. El runtime del asistente reside en editor/plugin_runtime.rs.
@@ -140,7 +128,7 @@ f0_validated:
     - tools rer_ui ejecutadas y registradas en ui-actions.log
 
 out_of_scope_v1:
-  - engine:cmd / crear entidades desde la IA
+  - comandos del motor / crear entidades desde la IA
   - embeddings / RAG vectorial
   - macOS / Linux binary for opencode
   - login device OAuth automático (fallback manual)

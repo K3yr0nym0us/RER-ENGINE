@@ -6,7 +6,7 @@ alwaysApply: true
 # Regla crítica: `src/shared-types/` no es el contrato del editor
 
 El editor real de RER-ENGINE es **Rust + egui** (`rer_engine_editor`), no React.
-Electron + React es solo el **launcher**: elegir 2D/3D, abrir `.save`, idioma de la UI y plugins.
+Electron + React es solo el **launcher**: elegir 2D/3D, abrir `.save` (solo entrega la ruta) e idioma. Permanece como proceso padre para capturar la consola del editor en desarrollo.
 
 ## Regla
 
@@ -21,10 +21,10 @@ entidades, escenas, HUD, blueprints, scripting, cámara, física...).
 
 ## Cuándo SÍ tocar `src/shared-types/`
 
-Solo si el cambio es explícitamente en el **shell Electron** y el tipo lo usa
-`main`, `preload` o `renderer`: payload de arranque, diálogo de `.save`, plugins
-o validación del catálogo IPC para comandos enviados por plugins. Incluso en ese
-caso, justifica por qué el dato no puede vivir en Rust.
+Solo si el cambio es explícitamente en el **launcher** y el tipo lo usa `main`,
+`preload` o `renderer`: payload de arranque, ruta del `.save` o idioma. Incluso
+en ese caso, justifica por qué el dato no puede vivir en Rust. `src/shared-types/`
+no contiene tipos de plugins ni catálogos de comandos: Rust los posee.
 
 ## Documentación obsoleta
 

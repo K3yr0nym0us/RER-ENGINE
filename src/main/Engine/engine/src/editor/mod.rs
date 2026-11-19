@@ -19,6 +19,7 @@ pub(crate) mod plugins;
 mod project_state;
 mod render;
 mod save;
+mod save_open;
 mod scenes;
 mod socket_config;
 mod theme;

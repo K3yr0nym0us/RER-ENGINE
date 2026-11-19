@@ -364,6 +364,15 @@ impl EditorWindow {
         Ok(())
     }
 
+    /// Al abrir un `.save` el motor arranca con el mundo vacío (`setup_empty_3d`)
+    /// y espera un `set_scene` para montar la escena. Antes lo enviaba Electron
+    /// tras `ready`; ahora lo hace el editor con el directorio que él extrajo.
+    fn mount_saved_scene(&self) {
+        if let Some(command) = crate::editor::cli::saved_scene_command(&self.app.cli) {
+            self.app.send_engine(command);
+        }
+    }
+
     /// El hilo de carga terminó: el motor pasa a ser propiedad del editor.
     fn attach_engine(&mut self, state: crate::engine3d::engine::State) {
         unsafe { std::env::remove_var("RER_VK_SYNC_FRAMES") };
@@ -376,6 +385,7 @@ impl EditorWindow {
             "cmd": "set_locale",
             "locale": self.app.cli.locale.as_str(),
         }));
+        self.mount_saved_scene();
         self.window.request_redraw();
     }
 
@@ -391,6 +401,7 @@ impl EditorWindow {
             "cmd": "set_locale",
             "locale": self.app.cli.locale.as_str(),
         }));
+        self.mount_saved_scene();
         self.window.request_redraw();
     }
 
@@ -923,6 +934,14 @@ struct EditorApplication {
     exit_request_pending: bool,
     /// Logs recibidos antes de que exista la ventana (arranque del editor).
     pending_logs: Vec<LogEvent>,
+}
+
+impl Drop for EditorApplication {
+    fn drop(&mut self) {
+        if let Some(dir) = self.cli.temp_extract_dir.take() {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
 }
 
 impl EditorApplication {
@@ -1748,7 +1767,11 @@ fn install_log_sink(proxy: EventLoopProxy<UserEvent>) {
 }
 
 pub fn run() {
-    let cli = Cli::parse_from(std::env::args());
+    let mut cli = Cli::parse_from(std::env::args());
+    if let Err(error) = cli.resolve_save() {
+        eprintln!("[editor] {error}");
+        std::process::exit(1);
+    }
 
     let event_loop = EventLoop::<UserEvent>::with_user_event()
         .build()

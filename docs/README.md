@@ -24,8 +24,8 @@
 | Documento | Contenido |
 |-----------|-----------|
 | [Engine_Runtime_Foundation.yaml](./yaml/engine/Engine_Runtime_Foundation.yaml) | Ventana única del editor, GPU Vulkan, métricas; intro 4K del build de juego (`status: pendiente`) |
-| [Engine_Context.yaml](./yaml/engine/Engine_Context.yaml) | `EngineProvider`, refs, `createEngineActions` / `createEngineEventHandler` |
-| [IPC_Protocol.yaml](./yaml/engine/IPC_Protocol.yaml) | `engine:cmd` / `engine:event`, catálogo por motor, `core/src/ipc` |
+| [Engine_Context.yaml](./yaml/engine/Engine_Context.yaml) | Contexto del motor (documento histórico del renderer React) |
+| [IPC_Protocol.yaml](./yaml/engine/IPC_Protocol.yaml) | Arranque del editor Rust, `set-locale`, contratos `ipc/` por motor |
 
 ---
 

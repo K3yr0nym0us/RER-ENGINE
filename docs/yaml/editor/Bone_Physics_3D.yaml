@@ -55,7 +55,7 @@ engine:
     bone_physics_sim: HashMap<(EntityId, joint_index), BonePhysicsSimState>  # runtime
 
 ipc_commands:
-  catalog: engine_3d only (EngineCommand3dOnly)
+  catalog: engine_3d only (definido en Rust, engine3d/ipc)
   list:
     - cmd: set_bone_physics_editor_entity
       args: { entity_id, active }

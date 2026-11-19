@@ -29,7 +29,7 @@ Aliases iguales que `electron.vite.config.ts` (`@renderer`, `@shared-types`, `@h
 
 **Fuera de alcance:** crates Rust bajo `src/main/Engine/engine_*` y `target/` (calidad aparte con Cargo).
 
-Ejemplos existentes: `src/shared-types/engineCommands.test.ts`, `src/main/plugins/local-ai-assistant/openCodeClient.test.ts`.
+Los tests del shell se ubican junto a su módulo (`*.test.ts` bajo `src/main/`). `src/shared-types/` ya no contiene tests: es solo el contrato mínimo del launcher.
 
 ## ESLint
 

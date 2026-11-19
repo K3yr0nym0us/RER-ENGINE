@@ -1,5 +1,4 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import './engineBridge'
 import type {
   EngineStartPayload,
   OpenProjectResult,
@@ -10,7 +9,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setGameStyle: (payload: EngineStartPayload): void => {
     ipcRenderer.send('set-game-style', payload)
   },
+  /** Electron solo entrega la ruta; el editor Rust abre el `.save` y decide 2D/3D. */
   openProjectDialog: (): Promise<OpenProjectResult | null> => {
     return ipcRenderer.invoke('open-project-dialog')
+  },
+  /** Guarda el idioma elegido en el launcher; main lo pasa como `--locale` al editor. */
+  setLocale: (locale: 'en' | 'es'): void => {
+    ipcRenderer.send('set-locale', locale)
   },
 })
