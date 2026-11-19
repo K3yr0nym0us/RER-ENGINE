@@ -1,23 +1,13 @@
 //! Solver de fluidos en CPU: PBF/XPBD con tensión superficial y cohesión.
 //!
-//! Port en Rust del núcleo físico del sistema de fluidos de KawaiiFluid
-//! (plugin UE5, MIT — `github.com/GTLBruteForce/KawaiiFluid`), analizado shader a
-//! shader. Lo que aquí se simula es SOLO el fluido: sin empuje, sin acoplamiento
+//! Lo que aquí se simula es SOLO el fluido: sin empuje, sin acoplamiento
 //! bidireccional con actores — partículas de agua que caen, salpican y QUEDAN
 //! contenidas dentro de una caja contenedora.
 //!
-//! Referencias (las mismas que usa KawaiiFluid):
-//! - Macklin & Müller, "Position Based Fluids" (2013) — λ, Δp, s_corr (Eq. 13).
-//! - Macklin et al., "Unified Particle Physics for Real-Time Applications" (XPBD,
-//!   2016) — compliance `alpha/dt²` en el constraint de densidad.
-//! - Akinci et al., "Versatile Surface Tension and Adhesion for SPH Fluids" (2013) —
-//!   cohesión con spline C(r) (atracción a r≈h/2, repulsión de cerca).
-//! - Akinci et al., "Versatile Rigid-Fluid Coupling" (2012) — partículas de
-//!   frontera: lattice virtual fuera de las paredes con masa efectiva ψ que
-//!   reconstruye la media cáscara de vecinos que las paredes quitan.
-//! - Viscosidad XSPH (Macklin & Müller 2013) — difusión de velocidad entre vecinos.
+//! Implementación derivada del núcleo físico de KawaiiFluid (MIT). Créditos,
+//! licencia y bibliografía en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
 //!
-//! Pipeline por substep (espejo de los shaders `KawaiiFluidSimulation*.usf`):
+//! Pipeline por substep:
 //! 1. **Predict**: `v += (gravedad + cohesión) * dt`, viscosidad XSPH,
 //!    `x* = x + v * dt`.
 //! 2. **DensityPressure** (N iteraciones): densidad Poly6 (fluidos + frontera),
@@ -28,8 +18,7 @@
 //! 3. **PostStep**: `v = (x* − x)/dt` (PBF puro), clamp de velocidad, damping.
 //!
 //! La búsqueda de vecinos usa hash espacial 3D con cache por substep (la primera
-//! iteración construye la lista; las demás la reutilizan con chequeo de distancia,
-//! igual que el cache `NeighborList` del shader GPU).
+//! iteración construye la lista; las demás la reutilizan con chequeo de distancia).
 //!
 //! Sin Vulkan ni dependencias: lógica pura y determinista. Vive dentro de una
 //! caja contenedora cerrada; no tiene acoplamiento con actores ni con el
@@ -87,7 +76,7 @@ pub(crate) struct FluidConfig {
     pub smoothing_radius: f32,
     /// Masa por partícula (kg).
     pub particle_mass: f32,
-    /// Máximo de iteraciones del solver por substep (KawaiiFluid usa 3–4).
+    /// Máximo de iteraciones del solver por substep (3–4 es un valor típico).
     pub solver_iterations: u32,
     /// Iteraciones mínimas antes de permitir la salida anticipada (B3).
     pub min_solver_iterations: u32,
@@ -102,7 +91,7 @@ pub(crate) struct FluidConfig {
     pub damping: f32,
     /// Velocidad máxima (m/s) — clamp anti-explosión del PostStep.
     pub max_velocity: f32,
-    /// Cohesión Akinci (0–1): fuerza de atracción entre partículas cercanas.
+    /// Cohesión superficial (0–1): fuerza de atracción entre partículas cercanas.
     /// 0.35 (≈ preset `water_cube`): con menos, el charco dilata libremente —
     /// el gate solo-compresión no se opone a la expansión — y se esparce como
     /// material granular sin volver al espaciado de reposo.
@@ -123,7 +112,7 @@ pub(crate) struct FluidConfig {
     pub tensile_n: u32,
     /// Δq de s_corr: fracción de h donde se mide el kernel de referencia (0.3 típico).
     pub tensile_delta_q: f32,
-    /// Soporte de paredes (partículas de frontera Akinci 2012): 0 = desactivado,
+    /// Soporte de paredes (partículas de frontera virtuales): 0 = desactivado,
     /// 1 = peso completo. Las paredes reconstruyen la media cáscara de vecinos
     /// que quitan (sin ellas, el agua contra suelo/paredes mide ~0.4·ρ0 aunque
     /// esté perfectamente apoyada).
@@ -172,7 +161,7 @@ pub(crate) struct FluidSolver {
     predicted: Vec<[f32; 3]>,
     densities: Vec<f32>,
     lambdas: Vec<f32>,
-    /// Partículas de frontera (Akinci 2012): muestreo estático fuera de cada
+    /// Partículas de frontera: muestreo estático fuera de cada
     /// pared. Se generan perezosamente en el primer `step` (necesitan la ρ0
     /// final, que `spawn_block` calibra al espaciado real).
     boundary: Vec<[f32; 3]>,
@@ -194,7 +183,7 @@ pub(crate) struct FluidSolver {
 }
 
 // ---------------------------------------------------------------------------
-// Kernels SPH (port de `KawaiiFluidParticleCore.ush`)
+// Kernels SPH
 // ---------------------------------------------------------------------------
 
 /// Kernel Poly6 (para densidad): `W(r) = 315/(64πh⁹)·(h²−r²)³`. Cero más allá de h.
@@ -228,7 +217,7 @@ fn spiky_grad(dir_i_minus_j: [f32; 3], rlen: f32, h: f32) -> [f32; 3] {
     ]
 }
 
-/// Presión artificial s_corr (PBF Eq. 13-14, versión branchless del shader):
+/// Presión artificial s_corr (PBF Eq. 13-14, versión branchless):
 /// `s_corr = −k·(W(r)/W(Δq·h))ⁿ`. El coeficiente del kernel cancela en el ratio,
 /// así que ambos lados usan el numerador `(h²−r²)³` sin normalizar.
 fn scorr(r2: f32, h: f32, k: f32, n: u32, delta_q: f32) -> f32 {
@@ -243,9 +232,9 @@ fn scorr(r2: f32, h: f32, k: f32, n: u32, delta_q: f32) -> f32 {
     -k * (w_num / w_dq).powi(n as i32)
 }
 
-/// Spline de cohesión Akinci 2013 `C(r)`: atracción a r≈h/2, repulsión de cerca.
+/// Spline de cohesión `C(r)`: atracción a r≈h/2, repulsión de cerca.
 /// Positivo = atrae; evita clustering sin colapsar el fluido a un punto.
-fn akinci_cohesion(r: f32, h: f32) -> f32 {
+fn cohesion_spline(r: f32, h: f32) -> f32 {
     if r > h || r <= SMALL {
         return 0.0;
     }
@@ -302,7 +291,7 @@ fn compute_surface_normals(
 }
 
 // ---------------------------------------------------------------------------
-// Hash espacial 3D (port simplificado de `KawaiiFluidSpatialHash.ush` + sorting)
+// Hash espacial 3D + ordenación por celda
 // ---------------------------------------------------------------------------
 
 /// B4 — hasher de búsqueda con semilla fija. El `DefaultHasher` de `std` se
@@ -769,7 +758,7 @@ impl FluidSolver {
         self.boundary_built = false;
     }
 
-    /// Genera (una sola vez) la nube de partículas de frontera (Akinci 2012).
+    /// Genera (una sola vez) la nube de partículas de frontera virtuales.
     /// La ψ es UNA para todas: ρ0 dividido por la suma de kernels de la lattice
     /// infinita de paso sb (con sb = h/2 = paso de fluido típico da ψ = masa de
     /// partícula, exactamente la media cáscara que el suelo le quita al fluido).
@@ -826,7 +815,7 @@ impl FluidSolver {
                 }
             }
         }
-        // Masa efectiva ψ UNIFORME (Akinci 2012): ψ = ρ0 / Σ_b' W(lattice
+        // Masa efectiva ψ UNIFORME: ψ = ρ0 / Σ_b' W(lattice
         // infinita de paso sb). El vecindario LOCAL de una virtual del borde
         // está truncado (sobre-ponderaría); la lattice infinita no.
         let rho0 = self.config.rest_density.max(SMALL);
@@ -838,7 +827,7 @@ impl FluidSolver {
         self.boundary_grid = Some(grid);
     }
 
-    /// Fase 1 — Predict (`KawaiiFluidSimulationPredict.usf`): fuerzas + predicción.
+    /// Fase 1 — Predict: fuerzas + predicción.
     fn predict(&mut self, dt: f32, neighbors: &[Vec<Neighbor>], b_neighbors: &[Vec<u32>]) {
         let h = self.config.smoothing_radius;
         let mass = self.config.particle_mass;
@@ -849,7 +838,7 @@ impl FluidSolver {
         let adhesion = self.config.boundary_adhesion;
         for i in 0..self.positions.len() {
             let mut vel = self.velocities[i];
-            // Gravedad + cohesión Akinci (K_ij corrige por asimetría de densidad).
+            // Gravedad + cohesión superficial (K_ij corrige por asimetría de densidad).
             vel[1] += self.config.gravity * dt;
             if self.config.cohesion > 0.0 {
                 let rho_i = self.densities[i].max(SMALL);
@@ -858,7 +847,7 @@ impl FluidSolver {
                     let j = neighbor.index as usize;
                     let rho_j = self.densities[j].max(SMALL);
                     let k_ij = (2.0 * self.config.rest_density / (rho_i + rho_j)).clamp(0.5, 2.0);
-                    let c = akinci_cohesion(neighbor.rlen, h);
+                    let c = cohesion_spline(neighbor.rlen, h);
                     // Dirección HACIA el vecino (atracción): opuesta a dir.
                     let dir = scale(neighbor.dir, -1.0);
                     force = add(force, scale(dir, k_ij * c * mass));
@@ -869,7 +858,7 @@ impl FluidSolver {
                         force = add(force, scale(delta, -curvature * k_ij));
                     }
                 }
-                // a = F/m_i, con clamp de estabilidad (MaxCohesionForce del shader).
+                // a = F/m_i, con clamp de estabilidad.
                 let accel = scale(force, self.config.cohesion / mass);
                 let a_len = length(accel).max(SMALL);
                 let clamped = if a_len > self.config.max_cohesion_accel {
@@ -915,7 +904,7 @@ impl FluidSolver {
         }
     }
 
-    /// Fase 2 — DensityPressure (`KawaiiFluidSimulationDensityPressure.usf`):
+    /// Fase 2 — DensityPressure:
     /// densidad Poly6 → λ XPBD → Δp Spiky con s_corr → clamp contra paredes.
     fn solve_constraints(
         &mut self,
@@ -951,7 +940,7 @@ impl FluidSolver {
                 sum_sq += dot(grad_c, grad_c);
                 grad_i = add(grad_i, scale(grad_w, inv_rest));
             }
-            // Soporte de paredes (Akinci 2012): los virtuales aportan densidad
+            // Soporte de paredes: los virtuales aportan densidad
             // con su masa efectiva ψ_b, reconstruyendo la media cáscara que la
             // pared quita. NO entran en κ ni en Δp: su λ sería 0 y su gradiente
             // decaleraría λ hacia las paredes (los virtuales están más juntos,
@@ -970,8 +959,8 @@ impl FluidSolver {
             self.densities[i] = density;
             sum_sq += dot(grad_i, grad_i);
 
-            // λ fresco por iteración, constraint de DESIGUALDAD (diseño de
-            // KawaiiFluid): solo se corrige la COMPRESIÓN (C > 0 → λ < 0 →
+            // λ fresco por iteración, constraint de DESIGUALDAD: solo se
+            // corrige la COMPRESIÓN (C > 0 → λ < 0 →
             // separa) porque la incompresibilidad es rígida. La atracción NO
             // va aquí: el λ de igualdad aplica la corrección completa de golpe
             // (correcto para un constraint rígido, catastrófico para la tensión
@@ -980,7 +969,7 @@ impl FluidSolver {
             // explosión en un ciclo bang-bang a velocidad máxima perpetua
             // (medido: v media clavada en 0.2·h/dt, el fluido llenando la caja
             // como gas y sin asentarse jamás). La atracción la aporta la
-            // cohesión Akinci del predict: una ACELERACIÓN limitada (como la
+            // cohesión del predict: una ACELERACIÓN limitada (como la
             // gravedad), física y estable por construcción.
             let c = density * inv_rest - 1.0;
             self.lambdas[i] = if c > 0.0 && sum_sq + alpha_tilde > SMALL {
@@ -1033,7 +1022,7 @@ impl FluidSolver {
         }
     }
 
-    /// Fase 3 — PostStep (`KawaiiFluidSimulationPostStep.usf`): velocidad pura
+    /// Fase 3 — PostStep: velocidad pura
     /// PBF `v = Δx/dt`, clamp, damping; la posición pasa a ser la corregida.
     fn post_step(&mut self, dt: f32) {
         let inv_dt = 1.0 / dt;
@@ -1084,10 +1073,10 @@ mod tests {
         // s_corr: repulsión (negativa) que crece cerca, nula en el borde.
         assert!(scorr(0.1 * 0.1, h, 2.0, 4, 0.3) < 0.0);
         assert_eq!(scorr(h * h, h, 2.0, 4, 0.3), 0.0);
-        // Cohesión Akinci: atracción a r≈h/2, repulsión cerca de 0.
-        assert!(akinci_cohesion(0.5 * h, h) > 0.0);
-        assert!(akinci_cohesion(0.05 * h, h) < 0.0);
-        assert_eq!(akinci_cohesion(2.0 * h, h), 0.0);
+        // Cohesión superficial: atracción a r≈h/2, repulsión cerca de 0.
+        assert!(cohesion_spline(0.5 * h, h) > 0.0);
+        assert!(cohesion_spline(0.05 * h, h) < 0.0);
+        assert_eq!(cohesion_spline(2.0 * h, h), 0.0);
     }
 
     #[test]

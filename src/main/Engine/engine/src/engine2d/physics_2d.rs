@@ -8,8 +8,8 @@
 //   "dynamic"   — afectado por gravedad y colisiones.
 //   "static"    — no se mueve (suelo, plataformas).
 //   "kinematic" — KinematicPositionBased + KinematicCharacterController de Rapier
-//                 (similar a CharacterBody/move_and_slide de Godot: deslices iterados,
-//                 snap al suelo). La entrada de velocidad viene de kinematic_actor_vel.
+//                 (deslices iterados, snap al suelo). La entrada de velocidad viene
+//                 de kinematic_actor_vel.
 //
 // Funciones extraídas a archivos propios (submódulos vía #[path]):
 //   teleport_entity         — sincroniza Rapier body con el Transform.
@@ -63,7 +63,7 @@ pub(crate) struct PhysicsWorld2D {
     /// Dirección horizontal bloqueada por colisión en el último step kinematic.
     /// -1.0 = bloqueado hacia izquierda, 1.0 = bloqueado hacia derecha.
     blocked_horizontal_sign: HashMap<EntityId, f32>,
-    /// Deslizamiento multi-paso + snap al suelo (API tipo Godot CharacterBody).
+    /// Deslizamiento multi-paso + snap al suelo.
     kinematic_character: KinematicCharacterController,
 }
 
@@ -432,7 +432,7 @@ impl PhysicsWorld2D {
 
         self.integration_params.dt = dt.clamp(0.0001, 0.05);
 
-        // ── KinematicPositionBased + CharacterController (estilo Godot move_and_slide) ──
+        // ── KinematicPositionBased + CharacterController (deslizamiento + snap) ──
         // Rapier ignora `set_linvel`; la entrada de scripts va a `kinematic_actor_vel`.
 
         #[derive(Clone, Copy)]
@@ -484,7 +484,7 @@ impl PhysicsWorld2D {
             .iter()
             .filter_map(|d| {
                 let script = self.kinematic_actor_vel.remove(&d.entity);
-                // Godot CharacterBody: la velocidad horizontal la fija cada frame el input;
+                // La velocidad horizontal la fija cada frame el input;
                 // sin comando => 0 (no arrastrar velocidad interpolada lateral de Rapier).
                 let vx = script.as_ref().map(|s| s.x).unwrap_or(0.0);
                 let vy_base = script.map(|s| s.y).unwrap_or(d.linvel.y);

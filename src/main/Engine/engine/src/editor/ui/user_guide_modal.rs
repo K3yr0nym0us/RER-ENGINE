@@ -74,8 +74,8 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, _app: &mut EditorApp) {
                     line(ui, "• ", &[("Propiedades:", true), (" aparece al seleccionar una entidad; nombre, transform, física, animaciones, ", false), ("Programar entidad", true), (" (nodos o scripts Rhai) y acciones (eliminar, blueprint, etc.).", false)]);
 
                     ui.add_space(10.0);
-                    heading(ui, "Viewport 3D (estilo Blender)");
-                    paragraph(ui, "En proyectos 3D, la navegación y el movimiento de entidades siguen el esquema por defecto de Blender:");
+                    heading(ui, "Viewport 3D");
+                    paragraph(ui, "En proyectos 3D, la navegación y el movimiento de entidades siguen el esquema estándar de orbit/pan/zoom:");
                     line(ui, "• ", &[("Órbita:", true), (" botón central del ratón (MMB) + arrastre.", false)]);
                     line(ui, "• ", &[("Pan:", true), (" Shift + MMB + arrastre.", false)]);
                     line(ui, "• ", &[("Zoom (dolly):", true), (" Ctrl + MMB + arrastre vertical, o rueda del ratón.", false)]);

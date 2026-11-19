@@ -49,8 +49,8 @@ defecto); `fit_config_to_world` escala features al área generada.
   anterior (más desnivel absoluto). El cálculo está en
   `scale::land_grade_amplitude`.
 - **Lagos / valles / montañas**: huella elíptica con costa irregular.
-  Las montañas copian masa + crestas de `primitive-voxels-godot` (esa
-  referencia no tiene lagos ni ríos).
+  Las montañas combinan mesetas y picos con masa + crestas (la referencia
+  de diseño no incluye lagos ni ríos).
 - **Ríos**: nacen en ladera de montaña o en el borde alto del mundo y
   bajan (lago o salida del mapa). No se plantan en un punto interior.
 - Semilla, colinas/llanuras/acantilados, cuevas, cascadas, scatter.

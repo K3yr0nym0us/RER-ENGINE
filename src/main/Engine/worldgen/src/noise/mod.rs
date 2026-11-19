@@ -1,12 +1,11 @@
-//! Puerto propio de [FastNoiseLite](https://github.com/Auburn/FastNoiseLite) (MIT, Auburn).
+//! Ruido procedural determinista para el generador de mundos.
 //!
-//! Port fiel del algoritmo de `CSharp/FastNoiseLite.cs` para que los valores de ruido
-//! coincidan con la referencia usada por el motor. Las tablas de gradientes
-//! (`tables.rs`) se generaron programáticamente desde el código fuente original para
-//! evitar errores de transcripción.
+//! Implementación derivada de FastNoiseLite (MIT, Auburn): créditos, licencia y
+//! referencias en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
 //!
-//! Los literales de `tables.rs` se conservan tal cual del original, por lo que
-//! algunos exceden la mantisa de f32 (warning cosmético que se ignora ahí).
+//! Las tablas de gradientes (`tables.rs`) se generaron programáticamente para
+//! coincidir con la referencia y evitar errores de transcripción. Sus literales
+//! exceden la mantisa de f32 (warning cosmético que se ignora ahí).
 #![allow(clippy::excessive_precision)]
 //!
 //! Cobertura: `OpenSimplex2`, `OpenSimplex2S`, `Perlin`, `ValueCubic` y `Value` en 2D/3D,
@@ -17,7 +16,7 @@ pub mod tables;
 
 use tables::{GRADIENTS_2D, GRADIENTS_3D};
 
-/// Tipos de ruido soportados (equivalen a `NoiseType` en FastNoiseLite).
+/// Tipos de ruido soportados por el generador.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NoiseType {
     /// Simplex/OpenSimplex2: el tipo usado por el terreno del plugin.

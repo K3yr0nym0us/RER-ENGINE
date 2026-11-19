@@ -1,8 +1,8 @@
-//! Tablas canónicas de Marching Cubes (Paul Bourke, 1994; tabla de Cory Gene Bloyd).
+//! Tablas canónicas de Marching Cubes.
+//! Créditos y referencias en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
 //!
-// Los literales se transcriben tal cual del código de referencia (p. ej. los
-// gradientes de FastNoiseLite y esta tabla), por lo que conservan dígitos que
-// exceden la mantisa de f32: el warning es cosmético y no se aplica aquí.
+// Los literales se transcriben tal cual de las tablas de referencia, por lo que
+// conservan dígitos que exceden la mantisa de f32: el warning es cosmético y no se aplica aquí.
 #![allow(clippy::excessive_precision)]
 
 //! Convención de corners (`CORNER_OFFSETS`, en unidades de celda; Y hacia arriba):

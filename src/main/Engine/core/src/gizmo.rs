@@ -1,4 +1,4 @@
-//! Escala del gizmo de transformación: tamaño ~constante en pantalla (estilo Blender).
+//! Escala del gizmo de transformación: tamaño ~constante en pantalla.
 
 /// Longitud de cada eje en el mesh (`build_axes`).
 pub const GIZMO_MESH_AXIS_LENGTH: f32 = 1.14;

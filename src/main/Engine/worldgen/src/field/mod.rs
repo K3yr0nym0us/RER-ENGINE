@@ -1,7 +1,7 @@
 //! Campo de densidad del mundo: heightfield base + features planificados +
 //! carving (cuevas, ríos, lagos) + formaciones rocosas.
 //!
-//! Convención heredada de la referencia: **densidad positiva = sólido**,
+//! Convención del campo: **densidad positiva = sólido**,
 //! `density(x, y, z) = height(x, z) - y` (con carving reductivo/aditivo). La
 //! densidad es una **función pura del espacio de mundo** dado el plan, por lo
 //! que los chunks comparten puntos exactos y las regeneraciones son fiables.

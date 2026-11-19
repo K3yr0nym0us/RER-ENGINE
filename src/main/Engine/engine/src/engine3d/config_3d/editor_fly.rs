@@ -1,12 +1,12 @@
 //! Navegación libre del viewport de edición: botón derecho para mirar, WASD para volar.
 //!
 //! La cámara del editor es ORBITAL (`editor_orbit_target` + `editor_viewport_yaw/pitch/distance`),
-//! así que "mirar como en Minecraft" no es solo cambiar yaw/pitch: hay que girar manteniendo el
+//! así que "mirar alrededor" no es solo cambiar yaw/pitch: hay que girar manteniendo el
 //! OJO fijo y recalcular el pivote. En el rig orbital el ojo está en
 //! `pivote + back(yaw, pitch) * distancia`, con `back = -forward`, por lo que tras cambiar los
 //! ángulos el pivote debe quedar en `ojo - back * distancia`.
 //!
-//! Se conserva el esquema Blender que ya existía (MMB órbita, Shift+MMB paneo, Ctrl+MMB dolly,
+//! El esquema existente se conserva (MMB órbita, Shift+MMB paneo, Ctrl+MMB dolly,
 //! rueda zoom): esto se suma, no lo reemplaza.
 
 use std::collections::HashSet;

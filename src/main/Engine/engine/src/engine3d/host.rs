@@ -404,7 +404,7 @@ fn finish_entity_grab_confirm(
 // ---------------------------------------------------------------------------
 pub struct App {
     state: Option<crate::engine3d::engine::State>,
-    // ── Cámara orbital (Blender: MMB + modificadores)
+    // ── Cámara orbital (MMB + modificadores)
     mouse_middle: bool,
     /// ── Cámara libre del editor: RMB mantiene pulsado el "mirar alrededor".
     mouse_right: bool,
@@ -551,7 +551,7 @@ impl App {
             let inputs = state.play_controller_effective_inputs(&self.keyboard_mouse_pressed);
             state.apply_play_controller_keyboard(&inputs, state.delta_time);
         } else if state.editor_fly_active() {
-            // WASD/Space/C para recorrer el mapa en edición (estilo Minecraft).
+            // WASD/Space/C para recorrer el mapa en edición.
             state.apply_editor_fly_input(&self.editor_keys, state.delta_time);
         }
     }

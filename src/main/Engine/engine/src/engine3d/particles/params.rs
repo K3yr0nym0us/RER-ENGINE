@@ -123,8 +123,8 @@ pub(crate) enum MaterialKind {
     Sand,
     Water,
     /// "Cubo de agua": bloque compacto de agua que cae, salpica al impactar y el
-    /// resto se asienta como charco en el plano (`ground_y`). Referencia física:
-    /// solver PBF/XPBD de KawaiiFluid (ver `fluid.rs` para el port CPU completo).
+    /// resto se asienta como charco en el plano (`ground_y`). Se simula con el
+    /// solver PBF/XPBD de `fluid.rs`.
     WaterCube,
     /// Corona del sol: chispas blancas cálidas que nacen en toda la esfera y se
     /// expanden hacia fuera. Emisor interno reservado; no aparece en la UI F5.

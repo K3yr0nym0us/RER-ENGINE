@@ -189,9 +189,8 @@ impl CarveIndex {
                     } else {
                         smoothstep(2.5, 6.5, depth_below_surface)
                     };
-                    // La fuerza escala con la profundidad (término clave de la
-                    // referencia): garantiza que el túnel excave a cualquier
-                    // profundidad y no solo cerca de la superficie.
+                    // La fuerza escala con la profundidad: excavación fiable a
+                    // cualquier cota, no solo cerca de la superficie.
                     let strength =
                         tunnel_factor * gate * (3.5 + depth_below_surface + radius * 2.5) * rough;
                     if strength > carve {

@@ -1,4 +1,4 @@
-//! Mapa de biomas: clasificación Whittaker (temperatura + humedad) con nieve
+//! Mapa de biomas: clasificación por temperatura + humedad con nieve
 //! solo por altitud.
 //!
 //! Antes el ruido 2D se partía en bandas iguales: con los 5 biomas activos el

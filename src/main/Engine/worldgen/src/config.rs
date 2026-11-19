@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// offset de escena resta esta cota para que las llanuras queden en y = 0.
 pub const TERRAIN_PLAINS_CLEARANCE: f32 = 6.0;
 
-/// Superficie más baja permitida, en metros. La referencia usa `min_height = 4`
+/// Superficie más baja permitida, en metros. El valor de partida era `min_height = 4`
 /// para que el terreno que no es cueva no cruce el fondo del volumen.
 pub const TERRAIN_FLOOR: f32 = 2.0;
 

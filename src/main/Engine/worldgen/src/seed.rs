@@ -1,12 +1,11 @@
 //! Seeds deterministas por dominio y RNG determinista del generador.
 //!
-//! Patrón de la referencia (`primitive-voxels-godot`): un `world_seed` base más un
-//! salt por dominio (altura, biomas, cuevas, ríos, distribución…) producen seeds
-//! descorrelacionadas. Todo lo aleatorio del plugin deriva de aquí, nunca de
-//! estado global ni del reloj.
+//! Un `world_seed` base más un salt por dominio (altura, biomas, cuevas, ríos,
+//! distribución…) producen seeds descorrelacionadas. Todo lo aleatorio del plugin
+//! deriva de aquí, nunca de estado global ni del reloj.
 
-/// Mezcla determinista de 32 bits (estilo PCG/xorshift; equivalente a `_hash01` de la
-/// referencia). Útil para hashing de celdas y seeds de dominio.
+/// Mezcla determinista de 32 bits (estilo PCG/xorshift). Útil para hashing de
+/// celdas y seeds de dominio.
 #[inline]
 #[must_use]
 pub fn mix_u32(mut v: u32) -> u32 {
@@ -36,7 +35,7 @@ pub const SALT_TERRAIN: u32 = 0;
 pub const SALT_DETAIL: u32 = 1_000;
 /// Dominio del mapa de biomas (temperatura).
 pub const SALT_BIOME: u32 = 2_000;
-/// Dominio de humedad (Whittaker, independiente de la temperatura).
+/// Dominio de humedad (independiente de la temperatura).
 pub const SALT_MOISTURE: u32 = 2_100;
 /// Dominio de hotspots volcánicos.
 pub const SALT_VOLCANIC: u32 = 2_200;

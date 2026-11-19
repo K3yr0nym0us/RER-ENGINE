@@ -546,7 +546,7 @@ impl State {
 
             // Actualizar collider por frame solo fuera de gameplay.
             // En preview/juego el collider del personaje debe ser estable
-            // (estilo CharacterBody2D de Godot) para evitar atravesar
+            // (cuerpo cinemático estable) para evitar atravesar
             // paredes cuando los frames cambian tight-bounds/offset.
             if self.physics_2d.has_physics(id) && !self.preview_playing {
                 let bounds = cache_entry.tight_bounds.unwrap_or([

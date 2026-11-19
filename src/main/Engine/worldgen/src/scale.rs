@@ -4,9 +4,9 @@
 //! 180 m, 5 biomas a partes iguales) no caben en un radio pequeño y dejan el
 //! mapa como un desierto con nieve suelta. Aquí se escala todo al radio real.
 //!
-//! Referencias: Whittaker / Neo Terrain (temp + humedad + lapse rate),
-//! `primitive-voxels-godot` (salts por dominio) y el hilo de biomes de
-//! VoxelLodTerrain (Zylann).
+//! El modelo de biomas usa temperatura, humedad y lapse rate, con salts por
+//! dominio y una cuadrícula de chunks por capas Y. Créditos y referencias de
+//! diseño en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
 
 use crate::config::{
     BiomesConfig, FeatureConfig, TERRAIN_FLOOR, WorldBounds, WorldGenConfig, plains_height,

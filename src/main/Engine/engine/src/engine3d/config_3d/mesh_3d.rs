@@ -368,7 +368,7 @@ struct GltfRawPrim {
 
 /// Lee una primitiva glTF aplicando la matriz `world` del nodo al que pertenece
 /// (importante para respetar la metadata de orientación que muchos exportadores
-/// dejan en los nodos, p. ej. la corrección Z-up→Y-up en Blender que mete una
+/// dejan en los nodos, p. ej. la corrección Z-up→Y-up que mete una
 /// rotación 90° en el `Armature`/root).
 fn decode_gltf_material_albedo(
     mat_idx: usize,

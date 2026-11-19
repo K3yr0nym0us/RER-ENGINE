@@ -3,7 +3,7 @@
 //! Cada chunk es una unidad de trabajo pura y paralelizable: su densidad se evalúa
 //! en coordenadas de mundo, de modo que dos chunks vecinos que compartan punto de
 //! grid producen valores idénticos y sus mallas sellan sin intercambio de datos
-//! (patrón validado por la referencia).
+//! (patrón validado en la práctica).
 
 use glam::Vec3;
 
@@ -45,8 +45,8 @@ impl ChunkKey {
 
 /// Resultado del pruning de columna: chunks Y activos para una columna XZ.
 ///
-/// Replica la optimización de la referencia (`_get_surface_y_layers_for_xz_chunk`):
-/// se samplea la altura en una rejilla 5×5 de la columna y solo se activan los
+/// Optimización de pruning por columna: se samplea la altura en una rejilla 5×5
+/// de la columna y solo se activan los
 /// chunks Y cuyo rango pueda contener terreno.
 #[must_use]
 pub fn active_y_chunks(

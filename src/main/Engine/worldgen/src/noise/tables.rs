@@ -1,6 +1,6 @@
-// Tablas de gradientes de FastNoiseLite.
-// Puerto fiel de Auburn/FastNoiseLite (MIT), CSharp/FastNoiseLite.cs.
-// Generadas programaticamente desde el codigo fuente para evitar errores de transcripcion.
+// Tablas de gradientes del generador de ruido.
+// Derivado de FastNoiseLite (MIT, Auburn): ver `THIRD_PARTY_NOTICES.md` en la raíz.
+// Generadas programáticamente para evitar errores de transcripción.
 
 /// Gradientes 2D: 128 pares (x, y) indexados por `hash & (127 << 1)`.
 pub const GRADIENTS_2D: [f32; 256] = [

@@ -1,4 +1,4 @@
-//! Controles del viewport de edición 3D (esquema por defecto de Blender).
+//! Controles del viewport de edición 3D (esquema estándar de orbit/pan/zoom).
 
 use glam::Vec3;
 
@@ -189,7 +189,7 @@ impl State {
         self.zoom_editor_viewport(-dy * DOLLY_SENSITIVITY * scale);
     }
 
-    /// Aplica navegación de cámara del editor según modo Blender.
+    /// Aplica navegación de cámara del editor (órbita / paneo / dolly).
     pub(crate) fn apply_editor_camera_nav(&mut self, mode: EditorCameraNavMode, dx: f32, dy: f32) {
         if !self.uses_editor_viewport_camera() {
             return;
@@ -201,7 +201,7 @@ impl State {
         }
     }
 
-    /// Encuadra la selección en el viewport (Numpad `.` en Blender).
+    /// Encuadra la selección en el viewport (tecla `.` del teclado numérico).
     pub(crate) fn frame_selected_in_viewport(&mut self) -> bool {
         if !self.uses_editor_viewport_camera() {
             return false;
@@ -318,7 +318,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn nav_mode_blender_defaults() {
+    fn nav_mode_defaults() {
         assert_eq!(
             resolve_editor_camera_nav_mode(false, false),
             EditorCameraNavMode::Orbit

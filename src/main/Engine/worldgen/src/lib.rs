@@ -5,7 +5,7 @@
 //! - [`config`]: esquema de configuración con límites de dimensiones, resolución,
 //!   features activables y cantidades máximas por elemento.
 //! - [`seed`]: seeds deterministas por dominio y RNG determinista.
-//! - [`noise`]: puerto propio de FastNoiseLite (MIT).
+//! - [`noise`]: ruido procedural determinista (ver `THIRD_PARTY_NOTICES.md`).
 //! - `field` (F2+): heightfield + SDF + carving (terreno, agua, cuevas).
 //! - `mesher` (F2+): Marching Cubes con normales por gradiente.
 //! - `chunks` (F2+): pipeline de chunks con Y-layer pruning.

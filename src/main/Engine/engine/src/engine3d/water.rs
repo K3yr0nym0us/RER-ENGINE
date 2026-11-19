@@ -53,7 +53,7 @@ const SOURCE_LEVEL: u8 = 7;
 /// medida que crece el charco, hasta quedar en la mínima (1 unidad) en todas.
 /// Ajusta este valor para charcos más grandes o más pequeños.
 const SOURCE_VOLUME: u32 = 96;
-/// Tick del autómata (5 Hz, como Minecraft).
+/// Tick del autómata (5 Hz).
 pub(crate) const TICK_INTERVAL: f32 = 0.2;
 const MIN_CELL: f32 = 0.1;
 const MAX_CELL: f32 = 4.0;

@@ -17,7 +17,7 @@
 //
 //   4. SLIDING: si toi ≤ ε (ya pegado a la pared), proyecta la velocidad sobre
 //      el plano perpendicular a la normal del obstáculo (normal2), igual que
-//      Godot move_and_collide. El personaje desliza en lugar de bloquearse.
+//      (normal2). El personaje desliza en lugar de bloquearse.
 //
 //   5. CCD (seguro de red): Rapier garantiza no-traversal aunque el shape cast
 //      subestime la distancia.

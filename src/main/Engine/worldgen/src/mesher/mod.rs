@@ -1,13 +1,13 @@
 //! Marching Cubes con normales por gradiente y deduplicación de vértices.
 //!
-//! Convención del campo: **densidad positiva = sólido** (como la referencia
-//! `primitive-voxels-godot`). La isosuperficie es `density = 0`.
+//! Convención del campo: **densidad positiva = sólido**. La isosuperficie es
+//! `density = 0`.
 //!
-//! Diferencias deliberadas respecto a la referencia:
+//! Decisiones de diseño:
 //! - La orientación de cada triángulo se corrige contra el **gradiente del campo**
 //!   (la normal apunta hacia la densidad decreciente, es decir, hacia fuera del
-//!   sólido). Esto hace el resultado inmune a los casos ambiguos de la tabla de
-//!   Bourke que en la referencia se parchearon invirtiendo el winding a mano.
+//!   sólido). Esto hace el resultado inmune a los casos ambiguos de la tabla
+//!   canónica, que en otras implementaciones se parchean invirtiendo el winding a mano.
 //! - Las normales de vértice se obtienen por **gradiente central** sobre el grid
 //!   con padding, no por promedio de caras con keys de string (mucho más barato
 //!   y exacto).

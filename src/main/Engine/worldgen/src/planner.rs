@@ -16,7 +16,7 @@ use crate::seed::{Rng, SALT_CAVES, SALT_PLANNER, SALT_RIVERS, domain_seed};
 /// Clases de feature localizable con sitio.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FeatureKind {
-    /// Montaña (máscara irregular; masa + crestas como en la referencia Godot).
+    /// Montaña (máscara irregular; mesetas + crestas).
     Mountain,
     /// Colina (amplitud FBM local).
     Hill,
@@ -55,8 +55,7 @@ impl Site {
     }
 
     /// Distancia normalizada al borde (`1` = orilla). Elipse + armónicos: no
-    /// es un círculo. La referencia Godot tampoco usa discos para montañas
-    /// (máscara de ruido); aquí se deforma el cupo del planificador.
+    /// es un círculo. La máscara de ruido deforma el cupo del planificador.
     #[must_use]
     pub fn norm_dist(&self, x: f32, z: f32) -> f32 {
         let dx = x - self.pos.x;
@@ -894,9 +893,9 @@ fn source_height_floor(lakes: &[LakeInfo]) -> f32 {
 
 /// Genera un sistema de cuevas: túnel con entrada en superficie + rooms (F4).
 ///
-/// La boca nace en una zona alta. El descenso copia la referencia Godot
-/// (`primitive-voxels-godot`): lerp suave hacia el piso (no un pozo), los
-/// primeros 7 tramos se tallan como entrada y el radio crece hacia el interior.
+/// La boca nace en una zona alta. El descenso hace un lerp suave hacia el piso
+/// (no un pozo); los primeros 7 tramos se tallan como entrada y el radio crece
+/// hacia el interior.
 /// Se corta antes de asomar por la ladera opuesta.
 fn walk_cave(
     config: &WorldGenConfig,

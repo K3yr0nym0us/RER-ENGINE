@@ -157,7 +157,7 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
 - `src/engine3d/config_3d/camera_3d.rs`: camara orbital y uniforms.
 - `src/engine3d/config_3d/character_anchor.rs`: pies ↔ centro del personaje jugable.
 - `src/engine3d/config_3d/play_character.rs`: entidad `[Player]`, spawn y cuerpo placeholder.
-- `src/engine3d/config_3d/editor_viewport_controls.rs`: navegación orbital (esquema Blender), arrastre/gizmo.
+- `src/engine3d/config_3d/editor_viewport_controls.rs`: navegación orbital, arrastre/gizmo.
 - `src/engine3d/config_3d/editor_fly.rs`: navegación libre del viewport de edición (RMB mirar, WASD volar).
 - `src/engine3d/config_3d/fps_camera.rs`: vista play character acoplada, IPC `play_character_view_changed`.
 - `src/engine3d/config_3d/play_controller.rs`: movimiento en play (cápsula cinemática).
@@ -213,7 +213,7 @@ codigo no cambia. Las reglas de cada split:
 ## Modos de camara y render
 
 - **Editor 3D**: solo `Camera` orbital + viewport desacoplado del jugador; gizmo y frustum de cámara play character con `preview_playing == false`. No hay modo cámara 2D en este binario.
-  - Navegación (toda en `!preview_playing` y fuera del editor de HUD): **RMB + arrastre** mira alrededor del ojo (estilo Minecraft, `editor_fly_look`), **W/A/S/D** vuela, **Space/C** suben y bajan, **Shift** acelera (×3), y se conserva el esquema Blender: **MMB** órbita, **Shift+MMB** paneo, **Ctrl+MMB** dolly, **rueda** zoom, **Numpad.** encuadra la selección.
+  - Navegación (toda en `!preview_playing` y fuera del editor de HUD): **RMB + arrastre** mira alrededor del ojo (`editor_fly_look`), **W/A/S/D** vuela, **Space/C** suben y bajan, **Shift** acelera (×3); **MMB** órbita, **Shift+MMB** paneo, **Ctrl+MMB** dolly, **rueda** zoom, **Numpad.** encuadra la selección.
   - La cámara del editor es orbital, así que "mirar" no es solo cambiar yaw/pitch: hay que girar manteniendo el ojo fijo y recolocar el pivote (`pivote = ojo − back·distancia`). Ver `config_3d/editor_fly.rs`.
   - El editor es dueño del foco de la ventana winit; no hay ventana overlay ni `WS_EX_NOACTIVATE`. El modo standalone usa su propia ventana y conserva el foco normal.
 - **Play 3D**: `preview_playing`, vista desde acordeón Camera; mesh del jugador visible; capsula cinematica en `play_controller.rs`.
