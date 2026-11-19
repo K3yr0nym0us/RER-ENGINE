@@ -332,6 +332,8 @@ pub struct SaveConfigCameraSnapshot {
     pub pitch: f32,
     pub fov_y: f32,
     pub frustum_distance: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub camera_clip_radius: Option<f32>,
     #[serde(default)]
     pub camera_follow_mode: PlayCameraFollowMode,
 }

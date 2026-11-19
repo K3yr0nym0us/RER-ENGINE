@@ -398,6 +398,7 @@ impl State {
         fov_y: Option<f32>,
         frustum_distance: Option<f32>,
         camera_follow_mode: Option<crate::engine3d::ipc::PlayCameraFollowMode>,
+        camera_clip_radius: Option<f32>,
     ) {
         if let Some(av) = position_axis {
             let mut eye = self.play_camera_eye_position;
@@ -427,6 +428,9 @@ impl State {
         }
         if let Some(dist) = frustum_distance {
             self.fps_editor_frustum_distance = dist.clamp(0.5, 50.0);
+        }
+        if let Some(radius) = camera_clip_radius {
+            self.play_camera_clip_radius = radius.clamp(0.0, 1.0);
         }
         self.emit_play_character_view_changed(false);
     }
@@ -536,6 +540,7 @@ impl State {
             pitch,
             fov_y: self.camera.fov_y,
             frustum_distance: self.fps_editor_frustum_distance,
+            camera_clip_radius: self.play_camera_clip_radius,
             camera_follow_mode: self.play_camera_follow_mode,
             body_center,
             body_rotation,
@@ -549,7 +554,8 @@ impl State {
             return;
         }
 
-        self.camera.yaw += dx * PLAY_CHARACTER_MOUSE_SPEED;
+        let yaw_delta = dx * PLAY_CHARACTER_MOUSE_SPEED;
+        self.camera.yaw += yaw_delta;
         self.camera.pitch = (self.camera.pitch + dy * PLAY_CHARACTER_MOUSE_SPEED).clamp(
             -std::f32::consts::FRAC_PI_2 + 0.05,
             std::f32::consts::FRAC_PI_2 - 0.05,
@@ -562,5 +568,16 @@ impl State {
             .world_bounds_3d
             .clamp_sphere_center(self.play_character_feet_position(), 0.0);
         self.set_play_character_feet_position(feet);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine3d::config_3d::character_anchor::PLAY_CHARACTER_BODY_HEIGHT;
+
+    #[test]
+    fn eye_offset_is_near_top_of_body() {
+        assert!(PLAY_CHARACTER_EYE_OFFSET > PLAY_CHARACTER_BODY_HEIGHT * 0.9);
     }
 }

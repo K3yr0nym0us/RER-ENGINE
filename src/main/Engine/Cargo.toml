@@ -9,6 +9,9 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+# MSRV real: egui 0.36/0.37 exigen 1.95. La toolchain activa se fija en
+# rust-toolchain.toml en la raíz del repo (1.100.0).
+rust-version = "1.95"
 
 [workspace.dependencies]
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
@@ -40,16 +43,18 @@ ureq = { version = "2", features = ["json"] }
 sha2 = "0.10"
 base64 = "0.22"
 hex = "0.4"
-# UI del editor: egui 0.35 + backend Vulkan/ash.
+# UI del editor: egui 0.36 + backend Vulkan/ash.
+# 0.37 no es alcanzable todavía: egui-ash-renderer 0.13, egui-phosphor 0.14 y
+# egui-snarl 0.12 exigen ^0.36. gpu-allocator 0.28 necesita el feature `std`.
 ash = "0.38"
 ash-window = "0.13"
-gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"] }
-egui = "0.35"
-egui-ash-renderer = "0.12"
-egui-winit = { version = "0.35", default-features = false }
-egui-phosphor = "0.13"
-# Editor visual de nodos (compatible con egui 0.35; 0.12 ya exige egui 0.36).
-egui-snarl = { version = "0.11", features = ["serde"] }
+gpu-allocator = { version = "0.28", default-features = false, features = ["vulkan", "std"] }
+egui = "0.36"
+egui-ash-renderer = "0.13"
+egui-winit = { version = "0.36", default-features = false }
+egui-phosphor = "0.14"
+# Editor visual de nodos (0.12 exige egui 0.36).
+egui-snarl = { version = "0.12", features = ["serde"] }
 
 # Workspace lints: quality scripts deny Clippy warnings with `-D warnings`.
 # `unsafe` is allowed only in justified platform/GPU FFI (see rust-quality.mdc); do not warn-deny it globally.

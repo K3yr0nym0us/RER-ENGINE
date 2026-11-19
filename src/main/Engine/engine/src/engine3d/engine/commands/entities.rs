@@ -94,6 +94,7 @@ impl State {
                 pitch,
                 fov_y,
                 frustum_distance,
+                camera_clip_radius,
                 camera_only,
                 camera_follow_mode,
                 body_rotation,
@@ -110,6 +111,7 @@ impl State {
                         fov_y,
                         frustum_distance,
                         camera_follow_mode,
+                        camera_clip_radius,
                     );
                 } else {
                     let Some(pos) = position else {
@@ -133,6 +135,9 @@ impl State {
                         fps_camera_yaw,
                         fps_camera_pitch,
                     );
+                    if let Some(radius) = camera_clip_radius {
+                        self.play_camera_clip_radius = radius.clamp(0.0, 1.0);
+                    }
                 }
             }
             EngineCommand::Common(EngineCommandCommon::SetTransform {

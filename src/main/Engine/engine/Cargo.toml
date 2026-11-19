@@ -2,6 +2,7 @@
 name = "rer-engine"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 
 [lints]
 workspace = true
@@ -50,8 +51,9 @@ egui = { workspace = true, optional = true }
 egui-ash-renderer = { workspace = true, optional = true }
 egui-winit = { workspace = true, optional = true }
 egui-phosphor = { workspace = true, optional = true }
-# Editor de código nativo para los scripts Rhai (compatible con egui 0.35).
-egui_code_editor = { version = "=0.3.7", optional = true }
+# Editor de código nativo para los scripts Rhai (0.4.2 exige egui 0.36;
+# 0.5.0 ya exige 0.37, pendiente de que el ecosistema se ponga al día).
+egui_code_editor = { version = "=0.4.2", optional = true }
 egui-snarl = { workspace = true, optional = true }
 zip.workspace = true
 rfd = { version = "0.18", optional = true }
@@ -60,7 +62,7 @@ rer-engine-core = { path = "../core", features = ["vulkan"] }
 ttf-parser.workspace = true
 ab_glyph.workspace = true
 ash = "0.38"
-gpu-allocator = { version = "0.27", default-features = false, features = ["vulkan"], optional = true }
+gpu-allocator = { version = "0.28", default-features = false, features = ["vulkan", "std"], optional = true }
 
 [features]
 # `default` mantiene el build local completo; los binarios se compilan con

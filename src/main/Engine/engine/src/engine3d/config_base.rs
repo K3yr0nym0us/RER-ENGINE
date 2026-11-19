@@ -147,6 +147,8 @@ impl State {
         self.play_character_entity = None;
         self.editor_camera_entity = None;
         self.play_camera_eye_position = glam::Vec3::ZERO;
+        self.play_camera_clip_radius =
+            crate::engine3d::config_3d::character_anchor::PLAY_CHARACTER_CAMERA_CLIP_RADIUS;
         self.play_camera_follow_mode =
             crate::engine3d::ipc::PlayCameraFollowMode::MoveWithCharacter;
         self.play_camera_follow_offset = glam::Vec3::ZERO;
@@ -733,6 +735,8 @@ impl State {
         self.editor_camera_entity = None;
         self.play_camera_eye_position = glam::Vec3::ZERO;
         self.play_camera_follow_mode =
+        self.play_camera_clip_radius =
+            crate::engine3d::config_3d::character_anchor::PLAY_CHARACTER_CAMERA_CLIP_RADIUS;
             crate::engine3d::ipc::PlayCameraFollowMode::MoveWithCharacter;
         self.play_camera_follow_offset = glam::Vec3::ZERO;
         self.play_camera_follow_offset_local = glam::Vec3::ZERO;

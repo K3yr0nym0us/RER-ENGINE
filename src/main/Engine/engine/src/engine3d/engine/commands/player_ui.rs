@@ -147,6 +147,9 @@ impl State {
                     self.capture_preview_editor_snapshots();
                     self.reset_play_controller_motion();
                     self.ensure_play_character_kinematic_only();
+                    // Primera persona: ojo dentro de la cabeza. El shader recorta
+                    // la geometría cercana para no ver el interior del rostro.
+                    self.play_camera_eye_position = self.play_character_head_world();
                     self.capture_play_camera_follow_offset();
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer =

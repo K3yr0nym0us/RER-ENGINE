@@ -136,6 +136,8 @@ impl State {
                 crate::engine3d::config_3d::character_anchor::EDITOR_DEFAULT_ORBIT_PITCH,
             editor_viewport_distance: 3.0,
             fps_editor_frustum_distance: 2.5,
+            play_camera_clip_radius:
+                crate::engine3d::config_3d::character_anchor::PLAY_CHARACTER_CAMERA_CLIP_RADIUS,
             play_camera_eye_position: glam::Vec3::ZERO,
             play_camera_follow_mode: crate::engine3d::ipc::PlayCameraFollowMode::MoveWithCharacter,
             play_camera_follow_offset: glam::Vec3::ZERO,

@@ -162,6 +162,12 @@ vec3 terrain_materials(vec3 n) {
 }
 
 void main() {
+    // Primera persona: recorta la geometria dentro del radio alrededor del ojo.
+    // u.cam_pos.w = 0 fuera de play, asi que el recorte solo actua en FP.
+    // Oculta el interior del rostro del Player sin depender de su malla.
+    if (u.cam_pos.w > 0.0 && distance(v_world, u.cam_pos.xyz) < u.cam_pos.w) {
+        discard;
+    }
     vec3 n = normalize(v_normal);
     bool terrain = v_flag.z > 3.5 && v_flag.z < 4.5;
     vec4 albedo_s;

@@ -1,0 +1,8 @@
+# Toolchain del workspace Rust (RER-ENGINE).
+# Fijada para que `cargo`, `rustfmt` y `clippy` sean idénticos en local y en CI.
+# La configuración se hereda al invocar cargo desde la raíz del repo o desde
+# src/main/Engine (rustup busca este archivo hacia arriba desde el cwd).
+[toolchain]
+channel = "1.100.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

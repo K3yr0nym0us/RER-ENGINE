@@ -315,14 +315,14 @@ impl ModalWindow {
         let Some(egui_renderer) = self.egui_renderer.as_mut() else {
             return Ok(());
         };
-        if !full_output.textures_delta.set.is_empty() {
-            egui_renderer
-                .set_textures(
-                    self.present.gpu().queue(),
-                    self.ui_pool,
-                    &full_output.textures_delta.set,
-                )
-                .map_err(|error| format!("No se pudieron subir texturas de la modal: {error}"))?;
+        for (id, deltas) in &full_output.textures_delta.set {
+            for delta in deltas {
+                egui_renderer
+                    .set_texture(self.present.gpu().queue(), self.ui_pool, *id, delta)
+                    .map_err(|error| {
+                        format!("No se pudieron subir texturas de la modal: {error}")
+                    })?;
+            }
         }
 
         let frame = match self.present.begin_frame() {
@@ -405,9 +405,11 @@ impl ModalWindow {
             Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
         }
 
-        egui_renderer
-            .free_textures(&full_output.textures_delta.free)
-            .map_err(|error| format!("No se pudieron liberar texturas de la modal: {error}"))?;
+        for id in &full_output.textures_delta.free {
+            egui_renderer
+                .free_texture(*id)
+                .map_err(|error| format!("No se pudieron liberar texturas de la modal: {error}"))?;
+        }
 
         Ok(())
     }

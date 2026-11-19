@@ -158,6 +158,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
                 pitch: Some(c.pitch),
                 fov_y: Some(c.fov_y),
                 frustum_distance: Some(c.frustum_distance),
+                camera_clip_radius: c.camera_clip_radius,
                 camera_follow_mode: Some(follow.to_string()),
             }
         }),
@@ -345,6 +346,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             pitch: Some(PLAY_CHARACTER_EDITOR_ORBIT_PITCH),
             fov_y: None,
             frustum_distance: None,
+            camera_clip_radius: None,
             camera_follow_mode: Some("move_with_character".to_string()),
         }),
         config_editor_camera: None,

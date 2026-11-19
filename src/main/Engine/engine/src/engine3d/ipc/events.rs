@@ -517,6 +517,8 @@ pub enum EngineEvent {
         pitch: f32,
         fov_y: f32,
         frustum_distance: f32,
+        /// Radio de exclusión alrededor del ojo en primera persona (m).
+        camera_clip_radius: f32,
         camera_follow_mode: PlayCameraFollowMode,
         body_center: [f32; 3],
         body_rotation: [f32; 4],

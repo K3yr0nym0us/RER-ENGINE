@@ -149,6 +149,9 @@ pub enum EngineCommand3dOnly {
         fov_y: Option<f32>,
         #[serde(default)]
         frustum_distance: Option<f32>,
+        /// Radio de exclusión del ojo en primera persona (m).
+        #[serde(default)]
+        camera_clip_radius: Option<f32>,
         #[serde(default)]
         camera_only: Option<bool>,
         #[serde(default)]

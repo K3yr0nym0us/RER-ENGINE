@@ -239,6 +239,7 @@ pub(crate) fn build_config_camera_snapshot(state: &State) -> Option<SaveConfigCa
         pitch,
         fov_y: state.camera.fov_y,
         frustum_distance: state.fps_editor_frustum_distance,
+        camera_clip_radius: Some(state.play_camera_clip_radius),
         camera_follow_mode: state.play_camera_follow_mode,
     })
 }

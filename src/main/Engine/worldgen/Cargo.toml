@@ -2,6 +2,7 @@
 name = "rer-worldgen"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 description = "Generación procedural de mundos 3D para RER-ENGINE: campo de densidad, Marching Cubes, chunks, biomas y distribución de blueprints. Crate independiente del motor (lógica pura) con fachada FFI C para el plugin instalable."
 
 [lints]

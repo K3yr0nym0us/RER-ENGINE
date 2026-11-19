@@ -25,6 +25,8 @@ pub(crate) mod water;
 #[path = "config_3d/mod.rs"]
 mod config_3d;
 #[cfg(feature = "editor")]
+pub(crate) use config_3d::character_anchor::PLAY_CHARACTER_CAMERA_CLIP_RADIUS;
+#[cfg(feature = "editor")]
 pub(crate) use config_3d::directional_light::{SHADOW_DARKNESS_MAX, SHADOW_DARKNESS_MIN};
 #[cfg(feature = "editor")]
 pub(crate) use config_3d::model_lod::{

@@ -220,6 +220,9 @@ pub(crate) fn restore_player_from_manifest(
         cam.fps_camera_yaw,
         cam.fps_camera_pitch,
     );
+    state.play_camera_clip_radius = cam
+        .camera_clip_radius
+        .unwrap_or(crate::engine3d::config_3d::character_anchor::PLAY_CHARACTER_CAMERA_CLIP_RADIUS);
     if let Some(eye) = cam.camera_eye_position {
         state.play_camera_eye_position = glam::Vec3::from_array(eye);
         state.capture_play_camera_follow_offset();

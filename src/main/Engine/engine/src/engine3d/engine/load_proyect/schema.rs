@@ -170,6 +170,8 @@ pub(crate) struct SavedConfigCamera {
     #[serde(default)]
     pub(crate) frustum_distance: Option<f32>,
     #[serde(default)]
+    pub(crate) camera_clip_radius: Option<f32>,
+    #[serde(default)]
     pub(crate) camera_follow_mode: Option<String>,
 }
 

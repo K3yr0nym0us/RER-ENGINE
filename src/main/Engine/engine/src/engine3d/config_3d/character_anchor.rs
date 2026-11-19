@@ -7,7 +7,13 @@ pub(crate) const PLAY_CHARACTER_KEYBOARD_SPEED: f32 = 4.0;
 pub(crate) const PLAY_CHARACTER_SPRINT_MULTIPLIER: f32 = 3.0;
 pub(crate) const PLAY_CHARACTER_MOUSE_SPEED: f32 = 0.0020;
 pub(crate) const PLAY_CHARACTER_COLLIDER_RADIUS: f32 = 0.40;
-pub(crate) const PLAY_CHARACTER_EYE_OFFSET: f32 = 1.35;
+/// Altura del ojo de la cámara de juego (~94% del cuerpo de 1.7 m).
+/// 1.35 dejaba la cámara a la altura del cuello.
+pub(crate) const PLAY_CHARACTER_EYE_OFFSET: f32 = 1.6;
+/// Radio alrededor de la cámara que se recorta en el shader (ver `forward.frag`).
+/// Oculta el interior del rostro del Player en primera persona sin depender
+/// del modelo asignado. 0 = desactivado.
+pub(crate) const PLAY_CHARACTER_CAMERA_CLIP_RADIUS: f32 = 0.22;
 pub(crate) const PLAY_CHARACTER_JUMP_SPEED: f32 = 6.0;
 pub(crate) const PLAY_CHARACTER_GROUND_PROBE: f32 = 0.08;
 /// Altura del cubo-cuerpo del jugador (placeholder visual).

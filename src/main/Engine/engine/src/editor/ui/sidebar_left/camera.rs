@@ -67,6 +67,7 @@ pub(super) fn camera_body(
         state.cam3_yaw.sync(view.yaw.to_degrees());
         state.cam3_fov.sync(view.fov_y.to_degrees());
         state.cam3_frustum.sync(view.frustum_distance);
+        state.cam3_clip.sync(view.camera_clip_radius);
 
         widgets::caption(ui, crate::editor::i18n::tr(locale, "Cámara", "Camera"));
         let mut axis = None;
@@ -105,11 +106,13 @@ pub(super) fn camera_body(
                     crate::editor::i18n::tr(locale, "FOV (°)", "FOV (°)"),
                     crate::editor::i18n::tr(locale, "Rango F. (m)", "F. Range (m)"),
                 ];
+                    crate::editor::i18n::tr(locale, "Recorte (m)", "Clip (m)"),
                 let drafts = [
                     &mut state.cam3_yaw,
                     &mut state.cam3_fov,
                     &mut state.cam3_frustum,
                 ];
+                    &mut state.cam3_clip,
                 for (index, (label, draft)) in labels.into_iter().zip(drafts).enumerate() {
                     let width = columns[index].available_width();
                     columns[index].label(
@@ -140,6 +143,9 @@ pub(super) fn camera_body(
         }
         return;
     }
+        if let Some(value) = clip {
+            actions.push(LeftAction::SetPlayCameraClipRadius(value));
+        }
 
     let camera = camera.unwrap_or(Camera2d {
         x: 0.0,

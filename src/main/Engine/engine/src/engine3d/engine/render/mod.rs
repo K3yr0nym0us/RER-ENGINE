@@ -164,7 +164,14 @@ impl State {
             view_proj_stable: vp_stable,
             prev_view_proj: self.prev_view_proj,
             inv_view_proj,
-            cam_pos: [eye.x, eye.y, eye.z, 0.0],
+            cam_pos: [eye.x, eye.y, eye.z, camera_clip_radius],
+        // Primera persona: el fragment shader recorta la geometría dentro de
+        // este radio alrededor del ojo (w = 0 en editor => recorte desactivado).
+        let camera_clip_radius = if self.uses_player_fps_viewport() {
+            self.play_camera_clip_radius
+        } else {
+            0.0
+        };
             light_dir: self.scene_light_dir(),
             light_color: self.scene_light_color(),
             light_view_proj: self.build_light_view_proj(),

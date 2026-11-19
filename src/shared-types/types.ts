@@ -189,6 +189,7 @@ export interface ConfigCamera {
   pitch?: number
   fov_y?: number
   frustum_distance?: number
+  camera_clip_radius?: number
   camera_follow_mode?: PlayCameraFollowMode
 }
 

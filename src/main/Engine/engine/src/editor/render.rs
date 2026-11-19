@@ -119,14 +119,14 @@ impl EditorGpu {
 
         // `set_textures` graba, envía y espera en la cola. Se hace antes de abrir el frame
         // para no invalidar el command buffer que devuelve `begin_frame`.
-        if !full_output.textures_delta.set.is_empty() {
-            self.egui_renderer
-                .set_textures(
-                    self.gpu.queue(),
-                    self.ui_pool,
-                    &full_output.textures_delta.set,
-                )
-                .map_err(|error| format!("No se pudieron subir texturas egui: {error}"))?;
+        // egui 0.36 agrupa varias actualizaciones por TextureId; el renderer 0.13
+        // expone `set_texture` (set_textures quedó obsoleto).
+        for (id, deltas) in &full_output.textures_delta.set {
+            for delta in deltas {
+                self.egui_renderer
+                    .set_texture(self.gpu.queue(), self.ui_pool, *id, delta)
+                    .map_err(|error| format!("No se pudieron subir texturas egui: {error}"))?;
+            }
         }
 
         let frame = match self.gpu.begin_frame() {
@@ -241,9 +241,11 @@ impl EditorGpu {
             Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
         }
 
-        self.egui_renderer
-            .free_textures(&full_output.textures_delta.free)
-            .map_err(|error| format!("No se pudieron liberar texturas egui: {error}"))?;
+        for id in &full_output.textures_delta.free {
+            self.egui_renderer
+                .free_texture(*id)
+                .map_err(|error| format!("No se pudieron liberar texturas egui: {error}"))?;
+        }
 
         Ok(repaint_now)
     }

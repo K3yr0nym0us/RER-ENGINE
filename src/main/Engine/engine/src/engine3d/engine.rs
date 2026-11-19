@@ -65,6 +65,8 @@ pub struct State {
     pub editor_viewport_distance: f32,
     /// Profundidad del gizmo de frustum FPS en modo editor (metros).
     pub(crate) fps_editor_frustum_distance: f32,
+    /// Radio de exclusión alrededor del ojo en primera persona (m). 0 = desactivado.
+    pub(crate) play_camera_clip_radius: f32,
     /// Posición absoluta del ojo de la cámara FPS en editor. Independiente del transform
     /// del jugador salvo modo de seguimiento activo en el panel Cámara.
     pub(crate) play_camera_eye_position: glam::Vec3,

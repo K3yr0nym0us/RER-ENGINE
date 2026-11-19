@@ -45,6 +45,7 @@ pub struct PlayView {
     pub yaw: f32,
     pub fov_y: f32,
     pub frustum_distance: f32,
+    pub camera_clip_radius: f32,
 }
 
 impl PlayView {
@@ -66,6 +67,11 @@ impl PlayView {
                 .get("frustum_distance")
                 .and_then(Value::as_f64)
                 .unwrap_or_default() as f32,
+            camera_clip_radius: event
+                .get("camera_clip_radius")
+                .and_then(Value::as_f64)
+                .unwrap_or(crate::engine3d::PLAY_CHARACTER_CAMERA_CLIP_RADIUS as f64)
+                as f32,
         })
     }
 }
