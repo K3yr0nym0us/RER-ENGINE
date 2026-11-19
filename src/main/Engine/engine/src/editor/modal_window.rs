@@ -138,8 +138,8 @@ impl ModalWindow {
         };
         // Propiedades también debe poder crecer: con `resizable=false` Windows
         // ignora `request_inner_size` y la ventana se queda en el ancho inicial.
-        let resizable = kind == NativeModal::SceneVisualScript
-            || kind == NativeModal::EntityProperties;
+        let resizable =
+            kind == NativeModal::SceneVisualScript || kind == NativeModal::EntityProperties;
         let (min_width, min_height) = match kind {
             NativeModal::SceneVisualScript => (VISUAL_SCRIPT_MIN_WIDTH, VISUAL_SCRIPT_MIN_HEIGHT),
             NativeModal::EntityProperties => (ENTITY_PROPS_WIDTH, MIN_INNER_HEIGHT),

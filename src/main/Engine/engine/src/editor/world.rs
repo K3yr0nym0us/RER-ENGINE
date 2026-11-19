@@ -309,8 +309,10 @@ impl Default for WorldSettings {
             shadow_darkness: 0.9,
             sun_cycle_enabled: true,
             sun_rise_cardinal: "east",
-            sun_cycle_day: crate::engine3d::config_3d::directional_light::SUN_CYCLE_DEFAULT_UI_VALUE,
-            sun_cycle_night: crate::engine3d::config_3d::directional_light::SUN_CYCLE_DEFAULT_UI_VALUE,
+            sun_cycle_day:
+                crate::engine3d::config_3d::directional_light::SUN_CYCLE_DEFAULT_UI_VALUE,
+            sun_cycle_night:
+                crate::engine3d::config_3d::directional_light::SUN_CYCLE_DEFAULT_UI_VALUE,
             sun_cycle_phase: 0.0,
             graphics_texture_tier: TextureTier::Medium,
             texture_detail_distance: 10.0,
@@ -948,7 +950,10 @@ mod tests {
         let mut world = WorldSettings::default();
         world.apply_command(&json!({ "cmd": "set_world_radius", "radius": 10.0 }));
         assert_eq!(world.world_radius, crate::engine3d::MIN_WORLD_RADIUS_3D);
-        assert_eq!(world.world_width, crate::engine3d::MIN_WORLD_RADIUS_3D * 2.0);
+        assert_eq!(
+            world.world_width,
+            crate::engine3d::MIN_WORLD_RADIUS_3D * 2.0
+        );
 
         world.apply_command(&json!({ "cmd": "set_world_radius", "radius": 5000.0 }));
         assert_eq!(world.world_radius, crate::engine3d::MAX_WORLD_RADIUS_3D);
@@ -997,9 +1002,7 @@ mod tests {
         );
         assert_eq!(world.msaa_tier, MsaaTier::Ultra);
         assert_eq!(world.msaa_sample_count, 8);
-        world.apply_event(
-            &json!({ "event": "ssaa_tier_changed", "tier": "high", "scale": 1.75 }),
-        );
+        world.apply_event(&json!({ "event": "ssaa_tier_changed", "tier": "high", "scale": 1.75 }));
         assert_eq!(world.ssaa_tier, SsaaTier::High);
         assert_eq!(world.ssaa_scale, 1.75);
         world
@@ -1046,10 +1049,16 @@ mod tests {
 
     #[test]
     fn directional_light_only_includes_given_fields() {
-        let command =
-            WorldSettings::directional_light_command(
-                Some(0.1), None, Some(0.4), None, None, None, None, None,
-            );
+        let command = WorldSettings::directional_light_command(
+            Some(0.1),
+            None,
+            Some(0.4),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         assert_eq!(command["cmd"], json!("set_directional_light"));
         assert!((command["ambient"].as_f64().unwrap() - 0.1).abs() < 1e-6);
         assert!(command.get("intensity").is_none());
