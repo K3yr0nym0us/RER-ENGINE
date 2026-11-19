@@ -171,7 +171,8 @@ fn log_layer_strip(ui: &mut egui::Ui, app: &mut EditorApp) {
                 ui,
                 WidgetText::from(RichText::new(metrics).size(10.5)),
                 TextStyle::Body,
-            ) + ui.spacing().icon_width + 8.0;
+            ) + ui.spacing().icon_width
+                + 8.0;
             let checks_w: f32 = layers
                 .iter()
                 .map(|layer| {

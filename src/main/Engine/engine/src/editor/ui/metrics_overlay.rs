@@ -18,7 +18,12 @@ const HEADER_H: f32 = 18.0;
 const FONT_SIZE: f32 = 11.5;
 
 /// Dibuja el panel si hay métricas. `viewport` es el rect de la escena en puntos egui.
-pub(crate) fn show(ui: &mut egui::Ui, viewport: egui::Rect, metrics: Option<DebugMetrics>, locale: Locale) {
+pub(crate) fn show(
+    ui: &mut egui::Ui,
+    viewport: egui::Rect,
+    metrics: Option<DebugMetrics>,
+    locale: Locale,
+) {
     let Some(m) = metrics else {
         return;
     };
@@ -47,10 +52,7 @@ pub(crate) fn show(ui: &mut egui::Ui, viewport: egui::Rect, metrics: Option<Debu
         egui::StrokeKind::Inside,
     );
 
-    let header_font = egui::FontId::new(
-        11.0,
-        egui::FontFamily::Name("rer-bold".into()),
-    );
+    let header_font = egui::FontId::new(11.0, egui::FontFamily::Name("rer-bold".into()));
     ui.painter().text(
         egui::pos2(rect.center().x, rect.top() + PAD + HEADER_H * 0.5),
         egui::Align2::CENTER_CENTER,

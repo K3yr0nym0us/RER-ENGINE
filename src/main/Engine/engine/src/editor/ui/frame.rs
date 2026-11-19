@@ -167,7 +167,11 @@ fn panel_frame(fill: egui::Color32) -> egui::Frame {
 /// Se dibuja dentro del rect del panel para que no quede fuera del clip.
 fn sidebar_divider(ui: &mut egui::Ui, left: bool) {
     let rect = ui.max_rect();
-    let x = if left { rect.right() - 1.0 } else { rect.left() };
+    let x = if left {
+        rect.right() - 1.0
+    } else {
+        rect.left()
+    };
     ui.painter().line_segment(
         [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
         egui::Stroke::new(1.0, crate::editor::theme::SIDEBAR_DIVIDER),
