@@ -1,50 +1,44 @@
-# Protocolo IPC Electron ↔ motores Rust (engine:cmd / engine:event)
+# Protocolo IPC shell Electron ↔ editor/motor Rust
 #
-# Contratos JSON línea a línea entre el renderer, el proceso main de Electron
-# y el binario del motor en ejecución (rer_engine_2d | rer_engine_3d).
+# El editor real es `rer_engine_editor` (egui/winit) y consume el motor 2D/3D
+# **en proceso**. Electron es solo el launcher: elige proyecto, abre `.save` y
+# arranca el editor. Ya no existe un renderer que envíe comandos de autoría.
 #
 # Relacionado con:
-#   - docs/yaml/persistence/Escenes_Model_3D.yaml       (comandos multi-escena)
-#   - docs/yaml/editor/Entity_Textures.yaml        (list_entity_textures, …)
-#   - docs/yaml/engine/Engine_Context.yaml         (createEngineActions / createEngineEventHandler)
-#   - docs/yaml/persistence/Save_Proyect_Model.yaml     (export_save_snapshot, load_proyect)
+#   - docs/yaml/editor/Editor_Native_Shell.yaml
+#   - src/main/Engine/engine/ARCHITECTURE.md
+#   - .cursor/rules/shared-types.mdc
 
-version: 2
-updated: 2026-06-14
+version: 3
+updated: 2026-11-19
 
 summary: |
-  El renderer envía comandos con window.engine.send (preload → engine:cmd).
-  Main valida el comando contra el catálogo del motor activo (2D o 3D), aplica
-  side-effects propios de main (p. ej. watchers PNG solo en 2D) y reenvía por
-  stdin del proceso hijo (una línea JSON por comando).
-  El motor escribe eventos en stdout; main los reenvía al renderer como engine:event.
+  El launcher Electron envía la configuración de arranque (`set-game-style`) y
+  lanza `rer_engine_editor`. El editor egui hospeda el motor in-process y usa sus
+  comandos/eventos directamente, sin pasar por Electron.
 
-  **No hay un tercer contrato IPC:** rer_engine_core es crate de biblioteca
-  (GPU, overlay, scripting, .rerasset, métricas, helpers Player UI) y no participa
-  en engine:cmd.
+  El canal `engine:cmd` sigue vivo **solo** para comandos iniciados desde
+  Electron: `set_locale` (selector de idioma) y comandos de plugins (world-gen,
+  asistente). Main valida contra el catálogo y reenvía por stdin del editor.
+
+  **Regla:** un cambio en Rust nunca debe agregar tipos a `src/shared-types/`.
+  Los contratos del motor viven en `engine/src/**/ipc/`. Ver `.cursor/rules/shared-types.mdc`.
 
 principle:
   engine_first: |
-    El frontend envía intención; el motor valida, muta estado y emite eventos.
+    El editor egui posee el estado del motor; Electron solo lanza y configura.
     No reimplementar lógica espacial, clasificación de entidades ni undo en TypeScript.
   per_motor_contract: |
-    Cada binario ensambla `EngineCommand` en engine_command.rs:
+    Cada motor ensambla su `EngineCommand` en `engine_command.rs`:
       - `Common(EngineCommandCommon)` — crate rer-engine-core (stdin JSON `cmd`)
-      - `Only2d` / `Only3d` — variantes exclusivas en engine_command.rs del motor
-    ipc.rs reexporta tipos y eventos; ya no duplica el enum monolítico.
+      - `Only2d` / `Only3d` — variantes exclusivas del motor
   main_gate: |
-    Antes de stdin, src/main/engine/engineCommandCatalog.ts define:
-      - ENGINE_COMMANDS_SHARED — presentes en ambos ipc.rs (recursos, undo, UI, …)
-      - ENGINE_COMMANDS_2D_ONLY / ENGINE_COMMANDS_3D_ONLY — exclusivos
-    registerEngineCmdIpc rechaza comandos del motor equivocado (log
-    `[ipc] comando "…" rechazado para motor …`). Fuente de verdad al añadir
-    comandos: actualizar ipc.rs del motor correspondiente **y** el catálogo en main.
+    `src/shared-types/engineCommandCatalog.ts` valida únicamente los comandos que
+    Electron todavía envía (plugins / `set_locale`). **No** es un contrato que
+    debas sincronizar desde Rust: el editor egui no pasa por este catálogo.
   types_mirror: |
-    src/shared-types/engineCommandCatalog.ts + engineCommands.ts:
-    EngineCommand2D / EngineCommand3D discriminados por motor.
-    Preload: window.engine2d.send / window.engine3d.send (enforcement compile-time).
-    window.engine.send sigue disponible como unión + send2d/send3d helpers.
-    Renderer: engine/engineSend.ts — send2d, send3d, sendMotor(projectType, cmd), createEngineSend.
+    `src/shared-types/` contiene tipos del shell (launcher, plugins, manifest de
+    `.save`) y el catálogo de validación de main. No ampliarlo por cambios en Rust.
 
 core_crate:
   role: biblioteca Rust (rer-engine-core), dependencia de los motores 2D/3D y del editor
@@ -60,32 +54,31 @@ core_crate:
     el binario correspondiente.
 
 transport:
-  renderer_to_main:
+  launcher_to_main:
+    channel: set-game-style
+    payload: '{ projectType, mode, save_path, extract_dir }'
+    effect: spawn de `rer_engine_editor` con los argumentos de arranque
+  shell_to_engine:
     channel: engine:cmd
-    preload: src/preload/index.ts
-    payload: '{ "cmd": "<snake_case>", ... }'
-  main_to_engine:
-    mechanism: stdin del proceso hijo (spawn en src/main/index.ts)
-    format: JSON.stringify(cmd) + '\n'
-  engine_to_main:
-    mechanism: stdout del proceso hijo (lectura línea a línea en ipc.rs)
-    format: '{ "event": "<snake_case>", ... }'
-  main_to_renderer:
-    channel: engine:event
-    listener: window.electronAPI.onEngineEvent en createEngineEventHandler.ts
+    used_for: set_locale y comandos iniciados por plugins de Electron
+    preload: src/preload/engineBridge.ts
+    format: JSON.stringify(cmd) + '\n' por stdin
+    validation: isCommandAllowedForMotor (engineIpcRegistry.ts)
+  editor_engine:
+    note: el editor egui consume el motor en proceso; no hay transporte IPC entre ellos
 
 flow: |
-  Renderer                    Main (Electron)                 Motor (Rust)
-  ────────                    ───────────────                 ────────────
-  engine.send({cmd:…})    →   ipcMain.on('engine:cmd')
-                                handleEngineCommand:
-                                  · set_locale (siempre)
-                                  · catálogo 2D|3D
-                                  · side-effects 2D (watchers PNG)
-                                sendToEngine(cmd)         →   stdin
-                                                              handle_command
-                                ← stdout línea JSON       ←   send_event
-  engine.on(cb)           ←   webContents.send('engine:event')
+  Launcher (React)        Main (Electron)              Editor egui / Motor (Rust)
+  ────────────────        ───────────────               ──────────────────────────
+  setGameStyle(payload) → ipc: set-game-style
+                            spawn rer_engine_editor ──→  editor con el motor in-process
+                                                        (comandos/eventos directos)
+
+  LanguageToggle        → window.engine2d.send
+                            ipcMain.on('engine:cmd') ──→  stdin: {cmd:'set_locale'}
+                            handleEngineCommand:
+                              · catálogo 2D|3D
+                              · side-effects 2D (watchers PNG)
 
 lifecycle:
   spawn:

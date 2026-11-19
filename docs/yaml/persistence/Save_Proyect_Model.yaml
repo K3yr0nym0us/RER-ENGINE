@@ -191,7 +191,7 @@ save_flow:
         - Escenas inactivas: sceneStateStore (React).
         - Bibliotecas globales en raíz:
           · models, fonts, hudImages: merge editor + snapshot motor (por path).
-          · sounds, backgrounds: estado React del editor (no merge con snapshot motor).
+          · sounds, backgrounds: estado del editor Rust (no merge con snapshot motor).
         - blueprints, language, playerUiScreens/menuUiScreens: editor.
         Con scenes[]: datos de escena solo en scenes[]; raíz sin duplicar escena activa
         (entities/player/config_* vacíos o null; sprites[] raíz vacío).

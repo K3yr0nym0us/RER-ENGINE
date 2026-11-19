@@ -15,8 +15,8 @@ window:
   single_window: true
   owner: src/main/Engine/engine/src/editor/host.rs
   focus_on_ready: |
-    Al crear la ventana nativa se llama a focus_window(); main oculta la ventana
-    React en `editor_ready`.
+    Al crear la ventana nativa se llama a focus_window(); el launcher Electron
+    oculta su ventana cuando el editor nativo está listo.
   tooltips:
     delay: 0 s
     when_still: false

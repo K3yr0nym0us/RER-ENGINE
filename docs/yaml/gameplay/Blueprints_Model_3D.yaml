@@ -22,7 +22,7 @@ overview: |
   (plantilla) salvo que se edite solo la instancia sin afectar plantilla.
 
 # ---------------------------------------------------------------------------
-# Esquema manifest (`Blueprint3D` en src/shared-types/types.ts)
+# Esquema manifest (`Blueprint3D`; tipo legacy del shell en src/shared-types/types.ts — no ampliar desde Rust)
 # ---------------------------------------------------------------------------
 
 schema:
@@ -140,7 +140,7 @@ register_blueprint:
   purpose: enrich_blueprint_placement_meta en quick_build sin reenviar todo el manifest
 
 # ---------------------------------------------------------------------------
-# Propagación plantilla → instancias (editor React)
+# Propagación plantilla → instancias (editor Rust egui)
 # ---------------------------------------------------------------------------
 
 propagation:
@@ -208,9 +208,9 @@ differences_from_2d:
 # ---------------------------------------------------------------------------
 
 key_files:
-  types: src/shared-types/types.ts (Blueprint3D)
+  types: src/shared-types/types.ts (Blueprint3D) # legado del shell; no ampliar desde Rust
   modal: engine/src/editor/ui/quick_build_modal.rs (ventana nativa)
-  note: Sin bridge React; el editor construye el comando de colocación y guarda los blueprints.
+  note: El editor egui construye el comando de colocación y guarda los blueprints.
   motor_registry: src/main/Engine/engine/src/engine3d/engine/commands.rs (RegisterBlueprint)
   motor_placement: src/main/Engine/engine/src/engine3d/config_3d/quick_build.rs
   motor_load: src/main/Engine/engine/src/engine3d/engine/load_proyect.rs

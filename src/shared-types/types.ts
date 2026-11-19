@@ -1,4 +1,15 @@
-// Tipos compartidos entre main process, preload y renderer.
+/**
+ * Tipos del SHELL Electron (launcher), NO del editor.
+ *
+ * El editor real es Rust (`rer_engine_editor` + egui). Los tipos del motor —
+ * entidades, escenas, comandos, eventos, HUD, blueprints, cámara, física— viven
+ * en Rust (carpetas `ipc/` de `src/main/Engine/engine/src/`).
+ *
+ * NO agregar ni modificar tipos aquí como consecuencia de un cambio en Rust.
+ * Este archivo solo debe crecer si cambia el shell Electron (launcher, plugins,
+ * manifest de `.save`) y el dato no puede vivir en Rust.
+ * Ver `.cursor/rules/shared-types.mdc`.
+ */
 
 import type { EngineCommandName2D, EngineCommandName3D } from './engineCommands'
 

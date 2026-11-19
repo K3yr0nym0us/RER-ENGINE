@@ -13,46 +13,31 @@ alwaysApply: true
 
 ## Stack
 
-### Frontend / Desktop
-- Electron
-- React
-- TypeScript
-- Yarn
+### Shell / Launcher (Electron + React + TypeScript)
+- Electron, React, TypeScript, Yarn.
+- Es **solo el launcher**: selector de proyecto 2D/3D, diálogo de apertura de `.save`,
+  idioma de la UI y arranque del editor Rust.
+- **No es el editor.** No contiene escenas, entidades, paneles de autoría ni comandos del motor.
 
-### Engine
-- Rust
-- Cargo
-- `rer_engine_2d`
-- `rer_engine_3d`
-- `rer-engine-core` (compartido)
+### Editor y motor (Rust)
+- Rust, Cargo.
+- `rer_engine_2d`, `rer_engine_3d`, `rer-engine-core`, `rer_engine_editor` (egui).
 
-## Architecture
+## Architecture (estado actual, post-migración a egui)
 
-- Electron + React + TypeScript are responsible for the editor/UI.
-- Rust is the authoritative game/engine runtime.
-- Engine/domain logic must live in Rust.
-- Frontend sends user intent and displays engine state/events.
-- Never duplicate engine logic in TypeScript.
+- El **editor real** es `rer_engine_editor` (egui/winit), una ventana independiente
+  que hospeda el motor 2D/3D **in-process** sobre `SharedGpu`/Ash/Vulkan.
+- Electron es el host del launcher y de los diálogos nativos; ya no renderiza el editor.
+- Rust es la **única** fuente de verdad de estado del motor: transforms, físicas,
+  entidades, escenas, cámaras, HUD, scripting y render.
+- No duplicar lógica ni tipos del motor en TypeScript.
 
-Rust owns:
-- transforms
-- position/rotation/scale
-- spatial math
-- entities
-- snapping
-- collisions
-- scene/world state
-- rendering state
-- GPU state
-- engine calculations
+## Regla sobre `src/shared-types/`
 
-React owns:
-- UI
-- panels
-- menus
-- dialogs
-- user interaction
-- presentation state
+- `src/shared-types/` es código del **shell**, no un contrato del editor.
+- **Un cambio en Rust nunca debe agregar ni modificar tipos ahí.** Ver `shared-types.mdc`.
+- Los comandos/eventos del motor viven en Rust (`engine/src/**/ipc/`); el catálogo TS
+  (`engineCommandCatalog.ts`) es solo validación de main para plugins, no un espejo a sincronizar.
 
 ## General Rules
 

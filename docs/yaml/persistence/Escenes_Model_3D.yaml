@@ -121,7 +121,7 @@ flow_switch_scene:
   - "Tras confirmar (solo si limpio): setSwitchingToSceneId, beginSceneImportLoading, send switch_editor_scene."
   - "Motor: si undo_stack no vacía → editor_scene_switch_blocked (sin cambiar mundo)."
   - "Si limpio: guarda committed, apply_editor_scene_switch, project_loaded_3d + project_load_3d_complete, clear undo, editor_scene_switched."
-  - "Renderer: lista vía editor_scene_*; project_loaded_3d solo hidrata React en la primera apertura del .save (no en switches posteriores)."
+  - "Editor egui: lista vía editor_scene_*; project_loaded_3d solo hidrata el estado nativo en la primera apertura del .save (no en switches posteriores)."
 
 flow_open_save:
   - "ready + engineLoads3dSave → sceneImportLoading; acordeón Scenes en modo «Cargando escenas…»."

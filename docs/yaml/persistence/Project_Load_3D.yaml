@@ -47,7 +47,7 @@ phases:
     action: import_player_ui_* con paths ya resueltos
   6_complete:
     event: project_load_3d_complete
-    front: cierra overlay, clear_editor_undo_redo, sincroniza React
+    editor: cierra overlay, clear_editor_undo_redo y sincroniza estado nativo
 
 preload_strategy:
   scoped: |

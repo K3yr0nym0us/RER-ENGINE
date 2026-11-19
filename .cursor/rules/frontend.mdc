@@ -1,9 +1,9 @@
 ---
-description: RER-ENGINE Electron React TypeScript frontend rules
+description: RER-ENGINE Electron React TypeScript launcher rules
 alwaysApply: true
 ---
 
-# RER-ENGINE — Frontend
+# RER-ENGINE — Frontend (launcher)
 
 ## Stack
 
@@ -12,117 +12,48 @@ alwaysApply: true
 - TypeScript
 - Yarn
 
-Use **Yarn** for JavaScript dependencies.
+Use **Yarn** for JavaScript dependencies. Do not use npm, pnpm or bun unless explicitly requested.
 
-Do not use npm, pnpm or bun unless explicitly requested.
+## Responsibilities (alcance real)
 
-## Responsibilities
+El renderer es únicamente el **selector de proyecto**:
 
-Frontend handles:
+- elegir proyecto 2D o 3D;
+- abrir un `.save` existente;
+- idioma de la UI (`set_locale`);
+- arrancar `rer_engine_editor` vía `window.electronAPI.setGameStyle`.
 
-- UI
-- editor controls
-- panels
-- dialogs
-- menus
-- user input
-- presentation
-- engine commands/events
-
-Frontend does NOT own:
-
-- transforms
-- spatial calculations
-- collisions
-- snapping
-- entity classification
-- world/scene state
-- rendering state
-- engine calculations
-
-These belong to Rust.
-
-If a value or behavior belongs to the engine, Rust is the source of truth.
-
-Do not duplicate engine logic or engine state in TypeScript.
-
-## React
-
-- Follow existing component and hook patterns.
-- Reuse components and hooks before creating new ones.
-- Keep components focused on presentation and interaction.
-- Keep business/domain logic outside presentation components.
-- Never put complex async workflows directly inside components.
-- Async work belongs in hooks/services according to the existing architecture.
-- Follow React Hooks rules.
-- Do not bypass hook rules to make an implementation work.
-- Avoid unnecessary re-renders and duplicated state.
-- Prefer existing state-management patterns used by the project.
+**Ya no es el editor.** No vive en React: escenas, entidades, paneles, propiedades,
+visual scripting, HUD, cámara, física y guardado los posee `rer_engine_editor` (egui/Rust).
 
 ## Engine Communication
 
-Flow:
+No existe un flujo React → bridge → motor para comandos del editor. El editor egui
+consume el motor directamente **en proceso**; no reintroduzcas canales ni puertos
+para que React envíe comandos de autoría.
 
-React
-→ Electron/Bridge
-→ Rust Engine
-→ Electron/Bridge
-→ React
+El único puente TS → motor que queda es `set_locale` (preload `engine:cmd`), usado
+por el selector de idioma. No lo extiendas para soportar cambios del editor.
 
-React sends **intent**.
+## TypeScript / `src/shared-types/`
 
-Rust performs the operation.
+- `src/shared-types/` contiene tipos del **shell**: launcher, plugins, manifest de `.save`
+  y catálogo de validación para main. **No es un contrato a ampliar desde Rust.**
+- **NUNCA** agregues tipos ahí por un cambio en `src/main/Engine/**/*.rs`. Ver `shared-types.mdc`.
+- Si un cambio del shell Electron necesita un tipo nuevo, documenta por qué no vive en Rust.
 
-React displays the result.
-
-Never maintain a second independent implementation of engine state in TypeScript.
-
-If the frontend needs a value calculated by the engine, obtain it from the engine instead of recreating the calculation in TypeScript.
-
-## TypeScript
-
-Use English for:
-
-- variables
-- functions
-- components
-- hooks
-- interfaces
-- types
-- enums
-- services
-- utilities
-
+Use English for variables, functions, components, hooks, interfaces, types, enums, services, utilities.
 UI text may be Spanish or English, but remain consistent.
 
-Prefer explicit and safe types.
-
-Avoid:
-
-- `any`
-- unnecessary type assertions
-- `@ts-ignore`
-- `@ts-nocheck`
-- unsafe casts
-- duplicated type definitions
-
-Do not weaken TypeScript strictness to make code compile.
-
-Fix the underlying type problem instead.
+Prefer explicit and safe types. Avoid `any`, unnecessary assertions, `@ts-ignore`, `@ts-nocheck`, unsafe casts and duplicated type definitions.
+Do not weaken TypeScript strictness to make code compile; fix the underlying problem.
 
 ## Code Quality
 
-Every Electron/React/TypeScript change must comply with:
+Every Electron/React/TypeScript change must comply with ESLint (incl. `eslint-plugin-sonarjs`),
+TypeScript strict checking, automated tests and SonarLint in the IDE (sin SonarCloud / sin token).
 
-- ESLint (incluye `eslint-plugin-sonarjs`)
-- TypeScript strict checking
-- automated tests
-- SonarLint en el IDE (sin SonarCloud / sin token)
-
-The quality configuration is defined in:
-
-- `.cursor/rules/frontend-quality.mdc`
-- `docs/FRONTEND_QUALITY.md`
+Quality configuration: `.cursor/rules/frontend-quality.mdc` y `docs/FRONTEND_QUALITY.md`.
 
 Before considering an implementation complete, run:
 

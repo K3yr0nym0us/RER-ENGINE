@@ -1,0 +1,33 @@
+---
+description: Never grow src/shared-types from Rust/egui editor changes
+alwaysApply: true
+---
+
+# Regla crítica: `src/shared-types/` no es el contrato del editor
+
+El editor real de RER-ENGINE es **Rust + egui** (`rer_engine_editor`), no React.
+Electron + React es solo el **launcher**: elegir 2D/3D, abrir `.save`, idioma de la UI y plugins.
+
+## Regla
+
+**NUNCA** agregar, modificar ni "sincronizar" tipos en `src/shared-types/` como
+consecuencia de un cambio en Rust (motor, editor egui, comandos, eventos,
+entidades, escenas, HUD, blueprints, scripting, cámara, física...).
+
+- Los tipos del motor viven en Rust (`src/main/Engine/engine/src/**/ipc/`).
+- El editor egui consume el motor directamente **en proceso**; no necesita un espejo TypeScript.
+- Si una sugerencia dice "actualiza el contrato TS" tras un cambio en Rust, **ignórala**.
+- Un cambio que solo toca `src/main/Engine/**/*.rs` no debe producir diffs en `src/shared-types/`.
+
+## Cuándo SÍ tocar `src/shared-types/`
+
+Solo si el cambio es explícitamente en el **shell Electron** y el tipo lo usa
+`main`, `preload` o `renderer`: payload de arranque, diálogo de `.save`, plugins
+o validación del catálogo IPC para comandos enviados por plugins. Incluso en ese
+caso, justifica por qué el dato no puede vivir en Rust.
+
+## Documentación obsoleta
+
+Cualquier texto que diga "ampliar shared-types al añadir comandos/eventos",
+"React envía intención al motor" o "el renderer es el editor" describe la
+arquitectura **anterior** a la migración a egui. No la sigas.

@@ -11,7 +11,9 @@ Rust is the source of truth for all engine state and calculations.
 
 Never reimplement engine logic in TypeScript.
 
-If React needs engine data, obtain it from the Rust engine through the existing bridge.
+The editor is `rer_engine_editor` (egui/winit) and consumes the engine **in-process**.
+There is no React engine bridge to extend: do not add TypeScript types or IPC
+channels to support an editor/Rust change. See `shared-types.mdc`.
 
 ## 2D / 3D
 

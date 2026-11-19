@@ -8,19 +8,19 @@ Motor de videojuegos 2D/3D con editor integrado. La idea central: **crear compor
 
 ## Idea del motor
 
-RER-ENGINE separa el producto en Electron (UI, persistencia y modales) y un **editor nativo Rust** que abre la ventana winit y hospeda el motor 2D/3D in-process. Electron y el editor hablan por JSON (stdin/stdout).
+RER-ENGINE separa el producto en un **launcher Electron** y un **editor nativo Rust** que abre la ventana winit y hospeda el motor 2D/3D in-process. Electron y el editor hablan por JSON (stdin/stdout).
 
 | Capa | Rol |
 |------|-----|
-| **Editor** (Electron + React + TypeScript) | Interfaz, escenas, guardado `.save`, herramientas de autoría. |
-| **Editor nativo** (Rust + egui) | Ventana winit que hospeda el motor 2D/3D in-process sobre Ash/Vulkan. Electron solo lanza el editor y abre las modales. |
+| **Launcher** (Electron + React + TypeScript) | Selector de proyecto 2D/3D, apertura de `.save`, idioma de la UI y arranque del editor. **No es el editor.** |
+| **Editor** (Rust + egui) | Ventana winit que hospeda el motor 2D/3D in-process sobre Ash/Vulkan. Posee escenas, entidades, propiedades, HUD, scripting y guardado. |
 
 Hay **dos motores independientes**, no uno híbrido:
 
 - `rer_engine_2d` — sprites, plano XY, colliders y execution areas.
 - `rer_engine_3d` — mallas glTF/GLB, cámara orbital en editor, cámara play character en play (modo `first-person` en manifest), editor **Player UI HUD** (pantallas, texto, botones, imágenes, objetos 2D en NDC).
 
-Electron lanza el editor (`rer_engine_editor`); el editor hospeda el motor 2D o 3D in-process según el tipo de proyecto. Comparten protocolo IPC y utilidades (`rer-engine-core`), pero **no comparten runtime de juego**.
+Electron lanza el editor (`rer_engine_editor`); el editor hospeda el motor 2D o 3D in-process según el tipo de proyecto. Comparten el protocolo de arranque y utilidades (`rer-engine-core`), pero **no comparten runtime de juego**. Los tipos del motor viven en Rust; `src/shared-types/` solo contiene tipos del shell Electron.
 
 ### Viewport: ventana única del editor
 
@@ -28,7 +28,9 @@ El editor egui (`rer_engine_editor`) abre su propia ventana winit y hospeda el m
 
 Los binarios `rer_engine_2d` / `rer_engine_3d` siguen existiendo como standalone de debug, con ventana propia y sin overlay.
 
-Principio **engine-first**: posiciones, cámaras, física y convenciones espaciales las resuelve el motor; el frontend envía intención y refleja eventos. Detalle en [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) y en los `ARCHITECTURE.md` de cada crate.
+Principio **engine-first**: posiciones, cámaras, física y convenciones espaciales las resuelve el motor dentro del editor egui. El launcher solo elige proyecto y arranca el editor. Detalle en [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) y en los `ARCHITECTURE.md` de cada crate.
+
+> **Importante:** un cambio en Rust **no** debe agregar tipos a `src/shared-types/`. Ver [`.cursor/rules/shared-types.mdc`](.cursor/rules/shared-types.mdc).
 
 ---
 
@@ -63,9 +65,10 @@ Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 | Área | Tecnologías |
 |------|-------------|
 | Motor | Rust, **Ash/Vulkan**, winit, glam, Rapier, **rhai**, gltf/image |
-| Editor | Electron, React, TypeScript, Vite (electron-vite) |
+| Editor | Rust, egui, winit |
+| Launcher | Electron, React, TypeScript, Vite (electron-vite) |
 | Scripts de juego | Rhai (sandbox: API `engine.*` registrada por el motor) |
-| Contrato IPC | JSON — tipos en `src/shared-types/types.ts` |
+| Comandos/eventos | JSON definido en Rust (`engine/src/**/ipc/`); `src/shared-types/` es solo del shell |
 
 ---
 
@@ -142,8 +145,8 @@ Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine::engine2d=debu
 | [`src/main/Engine/branding/README.md`](src/main/Engine/branding/README.md) | Intro 4K del motor para el build final del juego (`status: pendiente`) |
 | [`src/main/Engine/engine/src/engine2d/ARCHITECTURE.md`](src/main/Engine/engine/src/engine2d/ARCHITECTURE.md) | Contrato del motor 2D |
 | [`src/main/Engine/engine/ARCHITECTURE.md`](src/main/Engine/engine/ARCHITECTURE.md) | Contrato del motor 3D |
-| [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) | Rol del frontend y qué no duplicar |
-| [`.cursor/rules/project.mdc`](.cursor/rules/project.mdc) | Reglas del proyecto (índice de reglas: `engine`, `frontend`, `rust-quality`, `frontend-quality`) |
+| [`src/renderer/ARCHITECTURE.md`](src/renderer/ARCHITECTURE.md) | Rol del launcher (ya no es el editor) y regla de `shared-types` |
+| [`.cursor/rules/project.mdc`](.cursor/rules/project.mdc) | Reglas del proyecto (índice: `engine`, `frontend`, `shared-types`, `rust-quality`, `frontend-quality`) |
 
 ---
 

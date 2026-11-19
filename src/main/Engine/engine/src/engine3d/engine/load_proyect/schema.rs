@@ -318,7 +318,7 @@ pub(crate) struct SavedControlBindings {
     pub(crate) gamepad: HashMap<String, SavedScript>,
 }
 
-/// `Blueprint3D` en types.ts.
+/// Equivale al tipo legacy `Blueprint3D` de types.ts (shell Electron); la fuente de verdad es este schema.
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone, Serialize)]
 pub(crate) struct SavedBlueprint {

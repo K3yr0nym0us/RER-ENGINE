@@ -18,6 +18,10 @@ globs:
 Applies to Electron, React, TypeScript and related frontend JavaScript only.
 Does **not** replace Rust engine quality rules.
 
+`src/shared-types/` is included here because it is TypeScript of the Electron
+**shell**, not because it is an IPC contract to grow. A Rust/egui change must
+never add types there (see `shared-types.mdc`).
+
 ## Mandatory before finishing any frontend task
 
 1. Changes must satisfy **ESLint** (`yarn lint`), including `eslint-plugin-sonarjs`.

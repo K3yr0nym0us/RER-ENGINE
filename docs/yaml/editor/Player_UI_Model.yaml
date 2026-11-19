@@ -33,7 +33,7 @@ native_sidebar:
   source_of_truth: editor nativo (editor/ui_screens.rs); sin puente React -> main
   commands: sync_player_ui_screens / set_active_player_ui_screen enviados por Rust
   player:
-    - Nuevo HUD (create_ui_screen_modal.rs; abre el editor React aun no migrado)
+    - Nuevo HUD (create_ui_screen_modal.rs; modal nativa Rust, ya migrada)
     - Lista con switch de activo (accion Rust), editar (ventana nativa HUD) y eliminar
   menu:
     - Nuevo menu (create_ui_screen_modal.rs), renombrar (rename_ui_screen_modal.rs) y eliminar
