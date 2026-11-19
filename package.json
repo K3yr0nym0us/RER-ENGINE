@@ -69,12 +69,7 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
-    "@monaco-editor/react": "^4.7.0",
-    "@xyflow/react": "^12.11.0",
     "adm-zip": "^0.5.17",
-    "bootstrap": "^5.3.8",
-    "monaco-editor": "^0.55.1",
-    "react-bootstrap": "^2.10.10",
-    "react-bootstrap-icons": "^1.11.6"
+    "bootstrap": "^5.3.8"
   }
 }

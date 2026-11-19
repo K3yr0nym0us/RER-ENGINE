@@ -195,11 +195,8 @@ differences_from_3d:
 
 key_files:
   types: src/shared-types/types.ts (BluePrintEntry / Blueprint3D compartido)
-  paths: src/renderer/src/utils/blueprintModelPath.ts
-  quick_build_hook: src/renderer/src/hooks/useQuickBuildPlacement.ts
-  native_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (QuickBuildBridge)
-  actions: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   modal: engine/src/editor/ui/quick_build_modal.rs (ventana nativa)
+  note: Sin bridge React; el editor construye el comando de colocación y guarda los blueprints.
   motor_ghost: src/main/Engine/engine/src/engine2d/config_2d/assets.rs
   motor_snap: src/main/Engine/engine/src/engine2d/config_2d.rs
   motor_load: src/main/Engine/engine/src/engine2d/engine/load_proyect.rs

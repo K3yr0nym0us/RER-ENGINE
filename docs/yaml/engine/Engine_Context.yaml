@@ -94,15 +94,9 @@ scene_import:
     project_load_3d_complete o equivalente 2D, limpia flags y undo.
 
 modal_delegation:
-  description: |
-    Ventanas modal Electron no tienen EngineProvider. Los hosts dedicados
-    (EntityProperties, PlayerUI, Blueprint) reciben estado serializado y
-    delegan acciones al editor padre vía sesiones en main/renderer.
-  sessions:
-    - entityPropertiesModalSessions.ts
-    - playerUiEditorSessions.ts
+  note: Eliminada. Todas las ventanas son nativas y el estado vive en Rust.
 
 do_not:
-  - Usar useContextEngine() dentro de modales Electron hijos
+  - Reintroducir sesiones React o hosts Electron para modales
   - Comparar snapshots completos en TS para dirty de escena (motor decide undo)
   - Poner lógica async pesada dentro de componentes; usar hooks

@@ -71,7 +71,7 @@ models:
     storage: perfil XDG aislado de OpenCode; RER nunca guarda el token.
 
 assistant_tools:
-  plugin: .opencode/plugins/rer-ui (plugin local de OpenCode, codemode: false)
+  plugin: ".opencode/plugins/rer-ui (plugin local de OpenCode, codemode: false)"
   tools:
     - rer_ui_open_accordion(accordionKey)  # abre acordeón del sidebar
     - rer_ui_highlight(targetId)           # resalta un control (dom-id)
@@ -96,22 +96,16 @@ chat_flow:
   cancel: POST /api/session/{id}/interrupt vía plugins:chat-cancel.
 
 ui:
-  overlay: |
-    FAB (126×126) + panel expandible (~470×680, anclado abajo-derecha, resize
-    persistido). Header con avatar, estado de OpenCode, selector de modelo,
-    nueva conversación y cerrar. Historial con scroll, streaming, chips de tools,
-    composer multilínea y errores con Reintentar. Footer: "Lee solo docs/ai".
-    Ventana: src/main/aiAssistantWindow.ts (layout 'panel').
+  note: |
+    El overlay React y la ventana del asistente fueron eliminados. El editor
+    nativo gestiona el plugin, el servidor OpenCode y la configuración de modelos.
   plugins_modal: |
-    Sección "Modelo y conexión": selector de modelos (Free/OpenCode Go) y
-    token de OpenCode Go (conectar/desconectar).
+    Sección "Modelo y conexión" en la ventana nativa de plugins: selector de
+    modelos (Free/OpenCode Go) y token de OpenCode Go (conectar/desconectar).
   files:
-    renderer:
-      - src/renderer/src/ai-overlay/AiAssistantOverlayApp.tsx
-      - src/renderer/src/ai-overlay/AssistantReplyText.tsx
-      - src/renderer/src/plugins/PluginsModalBody.tsx
-      - src/renderer/src/plugins/usePlugins.ts
-      - src/renderer/src/plugins/pluginInstallUi.ts
+    native:
+      - src/main/Engine/engine/src/editor/plugin_runtime.rs
+      - src/main/Engine/engine/src/editor/ui/plugins_modal.rs
     main_shared:
       - src/main/plugins/pluginCatalog.ts
       - src/main/plugins/pluginState.ts
@@ -129,35 +123,21 @@ ui:
       - src/main/plugins/local-ai-assistant/assistantReplyFormat.ts
       - src/main/plugins/local-ai-assistant/assistantChatLog.ts
       - src/main/plugins/local-ai-assistant/ipc.ts
-    overlay_window:
-      file: src/main/aiAssistantWindow.ts
-      layouts: fab | panel (legacy intro/thinking/input/answer conservados)
-      position: anclado abajo-derecha; arrastrable; posición persistida
+    note: Sin overlay_window; la configuración vive en la ventana nativa de plugins.
 
 ipc:
-  channels:
-    - plugins:llm-status          # estado del servidor OpenCode
-    - plugins:chat                # turno completo (con streaming por eventos)
-    - plugins:chat-cancel         # interrupt del turno
-    - plugins:chat-delta          # streaming text/tool/done/error (broadcast)
-    - plugins:start-llm           # prepara sandbox + arranca serve
-    - plugins:stop-llm
-    - plugins:list-models
-    - plugins:set-model
-    - plugins:get-assistant-settings
-    - plugins:connect-go
-    - plugins:disconnect-go
-    - plugins:ui-action           # acciones de UI (sidebar)
+  note: Eliminados. El runtime del asistente reside en editor/plugin_runtime.rs.
 
 f0_validated:
   date: 2026-11-12
-  - binario standalone sin Node/Bun/npm ni VC++
-  - perfil XDG aislado (db y credenciales propias)
-  - Basic auth con password de service.json
-  - 12 modelos free sin credenciales
-  - agente local cargado y usado
-  - permisos: lectura externa denegada
-  - tools rer_ui ejecutadas y registradas en ui-actions.log
+  items:
+    - binario standalone sin Node/Bun/npm ni VC++
+    - perfil XDG aislado (db y credenciales propias)
+    - Basic auth con password de service.json
+    - 12 modelos free sin credenciales
+    - agente local cargado y usado
+    - permisos: lectura externa denegada
+    - tools rer_ui ejecutadas y registradas en ui-actions.log
 
 out_of_scope_v1:
   - engine:cmd / crear entidades desde la IA

@@ -55,27 +55,10 @@ persistence:
     # world-gen no tiene interruptor: instalado implica usable.
 
 ipc:
-  - plugins:get-catalog
-  - plugins:get-state
-  - plugins:set-enabled
-  - plugins:install
-  - plugins:uninstall
-  - plugins:llm-status
-  - plugins:start-llm
-  - plugins:stop-llm
-  - plugins:chat
-  - plugins:download-progress  # push main → renderer
-  - plugins:ui-action          # push main → renderer
-  - ai-assistant:show
-  - ai-assistant:hide
-  - ai-assistant:set-layout
-  - ai-assistant:config        # push main → overlay window
+  note: Eliminados. La gestión de plugins y del asistente es 100% Rust.
 
 ui:
-  sidebar_footer: src/renderer/src/pages/EngineView/components/SideBarLeft.tsx
-  native_footer: |
-    El pie del editor nativo emite `legacy_window_request` kind `plugins`;
-    HeadlessEditorHost abre PluginsModalBody en la ventana modal Electron.
-  modal: src/renderer/src/plugins/PluginsModalBody.tsx
-  chat_overlay: src/main/aiAssistantWindow.ts
-  chat_ui: src/renderer/src/ai-overlay/AiAssistantOverlayApp.tsx
+  native_footer: El pie del editor nativo abre directamente la ventana nativa de plugins.
+  modal: src/main/Engine/engine/src/editor/ui/plugins_modal.rs
+  runtime: src/main/Engine/engine/src/editor/plugin_runtime.rs
+  note: Sin ventana modal Electron ni overlay React.

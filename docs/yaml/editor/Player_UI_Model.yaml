@@ -95,11 +95,8 @@ key_files:
   motor_2d: src/main/Engine/engine/src/engine2d/config_2d/player_ui/
   native_sync: src/main/Engine/engine/src/editor/ui_screens.rs
   native_sidebar: src/main/Engine/engine/src/editor/ui/sidebar_left/interface.rs
-  react_bridge: src/renderer/src/pages/EngineView/HeadlessEditorHost.tsx (UiScreensSync)
   modal: src/main/Engine/engine/src/editor/ui/hud_editor_modal.rs (ventana nativa)
-  hook_draw: src/renderer/src/hooks/usePlayerUiObjectDrawing.ts
-  save_build: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
-  sidebar: src/renderer/src/pages/EngineView/components/sidebar/UIAccordion/
+  note: Sin bridge React; el editor nativo posee el catálogo y el guardado.
 
 rhai:
   note: API engine.* para mostrar/ocultar pantallas y leer input HUD en play.
