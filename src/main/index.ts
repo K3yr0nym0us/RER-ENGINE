@@ -107,10 +107,28 @@ function editorFrameBinaryName(): string {
   return process.platform === 'win32' ? 'rer_engine_editor.exe' : 'rer_engine_editor'
 }
 
-/** Muestra en la terminal de desarrollo la salida del editor Rust. */
+/**
+ * Muestra solo lo que la consola egui NO muestra.
+ *
+ * Los eventos del motor (`{"event": ...}`) y los mensajes de control
+ * (`{"type": ...}`) ya salen en la consola del editor, traducidos a texto
+ * legible. Reenviarlos aquí inunda la terminal de `yarn dev` con
+ * `debug_metrics`, hovers y snapshots del `.save`. Solo se conserva el
+ * texto suelto (logs fuera del sink, errores de arranque, panics).
+ */
 function forwardEditorOutput(line: string): void {
   const trimmed = line.trim()
-  if (trimmed) console.log('[editor]', trimmed)
+  if (!trimmed) return
+
+  if (trimmed.startsWith('{')) {
+    try {
+      const msg = JSON.parse(trimmed) as Record<string, unknown>
+      if (typeof msg.event === 'string' || typeof msg.type === 'string') return
+    } catch {
+      // Empieza por '{' pero no es JSON: se trata como texto.
+    }
+  }
+  console.log('[editor]', trimmed)
 }
 
 function startEditorFrame(): void {
