@@ -18,7 +18,7 @@ impl State {
         if !self.preview_playing {
             return;
         }
-        log::info!("[on_keep] tecla {} bajó", control_key);
+        log::info!(target: "play_keys", "[on_keep] tecla {} bajó", control_key);
     }
 
     /// Called once when a key/button is released.
@@ -28,7 +28,7 @@ impl State {
             return;
         }
         self.clear_on_keep_horizontal_block_for_input(device, control_key);
-        log::info!("[on_keep] tecla {} subió", control_key);
+        log::info!(target: "play_keys", "[on_keep] tecla {} subió", control_key);
     }
 
     /// Called every frame while a key/button is held (from `RedrawRequested`).

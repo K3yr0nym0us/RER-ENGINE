@@ -39,10 +39,12 @@ pub enum LogLayer {
     Runtime = 8,
     /// Vulkan: validación, adaptador, pipelines y asignaciones (ruidoso).
     Vulkan = 9,
+    /// Pulsaciones de teclado en modo juego (`on_press`/`on_keep`, muy ruidoso).
+    PlayKeys = 10,
 }
 
 impl LogLayer {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Engine,
         Self::Editor,
         Self::Loading,
@@ -53,6 +55,7 @@ impl LogLayer {
         Self::Assets,
         Self::Runtime,
         Self::Vulkan,
+        Self::PlayKeys,
     ];
 
     #[must_use]
@@ -74,6 +77,7 @@ impl LogLayer {
             Self::Assets => "assets",
             Self::Runtime => "runtime",
             Self::Vulkan => "vulkan",
+            Self::PlayKeys => "play_keys",
         }
     }
 
@@ -90,6 +94,7 @@ impl LogLayer {
             "assets" => Some(Self::Assets),
             "runtime" | "ruido" => Some(Self::Runtime),
             "vulkan" | "gpu" => Some(Self::Vulkan),
+            "play_keys" | "teclas" => Some(Self::PlayKeys),
             _ => None,
         }
     }
@@ -270,6 +275,9 @@ pub fn set_layer(layer: LogLayer, enabled: bool) {
 
 /// Mapea el `target` de `log` a la capa visible en la consola.
 fn layer_for_target(target: &str) -> Option<LogLayer> {
+    if target.contains("play_keys") {
+        return Some(LogLayer::PlayKeys);
+    }
     if target.contains("worldgen") {
         return Some(LogLayer::Worldgen);
     }
@@ -327,6 +335,7 @@ mod tests {
         assert!(!layers.contains(LogLayer::Assets));
         assert!(!layers.contains(LogLayer::Runtime));
         assert!(!layers.contains(LogLayer::Vulkan));
+        assert!(!layers.contains(LogLayer::PlayKeys));
     }
 
     #[test]
@@ -374,6 +383,8 @@ mod tests {
             layer_for_target("rer_engine::engine3d::config_3d::plane_tool_rotate_dbg"),
             Some(LogLayer::Runtime)
         );
+        assert_eq!(layer_for_target("play_keys"), Some(LogLayer::PlayKeys));
         assert_eq!(LogLayer::Vulkan.key(), "vulkan");
+        assert_eq!(LogLayer::PlayKeys.key(), "play_keys");
     }
 }

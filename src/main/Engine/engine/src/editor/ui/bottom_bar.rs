@@ -332,6 +332,7 @@ fn layer_label(locale: crate::editor::cli::Locale, layer: LogLayer) -> &'static 
         LogLayer::Assets => tr(locale, "Recursos", "Assets"),
         LogLayer::Runtime => tr(locale, "Depuración", "Debug"),
         LogLayer::Vulkan => tr(locale, "Vulkan", "Vulkan"),
+        LogLayer::PlayKeys => tr(locale, "Teclas", "Play keys"),
     }
 }
 
@@ -386,6 +387,11 @@ fn layer_hint(locale: crate::editor::cli::Locale, layer: LogLayer) -> &'static s
             locale,
             "Vulkan: validación, dispositivo, pipelines y asignaciones (ruidoso)",
             "Vulkan: validation, device, pipelines and allocations (noisy)",
+        ),
+        LogLayer::PlayKeys => tr(
+            locale,
+            "Pulsaciones de teclado en play (muy ruidoso)",
+            "Key presses during play (very noisy)",
         ),
     }
 }

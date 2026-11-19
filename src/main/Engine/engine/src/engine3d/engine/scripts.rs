@@ -121,7 +121,7 @@ impl State {
         }
 
         self.prepare_control_script_input();
-        log::info!("[on_press] tecla {} detectada", control_key);
+        log::info!(target: "play_keys", "[on_press] tecla {} detectada", control_key);
 
         let bindings: Vec<(u32, String, String)> = self
             .control_bindings_by_entity
@@ -159,7 +159,7 @@ impl State {
         if !self.preview_playing {
             return;
         }
-        log::info!("[on_keep] tecla {} bajó", control_key);
+        log::info!(target: "play_keys", "[on_keep] tecla {} bajó", control_key);
     }
 
     pub fn dispatch_on_keep_key_up(&mut self, device: &str, control_key: &str) {
@@ -167,7 +167,7 @@ impl State {
             return;
         }
         let _ = device;
-        log::info!("[on_keep] tecla {} subió", control_key);
+        log::info!(target: "play_keys", "[on_keep] tecla {} subió", control_key);
     }
 
     /// Cada frame mientras la tecla/botón está sostenido. Ejecuta `on_keep` en Rhai.

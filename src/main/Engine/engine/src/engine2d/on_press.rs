@@ -24,7 +24,7 @@ impl State {
 
         self.prepare_control_script_input();
 
-        log::info!("[on_press] tecla {} detectada", control_key);
+        log::info!(target: "play_keys", "[on_press] tecla {} detectada", control_key);
 
         let bindings: Vec<(u32, String, String)> = self
             .control_bindings_by_entity
