@@ -15,6 +15,7 @@ pub(crate) enum PropTab {
     Scripting,
     Bones,
     Projectile,
+    Interaction,
 }
 
 /// Acción pendiente de una confirmación mostrada dentro de la ventana.
@@ -93,6 +94,51 @@ pub(crate) struct PropEntity {
     pub physics_enabled: bool,
     pub physics_type: String,
     pub animations: Vec<PropAnimation>,
+}
+
+/// Config de interacción (tooltip) leída del meta guardado.
+#[derive(Debug, Clone)]
+pub(crate) struct PropInteractable {
+    pub enabled: bool,
+    pub prompt_es: String,
+    pub prompt_en: String,
+    pub key: String,
+    pub once: bool,
+    pub max_distance: f32,
+}
+
+impl Default for PropInteractable {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            prompt_es: String::new(),
+            prompt_en: String::new(),
+            key: "E".to_string(),
+            once: false,
+            max_distance: 3.5,
+        }
+    }
+}
+
+impl PropInteractable {
+    pub(crate) fn from_value(value: &Value) -> Self {
+        let base = Self::default();
+        let key = str_field(value, "key");
+        Self {
+            enabled: value
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(base.enabled),
+            prompt_es: str_field(value, "prompt_es"),
+            prompt_en: str_field(value, "prompt_en"),
+            key: if key.is_empty() { base.key } else { key },
+            once: value
+                .get("once")
+                .and_then(Value::as_bool)
+                .unwrap_or(base.once),
+            max_distance: f32_field(value, "max_distance", base.max_distance),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -204,6 +250,7 @@ pub(crate) struct EntityPropertiesState {
     pub can_have_bone_physics: bool,
     pub projectile_config: Option<ProjectileCfg>,
     pub entity_hardness: u32,
+    pub interactable: Option<PropInteractable>,
 
     // --- Estados locales del componente (drafts) ---
     pub name_draft: String,
@@ -225,6 +272,13 @@ pub(crate) struct EntityPropertiesState {
     pub max_bounces_draft: String,
     pub bounce_loss_draft: String,
     pub projectile_hardness_draft: String,
+
+    pub interaction_enabled_draft: bool,
+    pub interaction_prompt_es_draft: String,
+    pub interaction_prompt_en_draft: String,
+    pub interaction_key_draft: String,
+    pub interaction_once_draft: bool,
+    pub interaction_max_distance_draft: String,
 
     /// Posición/rotación/escala en texto, como los `input` number de React.
     pub pos_draft: [String; 3],
@@ -342,6 +396,10 @@ impl EntityPropertiesState {
                     .map(|v| v as u32)
             })
             .unwrap_or(0);
+        self.interactable = meta
+            .get("interactable")
+            .filter(|v| v.is_object())
+            .map(PropInteractable::from_value);
         self.scripts = meta
             .get("scripts")
             .and_then(Value::as_array)
@@ -377,6 +435,14 @@ impl EntityPropertiesState {
             self.model_picker = None;
             self.active_tab = PropTab::Transform;
             self.hardness_draft = self.entity_hardness.to_string();
+            let interaction = self.interactable.clone().unwrap_or_default();
+            self.interaction_enabled_draft = interaction.enabled;
+            self.interaction_prompt_es_draft = interaction.prompt_es;
+            self.interaction_prompt_en_draft = interaction.prompt_en;
+            self.interaction_key_draft = interaction.key;
+            self.interaction_once_draft = interaction.once;
+            self.interaction_max_distance_draft = interaction.max_distance.to_string();
+
             if let Some(cfg) = self.projectile_config.as_ref() {
                 self.speed_draft = cfg.speed.to_string();
                 self.lifetime_draft = cfg.lifetime_s.to_string();

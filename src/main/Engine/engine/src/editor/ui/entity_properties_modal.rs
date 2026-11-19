@@ -801,6 +801,9 @@ fn tabs(
     if state.is_projectile && !is_multi {
         tabs.push(PropTab::Projectile);
     }
+    if is_3d && !state.is_collider && !is_multi {
+        tabs.push(PropTab::Interaction);
+    }
     if !tabs.contains(&state.active_tab) {
         state.active_tab = tabs.first().copied().unwrap_or(PropTab::Transform);
     }
@@ -814,6 +817,7 @@ fn tabs(
                 PropTab::Scripting => t(locale, "Programar entidad", "Program entity"),
                 PropTab::Bones => t(locale, "Huesos", "Bones"),
                 PropTab::Projectile => t(locale, "Proyectil", "Projectile"),
+                PropTab::Interaction => t(locale, "Interacción", "Interaction"),
             };
             if prop_tab(ui, &label, state.active_tab == *tab) {
                 state.active_tab = *tab;
@@ -828,6 +832,7 @@ fn tabs(
         PropTab::Scripting => scripting_tab(ui, state, locale, commands),
         PropTab::Bones => bones_tab(ui, state, locale, commands),
         PropTab::Projectile => projectile_tab(ui, state, locale, commands, is_3d),
+        PropTab::Interaction => interaction_tab(ui, state, locale, commands),
     }
 }
 
@@ -1251,6 +1256,120 @@ fn bones_tab(
         ),
         12.0,
     ));
+}
+
+fn interaction_tab(
+    ui: &mut egui::Ui,
+    state: &mut EntityPropertiesState,
+    locale: Locale,
+    commands: &mut Vec<Value>,
+) {
+    let id = state.entity.as_ref().map(|e| e.id).unwrap_or(0);
+    let mut enabled = state.interaction_enabled_draft;
+    ui.horizontal(|ui| {
+        if ui.checkbox(&mut enabled, "").clicked() {
+            state.interaction_enabled_draft = enabled;
+            commit_interaction(state, id, commands);
+        }
+        ui.label(body(
+            &t(locale, "Entidad interactuable", "Interactable entity"),
+            12.0,
+        ));
+    });
+    ui.add_space(6.0);
+    ui.label(muted(
+        &t(
+            locale,
+            "Muestra un prompt anclado a la entidad cuando se mira en play.",
+            "Shows an entity-anchored prompt when looked at in play.",
+        ),
+        11.0,
+    ));
+    ui.add_space(8.0);
+
+    let field = |ui: &mut egui::Ui, label: String, draft: &mut String, width: f32| {
+        section_label(ui, &label);
+        let response = number_field(ui, draft, width);
+        ui.add_space(4.0);
+        response
+    };
+
+    if field(
+        ui,
+        t(locale, "Texto del prompt (ES)", "Prompt text (ES)"),
+        &mut state.interaction_prompt_es_draft,
+        ui.available_width(),
+    )
+    .lost_focus()
+    {
+        commit_interaction(state, id, commands);
+    }
+    if field(
+        ui,
+        t(locale, "Texto del prompt (EN)", "Prompt text (EN)"),
+        &mut state.interaction_prompt_en_draft,
+        ui.available_width(),
+    )
+    .lost_focus()
+    {
+        commit_interaction(state, id, commands);
+    }
+    if field(
+        ui,
+        t(locale, "Tecla", "Key"),
+        &mut state.interaction_key_draft,
+        ui.available_width(),
+    )
+    .lost_focus()
+    {
+        commit_interaction(state, id, commands);
+    }
+    if field(
+        ui,
+        t(locale, "Distancia máxima (m)", "Max distance (m)"),
+        &mut state.interaction_max_distance_draft,
+        ui.available_width(),
+    )
+    .lost_focus()
+    {
+        commit_interaction(state, id, commands);
+    }
+
+    let mut once = state.interaction_once_draft;
+    ui.horizontal(|ui| {
+        if ui.checkbox(&mut once, "").clicked() {
+            state.interaction_once_draft = once;
+            commit_interaction(state, id, commands);
+        }
+        ui.label(body(&t(locale, "Solo una vez", "Only once"), 12.0));
+    });
+}
+
+fn commit_interaction(state: &EntityPropertiesState, id: u64, commands: &mut Vec<Value>) {
+    let key = {
+        let k = state.interaction_key_draft.trim();
+        if k.is_empty() {
+            "E".to_string()
+        } else {
+            k.to_string()
+        }
+    };
+    let max_distance = state
+        .interaction_max_distance_draft
+        .trim()
+        .parse::<f32>()
+        .unwrap_or(3.5)
+        .clamp(0.5, 100.0);
+    commands.push(json!({
+        "cmd": "set_interactable",
+        "id": id,
+        "enabled": state.interaction_enabled_draft,
+        "prompt_es": state.interaction_prompt_es_draft,
+        "prompt_en": state.interaction_prompt_en_draft,
+        "key": key,
+        "once": state.interaction_once_draft,
+        "max_distance": max_distance,
+    }));
 }
 
 fn projectile_tab(
