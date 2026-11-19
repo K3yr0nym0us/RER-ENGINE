@@ -14,7 +14,7 @@ use super::{bottom_bar, sidebar_left, sidebar_right, top_bar, widgets};
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let text = app.text();
     let full_height = ui.max_rect().height();
-    let console_height = console_height(full_height);
+    let default_console_height = console_height(full_height);
 
     // Las sidebars ocupan toda la altura, como en React.
     egui::Panel::left("editor_sidebar_left")
@@ -24,6 +24,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         .frame(panel_frame(crate::editor::theme::PANEL_BG))
         .show(ui, |ui| {
             sidebar_left::show(ui, app);
+            sidebar_divider(ui, true);
         });
 
     egui::Panel::right("editor_sidebar_right")
@@ -33,6 +34,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         .frame(panel_frame(crate::editor::theme::PANEL_BG))
         .show(ui, |ui| {
             sidebar_right::show(ui, app);
+            sidebar_divider(ui, false);
         });
 
     // Barra superior y consola solo en la columna central.
@@ -44,8 +46,14 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             top_bar::show(ui, app);
         });
 
+    // Panel redimensionable: el borde superior es un divisor que se arrastra con
+    // el ratón. egui guarda la altura elegida en su memoria (clave `editor_log_console`)
+    // y el `CentralPanel` de abajo ocupa el espacio restante, así que el rect del
+    // viewport y el render del motor se ajustan solos en cada frame.
     egui::Panel::bottom("editor_log_console")
-        .exact_size(console_height)
+        .default_size(default_console_height)
+        .size_range(MIN_CONSOLE_HEIGHT..=max_console_height(full_height))
+        .resizable(true)
         .show_separator_line(false)
         .frame(panel_frame(crate::editor::theme::LOG_BG))
         .show(ui, |ui| {
@@ -155,9 +163,30 @@ fn panel_frame(fill: egui::Color32) -> egui::Frame {
     egui::Frame::new().fill(fill)
 }
 
-/// Altura de la consola: 25 % del alto disponible, con un mínimo de 120 px.
+/// Línea de 1 px entre una sidebar y el área central del motor.
+/// Se dibuja dentro del rect del panel para que no quede fuera del clip.
+fn sidebar_divider(ui: &mut egui::Ui, left: bool) {
+    let rect = ui.max_rect();
+    let x = if left { rect.right() - 1.0 } else { rect.left() };
+    ui.painter().line_segment(
+        [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+        egui::Stroke::new(1.0, crate::editor::theme::SIDEBAR_DIVIDER),
+    );
+}
+
+/// Altura inicial de la consola: 25 % del alto disponible, con un mínimo de 120 px.
+const MIN_CONSOLE_HEIGHT: f32 = 120.0;
+/// Hueco mínimo que se reserva para el viewport del motor al arrastrar el divisor.
+const MIN_VIEWPORT_HEIGHT: f32 = 160.0;
+
 fn console_height(full_height: f32) -> f32 {
-    (full_height * 0.25).max(120.0)
+    (full_height * 0.25).max(MIN_CONSOLE_HEIGHT)
+}
+
+/// Tope de la consola para que el viewport nunca quede demasiado pequeño.
+fn max_console_height(full_height: f32) -> f32 {
+    (full_height - crate::editor::theme::TOP_BAR_HEIGHT - MIN_VIEWPORT_HEIGHT)
+        .max(MIN_CONSOLE_HEIGHT)
 }
 
 #[cfg(test)]
@@ -174,5 +203,19 @@ mod tests {
     fn console_never_goes_below_the_minimum() {
         assert_eq!(console_height(400.0), 120.0);
         assert_eq!(console_height(0.0), 120.0);
+    }
+
+    #[test]
+    fn console_cannot_eat_the_whole_viewport() {
+        assert_eq!(max_console_height(800.0), 800.0 - 46.0 - 160.0);
+        assert_eq!(max_console_height(200.0), MIN_CONSOLE_HEIGHT);
+    }
+
+    #[test]
+    fn default_console_height_is_within_the_drag_range() {
+        for height in [0.0, 200.0, 600.0, 1080.0, 2000.0] {
+            assert!(console_height(height) >= MIN_CONSOLE_HEIGHT);
+            assert!(console_height(height) <= max_console_height(height));
+        }
     }
 }

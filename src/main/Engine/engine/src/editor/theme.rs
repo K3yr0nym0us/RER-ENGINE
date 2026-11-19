@@ -10,6 +10,8 @@ pub const MIN_WINDOW_WIDTH: f32 = 900.0;
 pub const MIN_WINDOW_HEIGHT: f32 = 600.0;
 
 pub const SIDEBAR_BG: Color32 = Color32::from_rgb(0x09, 0x0b, 0x18);
+/// Separador oscuro entre las sidebars y el viewport del motor.
+pub const SIDEBAR_DIVIDER: Color32 = Color32::from_rgb(0x0a, 0x0c, 0x16);
 pub const PANEL_BG: Color32 = Color32::from_rgb(0x1f, 0x22, 0x37);
 pub const LOG_BG: Color32 = Color32::from_rgb(0x03, 0x05, 0x0d);
 pub const METRICS_BG: Color32 = Color32::from_rgb(0x05, 0x08, 0x17);
