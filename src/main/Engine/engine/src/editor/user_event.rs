@@ -22,6 +22,10 @@ pub enum UserEvent {
     EngineFailed(String),
     /// Línea de `log` del motor (o del editor) para la consola inferior.
     Log(LogEvent),
+    /// Progreso de una instalación de plugin.
+    PluginProgress(Value),
+    /// Resultado de una operación de plugins.
+    PluginFinished(Value),
 }
 
 /// Versión editor de `rer_engine_core::logging::LogLine`, ya filtrada por capa.

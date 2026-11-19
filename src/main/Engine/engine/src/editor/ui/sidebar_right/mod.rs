@@ -102,7 +102,7 @@ enum WorldAction {
     },
     /// Partículas (F5): baja de un emisor de escena creado por la UI.
     RemoveParticleEmitter(u64),
-    /// Agua de bloques (F5): baja de una fuente creada desde el sidebar.
+    /// Cubo de líquidos (F5): baja de una fuente creada desde el sidebar.
     RemoveWaterSource(u64),
 }
 

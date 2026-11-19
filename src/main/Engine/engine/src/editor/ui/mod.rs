@@ -3,18 +3,52 @@
 mod accordion;
 mod bottom_bar;
 mod clear_scene_modal;
+/// Cuerpo de la ventana nativa de configuración de controles.
+pub(crate) mod control_bindings_modal;
+/// Cuerpo de la ventana nativa de creación de escena.
+pub(crate) mod create_scene_modal;
+/// Cuerpo de la ventana nativa de creación de pantalla UI.
+pub(crate) mod create_ui_screen_modal;
+/// Cuerpo de la ventana nativa de confirmación de borrado de escena.
+pub(crate) mod delete_scene_modal;
+/// Cuerpo de la ventana nativa de confirmación de borrado de pantalla UI.
+pub(crate) mod delete_ui_screen_modal;
+/// Cuerpo de la ventana nativa de propiedades de entidad.
+pub(crate) mod entity_properties_modal;
+/// Cuerpo de la ventana nativa de confirmación de salida del editor.
+pub(crate) mod exit_confirm_modal;
 mod frame;
 mod globalize_model_modal;
+/// Cuerpo de la ventana nativa del editor de HUD.
+pub(crate) mod hud_editor_modal;
 mod load_from_scene_modal;
 mod model_import_modal;
 mod number_draft;
 /// Modal nativa del editor de emisores de partículas (F5).
 mod particles_config_modal;
+/// Cuerpo de la ventana nativa del catálogo de plugins.
+pub(crate) mod plugins_modal;
+/// Cuerpo de la ventana nativa del selector de blueprints.
+pub(crate) mod quick_build_modal;
+/// Cuerpo de la ventana nativa de confirmación para borrar un recurso.
+pub(crate) mod remove_asset_modal;
+/// Cuerpo de la ventana nativa de renombrado de menú UI.
+pub(crate) mod rename_ui_screen_modal;
+/// Cuerpo de la ventana nativa del script Rhai de escena.
+pub(crate) mod scene_script_modal;
 pub(crate) mod sidebar_left;
 pub(crate) mod sidebar_right;
+/// Cuerpo de la ventana nativa de configuración de sockets.
+pub(crate) mod socket_config_modal;
 mod switch_scene_modal;
 mod top_bar;
+/// Cuerpo de la ventana nativa de la guía de usuario.
+pub(crate) mod user_guide_modal;
+/// Cuerpo de la ventana nativa del editor visual de lógica (nodos).
+pub(crate) mod visual_script_modal;
 mod widgets;
+/// Cuerpo de la ventana nativa del generador de mundo.
+pub(crate) mod worldgen_modal;
 
 use crate::editor::app::EditorApp;
 

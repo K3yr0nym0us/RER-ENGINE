@@ -101,7 +101,8 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
         // Los campos que el material no usa NO se renderizan (antes se
         // mostraban bloqueados): así la modal solo enseña lo que aplica.
         if mask.cell_size {
-            // Agua de bloques: el único parámetro es el tamaño de celda.
+            // Cubo de líquidos: el backend de rejilla solo añade el tamaño de
+            // celda; el resto de propiedades líquidas se comparten abajo.
             slider_row(
                 ui,
                 locale,
@@ -174,7 +175,19 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
                     0.0,
                 );
             }
-            if mask.cohesion {
+            if mask.cohesion && mask.color {
+                // Líquidos GPU: el mismo parámetro se presenta como tensión
+                // superficial (el shader lo usa como cohesión de flujo).
+                slider_row(
+                    ui,
+                    locale,
+                    "Tensión superficial",
+                    "Surface tension",
+                    &mut draft.cohesion,
+                    ranges.cohesion,
+                    0.15,
+                );
+            } else if mask.cohesion {
                 slider_row(
                     ui,
                     locale,
@@ -237,6 +250,26 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
                     }
                 });
             }
+        }
+        // Propiedades compartidas por todos los líquidos, con backend de
+        // rejilla (cubo) o GPU (emisor de agua).
+        if mask.color {
+            ui.add_space(3.0);
+            ui.horizontal(|ui| {
+                ui.label(tr(locale, "Color", "Color"));
+                ui.color_edit_button_rgb(&mut draft.color);
+            });
+        }
+        if mask.viscosity {
+            slider_row(
+                ui,
+                locale,
+                "Viscosidad",
+                "Viscosity",
+                &mut draft.viscosity,
+                ranges.viscosity,
+                0.15,
+            );
         }
         ui.add_space(10.0);
         ui.separator();

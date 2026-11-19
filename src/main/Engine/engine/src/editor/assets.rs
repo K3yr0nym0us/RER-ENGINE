@@ -151,18 +151,6 @@ impl AssetKind {
         }
     }
 
-    /// Identificador estable para las modales legacy de Electron.
-    pub fn legacy_id(self) -> &'static str {
-        match self {
-            Self::Model => "model",
-            Self::Sprite => "sprite",
-            Self::Sound => "sound",
-            Self::Font => "font",
-            Self::HudImage => "hud_image",
-            Self::Background => "background",
-        }
-    }
-
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
             Self::Model => &["glb", "gltf", "fbx"],

@@ -21,7 +21,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         .exact_size(crate::editor::theme::SIDEBAR_WIDTH)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(crate::editor::theme::SIDEBAR_BG))
+        .frame(panel_frame(crate::editor::theme::PANEL_BG))
         .show(ui, |ui| {
             sidebar_left::show(ui, app);
         });
@@ -30,7 +30,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         .exact_size(crate::editor::theme::SIDEBAR_WIDTH)
         .resizable(false)
         .show_separator_line(false)
-        .frame(panel_frame(crate::editor::theme::SIDEBAR_BG))
+        .frame(panel_frame(crate::editor::theme::PANEL_BG))
         .show(ui, |ui| {
             sidebar_right::show(ui, app);
         });
@@ -39,7 +39,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     egui::Panel::top("editor_top_bar")
         .exact_size(crate::editor::theme::TOP_BAR_HEIGHT)
         .show_separator_line(false)
-        .frame(panel_frame(crate::editor::theme::SIDEBAR_BG))
+        .frame(panel_frame(crate::editor::theme::PANEL_BG))
         .show(ui, |ui| {
             top_bar::show(ui, app);
         });

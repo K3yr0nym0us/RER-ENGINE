@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
@@ -15,8 +15,10 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::editor::app::{EditorApp, EditorStatus};
+use crate::editor::app::{EditorApp, EditorStatus, ExitAction};
 use crate::editor::cli::Cli;
+use crate::editor::i18n::tr;
+use crate::editor::modal_window::{ModalWindow, NativeModal};
 use crate::editor::user_event::{LogEvent, UserEvent};
 use rer_engine_core::vulkan::VulkanOptions;
 
@@ -154,24 +156,13 @@ struct EditorWindow {
     paused: bool,
     /// Ventana OS independiente del editor de emisores (mismo device, otra superficie).
     particle_window: Option<crate::editor::particle_window::ParticleWindow>,
+    /// Ventana nativa aparte para las modales migradas (borrar recurso / salida).
+    modal_window: Option<ModalWindow>,
     /// `true` mientras el ghost de colocación del emisor está activo en el motor.
     particle_placement_active: bool,
 }
 
 impl EditorWindow {
-    /// Rectángulo físico de la ventana nativa + escala, para anclar modales de Electron.
-    fn engine_window_rect(&self) -> Option<serde_json::Value> {
-        let pos = self.window.outer_position().ok()?;
-        let size = self.window.outer_size();
-        Some(serde_json::json!({
-            "x": pos.x,
-            "y": pos.y,
-            "width": size.width,
-            "height": size.height,
-            "scale": self.window.scale_factor(),
-        }))
-    }
-
     fn new(window: Arc<Window>, cli: Cli) -> Result<Self, String> {
         let options = if cli.context.is_3d() {
             VulkanOptions::three_d()
@@ -201,6 +192,7 @@ impl EditorWindow {
             app: EditorApp::new(cli),
             paused: false,
             particle_window: None,
+            modal_window: None,
             particle_placement_active: false,
         })
     }
@@ -539,6 +531,7 @@ impl EditorWindow {
             app,
             paused: _,
             particle_window: _,
+            modal_window: _,
             particle_placement_active: _,
         } = self;
 
@@ -630,6 +623,221 @@ impl EditorWindow {
             self.particle_placement_active = wants_ghost;
         }
     }
+
+    /// Abre/cierra la ventana modal externa según el estado pedido por las modales.
+    fn sync_modal_window(&mut self, event_loop: &ActiveEventLoop) {
+        let wanted = if self.app.exit_confirm_open {
+            Some(NativeModal::ExitConfirm)
+        } else if self.app.left_sidebar.pending_remove_asset.is_some() {
+            Some(NativeModal::RemoveAsset)
+        } else if self.app.left_sidebar.pending_delete_scene.is_some() {
+            Some(NativeModal::DeleteScene)
+        } else if self.app.left_sidebar.pending_create_scene.is_some() {
+            Some(NativeModal::CreateScene)
+        } else if self.app.left_sidebar.pending_delete_ui_screen.is_some() {
+            Some(NativeModal::DeleteUiScreen)
+        } else if self.app.left_sidebar.pending_create_ui_screen.is_some() {
+            Some(NativeModal::CreateUiScreen)
+        } else if self.app.left_sidebar.pending_rename_ui_screen.is_some() {
+            Some(NativeModal::RenameUiScreen)
+        } else if self.app.control_bindings.open {
+            Some(NativeModal::ControlBindings)
+        } else if self.app.worldgen.open {
+            Some(NativeModal::WorldGen)
+        } else if self.app.plugins_modal.open {
+            Some(NativeModal::Plugins)
+        } else if self.app.hud_editor.open {
+            Some(NativeModal::HudEditor)
+        } else if self.app.left_sidebar.user_guide_open {
+            Some(NativeModal::UserGuide)
+        } else if self.app.left_sidebar.quick_build_open {
+            Some(NativeModal::QuickBuild)
+        } else if self.app.entity_properties.open {
+            Some(NativeModal::EntityProperties)
+        } else if self.app.socket_config.open {
+            Some(NativeModal::SocketConfig)
+        } else if self.app.left_sidebar.scene_script_open.is_some() {
+            Some(NativeModal::SceneScript)
+        } else if self.app.visual_script.open {
+            Some(NativeModal::SceneVisualScript)
+        } else {
+            None
+        };
+        if wanted == self.modal_window.as_ref().map(ModalWindow::kind) {
+            return;
+        }
+        self.modal_window = None;
+        let Some(kind) = wanted else {
+            return;
+        };
+        let locale = self.app.cli.locale;
+        let title = match kind {
+            NativeModal::RemoveAsset => tr(locale, "Eliminar recurso", "Delete asset").to_string(),
+            NativeModal::ExitConfirm => {
+                tr(locale, "Salir de RER-ENGINE", "Exit RER-ENGINE").to_string()
+            }
+            NativeModal::DeleteScene => {
+                let draft = self
+                    .app
+                    .left_sidebar
+                    .pending_delete_scene
+                    .as_ref()
+                    .map(|draft| (draft.name.as_str(), draft.blocked));
+                match draft {
+                    Some((name, true)) => format!(
+                        "{} {name}",
+                        tr(locale, "No se puede eliminar", "Cannot delete")
+                    ),
+                    Some((name, false)) => {
+                        format!("{} {name}", tr(locale, "Eliminar", "Delete"))
+                    }
+                    None => tr(locale, "Eliminar escena", "Delete scene").to_string(),
+                }
+            }
+            NativeModal::CreateScene => {
+                tr(locale, "Crear nueva escena", "Create new scene").to_string()
+            }
+            NativeModal::DeleteUiScreen => {
+                tr(locale, "Confirmar eliminacion", "Confirm deletion").to_string()
+            }
+            NativeModal::CreateUiScreen => {
+                tr(locale, "Nueva pantalla UI", "New UI screen").to_string()
+            }
+            NativeModal::RenameUiScreen => {
+                tr(locale, "Renombrar menú UI", "Rename UI menu").to_string()
+            }
+            NativeModal::ControlBindings => {
+                if self.app.control_bindings.mode
+                    == crate::editor::control_bindings::ControlDeviceMode::Gamepad
+                {
+                    tr(locale, "Controles: Mandos", "Controls: Gamepads").to_string()
+                } else {
+                    tr(
+                        locale,
+                        "Controles: Teclado + Mouse",
+                        "Controls: Keyboard + Mouse",
+                    )
+                    .to_string()
+                }
+            }
+            NativeModal::WorldGen => {
+                tr(locale, "Generador de mundo", "World Generator").to_string()
+            }
+            NativeModal::Plugins => tr(locale, "Plugins", "Plugins").to_string(),
+            NativeModal::HudEditor => {
+                let name = self.app.hud_editor.name_draft.clone();
+                format!("{}: {name}", tr(locale, "Editar HUD", "Edit HUD"))
+            }
+            NativeModal::UserGuide => tr(locale, "Guia de usuario", "User guide").to_string(),
+            NativeModal::QuickBuild => tr(locale, "Construcción", "Construction").to_string(),
+            NativeModal::EntityProperties => {
+                tr(locale, "Propiedades de entidad", "Entity properties").to_string()
+            }
+            NativeModal::SocketConfig => {
+                tr(locale, "Configuración de sockets", "Socket configuration").to_string()
+            }
+            NativeModal::SceneScript => {
+                let scene_id = self
+                    .app
+                    .left_sidebar
+                    .scene_script_open
+                    .unwrap_or(self.app.scenes.active_scene_id);
+                format!(
+                    "{}: {}",
+                    tr(locale, "Script de escena", "Scene script"),
+                    self.app.scenes.name_for(scene_id)
+                )
+            }
+            NativeModal::SceneVisualScript => {
+                if self.app.visual_script.context
+                    == crate::editor::visual_script::GraphContext::Entity
+                {
+                    format!(
+                        "{}: {}",
+                        tr(locale, "Lógica de entidad", "Entity logic"),
+                        self.app.visual_script.entity_name
+                    )
+                } else {
+                    format!(
+                        "{}: {}",
+                        tr(locale, "Lógica de escena", "Scene logic"),
+                        self.app.visual_script.scene_name
+                    )
+                }
+            }
+        };
+        match ModalWindow::open(
+            event_loop,
+            self.gpu.shared_gpu(),
+            self.window.as_ref(),
+            app_window_icon(),
+            kind,
+            title,
+        ) {
+            Ok(window) => self.modal_window = Some(window),
+            Err(error) => {
+                log::error!("[editor] ventana modal: {error}");
+                // Evita reintentar indefinidamente: la acción se cancela.
+                match kind {
+                    NativeModal::ExitConfirm => {
+                        self.app.exit_confirm_open = false;
+                        self.app.pending_exit_action = Some(ExitAction::Cancel);
+                    }
+                    NativeModal::RemoveAsset => {
+                        self.app.left_sidebar.pending_remove_asset = None;
+                    }
+                    NativeModal::DeleteScene => {
+                        self.app.left_sidebar.pending_delete_scene = None;
+                    }
+                    NativeModal::CreateScene => {
+                        self.app.left_sidebar.pending_create_scene = None;
+                    }
+                    NativeModal::DeleteUiScreen => {
+                        self.app.left_sidebar.pending_delete_ui_screen = None;
+                    }
+                    NativeModal::CreateUiScreen => {
+                        self.app.left_sidebar.pending_create_ui_screen = None;
+                    }
+                    NativeModal::RenameUiScreen => {
+                        self.app.left_sidebar.pending_rename_ui_screen = None;
+                    }
+                    NativeModal::ControlBindings => {
+                        self.app.control_bindings.open = false;
+                        self.app.control_bindings.editor = None;
+                    }
+                    NativeModal::WorldGen => {
+                        self.app.worldgen.open = false;
+                    }
+                    NativeModal::Plugins => {
+                        self.app.plugins_modal.open = false;
+                    }
+                    NativeModal::HudEditor => {
+                        crate::editor::hud_editor::end_edit(&mut self.app);
+                    }
+                    NativeModal::UserGuide => {
+                        self.app.left_sidebar.user_guide_open = false;
+                    }
+                    NativeModal::QuickBuild => {
+                        self.app.left_sidebar.quick_build_open = false;
+                    }
+                    NativeModal::EntityProperties => {
+                        self.app.entity_properties.open = false;
+                    }
+                    NativeModal::SocketConfig => {
+                        self.app.socket_config.open = false;
+                    }
+                    NativeModal::SceneScript => {
+                        self.app.left_sidebar.scene_script_open = None;
+                        self.app.left_sidebar.scene_script_source = None;
+                    }
+                    NativeModal::SceneVisualScript => {
+                        self.app.visual_script.open = false;
+                        self.app.visual_script.loaded = false;
+                    }
+                }
+            }
+        }
+    }
 }
 
 struct EditorApplication {
@@ -642,8 +850,6 @@ struct EditorApplication {
     exit_after_save: bool,
     /// Hay una confirmación de salida abierta en Electron.
     exit_request_pending: bool,
-    /// Sincronización de pantallas UI recibida antes de crear la ventana.
-    pending_ui_screens: Option<Value>,
     /// Logs recibidos antes de que exista la ventana (arranque del editor).
     pending_logs: Vec<LogEvent>,
 }
@@ -657,6 +863,43 @@ impl EditorApplication {
                 editor.handle_engine_command(&command);
             } else {
                 editor.app.send_engine(command);
+            }
+        }
+    }
+
+    /// Aplica la acción de salida, tanto de la modal nativa como del puente Electron.
+    /// Devuelve `true` si el host debe terminar el proceso ahora.
+    fn apply_exit_action(&mut self, action: ExitAction) -> bool {
+        self.exit_request_pending = false;
+        match action {
+            ExitAction::Cancel => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.app.exit_confirm_open = false;
+                    editor.paused = false;
+                    editor.window.request_redraw();
+                }
+                false
+            }
+            ExitAction::Save => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.app.exit_confirm_open = false;
+                    editor.paused = false;
+                    if editor.app.can_save() {
+                        if editor.app.begin_save(false).is_some() {
+                            self.exit_after_save = true;
+                        }
+                    } else {
+                        return true;
+                    }
+                    editor.window.request_redraw();
+                }
+                false
+            }
+            ExitAction::Discard => {
+                if let Some(editor) = self.editor.as_mut() {
+                    editor.app.exit_confirm_open = false;
+                }
+                true
             }
         }
     }
@@ -700,71 +943,16 @@ impl EditorApplication {
                     }
                 }
             }
-            "ui_screens_sync" => {
-                if let Some(screens) = message.get("screens").cloned() {
-                    if let Some(editor) = self.editor.as_mut() {
-                        editor.app.ui_screens.apply_sync(&screens);
-                        editor.window.request_redraw();
-                    } else {
-                        self.pending_ui_screens = Some(screens);
-                    }
-                }
-            }
-            "quick_build_state" => {
-                let state = message.get("state");
-                let active = state
-                    .and_then(|state| state.get("active"))
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false);
-                let name = state
-                    .and_then(|state| state.get("name"))
-                    .and_then(Value::as_str)
-                    .map(str::to_string);
-                if let Some(editor) = self.editor.as_mut() {
-                    editor.app.quick_build_active = if active {
-                        Some(name.unwrap_or_else(|| "Quick build".to_string()))
-                    } else {
-                        None
-                    };
-                    editor.window.request_redraw();
-                }
-            }
-            "project_state" => {
-                let id = message.get("id").and_then(Value::as_u64).unwrap_or(0);
-                let state = message.get("state").cloned().unwrap_or(Value::Null);
-                if let Some(editor) = self.editor.as_mut()
-                    && editor.app.receive_project_state(id, &state)
-                {
-                    log::info!("[editor] estado de proyecto recibido (id={id})");
-                }
-            }
             "save_request" => {
                 if let Some(editor) = self.editor.as_mut() {
                     editor.app.begin_save(false);
                 }
             }
             "exit_cancelled" => {
-                self.exit_request_pending = false;
-                if let Some(editor) = self.editor.as_mut() {
-                    editor.paused = false;
-                    editor.window.request_redraw();
-                }
+                self.apply_exit_action(ExitAction::Cancel);
             }
-            "exit_after_save" => {
-                self.exit_request_pending = false;
-                if let Some(editor) = self.editor.as_mut() {
-                    editor.paused = false;
-                    if editor.app.can_save() {
-                        if editor.app.begin_save(false).is_some() {
-                            self.exit_after_save = true;
-                        }
-                    } else {
-                        return true;
-                    }
-                    editor.window.request_redraw();
-                }
-            }
-            "exit" => return true,
+            "exit_after_save" => return self.apply_exit_action(ExitAction::Save),
+            "exit" => return self.apply_exit_action(ExitAction::Discard),
             _ => {}
         }
 
@@ -825,9 +1013,35 @@ impl EditorApplication {
         let Some(editor) = self.editor.as_mut() else {
             return;
         };
-        let Some((save_path, state)) = editor.app.take_pending_save() else {
+        let Some((save_path, mut state)) = editor.app.take_pending_save() else {
             return;
         };
+        // Las pantallas UI las gestiona el editor nativo, no el snapshot de React.
+        state.player_ui_screens = editor
+            .app
+            .ui_screens
+            .player
+            .iter()
+            .map(|screen| json!({ "id": screen.id, "name": screen.name, "active": screen.active }))
+            .collect();
+        state.menu_ui_screens = editor
+            .app
+            .ui_screens
+            .menu
+            .iter()
+            .map(|screen| json!({ "id": screen.id, "name": screen.name, "active": screen.active }))
+            .collect();
+        // Los scripts Rhai también viven en el editor desde su ventana nativa.
+        for scene in state.scenes.iter_mut() {
+            if let Some(id) = scene.get("id").and_then(Value::as_u64)
+                && let Some(script) = editor.app.scene_scripts.get(&id)
+            {
+                scene["sceneScriptRhai"] = json!(script);
+            }
+        }
+        // Blueprints y metadatos de entidad también los gestiona el editor.
+        state.blueprints = editor.app.project_state.blueprints.clone();
+        state.entity_meta = editor.app.project_state.entity_meta.clone();
 
         let project_type = editor.app.project_type_string(&state);
         let game_style = editor.app.game_style_string(&state);
@@ -905,6 +1119,128 @@ impl EditorApplication {
             editor.particle_window = None;
         }
     }
+
+    /// Cierra la ventana modal externa cancelando la acción en curso.
+    fn cancel_modal_window(&mut self) {
+        let Some(editor) = self.editor.as_mut() else {
+            return;
+        };
+        let kind = editor.modal_window.as_ref().map(ModalWindow::kind);
+        editor.modal_window = None;
+        match kind {
+            Some(NativeModal::ExitConfirm) => {
+                self.apply_exit_action(ExitAction::Cancel);
+            }
+            Some(NativeModal::RemoveAsset) => {
+                editor.app.left_sidebar.pending_remove_asset = None;
+            }
+            Some(NativeModal::DeleteScene) => {
+                editor.app.left_sidebar.pending_delete_scene = None;
+            }
+            Some(NativeModal::CreateScene) => {
+                editor.app.left_sidebar.pending_create_scene = None;
+            }
+            Some(NativeModal::DeleteUiScreen) => {
+                editor.app.left_sidebar.pending_delete_ui_screen = None;
+            }
+            Some(NativeModal::CreateUiScreen) => {
+                editor.app.left_sidebar.pending_create_ui_screen = None;
+            }
+            Some(NativeModal::RenameUiScreen) => {
+                editor.app.left_sidebar.pending_rename_ui_screen = None;
+            }
+            Some(NativeModal::ControlBindings) => {
+                editor.app.control_bindings.open = false;
+                editor.app.control_bindings.editor = None;
+            }
+            Some(NativeModal::WorldGen) => {
+                editor.app.worldgen.open = false;
+            }
+            Some(NativeModal::Plugins) => {
+                editor.app.plugins_modal.open = false;
+            }
+            Some(NativeModal::HudEditor) => {
+                crate::editor::hud_editor::end_edit(&mut editor.app);
+            }
+            Some(NativeModal::UserGuide) => {
+                editor.app.left_sidebar.user_guide_open = false;
+            }
+            Some(NativeModal::QuickBuild) => {
+                editor.app.left_sidebar.quick_build_open = false;
+            }
+            Some(NativeModal::EntityProperties) => {
+                editor.app.entity_properties.open = false;
+                editor.app.entity_properties.confirm = None;
+            }
+            Some(NativeModal::SocketConfig) => {
+                // La X cierra la ventana: desactivar también el modo pick del viewport.
+                editor.app.socket_config.open = false;
+                editor.app.socket_config.bone_pick_active = false;
+                editor.app.send_engine(json!({
+                    "cmd": "set_socket_bone_pick_mode",
+                    "entity_id": editor.app.socket_config.target_id.unwrap_or(0),
+                    "active": false,
+                }));
+            }
+            Some(NativeModal::SceneScript) => {
+                editor.app.left_sidebar.scene_script_open = None;
+                editor.app.left_sidebar.scene_script_source = None;
+            }
+            Some(NativeModal::SceneVisualScript) => {
+                editor.app.visual_script.open = false;
+                editor.app.visual_script.loaded = false;
+            }
+            None => {}
+        }
+    }
+
+    /// Eventos de la ventana modal externa: la X equivale a Cancelar.
+    fn handle_modal_window_event(&mut self, event: WindowEvent) {
+        if matches!(event, WindowEvent::CloseRequested) {
+            self.cancel_modal_window();
+            return;
+        }
+
+        let Some(editor) = self.editor.as_mut() else {
+            return;
+        };
+
+        {
+            let Some(modal) = editor.modal_window.as_mut() else {
+                return;
+            };
+            let response = modal.on_window_event(&event);
+            let is_redraw = matches!(event, WindowEvent::RedrawRequested);
+            if response.repaint && !is_redraw {
+                modal.request_redraw();
+            }
+            if response.consumed && !is_redraw {
+                return;
+            }
+
+            match event {
+                WindowEvent::Resized(size) => {
+                    if let Err(error) = modal.resize(size) {
+                        log::error!("[editor] ventana modal: {error}");
+                    }
+                    modal.request_redraw();
+                }
+                WindowEvent::ScaleFactorChanged { .. } => {
+                    let size = modal.inner_size();
+                    if let Err(error) = modal.resize(size) {
+                        log::error!("[editor] ventana modal: {error}");
+                    }
+                    modal.request_redraw();
+                }
+                WindowEvent::RedrawRequested => {
+                    if let Err(error) = modal.render(&mut editor.app) {
+                        log::error!("[editor] ventana modal: {error}");
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 impl ApplicationHandler<UserEvent> for EditorApplication {
@@ -945,12 +1281,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                     for entry in pending {
                         editor.app.push_log(entry.text, entry.is_error);
                     }
-                }
-
-                if let Some(pending) = self.pending_ui_screens.take()
-                    && let Some(editor) = self.editor.as_mut()
-                {
-                    editor.app.ui_screens.apply_sync(&pending);
                 }
 
                 // La UI se pinta ya; el motor se construye en un hilo y avisa al terminar.
@@ -1042,6 +1372,18 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                     editor.fail_engine(message);
                 }
             }
+            UserEvent::PluginProgress(payload) => {
+                if let Some(editor) = self.editor.as_mut() {
+                    crate::editor::plugin_runtime::apply_progress(&mut editor.app, &payload);
+                    editor.window.request_redraw();
+                }
+            }
+            UserEvent::PluginFinished(payload) => {
+                if let Some(editor) = self.editor.as_mut() {
+                    crate::editor::plugin_runtime::apply_finished(&mut editor.app, &payload);
+                    editor.window.request_redraw();
+                }
+            }
             UserEvent::Log(entry) => {
                 if let Some(editor) = self.editor.as_mut() {
                     editor.app.push_log(entry.text, entry.is_error);
@@ -1082,6 +1424,16 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             self.handle_particle_window_event(event);
             return;
         }
+        let is_modal = self.editor.as_ref().is_some_and(|editor| {
+            editor
+                .modal_window
+                .as_ref()
+                .is_some_and(|window| window.window_id() == window_id)
+        });
+        if is_modal {
+            self.handle_modal_window_event(event);
+            return;
+        }
 
         let is_main = self
             .editor
@@ -1110,15 +1462,15 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 return;
             }
             self.exit_request_pending = true;
-            let mut engine_rect = None;
             if let Some(editor) = self.editor.as_mut() {
-                editor.paused = true;
-                engine_rect = editor.engine_window_rect();
+                // La modal nativa se dibuja en el propio editor: no lo pausamos
+                // (pausado no se producen frames y no se podría interactuar).
                 if let Some(engine) = editor.engine.as_mut() {
                     engine.release_cursor();
                 }
+                editor.app.exit_confirm_open = true;
+                editor.window.request_redraw();
             }
-            crate::editor::bridge::request_exit_confirmation(engine_rect);
             return;
         }
 
@@ -1180,6 +1532,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                     log::error!("[editor] {error}");
                 }
                 editor.sync_particle_window(event_loop);
+                editor.sync_modal_window(event_loop);
             }
             _ => {}
         }
@@ -1188,6 +1541,20 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
     /// Mantiene el editor al FPS configurado por el proyecto: el motor en proceso
     /// necesita frames continuos y egui solo pide repintar cuando hay animaciones/cambios.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        // La modal nativa de salida deja la acción aquí; el host la aplica una vez
+        // por frame (mismo camino que los mensajes `exit_*` de Electron).
+        if let Some(action) = self
+            .editor
+            .as_ref()
+            .and_then(|editor| editor.app.pending_exit_action)
+        {
+            if let Some(editor) = self.editor.as_mut() {
+                editor.app.pending_exit_action = None;
+            }
+            if self.apply_exit_action(action) {
+                exit_editor_now();
+            }
+        }
         if self.editor.as_ref().is_some_and(|editor| editor.paused) {
             event_loop.set_control_flow(ControlFlow::Wait);
             return;
@@ -1211,6 +1578,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         if now >= self.next_frame_at {
             if let Some(editor) = self.editor.as_mut() {
                 editor.sync_particle_window(event_loop);
+                editor.sync_modal_window(event_loop);
                 editor.window.request_redraw();
                 if let Some(particle) = editor.particle_window.as_ref() {
                     particle.request_redraw();
@@ -1282,7 +1650,6 @@ pub fn run() {
         target_fps: 60,
         exit_after_save: false,
         exit_request_pending: false,
-        pending_ui_screens: None,
         pending_logs: Vec::new(),
     };
     event_loop

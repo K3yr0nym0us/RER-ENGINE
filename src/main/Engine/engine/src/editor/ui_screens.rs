@@ -1,4 +1,4 @@
-//! Catálogo de pantallas de UI gestionado por React y sincronizado al editor nativo.
+//! Catálogo de pantallas de UI gestionado por el editor nativo (fuente de verdad).
 
 use serde_json::Value;
 
@@ -16,10 +16,40 @@ pub struct UiScreenLists {
 }
 
 impl UiScreenLists {
-    /// Aplica `{ player: [...], menu: [...] }` recibido desde Electron.
+    /// Carga inicial desde el `ProjectState` leído del `manifest.json`.
+    pub fn from_state(state: &crate::editor::project_state::ProjectState) -> Self {
+        Self {
+            player: parse_screens(Some(&Value::Array(state.player_ui_screens.clone()))),
+            menu: parse_screens(Some(&Value::Array(state.menu_ui_screens.clone()))),
+        }
+    }
+
+    #[cfg(test)]
     pub fn apply_sync(&mut self, value: &Value) {
         self.player = parse_screens(value.get("player"));
         self.menu = parse_screens(value.get("menu"));
+    }
+
+    /// Id fresco `ui_N`, sin colisionar con las pantallas ya existentes.
+    pub fn next_id(&self) -> String {
+        let mut max = self
+            .player
+            .iter()
+            .chain(self.menu.iter())
+            .filter_map(|screen| screen.id.strip_prefix("ui_"))
+            .filter_map(|number| number.parse::<u64>().ok())
+            .max()
+            .unwrap_or(0);
+        max += 1;
+        loop {
+            let id = format!("ui_{max}");
+            if !self.player.iter().any(|screen| screen.id == id)
+                && !self.menu.iter().any(|screen| screen.id == id)
+            {
+                return id;
+            }
+            max += 1;
+        }
     }
 }
 
@@ -75,5 +105,15 @@ mod tests {
         assert!(!lists.player[1].active);
         assert_eq!(lists.menu.len(), 1);
         assert_eq!(lists.menu[0].id, "menu-1");
+    }
+
+    #[test]
+    fn next_id_skips_existing_screens() {
+        let mut lists = UiScreenLists::default();
+        lists.apply_sync(&json!({
+            "player": [{ "id": "ui_1" }, { "id": "ui_3" }],
+            "menu": [{ "id": "ui_2" }]
+        }));
+        assert_eq!(lists.next_id(), "ui_4");
     }
 }

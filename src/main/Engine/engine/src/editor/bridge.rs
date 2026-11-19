@@ -39,41 +39,6 @@ pub fn notify_locale(locale: crate::editor::cli::Locale) {
     );
 }
 
-/// Pide a Electron que abra una ventana legacy por su tipo.
-///
-/// `kind` identifica el contenido (`scene_script`, `scene_visual_script`,
-/// `create_scene`, `delete_scene`, `remove_asset`, `socket_config`,
-/// `entity_properties`) y `payload` lleva los datos serializables.
-pub fn request_legacy_window(kind: &str, payload: serde_json::Value) {
-    write_line(
-        &json!({
-            "type": "legacy_window_request",
-            "kind": kind,
-            "payload": payload,
-        })
-        .to_string(),
-    );
-}
-
-/// Pide a Electron el estado de proyecto actual de la UI React.
-pub fn request_project_state(id: u64) {
-    write_line(&json!({ "type": "project_state_request", "id": id }).to_string());
-}
-
-/// Pide a Electron la modal de confirmación de salida (guardar antes de cerrar).
-///
-/// `rect` lleva posición/tamaño físicos de la ventana del editor y su factor de
-/// escala, para que Electron centre la modal sobre el motor y no sobre la pantalla.
-pub fn request_exit_confirmation(rect: Option<serde_json::Value>) {
-    write_line(
-        &json!({
-            "type": "exit_request",
-            "rect": rect,
-        })
-        .to_string(),
-    );
-}
-
 /// Notifica que el `.save` se escribió correctamente.
 pub fn notify_project_saved(path: &std::path::Path) {
     write_line(

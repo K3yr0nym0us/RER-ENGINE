@@ -539,15 +539,16 @@ pub fn modal_button(
             };
             (fill, fill, Color32::WHITE)
         }
-        ModalButtonStyle::Secondary => (
-            if hovered {
-                Color32::from_rgba_unmultiplied(255, 255, 255, 12)
+        // Igual que `.btn-secondary` en la modal Electron: fondo gris, sin
+        // borde y texto blanco (también en hover).
+        ModalButtonStyle::Secondary => {
+            let fill = if hovered {
+                crate::editor::theme::SECONDARY_HOVER
             } else {
-                Color32::TRANSPARENT
-            },
-            crate::editor::theme::OUTLINE_SECONDARY,
-            crate::editor::theme::TEXT_MUTED,
-        ),
+                crate::editor::theme::OUTLINE_SECONDARY
+            };
+            (fill, Color32::TRANSPARENT, Color32::WHITE)
+        }
     };
 
     let text = if icon.is_empty() {
@@ -572,6 +573,40 @@ pub fn modal_button(
     );
 
     enabled && response.clicked()
+}
+
+/// Pestaña con aspecto de `.nav-tabs` de Bootstrap (texto + borde inferior).
+pub fn modal_tab(ui: &mut egui::Ui, label: &str, active: bool) -> bool {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(110.0, 30.0), egui::Sense::click());
+    let painter = ui.painter();
+    painter.text(
+        rect.center() - egui::vec2(0.0, 2.0),
+        egui::Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(13.0),
+        if active {
+            crate::editor::theme::TEXT
+        } else {
+            crate::editor::theme::TEXT_MUTED
+        },
+    );
+    painter.line_segment(
+        [
+            egui::pos2(rect.min.x, rect.max.y - 1.0),
+            egui::pos2(rect.max.x, rect.max.y - 1.0),
+        ],
+        Stroke::new(
+            if active { 2.0 } else { 1.0 },
+            if active {
+                crate::editor::theme::INFO
+            } else {
+                crate::editor::theme::BORDER
+            },
+        ),
+    );
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
 }
 
 /// Separación entre el texto y una tecla resaltada (egui recorta los espacios

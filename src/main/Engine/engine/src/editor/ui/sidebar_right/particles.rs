@@ -30,15 +30,21 @@ const WEATHER_OPTIONS: [(&str, &str, &str); 4] = [
     ("fog", "Niebla", "Fog"),
 ];
 
-/// Materiales para la alta manual de emisores. «Agua (bloques)» no es un
-/// emisor GPU: es el autómata celular estilo Minecraft del módulo `water`.
+/// Materiales para la alta manual de emisores. «Cubo de líquidos» no es un
+/// emisor GPU: es el autómata celular del módulo `water`.
+/// Materiales con comportamiento de líquido: comparten color, viscosidad y
+/// tensión superficial aunque usen backends distintos (rejilla o GPU).
+pub(crate) fn is_liquid_material(material: &str) -> bool {
+    matches!(material, "water" | "liquid_cube" | "water_cube")
+}
+
 pub(crate) const MATERIAL_OPTIONS: [(&str, &str, &str); 6] = [
     ("fire", "Fuego", "Fire"),
     ("smoke", "Humo", "Smoke"),
     ("fog", "Niebla", "Fog"),
     ("sand", "Arena", "Arena"),
     ("water", "Agua", "Water"),
-    ("water_block", "Agua (bloques)", "Water blocks"),
+    ("liquid_cube", "Cubo de líquidos", "Liquid cube"),
 ];
 
 /// Valores planos de un emisor (preset o snapshot). Los borradores de la UI se
@@ -58,8 +64,12 @@ pub(crate) struct EmitterValues {
     pub ground_collision: bool,
     pub accumulate: bool,
     pub splash: bool,
-    /// Solo agua de bloques: lado de la celda (m).
+    /// Solo cubo de líquidos: lado de la celda (m).
     pub cell_size: f32,
+    /// Solo cubo de líquidos: color RGB del charco (0..1).
+    pub color: [f32; 3],
+    /// Solo cubo de líquidos: viscosidad (0..1), escala la inercia del flujo.
+    pub viscosity: f32,
 }
 
 /// Fila de un emisor de escena y borrador de la modal (una sola estructura: la modal
@@ -83,6 +93,8 @@ pub(crate) struct EmitterRow {
     pub(crate) accumulate: bool,
     pub(crate) splash: bool,
     pub(crate) cell_size: NumberDraft,
+    pub(crate) color: [f32; 3],
+    pub(crate) viscosity: NumberDraft,
 }
 
 impl EmitterRow {
@@ -116,6 +128,8 @@ impl EmitterRow {
             accumulate: values.accumulate,
             splash: values.splash,
             cell_size: NumberDraft::default(),
+            color: values.color,
+            viscosity: NumberDraft::default(),
         };
         row.apply_values(values);
         row
@@ -141,6 +155,8 @@ impl EmitterRow {
         self.accumulate = values.accumulate;
         self.splash = values.splash;
         self.cell_size.sync(values.cell_size);
+        self.color = values.color;
+        self.viscosity.sync(values.viscosity);
     }
 
     /// Aplica una posición elegida con el ghost del viewport a los drafts X/Y/Z.
@@ -189,6 +205,12 @@ impl EmitterRow {
         if !mask.cell_size {
             self.cell_size.force(preset.cell_size);
         }
+        if !mask.color {
+            self.color = preset.color;
+        }
+        if !mask.viscosity {
+            self.viscosity.force(preset.viscosity);
+        }
         self.clamp_fields();
     }
 
@@ -216,6 +238,7 @@ impl EmitterRow {
         clamp(&mut self.wind[0], ranges.wind);
         clamp(&mut self.wind[1], ranges.wind);
         clamp(&mut self.cell_size, ranges.cell_size);
+        clamp(&mut self.viscosity, ranges.viscosity);
     }
 
     /// Valores actuales (lo escrito en los drafts, con respaldo si están vacíos),
@@ -247,6 +270,12 @@ impl EmitterRow {
             accumulate: self.accumulate,
             splash: self.splash,
             cell_size: parse(&self.cell_size, 0.5, ranges.cell_size),
+            color: [
+                self.color[0].clamp(0.0, 1.0),
+                self.color[1].clamp(0.0, 1.0),
+                self.color[2].clamp(0.0, 1.0),
+            ],
+            viscosity: parse(&self.viscosity, 0.15, ranges.viscosity),
         }
     }
 }
@@ -282,14 +311,15 @@ pub struct ParticlesUiState {
 }
 
 /// Preset de valores por material para la alta nueva. Los emisores coinciden
-/// con los presets del motor; `water_block` solo usa posición y tamaño de celda.
+/// con los presets del motor; `liquid_cube` usa posición, celda y propiedades
+/// del líquido (color, viscosidad y tensión superficial).
 pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
     let (position, rate, size, life, gravity, drag, turbulence, cohesion) = match material {
         "smoke" => ([0.0, 0.3, 0.0], 90.0, 0.9, 3.8, 1.35, 0.55, 1.2, 0.0),
         "fog" => ([0.0, 1.2, 0.0], 36.0, 2.2, 10.0, 0.0, 0.0, 0.0, 0.0),
         "sand" => ([0.0, 2.0, 0.0], 320.0, 0.05, 4.0, -9.8, 0.6, 0.3, 0.1),
         "water" => ([0.0, 2.0, 0.0], 380.0, 0.06, 3.5, -9.8, 0.35, 0.2, 0.5),
-        "water_block" => ([0.0, 0.0, 0.0], 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0),
+        "liquid_cube" => ([0.0, 0.0, 0.0], 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.35),
         // fuego
         _ => ([0.0, 0.35, 0.0], 160.0, 0.55, 1.1, -1.9, 0.9, 2.4, 0.0),
     };
@@ -312,6 +342,18 @@ pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
         accumulate: false,
         splash: material == "water",
         cell_size: 0.5,
+        color: match material {
+            "liquid_cube" => [0.22, 0.55, 0.87],
+            // Azul del preset GPU `EmitterConfig::water()`.
+            "water" => [0.62, 0.82, 1.0],
+            _ => [1.0, 1.0, 1.0],
+        },
+        viscosity: match material {
+            // `drag` del preset `EmitterConfig::water()`.
+            "water" => 0.18,
+            "liquid_cube" => 0.15,
+            _ => 0.5,
+        },
     }
 }
 
@@ -330,22 +372,26 @@ pub(crate) struct EmitterFieldMask {
     pub accumulate: bool,
     pub splash: bool,
     pub cell_size: bool,
+    pub color: bool,
+    pub viscosity: bool,
 }
 
 pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
     match material {
-        "water_block" => EmitterFieldMask {
+        "liquid_cube" => EmitterFieldMask {
             rate: false,
             gravity: false,
             drag: false,
             turbulence: false,
-            cohesion: false,
+            cohesion: true,
             ground_y: false,
             wind: false,
             ground_collision: false,
             accumulate: false,
             splash: false,
             cell_size: true,
+            color: true,
+            viscosity: true,
         },
         "fog" => EmitterFieldMask {
             rate: true,
@@ -359,6 +405,8 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             accumulate: false,
             splash: false,
             cell_size: false,
+            color: false,
+            viscosity: false,
         },
         "sand" => EmitterFieldMask {
             rate: true,
@@ -372,11 +420,14 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             accumulate: false,
             splash: false,
             cell_size: false,
+            color: false,
+            viscosity: false,
         },
         "water" => EmitterFieldMask {
             rate: true,
             gravity: true,
-            drag: true,
+            // En líquidos el arrastre se presenta como viscosidad.
+            drag: false,
             turbulence: false,
             cohesion: true,
             ground_y: true,
@@ -385,6 +436,8 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             accumulate: false,
             splash: true,
             cell_size: false,
+            color: true,
+            viscosity: true,
         },
         // fuego y humo: flotabilidad, drag, curl y viento. Sin suelo ni cohesión.
         _ => EmitterFieldMask {
@@ -399,6 +452,8 @@ pub(crate) fn field_mask(material: &str) -> EmitterFieldMask {
             accumulate: false,
             splash: false,
             cell_size: false,
+            color: false,
+            viscosity: false,
         },
     }
 }
@@ -454,6 +509,7 @@ pub(crate) struct EmitterRanges {
     pub ground_y: FieldRange,
     pub wind: FieldRange,
     pub cell_size: FieldRange,
+    pub viscosity: FieldRange,
 }
 
 pub(crate) fn field_ranges(material: &str) -> EmitterRanges {
@@ -526,9 +582,9 @@ pub(crate) fn field_ranges(material: &str) -> EmitterRanges {
                 step: 0.1,
             },
         ),
-        // Agua de bloques: el autómata no tiene emisión ni tamaño de partícula;
+        // Cubo de líquidos: el autómata no tiene emisión ni tamaño de partícula;
         // sus campos se fijan al preset y solo se edita `cell_size`.
-        "water_block" => (
+        "liquid_cube" => (
             FieldRange {
                 min: 0.0,
                 max: 0.0,
@@ -602,6 +658,11 @@ pub(crate) fn field_ranges(material: &str) -> EmitterRanges {
             min: 0.25,
             max: 2.0,
             step: 0.05,
+        },
+        viscosity: FieldRange {
+            min: 0.0,
+            max: 1.0,
+            step: 0.01,
         },
     }
 }
@@ -707,6 +768,19 @@ impl ParticlesUiState {
                     accumulate: get_bool("accumulate"),
                     splash: get_bool("splash"),
                     cell_size: get_f("cell_size", 0.5),
+                    color: saved
+                        .get("color")
+                        .and_then(serde_json::Value::as_array)
+                        .and_then(|rgb| {
+                            let channel = |index| {
+                                rgb.get(index)
+                                    .and_then(serde_json::Value::as_f64)
+                                    .map(|value| value as f32)
+                            };
+                            Some([channel(0)?, channel(1)?, channel(2)?])
+                        })
+                        .unwrap_or_else(|| preset_values(material).color),
+                    viscosity: get_f("viscosity", preset_values(material).viscosity),
                 });
                 row.id = saved
                     .get("id")
@@ -719,21 +793,25 @@ impl ParticlesUiState {
         }
     }
 
-    /// Comando de alta para la fila: emisores GPU o fuente de agua de bloques
+    /// Comando de alta para la fila: emisores GPU o fuente de líquido
     /// (upsert por id en ambos casos).
     pub(crate) fn emitter_command(&self, row: &EmitterRow) -> serde_json::Value {
         let mut row = row.clone();
         row.pin_inapplicable_fields();
         let values = row.values();
-        if row.material == "water_block" {
+        if row.material == "liquid_cube" {
             return json!({
                 "cmd": "add_water_source",
                 "id": row.id,
                 "position": values.position,
                 "cell_size": values.cell_size,
+                "color": values.color,
+                "viscosity": values.viscosity,
+                "cohesion": values.cohesion,
             });
         }
-        json!({
+        let liquid = is_liquid_material(row.material);
+        let mut command = json!({
             "cmd": "add_particle_emitter",
             "id": row.id,
             "material": row.material,
@@ -742,7 +820,8 @@ impl ParticlesUiState {
             "size": values.size,
             "life": values.life,
             "gravity": values.gravity,
-            "drag": values.drag,
+            // En líquidos el shader interpreta `drag` como viscosidad.
+            "drag": if liquid { values.viscosity } else { values.drag },
             "turbulence": values.turbulence,
             "cohesion": values.cohesion,
             "ground_y": values.ground_y,
@@ -750,7 +829,11 @@ impl ParticlesUiState {
             "ground_collision": values.ground_collision,
             "accumulate": values.accumulate,
             "splash": values.splash,
-        })
+        });
+        if liquid {
+            command["color"] = json!(values.color);
+        }
+        command
     }
 
     /// Quita la fila demo del sidebar al «Limpiar escena».
@@ -965,7 +1048,7 @@ pub(super) fn particles_body(
                             theme::DANGER,
                             tr(locale, "Eliminar", "Remove"),
                         ) {
-                            if row.material == "water_block" {
+                            if row.material == "liquid_cube" {
                                 actions.push(WorldAction::RemoveWaterSource(row.id));
                             } else {
                                 actions.push(WorldAction::RemoveParticleEmitter(row.id));
@@ -1068,30 +1151,69 @@ mod tests {
     }
 
     #[test]
-    fn water_block_replaces_the_water_cube_splasher() {
+    fn liquid_cube_replaces_the_water_cube_splasher() {
         let options = super::MATERIAL_OPTIONS;
-        assert!(options.iter().any(|(wire, es, en)| *wire == "water_block"
-            && *es == "Agua (bloques)"
-            && *en == "Water blocks"));
+        assert!(options.iter().any(|(wire, es, en)| *wire == "liquid_cube"
+            && *es == "Cubo de líquidos"
+            && *en == "Liquid cube"));
         assert!(!options.iter().any(|(wire, _, _)| *wire == "water_cube"));
-        let mask = field_mask("water_block");
+        let mask = field_mask("liquid_cube");
         assert!(mask.cell_size);
-        assert!(
-            !mask.rate && !mask.gravity && !mask.splash && !mask.ground_collision && !mask.cohesion
-        );
-        let values = preset_values("water_block");
+        assert!(!mask.rate && !mask.gravity && !mask.splash && !mask.ground_collision);
+        let values = preset_values("liquid_cube");
         assert_eq!(values.cell_size, 0.5);
         assert_eq!(values.rate, 0.0);
+        assert_eq!(values.color, [0.22, 0.55, 0.87]);
+        assert_eq!(values.viscosity, 0.15);
+        assert!(mask.color && mask.viscosity && mask.cohesion);
     }
 
     #[test]
-    fn water_block_row_sends_the_water_source_command() {
+    fn liquid_cube_row_sends_the_water_source_command() {
         let state = super::ParticlesUiState::default();
-        let row = EmitterRow::new_draft("water_block");
+        let row = EmitterRow::new_draft("liquid_cube");
         let command = state.emitter_command(&row);
         assert_eq!(command["cmd"], "add_water_source");
         assert_eq!(command["cell_size"], 0.5);
         assert_eq!(command["position"], serde_json::json!([0.0, 0.0, 0.0]));
+    }
+
+    #[test]
+    fn liquid_cube_command_sends_liquid_properties() {
+        let state = super::ParticlesUiState::default();
+        let mut row = EmitterRow::new_draft("liquid_cube");
+        row.color = [0.9, 0.2, 0.4];
+        row.viscosity.force(0.7);
+        row.cohesion.force(0.25);
+        let command = state.emitter_command(&row);
+        assert!((command["color"][0].as_f64().unwrap() - 0.9).abs() < 1e-5);
+        assert!((command["color"][2].as_f64().unwrap() - 0.4).abs() < 1e-5);
+        assert!((command["viscosity"].as_f64().unwrap() - 0.7).abs() < 1e-5);
+        assert!((command["cohesion"].as_f64().unwrap() - 0.25).abs() < 1e-5);
+    }
+
+    #[test]
+    fn water_gpu_exposes_the_same_liquid_controls() {
+        let mask = field_mask("water");
+        assert!(mask.color && mask.viscosity && mask.cohesion);
+        assert!(!mask.drag, "el arrastre se presenta como viscosidad");
+        let values = preset_values("water");
+        assert_eq!(values.color, [0.62, 0.82, 1.0]);
+        assert!((values.viscosity - 0.18).abs() < 1e-6);
+        assert!(super::is_liquid_material("water"));
+        assert!(super::is_liquid_material("liquid_cube"));
+        assert!(!super::is_liquid_material("fire"));
+
+        let state = super::ParticlesUiState::default();
+        let mut row = EmitterRow::new_draft("water");
+        row.color = [0.1, 0.7, 0.3];
+        row.viscosity.force(0.6);
+        row.cohesion.force(0.25);
+        let command = state.emitter_command(&row);
+        assert_eq!(command["cmd"], "add_particle_emitter");
+        assert!((command["drag"].as_f64().unwrap() - 0.6).abs() < 1e-5);
+        assert!((command["color"][1].as_f64().unwrap() - 0.7).abs() < 1e-5);
+        assert!((command["cohesion"].as_f64().unwrap() - 0.25).abs() < 1e-5);
     }
 
     #[test]
@@ -1139,6 +1261,7 @@ mod tests {
             assert_inside(material, values.wind[0], ranges.wind);
             assert_inside(material, values.wind[1], ranges.wind);
             assert_inside(material, values.cell_size, ranges.cell_size);
+            assert_inside(material, values.viscosity, ranges.viscosity);
         }
     }
 
@@ -1163,14 +1286,14 @@ mod tests {
     }
 
     #[test]
-    fn water_block_command_clamps_cell_size() {
+    fn liquid_cube_command_clamps_cell_size() {
         let state = super::ParticlesUiState::default();
-        let mut row = EmitterRow::new_draft("water_block");
+        let mut row = EmitterRow::new_draft("liquid_cube");
         row.cell_size.force(999.0);
         let command = state.emitter_command(&row);
         assert_eq!(
             command["cell_size"].as_f64(),
-            Some(field_ranges("water_block").cell_size.max as f64)
+            Some(field_ranges("liquid_cube").cell_size.max as f64)
         );
     }
 }

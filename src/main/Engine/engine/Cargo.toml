@@ -41,11 +41,18 @@ rapier3d.workspace = true
 libloading = "0.8"
 rodio.workspace = true
 getrandom.workspace = true
+ureq.workspace = true
+sha2.workspace = true
+base64.workspace = true
+hex.workspace = true
 gilrs.workspace = true
 egui = { workspace = true, optional = true }
 egui-ash-renderer = { workspace = true, optional = true }
 egui-winit = { workspace = true, optional = true }
 egui-phosphor = { workspace = true, optional = true }
+# Editor de código nativo para los scripts Rhai (compatible con egui 0.35).
+egui_code_editor = { version = "=0.3.7", optional = true }
+egui-snarl = { workspace = true, optional = true }
 zip.workspace = true
 rfd = { version = "0.18", optional = true }
 # Núcleo Ash compartido (contexto, swapchain, buffers, imágenes) y tipos IPC.
@@ -76,6 +83,8 @@ editor = [
 	"dep:egui-ash-renderer",
 	"dep:egui-winit",
 	"dep:egui-phosphor",
+	"dep:egui_code_editor",
+	"dep:egui-snarl",
 	"dep:rfd",
 ]
 

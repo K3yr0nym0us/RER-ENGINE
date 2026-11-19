@@ -48,11 +48,11 @@ Este documento fija el contrato tecnico actual del motor 3D para que el codigo n
   frecuencia del monitor (picos de 200 FPS).
 - `forward_input` combina `egui_is_using_pointer()` y `layer_id_at()`: el `consumed`
   global de egui también es true sobre el viewport vacío, así que no se usa solo.
-- Cierre: Electron lanza el editor con `--electron-host`; al cerrar, el editor pausa el
-  motor, libera el cursor y emite `exit_request`. Electron abre la modal React
-  `ExitConfirmBody` (Guardar y salir / Salir sin guardar / Cancelar) en una ventana
-  `modal-electron` por encima del editor nativo. Tras guardar o descartar,
-  `exit_editor_now` sale sin esperar el `Drop` de Vulkan (~3 s en debug).
+- Cierre: Electron lanza el editor con `--electron-host`; al cerrar, el editor libera
+  el cursor y abre su propia ventana winit (`modal_window.rs`) con la confirmación
+  nativa (Guardar y salir / Salir sin guardar / Cancelar). La acción se aplica en el
+  host: guardar usa `begin_save` + `exit_after_save`, salir descarta y cancelar
+  reanuda. `exit_editor_now` sale sin esperar el `Drop` de Vulkan (~3 s en debug).
 - En play 3D el cursor se oculta, se confina con `CursorGrabMode::Confined` y se
   restringe al sub-rect del viewport con `ClipCursor` (`engine3d/host.rs`); se recentra
   cada frame para el mouse-look. Al perder foco, ocultarse/minimizarse o abrir la modal

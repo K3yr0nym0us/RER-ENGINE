@@ -1,13 +1,11 @@
 //! Estado de proyecto que el editor necesita para guardar.
 //!
-//! Mientras la UI React sigue siendo la fuente de edición, el editor pide un
-//! snapshot del proyecto justo antes de guardar. Así el ensamblado del
-//! `manifest.json` y el empaquetado `.save` viven en Rust y no dependen del
-//! empaquetado de Electron.
+//! El editor es la fuente de verdad: al abrir un `.save` lee su `manifest.json`
+//! extraído y construye este estado en Rust, sin pedir snapshots a React.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 
 /// Datos del proyecto que no viven en el motor (escenas inactivas, blueprints,
 /// metadatos de entidad, pantallas UI e idioma).
@@ -54,6 +52,103 @@ impl ProjectState {
     pub fn entity_meta_for(&self, entity_id: u64) -> Option<&Value> {
         self.entity_meta.get(&entity_id.to_string())
     }
+
+    /// Construye el estado desde el `manifest.json` de un `.save` extraído.
+    pub fn from_manifest_dir(extract_dir: &Path) -> Option<Self> {
+        let raw = std::fs::read_to_string(extract_dir.join("manifest.json")).ok()?;
+        let manifest: Value = serde_json::from_str(&raw).ok()?;
+        let take = |key: &str| manifest.get(key).cloned().unwrap_or(Value::Null);
+        let models = manifest
+            .get("resources")
+            .and_then(|resources| resources.get("models"))
+            .cloned()
+            .or_else(|| Some(take("models")));
+        let mut state = Self::from_value(&json!({
+            "projectType": take("type"),
+            "gameStyle": take("gameStyle"),
+            "locale": take("language"),
+            "scenes": take("scenes"),
+            "activeSceneId": take("activeSceneId"),
+            "blueprints": take("blueprints"),
+            "sounds": take("sounds"),
+            "fonts": take("fonts"),
+            "hudImages": take("hudImages"),
+            "models": models,
+            "backgrounds": take("backgrounds"),
+            "playerUiScreens": take("playerUiScreens"),
+            "menuUiScreens": take("menuUiScreens"),
+        }));
+        state.entity_meta = entity_meta_from_manifest(&manifest);
+        Some(state)
+    }
+}
+
+/// Reconstruye `entityMeta[id]` a partir de las entidades guardadas, igual que
+/// hacía React al cargar el manifest. El guardado usa estos metadatos para
+/// reinyectar scripts, animaciones, bindings y grafos en las entidades.
+fn entity_meta_from_manifest(manifest: &Value) -> BTreeMap<String, Value> {
+    let mut result = BTreeMap::new();
+    let Some(scenes) = manifest.get("scenes").and_then(Value::as_array) else {
+        return result;
+    };
+    for scene in scenes {
+        let mut entities: Vec<Value> = scene
+            .get("entities")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(player) = scene.get("player") {
+            match player {
+                Value::Array(list) => entities.extend(list.iter().cloned()),
+                Value::Object(_) => entities.push(player.clone()),
+                _ => {}
+            }
+        }
+        for entity in entities {
+            let Some(id) = entity.get("id").and_then(Value::as_u64) else {
+                continue;
+            };
+            let path = entity
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let category = entity.get("category").and_then(Value::as_str).unwrap_or("");
+            let marker = path.rsplit(['/', '\\']).next().unwrap_or(&path);
+            let kind = match marker {
+                "[Player]" => "character",
+                "[EditorCamera]" | "[Sun]" | "[Ground]" | "[EditorBox]" => "scenario",
+                _ if category == "player" || category == "character" => "character",
+                _ if category == "environment" || category == "ground" => "scenario",
+                _ => "model",
+            };
+            let mut meta = json!({
+                "kind": kind,
+                "path": path,
+                "name": entity.get("name").cloned().unwrap_or(Value::Null),
+                "physicsEnabled": entity.get("colision").cloned().unwrap_or(json!(false)),
+                "physicsType": entity.get("physics_type").cloned().unwrap_or(json!("")),
+            });
+            if let Some(object) = meta.as_object_mut() {
+                for (source, target) in [
+                    ("animations", "animations"),
+                    ("scripts", "scripts"),
+                    ("controls", "controlBindings"),
+                    ("blueprint_id", "blueprintId"),
+                    ("visualGraph", "visualGraph"),
+                    ("visualScriptRhai", "visualScriptRhai"),
+                ] {
+                    if let Some(value) = entity.get(source)
+                        && !value.is_null()
+                    {
+                        object.insert(target.to_string(), value.clone());
+                    }
+                }
+            }
+            result.insert(id.to_string(), meta);
+        }
+    }
+    result
 }
 
 fn string_field(value: &Value, key: &str) -> Option<String> {
@@ -160,6 +255,53 @@ mod tests {
             state.entity_meta_for(7).and_then(|m| m.get("kind")),
             Some(&json!("character"))
         );
+    }
+
+    #[test]
+    fn derives_entity_meta_from_manifest_entities() {
+        let manifest = json!({
+            "type": "3D",
+            "language": "es",
+            "activeSceneId": 1,
+            "scenes": [{
+                "id": 1,
+                "player": { "id": 7, "name": "Player", "category": "player", "model": "[Player]", "controls": { "keyboard_mouse": { "W": { "name": "walk", "source": "x=1;" } } } },
+                "entities": [{
+                    "id": 9, "name": "Hero", "category": "character", "model": "hero.glb",
+                    "scripts": [{ "name": "ai", "source": "let x=1;" }],
+                    "blueprint_id": "bp_1"
+                }]
+            }],
+            "resources": { "models": [{ "name": "Hero", "path": "hero.glb" }] },
+            "playerUiScreens": [{ "id": "hud", "name": "HUD" }]
+        });
+        let meta = entity_meta_from_manifest(&manifest);
+        assert_eq!(meta["7"]["kind"], json!("character"));
+        assert_eq!(meta["7"]["name"], json!("Player"));
+        assert!(meta["7"]["controlBindings"]["keyboard_mouse"]["W"].is_object());
+        assert_eq!(meta["9"]["blueprintId"], json!("bp_1"));
+        assert_eq!(meta["9"]["scripts"][0]["name"], json!("ai"));
+    }
+
+    #[test]
+    fn loads_manifest_from_disk() {
+        let dir = std::env::temp_dir().join(format!("rer-ps-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let manifest = json!({
+            "type": "3D", "gameStyle": "third-person", "language": "es",
+            "activeSceneId": 3, "scenes": [{ "id": 3, "name": "Nivel" }],
+            "blueprints": [{ "id": "bp" }],
+            "playerUiScreens": [{ "id": "hud", "name": "HUD" }],
+            "resources": { "models": [{ "name": "Hero", "path": "hero.glb" }] }
+        });
+        std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
+        let state = ProjectState::from_manifest_dir(&dir).expect("manifest leído");
+        assert_eq!(state.project_type.as_deref(), Some("3D"));
+        assert_eq!(state.locale.as_deref(), Some("es"));
+        assert_eq!(state.active_scene_id, Some(3));
+        assert_eq!(state.models.len(), 1);
+        assert_eq!(state.player_ui_screens.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

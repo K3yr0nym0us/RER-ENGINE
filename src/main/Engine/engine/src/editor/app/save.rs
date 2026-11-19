@@ -47,32 +47,19 @@ impl EditorApp {
             },
             false,
         );
+        // El editor ya posee el estado del proyecto (cargado del manifest o
+        // actualizado por sus propias ventanas): no hay que pedírselo a React.
+        let state = self.project_state.clone();
         self.pending_save = Some(PendingSave {
             id,
             save_path,
-            state: None,
+            state: Some(state),
             silent,
             writing: false,
         });
-        crate::editor::bridge::request_project_state(id);
+        self.send_engine(json!({ "cmd": "export_save_snapshot" }));
         self.spawn_save_timeout(id);
         Some(id)
-    }
-
-    /// Recibe el estado de proyecto que envió la UI React.
-    pub fn receive_project_state(&mut self, id: u64, state: &Value) -> bool {
-        let Some(pending) = self.pending_save.as_mut() else {
-            return false;
-        };
-        if pending.id != id || pending.state.is_some() {
-            return false;
-        }
-        let parsed = ProjectState::from_value(state);
-        pending.state = Some(parsed);
-        self.send_engine(serde_json::json!({
-            "cmd": "export_save_snapshot"
-        }));
-        true
     }
 
     /// Extrae el estado pendiente cuando llega el snapshot del motor.

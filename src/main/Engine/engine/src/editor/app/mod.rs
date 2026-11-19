@@ -3,7 +3,7 @@
 pub use self::events::{ControlSummary, DebugMetrics, PlayView, SelectedEntity};
 pub use self::logs::LogEntry;
 pub use self::save::PendingSave;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -14,6 +14,7 @@ use crate::editor::cli::Cli;
 use crate::editor::project_state::ProjectState;
 use crate::editor::save::SaveSuccess;
 use crate::editor::scenes::SceneList;
+use crate::editor::socket_config::SocketConfigState;
 use crate::editor::ui::sidebar_left::SidebarLeftState;
 use crate::editor::ui::sidebar_right::SidebarRightState;
 use crate::editor::ui_screens::UiScreenLists;
@@ -25,6 +26,14 @@ pub enum EditorStatus {
     Starting,
     Ready,
     Error,
+}
+
+/// Acción elegida en la modal nativa de salida; el host la aplica en el frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExitAction {
+    Save,
+    Discard,
+    Cancel,
 }
 
 /// Máximo de líneas retenidas (React conserva 200).
@@ -48,8 +57,28 @@ pub struct EditorApp {
     pub world: WorldSettings,
     pub world_sync_pending: bool,
     pub scenes: SceneList,
+    /// Estado del editor de sockets (ventana nativa).
+    pub socket_config: SocketConfigState,
+    /// Estado de la ventana nativa de propiedades de entidad.
+    pub entity_properties: crate::editor::entity_properties::EntityPropertiesState,
+    /// Estado de la ventana nativa de configuración de controles.
+    pub control_bindings: crate::editor::control_bindings::ControlBindingsState,
+    /// Estado de la ventana nativa del generador de mundo.
+    pub worldgen: crate::editor::worldgen::WorldGenState,
+    /// Estado de la ventana nativa del catálogo de plugins.
+    pub plugins_modal: crate::editor::plugins::PluginsModalState,
+    /// Estado de la ventana nativa del editor de HUD.
+    pub hud_editor: crate::editor::hud_editor::HudEditorState,
+    /// Elementos del HUD que envía el motor.
+    pub hud_elements: crate::editor::hud_editor::HudElements,
     pub assets: AssetLists,
     pub ui_screens: UiScreenLists,
+    /// Último estado de proyecto recibido de React (blueprints, entidades, etc.).
+    pub project_state: ProjectState,
+    /// Scripts Rhai de escena editados en la ventana nativa (id de escena → código).
+    pub scene_scripts: std::collections::BTreeMap<u64, String>,
+    /// Estado de la ventana nativa del editor visual de lógica (nodos).
+    pub visual_script: crate::editor::visual_script::VisualScriptState,
     /// Blueprint activo de construcción rápida (lo gestiona React).
     pub quick_build_active: Option<String>,
     pub player_controls: Option<ControlSummary>,
@@ -59,6 +88,10 @@ pub struct EditorApp {
     pub play_view: Option<PlayView>,
     /// Id de una entidad cuyo modal de propiedades se abrirá al seleccionarse.
     pub pending_properties: Option<u64>,
+    /// Confirmación de salida nativa abierta (en vez de la ventana Electron).
+    pub(crate) exit_confirm_open: bool,
+    /// Acción de salida pendiente de aplicar por el host.
+    pub(crate) pending_exit_action: Option<ExitAction>,
     pub request_seq: u64,
     pub pending_save: Option<PendingSave>,
     /// Proxy del event loop para el timeout de guardado.
@@ -84,6 +117,22 @@ mod save;
 
 impl EditorApp {
     pub fn new(cli: Cli) -> Self {
+        let project_state = cli
+            .extract_dir
+            .as_deref()
+            .map(Path::new)
+            .and_then(ProjectState::from_manifest_dir)
+            .unwrap_or_default();
+        let ui_screens = UiScreenLists::from_state(&project_state);
+        let scene_scripts: std::collections::BTreeMap<u64, String> = project_state
+            .scenes
+            .iter()
+            .filter_map(|scene| {
+                let id = scene.get("id")?.as_u64()?;
+                let source = scene.get("sceneScriptRhai")?.as_str()?;
+                Some((id, source.to_string()))
+            })
+            .collect();
         Self {
             save_path: cli.save_path.as_deref().map(PathBuf::from),
             extract_dir: cli.extract_dir.as_deref().map(PathBuf::from),
@@ -101,14 +150,26 @@ impl EditorApp {
             world: WorldSettings::default(),
             world_sync_pending: false,
             scenes: SceneList::default(),
+            socket_config: SocketConfigState::default(),
+            entity_properties: crate::editor::entity_properties::EntityPropertiesState::default(),
+            control_bindings: crate::editor::control_bindings::ControlBindingsState::default(),
+            worldgen: crate::editor::worldgen::WorldGenState::default(),
+            plugins_modal: crate::editor::plugins::PluginsModalState::default(),
+            hud_editor: crate::editor::hud_editor::HudEditorState::default(),
+            hud_elements: crate::editor::hud_editor::HudElements::default(),
             assets: AssetLists::default(),
-            ui_screens: UiScreenLists::default(),
+            ui_screens,
+            project_state,
+            scene_scripts,
+            visual_script: crate::editor::visual_script::VisualScriptState::default(),
             quick_build_active: None,
             player_controls: None,
             background_path: None,
             selected_entity: None,
             play_view: None,
             pending_properties: None,
+            exit_confirm_open: false,
+            pending_exit_action: None,
             request_seq: 0,
             pending_save: None,
             proxy: None,
@@ -133,6 +194,24 @@ impl EditorApp {
     pub fn send_engine(&self, command: Value) {
         // El host drena la cola hacia el motor in-process en el siguiente frame.
         self.pending_engine.borrow_mut().push(command);
+    }
+
+    /// Sincroniza el catálogo de pantallas del jugador con el motor. El editor
+    /// nativo es la fuente de verdad desde la migración de las modales de UI.
+    pub fn sync_player_ui_screens(&self) {
+        let screens: Vec<Value> = self
+            .ui_screens
+            .player
+            .iter()
+            .map(|screen| {
+                json!({
+                    "id": screen.id,
+                    "name": screen.name,
+                    "active": screen.active,
+                })
+            })
+            .collect();
+        self.send_engine(json!({ "cmd": "sync_player_ui_screens", "screens": screens }));
     }
 }
 

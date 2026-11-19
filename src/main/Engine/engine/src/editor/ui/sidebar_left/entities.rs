@@ -17,10 +17,7 @@ fn category_for_entity_kind(kind: EntityKind) -> &'static str {
 /// Los modelos importados antes de la modal nativa (o con una categoría que el
 /// motor no normaliza) se tratan como `object`, igual que hace el selector del
 /// renderer (`CreateEntityFromModelModalBody`).
-fn asset_matches_entity_kind(
-    asset: &crate::editor::assets::AssetEntry,
-    kind: EntityKind,
-) -> bool {
+fn asset_matches_entity_kind(asset: &crate::editor::assets::AssetEntry, kind: EntityKind) -> bool {
     let expected = category_for_entity_kind(kind);
     match crate::engine3d::ipc::normalize_model_library_category(asset.category.as_deref()) {
         Some(category) => category == expected,
@@ -269,10 +266,7 @@ mod tests {
             for other in CATEGORIES {
                 let belongs = kind == other;
                 assert_eq!(
-                    asset_matches_entity_kind(
-                        &model(Some(category_for_entity_kind(other))),
-                        kind
-                    ),
+                    asset_matches_entity_kind(&model(Some(category_for_entity_kind(other))), kind),
                     belongs,
                     "acordeón {:?} con modelo {:?}",
                     kind,
@@ -285,8 +279,16 @@ mod tests {
     #[test]
     fn uncategorized_or_invalid_models_are_objects_only() {
         for category in [None, Some("desconocida")] {
-            assert!(asset_matches_entity_kind(&model(category), EntityKind::Object));
-            for kind in [EntityKind::Character, EntityKind::Environment, EntityKind::Weapon, EntityKind::Projectile] {
+            assert!(asset_matches_entity_kind(
+                &model(category),
+                EntityKind::Object
+            ));
+            for kind in [
+                EntityKind::Character,
+                EntityKind::Environment,
+                EntityKind::Weapon,
+                EntityKind::Projectile,
+            ] {
                 assert!(!asset_matches_entity_kind(&model(category), kind));
             }
         }
@@ -297,7 +299,12 @@ mod tests {
         // `bundled.rs` registra el jugador base con category = "character".
         let player = model(Some("character"));
         assert!(asset_matches_entity_kind(&player, EntityKind::Character));
-        for kind in [EntityKind::Environment, EntityKind::Object, EntityKind::Weapon, EntityKind::Projectile] {
+        for kind in [
+            EntityKind::Environment,
+            EntityKind::Object,
+            EntityKind::Weapon,
+            EntityKind::Projectile,
+        ] {
             assert!(!asset_matches_entity_kind(&player, kind));
         }
     }

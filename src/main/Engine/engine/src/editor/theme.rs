@@ -46,7 +46,10 @@ pub const DANGER: Color32 = Color32::from_rgb(0xdc, 0x35, 0x45);
 pub const DANGER_HOVER: Color32 = Color32::from_rgb(0xbb, 0x2d, 0x3b);
 pub const WARNING_BADGE: Color32 = Color32::from_rgb(0xff, 0xc1, 0x07);
 pub const WARNING_TEXT: Color32 = Color32::from_rgb(0x0d, 0x0d, 0x1a);
+/// Gris de Bootstrap `.btn-secondary` (fondo de los botones Cancelar).
 pub const OUTLINE_SECONDARY: Color32 = Color32::from_rgb(0x6c, 0x75, 0x7d);
+/// Hover de `.btn-secondary` de Bootstrap.
+pub const SECONDARY_HOVER: Color32 = Color32::from_rgb(0x5c, 0x63, 0x6a);
 /// `.btn-outline-light` del CSS: texto blanco y borde `--app-primary-outline`.
 pub const PRIMARY_OUTLINE: Color32 = Color32::from_rgb(0x3d, 0x6e, 0xb8);
 
@@ -61,8 +64,12 @@ pub const BADGE_GREEN_BORDER: Color32 =
     Color32::from_rgba_unmultiplied_const(0x34, 0xd3, 0x99, 0x40);
 
 /// Color de limpieza del swapchain en formato RGBA lineal.
+///
+/// Equivale a `#1f2237` (`PANEL_BG`, el `--bs-body-bg` de las modales Electron)
+/// convertido a lineal para los swapchain sRGB que prefiere el editor. Así el
+/// fondo general del editor y el de las ventanas modales coinciden.
 pub fn clear_color() -> [f32; 4] {
-    [0.02, 0.025, 0.06, 1.0]
+    [0.0137, 0.0160, 0.0382, 1.0]
 }
 
 pub fn apply(ctx: &egui::Context) {
@@ -73,6 +80,8 @@ pub fn apply(ctx: &egui::Context) {
         let mut visuals = egui::Visuals::dark();
 
         visuals.panel_fill = PANEL_BG;
+        // `window_fill` se deja en el tono oscuro original: egui lo usa también
+        // para los popups de los ComboBox, y no queremos teñir los dropdowns.
         visuals.window_fill = SIDEBAR_BG;
         visuals.faint_bg_color = ACCORDION_BG;
         visuals.extreme_bg_color = PANEL_BG;
@@ -143,9 +152,8 @@ fn install_fonts(ctx: &egui::Context) {
         if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             family.insert(0, "rer-system".to_owned());
         }
-        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
-            family.insert(0, "rer-system".to_owned());
-        }
+        // La familia Monospace se deja intacta: el editor de código (egui_code_editor)
+        // fuerza FontId::monospace y Segoe UI no es monoespaciada.
 
         log::info!("[editor] fuente cargada desde {path}");
         system_font_loaded = true;

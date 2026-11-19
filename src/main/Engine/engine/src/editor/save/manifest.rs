@@ -341,6 +341,15 @@ fn map_engine_entity(raw: &Value, state: &ProjectState) -> Value {
     {
         obj.insert("scripts".into(), Value::Array(scripts.clone()));
     }
+    // Los bindings los edita el editor nativo en `entity_meta`; cópielos al
+    // entity del manifest para que se persistan sin depender del snapshot.
+    if let Some(controls) = meta
+        .get("controlBindings")
+        .or_else(|| meta.get("controls"))
+        .filter(|value| !value.is_null())
+    {
+        obj.insert("controls".into(), controls.clone());
+    }
     if let Some(graph) = meta.get("visualGraph").filter(|value| !value.is_null()) {
         obj.insert("visualGraph".into(), graph.clone());
     }
@@ -1016,6 +1025,32 @@ mod tests {
         assert_eq!(entity["scripts"][0]["name"], json!("a"));
         assert_eq!(entity["animations"][0]["loop"], json!(true));
         assert!(entity["animations"][0].get("loop_").is_none());
+    }
+
+    #[test]
+    fn manifest_keeps_control_bindings_from_editor_meta() {
+        let mut project = state();
+        project
+            .entity_meta
+            .get_mut("7")
+            .expect("meta de la entidad 7")
+            .as_object_mut()
+            .expect("meta es objeto")
+            .insert(
+                "controlBindings".into(),
+                json!({
+                    "keyboard_mouse": { "W": { "name": "walk", "source": "let x = 1;" } },
+                    "gamepad": {}
+                }),
+            );
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &engine_scene(),
+            state: &project,
+            project_type: "3D",
+            game_style: "third-person",
+        });
+        let controls = &manifest["scenes"][0]["entities"][0]["controls"];
+        assert_eq!(controls["keyboard_mouse"]["W"]["name"], json!("walk"));
     }
 
     #[test]

@@ -8,6 +8,7 @@ use crate::editor::app::{ControlSummary, EditorApp, EditorStatus, PlayView};
 use crate::editor::assets::{AssetKind, AssetLists};
 use crate::editor::cli::Locale;
 use crate::editor::context::{GameStyle, ProjectContext};
+use crate::editor::control_bindings::{self, ControlDeviceMode};
 use crate::editor::scenes::SceneList;
 use crate::editor::world::Camera2d;
 
@@ -66,6 +67,78 @@ pub struct SidebarLeftState {
     pub(crate) pending_scene_switch: Option<SceneSwitchDraft>,
     /// «Limpiar escena» pendiente de confirmar en la modal nativa.
     pub(crate) pending_clear_scene: bool,
+    /// Recurso pendiente de borrar; la modal nativa pide confirmación.
+    pub(crate) pending_remove_asset: Option<RemoveAssetDraft>,
+    /// Escena pendiente de borrar; la modal nativa confirma (o avisa si es la única).
+    pub(crate) pending_delete_scene: Option<DeleteSceneDraft>,
+    /// Creación de escena pendiente; la ventana nativa pide el nombre.
+    pub(crate) pending_create_scene: Option<CreateSceneDraft>,
+    /// Pantalla UI pendiente de borrar; la ventana nativa pide confirmación.
+    pub(crate) pending_delete_ui_screen: Option<DeleteUiScreenDraft>,
+    /// Creación de pantalla UI pendiente; la ventana nativa pide el nombre.
+    pub(crate) pending_create_ui_screen: Option<CreateUiScreenDraft>,
+    /// Renombrado de menú UI pendiente; la ventana nativa pide el nombre.
+    pub(crate) pending_rename_ui_screen: Option<RenameUiScreenDraft>,
+    /// Guía de usuario abierta en su ventana nativa.
+    pub(crate) user_guide_open: bool,
+    /// Selector de blueprints abierto en su ventana nativa.
+    pub(crate) quick_build_open: bool,
+    /// Pestaña activa del selector de blueprints (persiste entre frames).
+    pub(crate) quick_build_tab: usize,
+    /// Borrado de blueprint pendiente de confirmar en la ventana nativa.
+    pub(crate) quick_build_delete: Option<QuickBuildDeleteDraft>,
+    /// Script de escena abierto en su ventana nativa (id de escena).
+    pub(crate) scene_script_open: Option<u64>,
+    /// Código del editor; `None` hasta que llega el `project_state` con el script.
+    pub(crate) scene_script_source: Option<String>,
+}
+
+/// Pantalla UI que el usuario quiere borrar (HUD o menú).
+pub(crate) struct DeleteUiScreenDraft {
+    pub scope: String,
+    pub id: String,
+    pub name: String,
+}
+
+/// Nombre inicial para la pantalla UI nueva (HUD o menú).
+pub(crate) struct CreateUiScreenDraft {
+    pub scope: String,
+    pub name: String,
+    pub default_name: String,
+}
+
+/// Menú UI que se va a renombrar en la ventana nativa.
+pub(crate) struct RenameUiScreenDraft {
+    pub id: String,
+    pub name: String,
+}
+
+/// Blueprint a borrar ( datos sin serializar ) y nº de entidades vinculadas.
+pub(crate) struct QuickBuildDeleteDraft {
+    pub blueprint: serde_json::Value,
+    pub linked_count: usize,
+}
+
+/// Nombre inicial para la escena nueva; la ventana nativa lo deja editar.
+pub(crate) struct CreateSceneDraft {
+    pub name: String,
+    pub default_name: String,
+}
+
+/// Escena que el usuario quiere borrar. `blocked` indica que es la única del
+/// proyecto: la ventana nativa muestra el aviso en vez de la confirmación.
+pub(crate) struct DeleteSceneDraft {
+    pub id: u64,
+    pub name: String,
+    pub blocked: bool,
+}
+
+/// Recurso que el usuario quiere borrar; la modal nativa confirma antes de
+/// enviar el comando `remove_*` al motor.
+pub(crate) struct RemoveAssetDraft {
+    pub kind: AssetKind,
+    pub path: String,
+    pub name: String,
 }
 
 /// Escena destino del cambio pendiente; la modal nativa confirma antes de cargar.
@@ -130,17 +203,19 @@ enum LeftAction {
     SetPlayCameraFov(f32),
     SetPlayCameraFrustum(f32),
     OpenSockets,
+    /// Abre el catálogo de plugins en su ventana nativa.
+    OpenPlugins,
     OpenLegacyWindow(&'static str),
     /// Abre la modal React de bindings para `keyboard_mouse` o `gamepad`.
     OpenControlBindings(&'static str),
-    /// Crea una pantalla HUD/menú y la registra en React.
+    /// Crea una pantalla HUD/menú en la ventana nativa.
     CreateUiScreen(&'static str),
-    /// Abre el editor de una pantalla HUD o el rename de un menú.
+    /// Abre el editor HUD (aún React) o renombra un menú en la ventana nativa.
     OpenUiEditor {
         scope: &'static str,
         screen_id: String,
     },
-    /// Elimina una pantalla HUD/menú (con confirmación en React).
+    /// Elimina una pantalla HUD/menú (con confirmación en la ventana nativa).
     DeleteUiScreen {
         scope: &'static str,
         id: String,
@@ -419,10 +494,28 @@ fn sub_at(
 fn apply_action(app: &mut EditorApp, action: LeftAction) {
     match action {
         LeftAction::OpenCreateScene => {
-            crate::editor::bridge::request_legacy_window("create_scene", json!({}));
+            // La ventana nativa pide el nombre; el motor asigna el id al crear.
+            let next_id = app
+                .scenes
+                .scenes
+                .iter()
+                .map(|scene| scene.id)
+                .max()
+                .unwrap_or(0)
+                + 1;
+            let default_name = rer_engine_core::editor_defaults::default_scene_name(
+                u32::try_from(next_id).unwrap_or(1),
+            );
+            app.left_sidebar.pending_create_scene = Some(CreateSceneDraft {
+                name: default_name.clone(),
+                default_name,
+            });
         }
         LeftAction::OpenDeleteScene(id) => {
-            crate::editor::bridge::request_legacy_window("delete_scene", json!({ "scene_id": id }));
+            // La ventana nativa confirma el borrado (o avisa si es la única escena).
+            let name = app.scenes.name_for(id);
+            let blocked = !app.scenes.can_delete();
+            app.left_sidebar.pending_delete_scene = Some(DeleteSceneDraft { id, name, blocked });
         }
         LeftAction::SwitchScene(id) => {
             // La modal nativa confirma antes de cargar la escena.
@@ -463,50 +556,121 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
                 "frustum_distance": distance,
             }));
         }
+        LeftAction::OpenPlugins => {
+            app.plugins_modal.open = true;
+            crate::editor::plugins::request_snapshot(app);
+            app.push_log("[Plugins] Abriendo catálogo…", false);
+        }
         LeftAction::OpenSockets => {
-            crate::editor::bridge::request_legacy_window("socket_config", json!({}));
+            // La ventana nativa de sockets toma la entidad seleccionada del viewport.
+            let target = app.selected_entity.clone();
+            app.socket_config.open = true;
+            app.socket_config.target_id = target.as_ref().map(|entity| entity.id);
+            app.socket_config.target_name = target.map(|entity| entity.name).unwrap_or_default();
+            if let Some(id) = app.socket_config.target_id {
+                app.send_engine(json!({ "cmd": "list_entity_sockets", "entity_id": id }));
+                app.send_engine(json!({ "cmd": "list_entity_bones", "entity_id": id }));
+            }
         }
         LeftAction::OpenLegacyWindow(kind) => {
+            if kind == "user_guide" {
+                app.left_sidebar.user_guide_open = true;
+                return;
+            }
             let scene_id = app.scenes.active_scene_id;
-            crate::editor::bridge::request_legacy_window(kind, json!({ "scene_id": scene_id }));
+            if kind == "scene_visual_script" {
+                // El editor de nodos lee el grafo del estado nativo del proyecto.
+                app.visual_script.context = crate::editor::visual_script::GraphContext::Scene;
+                app.visual_script.scene_id = Some(scene_id);
+                app.visual_script.scene_name = app.scenes.name_for(scene_id);
+                app.visual_script.entity_id = None;
+                app.visual_script.error = None;
+                app.visual_script.selected = None;
+                app.visual_script.loaded = false;
+                app.visual_script.open = true;
+                return;
+            }
+            if kind == "scene_script" {
+                // El script se lee del estado nativo del proyecto.
+                app.left_sidebar.scene_script_open = Some(scene_id);
+                app.left_sidebar.scene_script_source = None;
+                return;
+            }
+            // Todos los `kind` conocidos se abren nativamente arriba; no queda
+            // ninguna ventana legacy que delegar a Electron.
             app.push_log(
-                format!("[Editor] Abriendo ventana legacy «{kind}» (escena {scene_id})…"),
-                false,
+                format!("[Editor] Ventana desconocida «{kind}» (escena {scene_id})"),
+                true,
             );
         }
         LeftAction::OpenControlBindings(mode) => {
-            crate::editor::bridge::request_legacy_window(
-                "control_bindings",
-                json!({ "mode": mode }),
-            );
+            // Los bindings se leen del `entity_meta` nativo del editor.
+            // El personaje efectivo se elige igual que en React (jugador primero).
+            app.control_bindings.mode = ControlDeviceMode::parse(mode);
+            control_bindings::ensure_character(app);
+            app.control_bindings.editor = None;
+            app.control_bindings.open = true;
             app.push_log(
                 format!("[Controles] Abriendo configuración ({mode})…"),
                 false,
             );
         }
         LeftAction::CreateUiScreen(scope) => {
-            crate::editor::bridge::request_legacy_window(
-                "ui_create_screen",
-                json!({ "scope": scope }),
+            let list = if scope == "menu" {
+                &app.ui_screens.menu
+            } else {
+                &app.ui_screens.player
+            };
+            let default_name = format!(
+                "{} {}",
+                if scope == "menu" { "UI Menu" } else { "HUD" },
+                list.len() + 1
             );
+            app.left_sidebar.pending_create_ui_screen = Some(CreateUiScreenDraft {
+                scope: scope.to_string(),
+                name: default_name.clone(),
+                default_name,
+            });
         }
         LeftAction::OpenUiEditor { scope, screen_id } => {
-            crate::editor::bridge::request_legacy_window(
-                "ui_edit_screen",
-                json!({ "scope": scope, "screen_id": screen_id }),
-            );
+            if scope == "menu" {
+                // El renombrado de menús vive en la ventana nativa.
+                let name = app
+                    .ui_screens
+                    .menu
+                    .iter()
+                    .find(|screen| screen.id == screen_id)
+                    .map(|screen| screen.name.clone())
+                    .unwrap_or_default();
+                app.left_sidebar.pending_rename_ui_screen = Some(RenameUiScreenDraft {
+                    id: screen_id,
+                    name,
+                });
+            } else {
+                // Editor de HUD 100 % nativo: se pide el snapshot de elementos
+                // al motor y se entra en modo edición de la pantalla.
+                crate::editor::hud_editor::begin_edit(app, &screen_id);
+            }
         }
         LeftAction::DeleteUiScreen { scope, id, name } => {
-            crate::editor::bridge::request_legacy_window(
-                "ui_delete_screen",
-                json!({ "scope": scope, "screen_id": id, "name": name }),
-            );
+            // La ventana nativa confirma y sincroniza el catálogo con el motor.
+            app.left_sidebar.pending_delete_ui_screen = Some(DeleteUiScreenDraft {
+                scope: scope.to_string(),
+                id,
+                name,
+            });
         }
         LeftAction::SetActiveUiScreen(screen_id) => {
-            crate::editor::bridge::request_legacy_window(
-                "ui_set_active_screen",
-                json!({ "screen_id": screen_id }),
-            );
+            // 100% nativo: el editor es la fuente de verdad del catálogo.
+            for screen in &mut app.ui_screens.player {
+                screen.active = screen_id.as_deref() == Some(screen.id.as_str());
+            }
+            app.left_sidebar.active_ui_screen = screen_id.clone();
+            app.sync_player_ui_screens();
+            app.send_engine(json!({
+                "cmd": "set_active_player_ui_screen",
+                "screen_id": screen_id,
+            }));
         }
         LeftAction::ImportAsset(kind) => import_asset(app, kind),
         LeftAction::OpenLoadFromScene => {
@@ -525,14 +689,8 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             app.left_sidebar.pending_clear_scene = true;
         }
         LeftAction::OpenRemoveAsset { kind, path, name } => {
-            crate::editor::bridge::request_legacy_window(
-                "remove_asset",
-                json!({
-                    "asset_kind": kind.legacy_id(),
-                    "path": path,
-                    "name": name,
-                }),
-            );
+            // La modal nativa confirma antes de enviar el comando de borrado.
+            app.left_sidebar.pending_remove_asset = Some(RemoveAssetDraft { kind, path, name });
         }
         LeftAction::CreateEntity { kind, asset } => create_entity(app, kind, asset),
         LeftAction::SetActiveTool(tool) => {
@@ -540,19 +698,17 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             app.send_engine(json!({ "cmd": "set_active_tool", "tool": tool }));
         }
         LeftAction::QuickBuild { active } => {
-            let action = if active { "toggle" } else { "open" };
-            crate::editor::bridge::request_legacy_window(
-                "quick_build",
-                json!({ "action": action }),
-            );
-            app.push_log(
-                if active {
-                    "[Quick build] Desactivando…"
-                } else {
-                    "[Quick build] Abriendo blueprints…"
-                },
-                false,
-            );
+            if active {
+                // Desactivar: se apaga el ghost directamente en el motor.
+                app.quick_build_active = None;
+                app.placement_hint = None;
+                app.send_engine(json!({ "cmd": "set_active_tool", "tool": "" }));
+                app.push_log("[Quick build] Desactivando…", false);
+            } else {
+                // Los blueprints ya están en el estado nativo del editor.
+                app.left_sidebar.quick_build_open = true;
+                app.push_log("[Quick build] Abriendo blueprints…", false);
+            }
         }
     }
 }
@@ -626,13 +782,19 @@ fn create_entity(app: &mut EditorApp, kind: EntityKind, asset: String) {
         app.send_engine(begin_entity_placement_command(kind, asset));
         // El motor emitirá `quick_build_ghost_ready`, pero mostramos el hint
         // ya mismo para que no haya que adivinar qué hacer en el viewport.
-        app.placement_hint = Some(crate::editor::i18n::tr(
-            app.cli.locale,
-            "Mueve el cursor sobre el mundo y haz click para colocar la entidad",
-            "Move the cursor over the world and click to place the entity",
-        ).to_string());
+        app.placement_hint = Some(
+            crate::editor::i18n::tr(
+                app.cli.locale,
+                "Mueve el cursor sobre el mundo y haz click para colocar la entidad",
+                "Move the cursor over the world and click to place the entity",
+            )
+            .to_string(),
+        );
         app.push_log(
-            format!("[Entidad] Mueve el cursor y haz click para colocar {:?}…", kind),
+            format!(
+                "[Entidad] Mueve el cursor y haz click para colocar {:?}…",
+                kind
+            ),
             false,
         );
         return;
@@ -644,7 +806,10 @@ fn create_entity(app: &mut EditorApp, kind: EntityKind, asset: String) {
     };
     app.send_engine(json!({ "cmd": command, "path": asset }));
     app.push_log(
-        format!("[Entidad] Creando {:?} desde el recurso seleccionado…", kind),
+        format!(
+            "[Entidad] Creando {:?} desde el recurso seleccionado…",
+            kind
+        ),
         false,
     );
 }
@@ -664,7 +829,7 @@ fn footer(ui: &mut egui::Ui, locale: Locale, actions: &mut Vec<LeftAction>) -> O
         ),
         crate::editor::theme::OUTLINE_SECONDARY,
     ) {
-        actions.push(LeftAction::OpenLegacyWindow("plugins"));
+        actions.push(LeftAction::OpenPlugins);
     }
     ui.add_space(2.0);
 

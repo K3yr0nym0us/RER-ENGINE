@@ -35,6 +35,11 @@ ttf-parser = "0.25"
 ab_glyph = "0.2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 sysinfo = "0.39"
+# Gestión de plugins 100% Rust (descargas, integridad y servidor OpenCode).
+ureq = { version = "2", features = ["json"] }
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
 # UI del editor: egui 0.35 + backend Vulkan/ash.
 ash = "0.38"
 ash-window = "0.13"
@@ -43,6 +48,8 @@ egui = "0.35"
 egui-ash-renderer = "0.12"
 egui-winit = { version = "0.35", default-features = false }
 egui-phosphor = "0.13"
+# Editor visual de nodos (compatible con egui 0.35; 0.12 ya exige egui 0.36).
+egui-snarl = { version = "0.11", features = ["serde"] }
 
 # Workspace lints: quality scripts deny Clippy warnings with `-D warnings`.
 # `unsafe` is allowed only in justified platform/GPU FFI (see rust-quality.mdc); do not warn-deny it globally.

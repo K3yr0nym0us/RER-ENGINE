@@ -174,6 +174,13 @@ impl EditorApp {
         self.world.apply_event(event);
         self.scenes.apply_event(event);
         self.assets.apply_event(event);
+        self.socket_config.apply_event(event);
+        if name.starts_with("world_gen_") {
+            self.worldgen.apply_event(name, event);
+        }
+        if name == "player_ui_text_boxes_list" {
+            self.hud_elements = crate::editor::hud_editor::HudElements::from_event(event);
+        }
 
         match name {
             "ready" => {
@@ -198,7 +205,7 @@ impl EditorApp {
                     && self.pending_properties == Some(entity.id)
                 {
                     self.pending_properties = None;
-                    crate::editor::bridge::request_legacy_window("entity_properties", json!({}));
+                    self.entity_properties.open = true;
                 }
             }
             "entity_properties_open" => {
@@ -206,10 +213,7 @@ impl EditorApp {
                 match (id, self.selected_entity.as_ref()) {
                     (Some(id), Some(entity)) if entity.id == id => {
                         self.pending_properties = None;
-                        crate::editor::bridge::request_legacy_window(
-                            "entity_properties",
-                            json!({}),
-                        );
+                        self.entity_properties.open = true;
                     }
                     (Some(id), _) => self.pending_properties = Some(id),
                     _ => {}
@@ -218,6 +222,9 @@ impl EditorApp {
             "entity_deselected" => {
                 self.selected_entity = None;
                 self.pending_properties = None;
+            }
+            "animation_finished" => {
+                self.entity_properties.playing_animation_name = None;
             }
             "play_character_view_changed" => {
                 self.play_view = PlayView::from_event(event);
