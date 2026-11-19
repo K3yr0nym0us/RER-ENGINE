@@ -164,6 +164,7 @@ impl State {
         if reset_atlas {
             self.player_ui_text_atlas.reset(&self.vulkan);
             self.player_ui_hud_texture_cache.clear();
+            self.interaction_prompt_cache.clear();
         }
 
         self.player_ui_glyph_instances.clear();

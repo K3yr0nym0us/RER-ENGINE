@@ -7,6 +7,7 @@ use super::api::{
 };
 use super::control::ControlScriptDispatch;
 use super::entity_snapshot::EntitySnapshot;
+use super::interaction::InteractionState;
 use super::play_script_input::PlayScriptInput;
 use super::script_cmd::ScriptCmd;
 
@@ -141,6 +142,66 @@ impl ScriptEngine {
         if let Ok(mut guard) = self.api_ctx.play_input.lock() {
             *guard = input;
         }
+    }
+
+    /// Publica el estado de interacción para que la API Rhai lo lea.
+    pub fn set_interaction_state(&self, state: InteractionState) {
+        if let Ok(mut guard) = self.api_ctx.interaction.lock() {
+            *guard = state;
+        }
+    }
+
+    /// Ejecuta `on_interact(target, actor)` en los scripts de la entidad interactuada.
+    pub fn run_interact_hook(
+        &mut self,
+        target_id: u32,
+        actor_id: u32,
+        target_snapshot: Option<&EntitySnapshot>,
+        actor_snapshot: Option<&EntitySnapshot>,
+    ) -> Vec<ScriptCmd> {
+        let target = entity_to_dynamic(target_id, target_snapshot);
+        let actor = entity_to_dynamic(actor_id, actor_snapshot);
+
+        if let Some(scripts) = self.scripts.get(&target_id) {
+            let scripts: Vec<_> = scripts
+                .iter()
+                .map(|s| (s.path.clone(), s.user_source.clone(), s.ast.clone()))
+                .collect();
+            for (path, user_source, ast) in scripts {
+                if Self::source_defines_fn(&user_source, "on_interact") {
+                    let cache_key = format!("{path}::on_interact::invoke");
+                    let profile = self.profile;
+                    match self.invoke_script_ast(
+                        &cache_key,
+                        &user_source,
+                        "on_interact!(target, actor);",
+                        move |s| wrap_user_source(profile, s),
+                    ) {
+                        Ok(hook_ast) => {
+                            let mut scope = Scope::new();
+                            scope.push("target", target.clone());
+                            scope.push("actor", actor.clone());
+                            if let Err(e) = self.engine.run_ast_with_scope(&mut scope, &hook_ast) {
+                                log::warn!("[scripting] on_interact '{path}': {e}");
+                            }
+                        }
+                        Err(e) => log::warn!("[scripting] on_interact compile '{path}': {e}"),
+                    }
+                } else {
+                    let mut scope = Scope::new();
+                    if let Err(e) = self.engine.call_fn::<()>(
+                        &mut scope,
+                        &ast,
+                        "on_interact",
+                        (target.clone(), actor.clone()),
+                    ) {
+                        log::warn!("[scripting] on_interact '{path}': {e}");
+                    }
+                }
+            }
+        }
+
+        self.api_ctx.drain_cmds()
     }
 
     pub fn sync_graphics_texture_tier_readback(&self, tier: &str) {

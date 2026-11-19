@@ -1,6 +1,6 @@
 //! Export/import helpers — docs/yaml/gameplay/Entities_Model_3D.yaml
 
-use crate::engine3d::ecs::Transform;
+use crate::engine3d::ecs::{Interactable, Transform};
 use crate::engine3d::engine::State;
 use crate::engine3d::entity_save_meta::EntitySaveMeta;
 use crate::engine3d::ipc::{
@@ -209,6 +209,7 @@ pub(crate) fn build_entity_3d_snapshot(
         sockets,
         bone_physics,
         projectile,
+        interactable: state.world.get::<Interactable>(id).cloned(),
     }
 }
 

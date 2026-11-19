@@ -98,4 +98,14 @@ pub enum ScriptCmd {
         dir_y: f32,
         dir_z: f32,
     },
+    /// Habilita/deshabilita una entidad interactuable en runtime (solo 3D).
+    SetInteractable {
+        id: u32,
+        enabled: bool,
+    },
+    /// Cambia el texto del prompt de una entidad interactuable (solo 3D).
+    SetInteractPrompt {
+        id: u32,
+        text: String,
+    },
 }

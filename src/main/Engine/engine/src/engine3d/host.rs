@@ -1361,6 +1361,14 @@ impl App {
                     {
                         preview_toggle = Some(false);
                     } else if state.is_preview_playing() {
+                        // Tecla de interacción configurable (E por defecto): flanco del callback.
+                        if pressed
+                            && !repeat
+                            && let Some(key) = map_keyboard_control_key(code)
+                            && state.interaction_key_matches(&key)
+                        {
+                            state.queue_interact();
+                        }
                         if let Some(control_key) = map_keyboard_control_key(code) {
                             if pressed {
                                 self.keyboard_mouse_pressed.insert(control_key.clone());

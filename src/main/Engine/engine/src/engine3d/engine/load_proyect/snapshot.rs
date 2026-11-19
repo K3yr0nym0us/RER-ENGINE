@@ -94,6 +94,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             sockets: e.sockets.clone(),
             bone_physics: e.bone_physics.clone(),
             projectile: e.projectile.clone(),
+            interactable: e.interactable.clone(),
         }
     }
 
@@ -266,6 +267,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             sockets: vec![],
             bone_physics: vec![],
             projectile: None,
+            interactable: None,
         },
         SavedEntity3D {
             id: 0,
@@ -293,6 +295,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
             sockets: vec![],
             bone_physics: vec![],
             projectile: None,
+            interactable: None,
         },
     ];
 
@@ -324,6 +327,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         sockets: vec![],
         bone_physics: vec![],
         projectile: None,
+        interactable: None,
     };
 
     SavedScene {

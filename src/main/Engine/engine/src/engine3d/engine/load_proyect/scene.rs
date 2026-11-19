@@ -189,6 +189,9 @@ pub(crate) fn restore_player_from_manifest(
     apply_entity_animations(state, id, pending.animations.as_deref());
     state.entity_colision.insert(id, pending.colision);
     state.entity_hardness.insert(id, pending.hardness);
+    if let Some(interactable) = pending.interactable.clone() {
+        state.world.insert(id, interactable);
+    }
     state.ensure_play_character_kinematic_only();
     state.reconcile_entity_physics_with_mesh(id);
 

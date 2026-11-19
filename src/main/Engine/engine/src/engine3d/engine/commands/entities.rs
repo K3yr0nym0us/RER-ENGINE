@@ -636,6 +636,42 @@ impl State {
             EngineCommand::Only3d(EngineCommand3dOnly::SetEntityHardness { id, hardness }) => {
                 self.set_entity_hardness(id, hardness);
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetInteractable {
+                id,
+                enabled,
+                prompt_es,
+                prompt_en,
+                key,
+                once,
+                max_distance,
+            }) => {
+                use crate::engine3d::ecs::Interactable;
+                let mut cfg = self
+                    .world
+                    .get::<Interactable>(id)
+                    .cloned()
+                    .unwrap_or_default();
+                if let Some(v) = enabled {
+                    cfg.enabled = v;
+                }
+                if let Some(v) = prompt_es {
+                    cfg.prompt_es = v;
+                }
+                if let Some(v) = prompt_en {
+                    cfg.prompt_en = v;
+                }
+                if let Some(v) = key {
+                    let v = v.trim().to_string();
+                    cfg.key = if v.is_empty() { "E".to_string() } else { v };
+                }
+                if let Some(v) = once {
+                    cfg.once = v;
+                }
+                if let Some(v) = max_distance {
+                    cfg.max_distance = v.clamp(0.5, 100.0);
+                }
+                self.world.insert(id, cfg);
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::AddParticleEmitter {
                 material,
                 position,

@@ -315,6 +315,9 @@ pub struct SaveEntity3DSnapshot {
     /// Config de disparo (solo categoría `projectile`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub projectile: Option<crate::engine3d::config_3d::projectiles::ProjectileConfig>,
+    /// Config de interacción (tooltip/prompt sobre la entidad en play).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interactable: Option<crate::engine3d::ecs::Interactable>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

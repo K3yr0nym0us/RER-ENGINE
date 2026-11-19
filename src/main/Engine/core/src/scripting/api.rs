@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use rhai::{Engine, INT};
 
+use super::interaction::InteractionState;
 use super::play_script_input::PlayScriptInput;
 use super::script_cmd::ScriptCmd;
 
@@ -99,6 +100,8 @@ pub struct ScriptApiContext {
     pub control_binding_key: Arc<Mutex<String>>,
     /// Input de juego (ratón / cruceta) para scripts de control en play.
     pub play_input: Arc<Mutex<PlayScriptInput>>,
+    /// Estado de interacción (objetivo bajo la mira y pulsación), writable por el motor.
+    pub interaction: Arc<Mutex<InteractionState>>,
     pub profile: ScriptEngineProfile,
 }
 
@@ -111,6 +114,7 @@ impl ScriptApiContext {
             reflection_tier: Arc::new(Mutex::new("off".to_string())),
             control_binding_key: Arc::new(Mutex::new(String::new())),
             play_input: Arc::new(Mutex::new(PlayScriptInput::default())),
+            interaction: Arc::new(Mutex::new(InteractionState::default())),
             profile,
         }
     }
@@ -459,6 +463,46 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
                 .unwrap_or(-1.0)
         });
 
+        // ── Sistema de interacción (tooltip sobre entidades) ─────────────────────
+        let interaction_ctx = ctx.interaction.clone();
+        engine.register_fn("__engine_interact_target", move || {
+            interaction_ctx
+                .lock()
+                .ok()
+                .and_then(|g| g.target)
+                .map(|id| id as f64)
+                .unwrap_or(-1.0)
+        });
+        let interaction_ctx = ctx.interaction.clone();
+        engine.register_fn("__engine_interact_pressed", move || {
+            interaction_ctx.lock().map(|g| g.pressed).unwrap_or(false)
+        });
+        let interaction_ctx = ctx.interaction.clone();
+        engine.register_fn("__engine_interact_distance", move || {
+            interaction_ctx
+                .lock()
+                .map(|g| g.distance as f64)
+                .unwrap_or(0.0)
+        });
+
+        let c = ctx.clone();
+        engine.register_fn(
+            "__engine_set_interactable",
+            move |id: i64, enabled: bool| {
+                c.push(ScriptCmd::SetInteractable {
+                    id: id as u32,
+                    enabled,
+                });
+            },
+        );
+        let c = ctx.clone();
+        engine.register_fn("__engine_interact_prompt", move |id: i64, text: String| {
+            c.push(ScriptCmd::SetInteractPrompt {
+                id: id as u32,
+                text,
+            });
+        });
+
         let c = ctx.clone();
         engine.register_fn(
             "__engine_fire_projectile",
@@ -550,6 +594,11 @@ let engine = #{
     play_aim_dir_x: || { __engine_play_aim_dir_x() },
     play_aim_dir_y: || { __engine_play_aim_dir_y() },
     play_aim_dir_z: || { __engine_play_aim_dir_z() },
+    interact_target: || { __engine_interact_target() },
+    interact_pressed: || { __engine_interact_pressed() },
+    interact_distance: || { __engine_interact_distance() },
+    set_interactable: |id, enabled| { __engine_set_interactable(id, enabled); },
+    interact_prompt: |id, text| { __engine_interact_prompt(id, text); },
     fire_projectile: |template_id, from_id, dir_x, dir_y, dir_z| { __engine_fire_projectile(template_id, from_id, dir_x, dir_y, dir_z); },
 };
 "#;

@@ -14,6 +14,7 @@ pub(crate) mod execution_areas_3d;
 pub(crate) mod fbx_facing;
 pub(crate) mod fps_camera;
 pub(crate) mod gltf_texture_load;
+pub(crate) mod interaction;
 pub(crate) mod material_validation;
 pub(crate) mod mesh_3d;
 pub(crate) mod mesh_3d_fbx;

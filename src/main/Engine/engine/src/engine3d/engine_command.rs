@@ -328,6 +328,22 @@ pub enum EngineCommand3dOnly {
         id: u32,
         hardness: u32,
     },
+    /// Configura el prompt/tooltip de interacción de una entidad.
+    SetInteractable {
+        id: u32,
+        #[serde(default)]
+        enabled: Option<bool>,
+        #[serde(default)]
+        prompt_es: Option<String>,
+        #[serde(default)]
+        prompt_en: Option<String>,
+        #[serde(default)]
+        key: Option<String>,
+        #[serde(default)]
+        once: Option<bool>,
+        #[serde(default)]
+        max_distance: Option<f32>,
+    },
     /// Partículas GPU-driven: alta de un emisor con preset del material + overrides.
     AddParticleEmitter {
         /// `fire | smoke | fog | rain | snow | sand | water | water_cube`.

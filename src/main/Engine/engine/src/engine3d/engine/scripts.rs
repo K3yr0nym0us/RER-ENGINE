@@ -438,6 +438,27 @@ impl State {
                         glam::Vec3::new(dir_x, dir_y, dir_z),
                     );
                 }
+                ScriptCmd::SetInteractable { id, enabled } => {
+                    use crate::engine3d::ecs::Interactable;
+                    let mut cfg = self
+                        .world
+                        .get::<Interactable>(id)
+                        .cloned()
+                        .unwrap_or_default();
+                    cfg.enabled = enabled;
+                    self.world.insert(id, cfg);
+                }
+                ScriptCmd::SetInteractPrompt { id, text } => {
+                    use crate::engine3d::ecs::Interactable;
+                    let mut cfg = self
+                        .world
+                        .get::<Interactable>(id)
+                        .cloned()
+                        .unwrap_or_default();
+                    cfg.prompt_es = text.clone();
+                    cfg.prompt_en = text;
+                    self.world.insert(id, cfg);
+                }
                 ScriptCmd::ApplyKinematicGravity { .. }
                 | ScriptCmd::ApplyKinematicImpulse { .. }
                 | ScriptCmd::SlideEntity { .. } => {}

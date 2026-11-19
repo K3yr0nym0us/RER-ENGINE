@@ -287,5 +287,7 @@ impl State {
             self.update_execution_areas_3d();
         }
         self.tick_projectiles(self.delta_time);
+        // Interacción (prompt anclado + callback on_interact) tras el step de física.
+        self.update_play_interaction();
     }
 }

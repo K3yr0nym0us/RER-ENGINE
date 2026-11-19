@@ -231,6 +231,17 @@ pub struct State {
     pub(crate) player_ui_font_cache:
         std::collections::HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
     pub(crate) player_ui_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,
+    /// Glifos del prompt de interacción (se reconstruyen cada frame en play).
+    pub(crate) interaction_prompt_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,
+    /// UV en caché de los prompts ya empaquetados en `player_ui_text_atlas`.
+    pub(crate) interaction_prompt_cache:
+        std::collections::HashMap<String, crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
+    /// Entidades `once` ya consumidas en la sesión de play actual.
+    pub(crate) interaction_consumed: std::collections::HashSet<EntityId>,
+    /// Flanco de pulsación de la tecla de interacción (lo marca el host).
+    pub(crate) interact_queued: bool,
+    /// Para detectar la transición a play y limpiar el estado de interacción.
+    pub(crate) interaction_was_playing: bool,
     pub(crate) player_ui_selected_text_id: Option<u32>,
     pub(crate) player_ui_selected_button_id: Option<u32>,
     pub(crate) player_ui_selected_image_id: Option<u32>,

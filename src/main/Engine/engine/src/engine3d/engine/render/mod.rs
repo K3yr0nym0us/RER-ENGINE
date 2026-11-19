@@ -693,7 +693,9 @@ impl State {
             }
         }
 
-        let hud_scratch = self.player_ui_glyph_instances.clone();
+        let mut hud_scratch = self.player_ui_glyph_instances.clone();
+        // El prompt de interacción se ancla a la entidad mirada y se reconstruye cada frame.
+        hud_scratch.extend_from_slice(&self.interaction_prompt_glyph_instances);
         let hud_instance_count = hud_scratch.len() as u32;
         let hud_ready = hud_instance_count > 0;
         let hud_instances: &[u8] = bytemuck::cast_slice(&hud_scratch);

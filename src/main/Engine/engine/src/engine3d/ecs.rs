@@ -9,6 +9,7 @@
 // ---------------------------------------------------------------------------
 
 use glam::{Mat4, Quat, Vec3};
+use serde::{Deserialize, Serialize};
 use std::any::{Any, TypeId};
 use std::collections::{HashMap, HashSet};
 
@@ -118,6 +119,74 @@ pub struct SurfacePbr {
     pub ior: f32,
     /// 1 = opaco; <1 → semitransparente (`flag_pad.y` + fade en forward; SSR intacto).
     pub opacity: f32,
+}
+
+/// Configuración de interacción: prompt anclado a la entidad cuando se mira en play.
+///
+/// Se persiste en el `.save` (`interactable`) y se edita en la pestaña "Interacción".
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Interactable {
+    #[serde(default = "default_interact_enabled")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub prompt_es: String,
+    #[serde(default)]
+    pub prompt_en: String,
+    #[serde(default = "default_interact_key")]
+    pub key: String,
+    /// Si se consume tras la primera interacción (no repetible).
+    #[serde(default)]
+    pub once: bool,
+    #[serde(default = "default_interact_max_distance")]
+    pub max_distance: f32,
+}
+
+fn default_interact_enabled() -> bool {
+    true
+}
+
+fn default_interact_key() -> String {
+    "E".to_string()
+}
+
+fn default_interact_max_distance() -> f32 {
+    3.5
+}
+
+impl Default for Interactable {
+    fn default() -> Self {
+        Self {
+            enabled: default_interact_enabled(),
+            prompt_es: String::new(),
+            prompt_en: String::new(),
+            key: default_interact_key(),
+            once: false,
+            max_distance: default_interact_max_distance(),
+        }
+    }
+}
+
+impl Interactable {
+    /// Texto localizado del prompt (es/en, con fallback).
+    pub fn prompt(&self, locale: &str) -> &str {
+        let es = self.prompt_es.trim();
+        let en = self.prompt_en.trim();
+        if locale.eq_ignore_ascii_case("en") {
+            if !en.is_empty() {
+                en
+            } else if !es.is_empty() {
+                es
+            } else {
+                "Interact"
+            }
+        } else if !es.is_empty() {
+            es
+        } else if !en.is_empty() {
+            en
+        } else {
+            "Interactuar"
+        }
+    }
 }
 
 // ── Almacenamiento de componentes ─────────────────────────────────────────────
@@ -234,6 +303,7 @@ impl Default for World {
         w.register::<EditorCamera>();
         w.register::<RenderLayer>();
         w.register::<SurfacePbr>();
+        w.register::<Interactable>();
         w
     }
 }

@@ -174,6 +174,68 @@ pub(crate) fn build_hud_label_glyph(
     }
 }
 
+/// Igual que `build_hud_label_glyph` pero reutiliza el bitmap empaquetado por
+/// texto+tamaño. El `alpha` se aplica en la instancia (fade por distancia), así
+/// que el raster queda en blanco y no hay que repintar el atlas cada frame.
+pub(crate) fn build_cached_hud_label_glyph(
+    font: &FontArc,
+    text: &str,
+    box_rect: UiHudRect,
+    alpha: f32,
+    viewport_w: f32,
+    viewport_h: f32,
+    gpu: &SharedGpu,
+    atlas: &mut HudAtlas,
+    cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
+    out: &mut Vec<crate::engine3d::mesh::InstanceData>,
+) {
+    if viewport_w <= 0.0 || viewport_h <= 0.0 || text.is_empty() {
+        return;
+    }
+
+    let width_px = (box_rect.width * 0.5 * viewport_w).round().max(8.0) as u32;
+    let height_px = (box_rect.height * 0.5 * viewport_h).round().max(8.0) as u32;
+    let key = format!("{text}|{width_px}x{height_px}");
+
+    let packed = if let Some(packed) = cache.get(&key) {
+        *packed
+    } else {
+        let font_px = (box_rect.height * 0.5 * viewport_h * 0.62).clamp(10.0, 72.0);
+        let Some(rgba) = rasterize_text_block(font, text, width_px, height_px, font_px, [1.0; 4])
+        else {
+            return;
+        };
+        let packed = atlas.pack_rgba(gpu, &rgba, width_px, height_px);
+        cache.insert(key, packed);
+        packed
+    };
+
+    let hw = box_rect.width * 0.5;
+    let hh = box_rect.height * 0.5;
+    let x0_ndc = box_rect.center_x - hw;
+    let y1_ndc = box_rect.center_y + hh;
+    let x0_px = (x0_ndc + 1.0) * 0.5 * viewport_w;
+    let y0_px = (1.0 - y1_ndc) * 0.5 * viewport_h;
+
+    if let Some(model) = ndc_transform_top_left(
+        x0_px,
+        y0_px,
+        width_px as f32,
+        height_px as f32,
+        viewport_w,
+        viewport_h,
+        HUD_BITMAP_FLIP_Y,
+    ) {
+        out.push(
+            crate::engine3d::screen_hud_image::build_screen_hud_instance(
+                packed,
+                model,
+                alpha.clamp(0.0, 1.0),
+            ),
+        );
+    }
+}
+
 pub(crate) fn pack_hud_texture_cached(
     path: &str,
     cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,

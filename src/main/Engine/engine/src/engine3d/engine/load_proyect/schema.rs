@@ -251,6 +251,8 @@ pub(crate) struct SavedEntity3D {
     pub bone_physics: Vec<crate::engine3d::config_3d::bone_physics::BonePhysicsSnapshot>,
     #[serde(default)]
     pub projectile: Option<crate::engine3d::config_3d::projectiles::ProjectileConfig>,
+    #[serde(default)]
+    pub interactable: Option<crate::engine3d::ecs::Interactable>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -347,6 +349,7 @@ pub(crate) struct PendingRestore {
     pub(crate) blueprint_id: Option<String>,
     pub(crate) entity_category: Option<String>,
     pub(crate) visual_model_path: Option<String>,
+    pub(crate) interactable: Option<crate::engine3d::ecs::Interactable>,
     /// Id estable del manifest; debe coincidir al spawnear para restaurar fusiones.
     pub(crate) saved_entity_id: u32,
 }

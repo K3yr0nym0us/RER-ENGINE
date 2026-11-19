@@ -138,6 +138,7 @@ pub(crate) fn build_generic_pending_restore(
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: entity_library_category(&entity.category),
         visual_model_path: visual,
+        interactable: entity.interactable.clone(),
         saved_entity_id: entity.id,
     }
 }
@@ -172,6 +173,7 @@ pub(crate) fn build_player_pending_restore_from_entity(entity: &SavedEntity3D) -
         blueprint_id: entity.blueprint_id.clone(),
         entity_category: None,
         visual_model_path: visual,
+        interactable: entity.interactable.clone(),
         saved_entity_id: entity.id,
     }
 }
@@ -283,6 +285,9 @@ pub(crate) fn apply_full_entity_restore(
 
     state.entity_colision.insert(id, pending.colision);
     state.entity_hardness.insert(id, pending.hardness);
+    if let Some(interactable) = pending.interactable.clone() {
+        state.world.insert(id, interactable);
+    }
     state.reconcile_entity_physics_with_mesh(id);
 }
 
