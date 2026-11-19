@@ -1,8 +1,9 @@
 //! Barra superior del editor.
 //!
-//! Play/Stop/Debug controlan el motor directamente en Rust. Guardar/Auto se
-//! ejecutan también en Rust: el editor pide el estado del proyecto a la UI
-//! React y escribe el `.save` (manifiesto + assets + ZIP).
+//! Play/Debug controlan el motor directamente en Rust. No hay botón de Stop:
+//! en modo juego el motor captura el cursor, así que se sale con ESC.
+//! Guardar/Auto se ejecutan también en Rust: el editor pide el estado del
+//! proyecto a la UI React y escribe el `.save` (manifiesto + assets + ZIP).
 
 use egui::{Align, Color32, Layout, RichText};
 use egui_phosphor::regular as icons;
@@ -21,10 +22,10 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             left_group(ui, app, &text);
         });
 
-        columns[1].vertical_centered(|ui| {
-            let vertical_pad = ((ui.available_height() - 28.0) * 0.5).max(0.0);
-            ui.add_space(vertical_pad);
-            ui.horizontal(|ui| center_group(ui, app, compact, &text));
+        columns[1].with_layout(Layout::left_to_right(Align::Center), |ui| {
+            // El `horizontal` limita la altura al de una fila; sin él el badge
+            // se estiraría para ocupar toda la altura de la barra.
+            ui.horizontal(|ui| center_group(ui, app, compact));
         });
 
         columns[2].with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -36,120 +37,85 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
 
 fn left_group(ui: &mut egui::Ui, app: &mut EditorApp, text: &Text) {
     let can_use = app.status == EditorStatus::Ready;
-    let playing = app.preview_playing;
 
-    if icon_button(
+    // En juego el cursor está capturado: este botón solo sirve para entrar,
+    // para salir se usa ESC.
+    if labeled_button(
         ui,
         icons::PLAY,
-        text.play,
-        can_use && !playing,
-        playing,
-        if playing {
-            crate::editor::theme::SUCCESS
-        } else {
-            Color32::TRANSPARENT
-        },
-        if playing {
-            crate::editor::theme::SUCCESS
-        } else {
-            crate::editor::theme::PRIMARY_OUTLINE
-        },
-        if playing {
-            Color32::WHITE
-        } else {
-            crate::editor::theme::TEXT
-        },
+        text.play_game,
+        None,
+        can_use && !app.preview_playing,
+        app.preview_playing,
+        crate::editor::theme::PLAY_BG,
     ) {
         app.send_engine(json!({ "cmd": "set_preview_playing", "playing": true }));
         app.preview_playing = true;
     }
 
-    let stopped = !playing;
-    if icon_button(
-        ui,
-        icons::STOP,
-        text.stop,
-        can_use && playing,
-        stopped,
-        if stopped {
-            crate::editor::theme::DANGER
-        } else {
-            Color32::TRANSPARENT
-        },
-        if stopped {
-            crate::editor::theme::DANGER
-        } else {
-            crate::editor::theme::PRIMARY_OUTLINE
-        },
-        if stopped {
-            Color32::WHITE
-        } else {
-            crate::editor::theme::TEXT
-        },
-    ) {
-        app.send_engine(json!({ "cmd": "set_preview_playing", "playing": false }));
-        app.preview_playing = false;
-    }
-
-    let debug = app.debug_mode;
-    if icon_button(
+    if labeled_button(
         ui,
         icons::BUG,
         text.debug,
+        Some(text.debug_hint),
         can_use,
-        debug,
-        if debug {
-            crate::editor::theme::SUCCESS
-        } else {
-            Color32::TRANSPARENT
-        },
-        crate::editor::theme::SUCCESS,
-        if debug {
-            Color32::WHITE
-        } else {
-            crate::editor::theme::SUCCESS
-        },
+        app.debug_mode,
+        crate::editor::theme::DEBUG_BG,
     ) {
         app.debug_mode = !app.debug_mode;
         app.send_engine(json!({ "cmd": "set_debug_mode", "show": app.debug_mode }));
     }
 }
 
-fn center_group(ui: &mut egui::Ui, app: &EditorApp, compact: bool, text: &Text) {
+fn center_group(ui: &mut egui::Ui, app: &EditorApp, compact: bool) {
+    let project_type = app.cli.context.project_type.as_str();
+
+    let title_font = egui::FontId::new(16.0, egui::FontFamily::Name("rer-bold".into()));
+
+    // `ui.horizontal` ocuparía todo el ancho de la columna, así que medimos el
+    // contenido y añadimos el espacio izquierdo necesario para centrarlo.
+    let title_width = if compact {
+        0.0
+    } else {
+        ui.ctx().fonts_mut(|fonts| {
+            fonts
+                .layout_no_wrap("RER-ENGINE".to_owned(), title_font.clone(), Color32::WHITE)
+                .rect
+                .width()
+        })
+    };
+    let badge_width = ui.ctx().fonts_mut(|fonts| {
+        fonts
+            .layout_no_wrap(
+                project_type.to_owned(),
+                egui::FontId::proportional(12.0),
+                Color32::WHITE,
+            )
+            .rect
+            .width()
+    }) + 16.0; // márgenes del badge (7+7) + borde (1+1)
+    let content_width = if compact {
+        badge_width
+    } else {
+        title_width + ui.spacing().item_spacing.x + badge_width
+    };
+    ui.add_space(((ui.available_width() - content_width) * 0.5).max(0.0));
+
     if !compact {
         ui.label(
             RichText::new("RER-ENGINE")
-                .strong()
-                .size(16.0)
+                .font(title_font)
                 .color(crate::editor::theme::ACCENT),
         );
     }
 
     badge(
         ui,
-        app.cli.context.project_type.as_str(),
+        project_type,
         crate::editor::theme::BADGE_GREEN_BG,
         crate::editor::theme::BADGE_GREEN_TEXT,
         Some(crate::editor::theme::BADGE_GREEN_BORDER),
     );
-
-    match app.status {
-        EditorStatus::Starting => badge(
-            ui,
-            text.starting,
-            crate::editor::theme::WARNING_BADGE,
-            crate::editor::theme::WARNING_TEXT,
-            None,
-        ),
-        EditorStatus::Ready => badge(ui, "◉", crate::editor::theme::SUCCESS, Color32::WHITE, None),
-        EditorStatus::Error => badge(
-            ui,
-            text.error,
-            crate::editor::theme::DANGER,
-            Color32::WHITE,
-            None,
-        ),
-    }
 }
 
 fn right_group(ui: &mut egui::Ui, app: &mut EditorApp, compact: bool, text: &Text) {
@@ -158,63 +124,58 @@ fn right_group(ui: &mut egui::Ui, app: &mut EditorApp, compact: bool, text: &Tex
     save_button(ui, app, compact, text);
 }
 
-#[allow(clippy::too_many_arguments)]
-fn icon_button(
+/// Botón con icono y texto y fondo sólido. El fondo se oscurece al activarse y
+/// un poco más mientras se mantiene pulsado; el borde es un tono claro del
+/// propio color, no blanco.
+fn labeled_button(
     ui: &mut egui::Ui,
     icon: &str,
     label: &str,
+    tooltip: Option<&str>,
     enabled: bool,
     active: bool,
     fill: Color32,
-    stroke: Color32,
-    text_color: Color32,
 ) -> bool {
-    let sense = if enabled {
-        egui::Sense::click()
+    // egui resuelve el estado visual con la respuesta del frame anterior;
+    // leemos esa misma respuesta para reforzar el efecto al pulsar.
+    let id = ui.next_auto_id();
+    let pressed = ui
+        .ctx()
+        .read_response(id)
+        .is_some_and(|response| response.is_pointer_button_down_on());
+
+    let current_fill = if pressed {
+        fill.lerp_to_gamma(Color32::BLACK, 0.40)
+    } else if active {
+        fill.lerp_to_gamma(Color32::BLACK, 0.22)
     } else {
-        egui::Sense::hover()
+        fill
     };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(32.0, 30.0), sense);
+    let border = if active || pressed {
+        fill.lerp_to_gamma(Color32::WHITE, 0.45)
+    } else {
+        fill
+    };
+
+    let text = RichText::new(format!("{}  {}", icon, label))
+        .size(14.0)
+        .color(Color32::WHITE);
+    let button = egui::Button::new(text)
+        .min_size(egui::vec2(0.0, 30.0))
+        .fill(current_fill)
+        .stroke(egui::Stroke::new(1.0, border));
+
+    let response = ui.add_enabled(enabled, button);
+    let response = if let Some(tooltip) = tooltip {
+        response.on_hover_text(tooltip)
+    } else {
+        response
+    };
     let response = if enabled {
         response.on_hover_cursor(egui::CursorIcon::PointingHand)
     } else {
         response
     };
-
-    let dim = !enabled && !active;
-    let fill = if dim {
-        fill.linear_multiply(0.55)
-    } else {
-        fill
-    };
-    let stroke = if dim {
-        stroke.linear_multiply(0.55)
-    } else {
-        stroke
-    };
-    let text_color = if dim {
-        text_color.linear_multiply(0.55)
-    } else {
-        text_color
-    };
-
-    let painter = ui.painter();
-    painter.rect(
-        rect,
-        egui::CornerRadius::same(4),
-        fill,
-        egui::Stroke::new(1.0, stroke),
-        egui::StrokeKind::Inside,
-    );
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        icon,
-        egui::FontId::proportional(17.0),
-        text_color,
-    );
-
-    let response = response.on_hover_text(label);
     enabled && response.clicked()
 }
 
@@ -222,7 +183,7 @@ fn save_button(ui: &mut egui::Ui, app: &mut EditorApp, compact: bool, text: &Tex
     let label = if compact {
         icons::FLOPPY_DISK.to_owned()
     } else {
-        format!("{}  {}", icons::FLOPPY_DISK, text.save)
+        format!("{}  {}", icons::FLOPPY_DISK, text.save_project)
     };
 
     // Si el último guardado falló, el botón queda marcado en rojo.
@@ -305,7 +266,7 @@ fn auto_button(ui: &mut egui::Ui, app: &mut EditorApp, compact: bool, text: &Tex
         } else {
             text.saving_project
         };
-        response.on_disabled_hover_text(format!("{} — {reason}", text.auto_off))
+        response.on_disabled_hover_text(reason)
     };
 
     if enabled && response.clicked() {

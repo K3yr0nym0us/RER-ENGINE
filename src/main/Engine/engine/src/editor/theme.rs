@@ -44,6 +44,10 @@ pub const INFO: Color32 = Color32::from_rgb(0x0d, 0xca, 0xf0);
 pub const DANGER: Color32 = Color32::from_rgb(0xdc, 0x35, 0x45);
 /// Hover de los botones destructivos (Bootstrap `.btn-danger:hover`).
 pub const DANGER_HOVER: Color32 = Color32::from_rgb(0xbb, 0x2d, 0x3b);
+/// Verde apagado del botón Play de la barra superior.
+pub const PLAY_BG: Color32 = Color32::from_rgb(0x2e, 0x6b, 0x4f);
+/// Rojo apagado del botón Debug de la barra superior.
+pub const DEBUG_BG: Color32 = Color32::from_rgb(0x8c, 0x3a, 0x44);
 pub const WARNING_BADGE: Color32 = Color32::from_rgb(0xff, 0xc1, 0x07);
 pub const WARNING_TEXT: Color32 = Color32::from_rgb(0x0d, 0x0d, 0x1a);
 /// Gris de Bootstrap `.btn-secondary` (fondo de los botones Cancelar).
