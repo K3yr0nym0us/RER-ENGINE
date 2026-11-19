@@ -99,20 +99,21 @@ pub(super) fn camera_body(
         let mut yaw = None;
         let mut fov = None;
         let mut frustum = None;
+        let mut clip = None;
         ui.add_enabled_ui(ready, |ui| {
-            ui.columns(3, |columns| {
+            ui.columns(4, |columns| {
                 let labels = [
                     crate::editor::i18n::tr(locale, "Yaw (°)", "Yaw (°)"),
                     crate::editor::i18n::tr(locale, "FOV (°)", "FOV (°)"),
                     crate::editor::i18n::tr(locale, "Rango F. (m)", "F. Range (m)"),
-                ];
                     crate::editor::i18n::tr(locale, "Recorte (m)", "Clip (m)"),
+                ];
                 let drafts = [
                     &mut state.cam3_yaw,
                     &mut state.cam3_fov,
                     &mut state.cam3_frustum,
-                ];
                     &mut state.cam3_clip,
+                ];
                 for (index, (label, draft)) in labels.into_iter().zip(drafts).enumerate() {
                     let width = columns[index].available_width();
                     columns[index].label(
@@ -126,7 +127,8 @@ pub(super) fn camera_body(
                         match index {
                             0 => yaw = Some(value.to_radians()),
                             1 => fov = Some(value.to_radians()),
-                            _ => frustum = Some(value.max(0.5)),
+                            2 => frustum = Some(value.max(0.5)),
+                            _ => clip = Some(value.clamp(0.0, 1.0)),
                         }
                     }
                 }
@@ -141,11 +143,11 @@ pub(super) fn camera_body(
         if let Some(value) = frustum {
             actions.push(LeftAction::SetPlayCameraFrustum(value));
         }
-        return;
-    }
         if let Some(value) = clip {
             actions.push(LeftAction::SetPlayCameraClipRadius(value));
         }
+        return;
+    }
 
     let camera = camera.unwrap_or(Camera2d {
         x: 0.0,

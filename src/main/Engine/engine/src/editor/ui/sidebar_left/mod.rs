@@ -53,9 +53,9 @@ pub struct SidebarLeftState {
     cam3_yaw: NumberDraft,
     cam3_fov: NumberDraft,
     cam3_frustum: NumberDraft,
+    cam3_clip: NumberDraft,
     selected_sprite: Option<String>,
     selected_model: Option<String>,
-    cam3_clip: NumberDraft,
     pub(crate) active_tool: Option<&'static str>,
     pub(crate) active_ui_screen: Option<String>,
     /// Importación de modelo pendiente: la modal nativa pide categoría (y nombre).
@@ -203,13 +203,13 @@ enum LeftAction {
     SetPlayCameraYaw(f32),
     SetPlayCameraFov(f32),
     SetPlayCameraFrustum(f32),
+    SetPlayCameraClipRadius(f32),
     OpenSockets,
     /// Abre el catálogo de plugins en su ventana nativa.
     OpenPlugins,
     OpenLegacyWindow(&'static str),
     /// Abre la modal React de bindings para `keyboard_mouse` o `gamepad`.
     OpenControlBindings(&'static str),
-    SetPlayCameraClipRadius(f32),
     /// Crea una pantalla HUD/menú en la ventana nativa.
     CreateUiScreen(&'static str),
     /// Abre el editor HUD (aún React) o renombra un menú en la ventana nativa.
@@ -558,6 +558,13 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
                 "frustum_distance": distance,
             }));
         }
+        LeftAction::SetPlayCameraClipRadius(radius) => {
+            app.send_engine(json!({
+                "cmd": "set_play_character_view",
+                "camera_only": true,
+                "camera_clip_radius": radius,
+            }));
+        }
         LeftAction::OpenPlugins => {
             app.plugins_modal.open = true;
             crate::editor::plugins::request_snapshot(app);
@@ -590,13 +597,6 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
                 app.visual_script.selected = None;
                 app.visual_script.loaded = false;
                 app.visual_script.open = true;
-        LeftAction::SetPlayCameraClipRadius(radius) => {
-            app.send_engine(json!({
-                "cmd": "set_play_character_view",
-                "camera_only": true,
-                "camera_clip_radius": radius,
-            }));
-        }
                 return;
             }
             if kind == "scene_script" {
