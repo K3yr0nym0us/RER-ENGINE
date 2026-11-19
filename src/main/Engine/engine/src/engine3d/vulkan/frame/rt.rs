@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine3d::config_3d::world_bounds::SkyUniform;
 
 pub(super) fn cube_face_view_proj(origin: [f32; 3], face: usize) -> [[f32; 4]; 4] {
     let dirs = [
@@ -16,7 +17,7 @@ pub(super) fn cube_face_view_proj(origin: [f32; 3], face: usize) -> [[f32; 4]; 4
     (proj * view).to_cols_array_2d()
 }
 
-pub(super) fn rt_camera_bytes(scene: &[u8], extent: vk::Extent2D) -> Vec<u8> {
+fn rt_camera_bytes_base(scene: &[u8], extent: vk::Extent2D) -> Vec<u8> {
     let mut out = vec![0u8; 112];
     if scene.len() >= 64 * 4 {
         let inv = &scene[64 * 3..64 * 4];
@@ -30,6 +31,13 @@ pub(super) fn rt_camera_bytes(scene: &[u8], extent: vk::Extent2D) -> Vec<u8> {
     }
     let resolution = [extent.width as f32, extent.height as f32, 0.0, 0.0];
     out[80..96].copy_from_slice(bytemuck::bytes_of(&resolution));
+    out
+}
+
+/// Uniform del pase RT: cámara + esfera de cielo (bloque `Camera` de los `.rgen`).
+pub(super) fn rt_camera_bytes(scene: &[u8], extent: vk::Extent2D, sky: &SkyUniform) -> Vec<u8> {
+    let mut out = rt_camera_bytes_base(scene, extent);
+    out.extend_from_slice(bytemuck::bytes_of(sky));
     out
 }
 
@@ -132,7 +140,7 @@ impl FrameRenderer {
         };
         let stride = self.sbt_stride;
         let address = self.sbt_address;
-        let camera = rt_camera_bytes(input.scene, self.targets.extent);
+        let camera = rt_camera_bytes(input.scene, self.targets.extent, &input.sky);
         self.rt_ubo[slot].write(0, &camera)?;
         // Un set distinto por uso: ver el comentario de `DescriptorSets::rt`.
         let set = self.sets.rt[slot][raygen as usize % 2];
@@ -217,11 +225,12 @@ impl FrameRenderer {
         device: &ash::Device,
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
-        let mut uniform = rt_camera_bytes(input.scene, self.targets.extent);
+        let mut uniform = rt_camera_bytes_base(input.scene, self.targets.extent);
         uniform.extend_from_slice(&input.bvh_node_count.to_le_bytes());
         uniform.extend_from_slice(&input.bvh_tri_count.to_le_bytes());
         uniform.extend_from_slice(&mode.to_le_bytes());
         uniform.extend_from_slice(&input.material_count.to_le_bytes());
+        uniform.extend_from_slice(bytemuck::bytes_of(&input.sky));
         self.bvh_ubo[slot].write(0, &uniform)?;
         Self::grow_host(
             &self.gpu,

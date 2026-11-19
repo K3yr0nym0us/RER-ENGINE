@@ -48,6 +48,11 @@ pub(super) fn shadows_body(
             ambient: None,
             intensity: None,
             shadow_darkness: Some(darkness),
+            sun_cycle_enabled: None,
+            sun_rise_cardinal: None,
+            sun_cycle_day: None,
+            sun_cycle_night: None,
+            sun_cycle_phase: None,
         });
     }
 }

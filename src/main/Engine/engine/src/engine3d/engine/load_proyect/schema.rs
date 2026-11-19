@@ -109,6 +109,16 @@ pub(crate) struct SavedWorldConfig {
     #[serde(default)]
     pub(crate) shadowDarkness: Option<f32>,
     #[serde(default)]
+    pub(crate) sunCycleEnabled: Option<bool>,
+    #[serde(default)]
+    pub(crate) sunRiseCardinal: Option<String>,
+    #[serde(default)]
+    pub(crate) sunCycleDay: Option<f32>,
+    #[serde(default)]
+    pub(crate) sunCycleNight: Option<f32>,
+    #[serde(default)]
+    pub(crate) sunCyclePhase: Option<f32>,
+    #[serde(default)]
     pub(crate) graphicsTextureTier: Option<String>,
     #[serde(default)]
     pub(crate) textureDetailDistance: Option<f32>,

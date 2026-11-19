@@ -115,6 +115,11 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             lightAmbient: p.world.light_ambient,
             lightIntensity: p.world.light_intensity,
             shadowDarkness: p.world.shadow_darkness,
+            sunCycleEnabled: p.world.sun_cycle_enabled,
+            sunRiseCardinal: p.world.sun_rise_cardinal.clone(),
+            sunCycleDay: p.world.sun_cycle_day,
+            sunCycleNight: p.world.sun_cycle_night,
+            sunCyclePhase: p.world.sun_cycle_phase,
             graphicsTextureTier: p.world.graphics_texture_tier.clone(),
             textureDetailDistance: p.world.texture_detail_distance_m,
             reflectionTier: p.world.reflection_tier.clone(),
@@ -192,10 +197,11 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
     };
 
     let world = SavedWorldConfig {
-        worldWidth: 56.0,
+        // Lado 64 m / radio 32 m: el mínimo que acepta el generador de mundos.
+        worldWidth: 64.0,
         worldHeight: 56.0,
-        worldDepth: Some(56.0),
-        worldRadius: Some(28.0),
+        worldDepth: Some(64.0),
+        worldRadius: Some(32.0),
         worldCenterX: 0.0,
         worldCenterZ: 0.0,
         gridVisible: true,
@@ -205,6 +211,12 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         lightAmbient: Some(DEFAULT_LIGHT_AMBIENT),
         lightIntensity: Some(DEFAULT_LIGHT_INTENSITY),
         shadowDarkness: Some(DEFAULT_SHADOW_DARKNESS),
+        // Demo: sol en el punto más alto (mediodía), ciclo activo por defecto.
+        sunCycleEnabled: Some(true),
+        sunRiseCardinal: Some("east".to_string()),
+        sunCycleDay: Some(1000.0),
+        sunCycleNight: Some(1000.0),
+        sunCyclePhase: Some(0.25),
         graphicsTextureTier: Some("medium".to_string()),
         textureDetailDistance: Some(
             crate::engine3d::config_3d::entity_textures::default_texture_detail_near_m(),
@@ -240,12 +252,14 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         particles: Some(serde_json::json!({ "emitters": [] })),
     };
 
-    let ground_scale = [28.0 / 40.0, 0.02, 56.0 / 40.0];
+    let ground_scale = [32.0 / 40.0, 0.02, 64.0 / 40.0];
     let sun_position = {
-        let center_y = world.worldHeight * 0.5;
-        let dir = crate::engine3d::config_3d::directional_light::DEFAULT_LIGHT_DIR.normalize();
-        let center = glam::Vec3::new(0.0, center_y, 0.0);
-        (center + dir * crate::engine3d::config_3d::directional_light::SUN_DISTANCE).to_array()
+        use crate::engine3d::config_3d::directional_light::{
+            SunRiseCardinal, sun_position_from_bounds,
+        };
+        use crate::engine3d::config_3d::world_bounds::WorldBounds3D;
+        let bounds = WorldBounds3D::with_faces(32.0, 32.0, 32.0, 32.0, world.worldHeight);
+        sun_position_from_bounds(&bounds, 0.25, SunRiseCardinal::East).to_array()
     };
     let entities = vec![
         SavedEntity3D {
@@ -408,6 +422,10 @@ mod tests {
         assert_eq!(scene.id, 2);
         assert_eq!(scene.name, "Scene-02");
         assert_eq!(scene.entities.len(), 2);
+        // Demo: sol en el punto más alto y ciclo activo por defecto.
+        assert_eq!(scene.world.sunCyclePhase, Some(0.25));
+        assert_eq!(scene.world.sunCycleEnabled, Some(true));
+        assert_eq!(scene.world.sunRiseCardinal.as_deref(), Some("east"));
         let categories: Vec<&str> = scene
             .entities
             .iter()

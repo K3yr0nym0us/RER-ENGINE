@@ -38,6 +38,17 @@ pub struct SaveWorldSnapshot {
     pub light_intensity: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shadow_darkness: Option<f32>,
+    /// Ciclo día/noche y posición del sol, para restaurar el `.save` completo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sun_cycle_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sun_rise_cardinal: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sun_cycle_day: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sun_cycle_night: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sun_cycle_phase: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub graphics_texture_tier: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -799,6 +810,16 @@ pub struct ProjectLoaded3dWorld {
     pub lightIntensity: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub shadowDarkness: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sunCycleEnabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sunRiseCardinal: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sunCycleDay: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sunCycleNight: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sunCyclePhase: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub graphicsTextureTier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

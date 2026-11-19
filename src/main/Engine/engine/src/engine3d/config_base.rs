@@ -386,8 +386,9 @@ impl State {
         spawn_block([0.0, 2.5, 21.0], [1.8, 5.0, 1.8], Some("object"));
 
         // Límites del mundo: el wireframe es centrado en el origen (z ∈ [-depth/2, depth/2]).
-        // Los muros del placeholder llegan hasta z≈28; depth 36 dejaba max z=18 y el render los ocultaba.
-        self.set_world_bounds_3d_radius(28.0);
+        // Radio mínimo permitido por el generador (32 m → lado 64 m): cubre los
+        // muros del placeholder, que llegan hasta z≈28.
+        self.set_world_bounds_3d_radius(crate::engine3d::MIN_WORLD_RADIUS_3D);
 
         self.camera = Camera::new();
         let spawn_xz = (0.0_f32, 5.0_f32);
@@ -422,7 +423,7 @@ impl State {
     }
 
     pub(crate) fn apply_empty_3d_editor_defaults(&mut self) {
-        self.set_world_bounds_3d_radius(28.0);
+        self.set_world_bounds_3d_radius(crate::engine3d::MIN_WORLD_RADIUS_3D);
         self.camera = Camera::new();
         let spawn_xz = (0.0_f32, 5.0_f32);
         let ground_y = self

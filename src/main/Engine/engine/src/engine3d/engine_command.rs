@@ -128,6 +128,21 @@ pub enum EngineCommand3dOnly {
         intensity: Option<f32>,
         #[serde(default)]
         shadow_darkness: Option<f32>,
+        /// Ciclo día/noche activado.
+        #[serde(default)]
+        sun_cycle_enabled: Option<bool>,
+        /// Cardinal de salida del sol: east / north / west / south.
+        #[serde(default)]
+        sun_rise_cardinal: Option<String>,
+        /// Duración del día en unidades UI (1000 = 1 hora).
+        #[serde(default)]
+        sun_cycle_day: Option<f32>,
+        /// Duración de la noche en unidades UI (1000 = 1 hora).
+        #[serde(default)]
+        sun_cycle_night: Option<f32>,
+        /// Fase manual del ciclo [0,1).
+        #[serde(default)]
+        sun_cycle_phase: Option<f32>,
     },
     #[serde(rename = "set_play_character_spawn")]
     SetPlayCharacterSpawn {

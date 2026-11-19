@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use crate::editor::app::EditorApp;
 
 /// Diámetro del disco en metros (la UI usa diámetro, el motor radio).
+/// Espejo de `MIN_WORLD_FACE_3D * 2` / `MAX_WORLD_FACE_3D * 2` del motor y de
+/// `MIN/MAX_WORLDGEN_RADIUS` del plugin (`worldgen/src/scale.rs`).
 pub const SIZE_MIN: u32 = 64;
 pub const SIZE_MAX: u32 = 2000;
 pub const SIZE_DEFAULT: u32 = 256;

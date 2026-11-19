@@ -25,12 +25,14 @@ pub struct SidebarRightState {
     grid_locked: bool,
     width: NumberDraft,
     height: NumberDraft,
-    radius: NumberDraft,
     north: NumberDraft,
     south: NumberDraft,
     east: NumberDraft,
     west: NumberDraft,
     grid_cell: NumberDraft,
+    /// Duración del día / la noche en unidades UI (1000 cada uno = 2000).
+    sun_cycle_day: NumberDraft,
+    sun_cycle_night: NumberDraft,
     fps_selection: u32,
     fps_dirty: bool,
     /// Partículas GPU-driven (F5): clima + emisores de escena gestionados desde la UI.
@@ -71,6 +73,11 @@ enum WorldAction {
         ambient: Option<f32>,
         intensity: Option<f32>,
         shadow_darkness: Option<f32>,
+        sun_cycle_enabled: Option<bool>,
+        sun_rise_cardinal: Option<&'static str>,
+        sun_cycle_day: Option<f32>,
+        sun_cycle_night: Option<f32>,
+        sun_cycle_phase: Option<f32>,
     },
     SetTextureTier(TextureTier),
     SetTextureDetailDistance(f32),
@@ -180,12 +187,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         grid_locked,
                         width,
                         height,
-                        radius,
                         north,
                         south,
                         east,
                         west,
                         grid_cell,
+                        sun_cycle_day,
+                        sun_cycle_night,
                         fps_selection,
                         fps_dirty,
                         particles,
@@ -194,12 +202,13 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                     // Sincroniza los borradores con el estado del motor.
                     width.sync(world.world_width);
                     height.sync(world.world_height);
-                    radius.sync(world.world_radius);
                     north.sync(world.north);
                     south.sync(world.south);
                     east.sync(world.east);
                     west.sync(world.west);
                     grid_cell.sync(world.grid_cell_size);
+                    sun_cycle_day.sync(world.sun_cycle_day);
+                    sun_cycle_night.sync(world.sun_cycle_night);
                     if !*fps_dirty {
                         *fps_selection = world.target_fps;
                     }
@@ -286,7 +295,16 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 "Sun and lighting",
                             ),
                             enabled,
-                            |ui| lighting_body(ui, world, locale, &mut actions),
+                            |ui| {
+                                lighting_body(
+                                    ui,
+                                    world,
+                                    locale,
+                                    sun_cycle_day,
+                                    sun_cycle_night,
+                                    &mut actions,
+                                )
+                            },
                         );
                         sub(
                             ui,
@@ -475,6 +493,11 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
             ambient,
             intensity,
             shadow_darkness,
+            sun_cycle_enabled,
+            sun_rise_cardinal,
+            sun_cycle_day,
+            sun_cycle_night,
+            sun_cycle_phase,
         } => {
             if let Some(value) = ambient {
                 app.world.light_ambient = value;
@@ -485,10 +508,30 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
             if let Some(value) = shadow_darkness {
                 app.world.shadow_darkness = value;
             }
+            if let Some(value) = sun_cycle_enabled {
+                app.world.sun_cycle_enabled = value;
+            }
+            if let Some(value) = sun_rise_cardinal {
+                app.world.sun_rise_cardinal = value;
+            }
+            if let Some(value) = sun_cycle_day {
+                app.world.sun_cycle_day = value;
+            }
+            if let Some(value) = sun_cycle_night {
+                app.world.sun_cycle_night = value;
+            }
+            if let Some(value) = sun_cycle_phase {
+                app.world.sun_cycle_phase = value;
+            }
             app.send_engine(WorldSettings::directional_light_command(
                 ambient,
                 intensity,
                 shadow_darkness,
+                sun_cycle_enabled,
+                sun_rise_cardinal,
+                sun_cycle_day,
+                sun_cycle_night,
+                sun_cycle_phase,
             ));
         }
         WorldAction::SetTextureTier(tier) => {

@@ -75,8 +75,20 @@ impl State {
                 ambient,
                 intensity,
                 shadow_darkness,
+                sun_cycle_enabled,
+                sun_rise_cardinal,
+                sun_cycle_day,
+                sun_cycle_night,
+                sun_cycle_phase,
             }) => {
                 self.apply_directional_light_settings(ambient, intensity, shadow_darkness);
+                self.apply_sun_cycle_settings(
+                    sun_cycle_enabled,
+                    sun_rise_cardinal.as_deref(),
+                    sun_cycle_day,
+                    sun_cycle_night,
+                    sun_cycle_phase,
+                );
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetPlayCharacterSpawn {
                 position,

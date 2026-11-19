@@ -13,14 +13,19 @@ use crate::config::{
 };
 
 /// Radio mínimo del disco generado (metros). Coincide con un mundo jugable.
+///
+/// Espejo de `MIN_WORLD_FACE_3D` / `MIN_WORLD_RADIUS_3D` del motor
+/// (`engine/src/engine3d/config_3d/world_bounds.rs`). El motor no depende de
+/// este crate (el plugin puede no estar instalado), así que ambos lugares
+/// mantienen el valor duplicado a propósito con esta referencia cruzada.
 pub const MIN_WORLDGEN_RADIUS: f32 = 32.0;
-/// Radio máximo del disco (diámetro 2000 m).
+/// Radio máximo del disco (diámetro 2000 m). Espejo de `MAX_WORLD_FACE_3D`.
 pub const MAX_WORLDGEN_RADIUS: f32 = 1000.0;
 /// Radio por defecto: isla compacta para iterar.
 pub const DEFAULT_WORLDGEN_RADIUS: f32 = 128.0;
-/// Altura mínima del volumen (cuevas + relieve).
+/// Altura mínima del volumen (cuevas + relieve). Espejo de `MIN_WORLD_HEIGHT_3D`.
 pub const MIN_WORLDGEN_HEIGHT: f32 = 48.0;
-/// Altura máxima del volumen.
+/// Altura máxima del volumen. Espejo de `MAX_WORLD_HEIGHT_3D`.
 pub const MAX_WORLDGEN_HEIGHT: f32 = 256.0;
 /// Margen al borde del disco para no plantar sitios en el recorte.
 pub const SITE_EDGE_MARGIN: f32 = 24.0;

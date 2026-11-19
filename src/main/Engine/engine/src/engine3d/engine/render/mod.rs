@@ -808,6 +808,8 @@ impl State {
 
         let input = crate::engine3d::vulkan::FrameInput {
             scene: scene_bytes,
+            sky: self.sky_uniform_for_frame(),
+            sun_above_horizon: self.sun_above_horizon(),
             shadows: self.shadow_tier
                 != crate::engine3d::config_3d::shadow_graphics::ShadowTier::Off,
             shadow_map_size: self.active_shadow_map_size(),

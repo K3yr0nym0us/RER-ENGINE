@@ -280,6 +280,11 @@ fn build_world(world: Option<&Value>) -> Value {
         ("lightAmbient", "light_ambient"),
         ("lightIntensity", "light_intensity"),
         ("shadowDarkness", "shadow_darkness"),
+        ("sunCycleEnabled", "sun_cycle_enabled"),
+        ("sunRiseCardinal", "sun_rise_cardinal"),
+        ("sunCycleDay", "sun_cycle_day"),
+        ("sunCycleNight", "sun_cycle_night"),
+        ("sunCyclePhase", "sun_cycle_phase"),
         ("graphicsTextureTier", "graphics_texture_tier"),
         ("textureDetailDistance", "texture_detail_distance_m"),
         ("reflectionTier", "reflection_tier"),
@@ -1012,6 +1017,28 @@ mod tests {
         assert_eq!(world["lodEnabled"], json!(true));
         assert_eq!(world["lod1Distance"], json!(35.0));
         assert_eq!(world["lod2Distance"], json!(90.0));
+    }
+
+    #[test]
+    fn manifest_maps_sun_cycle_world_fields() {
+        let mut scene = engine_scene();
+        scene["world"]["sun_cycle_enabled"] = json!(true);
+        scene["world"]["sun_rise_cardinal"] = json!("north");
+        scene["world"]["sun_cycle_day"] = json!(1200.0);
+        scene["world"]["sun_cycle_night"] = json!(800.0);
+        scene["world"]["sun_cycle_phase"] = json!(0.42);
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &scene,
+            state: &state(),
+            project_type: "3D",
+            game_style: "third-person",
+        });
+        let world = &manifest["scenes"][0]["world"];
+        assert_eq!(world["sunCycleEnabled"], json!(true));
+        assert_eq!(world["sunRiseCardinal"], json!("north"));
+        assert_eq!(world["sunCycleDay"], json!(1200.0));
+        assert_eq!(world["sunCycleNight"], json!(800.0));
+        assert_eq!(world["sunCyclePhase"], json!(0.42));
     }
 
     #[test]

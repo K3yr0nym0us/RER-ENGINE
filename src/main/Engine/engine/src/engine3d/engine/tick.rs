@@ -258,6 +258,16 @@ impl State {
         self.worldgen_tick();
         // Cubo de líquidos: autómata celular a 5 Hz (independiente de worldgen).
         self.water_tick(self.delta_time);
+        // Ciclo día/noche: el sol orbita la esfera del cielo (o sigue la fase manual).
+        // Mientras se arrastra el gizmo del sol se suspende el avance automático.
+        let sun_dragged = self
+            .selected_entity
+            .or_else(|| self.selected_entities.last().copied())
+            == self.sun_entity
+            && self.active_gizmo_axis.is_some();
+        if !sun_dragged {
+            self.tick_sun_cycle(self.delta_time);
+        }
 
         self.metrics_frame_count += 1;
         if now.duration_since(self.metrics_last_emit) >= std::time::Duration::from_secs(1) {
@@ -284,6 +294,7 @@ impl State {
                 play_character_position,
                 play_character_yaw,
                 play_character_pitch,
+                sun_cycle_phase: Some(self.sun_cycle_phase),
             });
             self.metrics_last_emit = now;
             self.metrics_frame_count = 0;

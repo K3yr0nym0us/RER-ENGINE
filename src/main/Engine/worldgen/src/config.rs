@@ -80,6 +80,10 @@ impl WorldBounds {
 
     /// Valida los invariantes de dimensiones.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        // Espejo de los límites del sidebar del motor (`world_bounds.rs`):
+        // MIN_WORLD_FACE_3D*2 / MAX_WORLD_FACE_3D*2 y MIN/MAX_WORLD_HEIGHT_3D.
+        // El motor no importa este crate; mantener ambos valores sincronizados
+        // es responsabilidad de estos comentarios cruzados.
         const MIN_DIM: f32 = 64.0;
         const MAX_DIM: f32 = 2000.0;
         const MIN_HEIGHT: f32 = 48.0;

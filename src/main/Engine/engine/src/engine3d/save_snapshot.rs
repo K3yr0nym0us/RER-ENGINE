@@ -56,6 +56,17 @@ impl State {
                 light_ambient: Some(self.directional_light_ambient),
                 light_intensity: Some(self.light_intensity),
                 shadow_darkness: Some(self.shadow_darkness),
+                sun_cycle_enabled: Some(self.sun_cycle_enabled),
+                sun_rise_cardinal: Some(self.sun_rise_cardinal.as_str().to_string()),
+                sun_cycle_day: Some(
+                    self.sun_cycle_day_secs
+                        / crate::engine3d::config_3d::directional_light::SUN_CYCLE_SECONDS_PER_UNIT,
+                ),
+                sun_cycle_night: Some(
+                    self.sun_cycle_night_secs
+                        / crate::engine3d::config_3d::directional_light::SUN_CYCLE_SECONDS_PER_UNIT,
+                ),
+                sun_cycle_phase: Some(self.sun_cycle_phase),
                 graphics_texture_tier: Some(self.graphics_texture_tier.wire().to_string()),
                 texture_detail_distance_m: Some(self.texture_detail_near_m),
                 reflection_tier: Some(self.reflection_tier.wire().to_string()),

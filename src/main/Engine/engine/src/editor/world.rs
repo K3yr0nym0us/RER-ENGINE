@@ -248,6 +248,16 @@ pub struct WorldSettings {
     pub light_ambient: f32,
     pub light_intensity: f32,
     pub shadow_darkness: f32,
+    /// Ciclo día/noche activo (el sol orbita automáticamente el cielo).
+    pub sun_cycle_enabled: bool,
+    /// Cardinal por el que sale el sol: east / north / west / south.
+    pub sun_rise_cardinal: &'static str,
+    /// Duración del día en unidades UI (1000 = 1 hora).
+    pub sun_cycle_day: f32,
+    /// Duración de la noche en unidades UI (1000 = 1 hora).
+    pub sun_cycle_night: f32,
+    /// Fase del ciclo [0,1), sincronizada desde el motor.
+    pub sun_cycle_phase: f32,
     pub graphics_texture_tier: TextureTier,
     pub texture_detail_distance: f32,
     pub reflection_tier: ReflectionTier,
@@ -297,6 +307,11 @@ impl Default for WorldSettings {
             light_ambient: 0.06,
             light_intensity: 1.0,
             shadow_darkness: 0.9,
+            sun_cycle_enabled: true,
+            sun_rise_cardinal: "east",
+            sun_cycle_day: crate::engine3d::config_3d::directional_light::SUN_CYCLE_DEFAULT_UI_VALUE,
+            sun_cycle_night: crate::engine3d::config_3d::directional_light::SUN_CYCLE_DEFAULT_UI_VALUE,
+            sun_cycle_phase: 0.0,
             graphics_texture_tier: TextureTier::Medium,
             texture_detail_distance: 10.0,
             reflection_tier: ReflectionTier::Off,
@@ -373,6 +388,21 @@ impl WorldSettings {
         if let Some(value) = number(world, "worldCenterZ") {
             self.world_center_z = value as f32;
         }
+        if let Some(value) = boolean(world, "sunCycleEnabled") {
+            self.sun_cycle_enabled = value;
+        }
+        if let Some(value) = world.get("sunRiseCardinal").and_then(Value::as_str) {
+            self.sun_rise_cardinal = sun_cardinal(value);
+        }
+        if let Some(value) = number(world, "sunCycleDay") {
+            self.sun_cycle_day = value as f32;
+        }
+        if let Some(value) = number(world, "sunCycleNight") {
+            self.sun_cycle_night = value as f32;
+        }
+        if let Some(value) = number(world, "sunCyclePhase") {
+            self.sun_cycle_phase = value as f32;
+        }
         self.sync_faces_from_box();
     }
 
@@ -424,6 +454,21 @@ impl WorldSettings {
                 crate::engine3d::SHADOW_DARKNESS_MIN,
                 crate::engine3d::SHADOW_DARKNESS_MAX,
             );
+        }
+        if let Some(value) = boolean(world, "sun_cycle_enabled") {
+            self.sun_cycle_enabled = value;
+        }
+        if let Some(value) = world.get("sun_rise_cardinal").and_then(Value::as_str) {
+            self.sun_rise_cardinal = sun_cardinal(value);
+        }
+        if let Some(value) = number(world, "sun_cycle_day") {
+            self.sun_cycle_day = value as f32;
+        }
+        if let Some(value) = number(world, "sun_cycle_night") {
+            self.sun_cycle_night = value as f32;
+        }
+        if let Some(value) = number(world, "sun_cycle_phase") {
+            self.sun_cycle_phase = value as f32;
         }
         if let Some(value) = world.get("graphics_texture_tier").and_then(Value::as_str) {
             self.graphics_texture_tier = TextureTier::parse(value);
@@ -518,7 +563,10 @@ impl WorldSettings {
                     );
                     self.world_radius = radius;
                     self.world_width = radius * 2.0;
-                    self.world_height = radius * 2.0;
+                    // La altura sigue la misma curva que el panel del generador,
+                    // para no anunciar en la UI un volumen que el plugin rechazaría.
+                    self.world_height =
+                        crate::editor::worldgen::height_for_radius(radius as f64) as f32;
                     self.world_depth = radius * 2.0;
                     self.world_center_x = 0.0;
                     self.world_center_z = 0.0;
@@ -557,6 +605,21 @@ impl WorldSettings {
                         crate::engine3d::SHADOW_DARKNESS_MIN,
                         crate::engine3d::SHADOW_DARKNESS_MAX,
                     );
+                }
+                if let Some(value) = command.get("sun_cycle_enabled").and_then(Value::as_bool) {
+                    self.sun_cycle_enabled = value;
+                }
+                if let Some(value) = command.get("sun_rise_cardinal").and_then(Value::as_str) {
+                    self.sun_rise_cardinal = sun_cardinal(value);
+                }
+                if let Some(value) = number(command, "sun_cycle_day") {
+                    self.sun_cycle_day = value as f32;
+                }
+                if let Some(value) = number(command, "sun_cycle_night") {
+                    self.sun_cycle_night = value as f32;
+                }
+                if let Some(value) = number(command, "sun_cycle_phase") {
+                    self.sun_cycle_phase = value as f32;
                 }
             }
             "set_graphics_texture_tier" => {
@@ -653,6 +716,12 @@ impl WorldSettings {
     pub fn apply_event(&mut self, event: &Value) {
         let name = event.get("event").and_then(Value::as_str).unwrap_or("");
         match name {
+            "debug_metrics" => {
+                // El motor reporta la fase ~1 Hz: el slider sigue al sol en modo automático.
+                if let Some(value) = number(event, "sun_cycle_phase") {
+                    self.sun_cycle_phase = value as f32;
+                }
+            }
             "graphics_texture_tier_changed" => {
                 if let Some(value) = event.get("tier").and_then(Value::as_str) {
                     self.graphics_texture_tier = TextureTier::parse(value);
@@ -753,6 +822,11 @@ impl WorldSettings {
         ambient: Option<f32>,
         intensity: Option<f32>,
         shadow_darkness: Option<f32>,
+        sun_cycle_enabled: Option<bool>,
+        sun_rise_cardinal: Option<&'static str>,
+        sun_cycle_day: Option<f32>,
+        sun_cycle_night: Option<f32>,
+        sun_cycle_phase: Option<f32>,
     ) -> Value {
         let mut fields = Map::new();
         fields.insert("cmd".into(), Value::String("set_directional_light".into()));
@@ -765,6 +839,21 @@ impl WorldSettings {
         if let Some(value) = shadow_darkness {
             fields.insert("shadow_darkness".into(), Value::from(value as f64));
         }
+        if let Some(value) = sun_cycle_enabled {
+            fields.insert("sun_cycle_enabled".into(), Value::Bool(value));
+        }
+        if let Some(value) = sun_rise_cardinal {
+            fields.insert("sun_rise_cardinal".into(), Value::String(value.to_string()));
+        }
+        if let Some(value) = sun_cycle_day {
+            fields.insert("sun_cycle_day".into(), Value::from(value as f64));
+        }
+        if let Some(value) = sun_cycle_night {
+            fields.insert("sun_cycle_night".into(), Value::from(value as f64));
+        }
+        if let Some(value) = sun_cycle_phase {
+            fields.insert("sun_cycle_phase".into(), Value::from(value as f64));
+        }
         Value::Object(fields)
     }
 }
@@ -775,6 +864,15 @@ fn number(value: &Value, key: &str) -> Option<f64> {
 
 fn boolean(value: &Value, key: &str) -> Option<bool> {
     value.get(key).and_then(Value::as_bool)
+}
+
+fn sun_cardinal(value: &str) -> &'static str {
+    match value {
+        "north" => "north",
+        "west" => "west",
+        "south" => "south",
+        _ => "east",
+    }
 }
 
 #[cfg(test)]
@@ -810,11 +908,47 @@ mod tests {
     }
 
     #[test]
+    fn restores_sun_cycle_from_project_and_snapshot() {
+        let mut world = WorldSettings::default();
+        world.apply_loaded_world(&json!({
+            "worldWidth": 100.0,
+            "worldHeight": 100.0,
+            "worldDepth": 100.0,
+            "sunCycleEnabled": false,
+            "sunRiseCardinal": "south",
+            "sunCycleDay": 1500.0,
+            "sunCycleNight": 500.0,
+            "sunCyclePhase": 0.33
+        }));
+        assert!(!world.sun_cycle_enabled);
+        assert_eq!(world.sun_rise_cardinal, "south");
+        assert_eq!(world.sun_cycle_day, 1500.0);
+        assert_eq!(world.sun_cycle_night, 500.0);
+        assert_eq!(world.sun_cycle_phase, 0.33);
+
+        world.apply_snapshot(&json!({
+            "world": {
+                "world_width": 100.0,
+                "world_height": 100.0,
+                "world_depth": 100.0,
+                "sun_cycle_enabled": true,
+                "sun_rise_cardinal": "west",
+                "sun_cycle_day": 1000.0,
+                "sun_cycle_night": 1000.0,
+                "sun_cycle_phase": 0.25
+            }
+        }));
+        assert!(world.sun_cycle_enabled);
+        assert_eq!(world.sun_rise_cardinal, "west");
+        assert_eq!(world.sun_cycle_phase, 0.25);
+    }
+
+    #[test]
     fn applies_react_commands() {
         let mut world = WorldSettings::default();
         world.apply_command(&json!({ "cmd": "set_world_radius", "radius": 10.0 }));
-        assert_eq!(world.world_radius, 10.0);
-        assert_eq!(world.world_width, 20.0);
+        assert_eq!(world.world_radius, crate::engine3d::MIN_WORLD_RADIUS_3D);
+        assert_eq!(world.world_width, crate::engine3d::MIN_WORLD_RADIUS_3D * 2.0);
 
         world.apply_command(&json!({ "cmd": "set_world_radius", "radius": 5000.0 }));
         assert_eq!(world.world_radius, crate::engine3d::MAX_WORLD_RADIUS_3D);
@@ -912,10 +1046,46 @@ mod tests {
 
     #[test]
     fn directional_light_only_includes_given_fields() {
-        let command = WorldSettings::directional_light_command(Some(0.1), None, Some(0.4));
+        let command =
+            WorldSettings::directional_light_command(
+                Some(0.1), None, Some(0.4), None, None, None, None, None,
+            );
         assert_eq!(command["cmd"], json!("set_directional_light"));
         assert!((command["ambient"].as_f64().unwrap() - 0.1).abs() < 1e-6);
         assert!(command.get("intensity").is_none());
         assert!((command["shadow_darkness"].as_f64().unwrap() - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn sun_cycle_settings_defaults_and_command() {
+        let world = WorldSettings::default();
+        assert!(world.sun_cycle_enabled);
+        assert_eq!(world.sun_cycle_day, 1000.0);
+        assert_eq!(world.sun_cycle_night, 1000.0);
+
+        let command = WorldSettings::directional_light_command(
+            None,
+            None,
+            None,
+            Some(true),
+            Some("north"),
+            Some(1000.0),
+            Some(500.0),
+            Some(0.25),
+        );
+        assert_eq!(command["sun_cycle_enabled"], json!(true));
+        assert_eq!(command["sun_rise_cardinal"], json!("north"));
+        assert_eq!(command["sun_cycle_day"], json!(1000.0));
+        assert_eq!(command["sun_cycle_night"], json!(500.0));
+        assert_eq!(command["sun_cycle_phase"], json!(0.25));
+
+        let mut synced = WorldSettings::default();
+        synced.apply_command(&command);
+        assert!(synced.sun_cycle_enabled);
+        assert_eq!(synced.sun_cycle_day, 1000.0);
+        assert_eq!(synced.sun_cycle_night, 500.0);
+        assert_eq!(synced.sun_cycle_phase, 0.25);
+        synced.apply_event(&json!({ "event": "debug_metrics", "sun_cycle_phase": 0.5 }));
+        assert_eq!(synced.sun_cycle_phase, 0.5);
     }
 }

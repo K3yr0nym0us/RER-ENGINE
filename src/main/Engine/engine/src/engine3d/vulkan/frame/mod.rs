@@ -7,6 +7,7 @@ use ash::vk;
 use gpu_allocator::MemoryLocation;
 
 use crate::engine3d::bvh::RtMaterialGpu;
+use crate::engine3d::config_3d::world_bounds::SkyUniform;
 
 use super::accel::{self, Accel, BlasInput, TlasInstance};
 use super::error::{VulkanError, vk_error};
@@ -179,6 +180,11 @@ pub struct ProbeCapture {
 
 pub struct FrameInput<'a> {
     pub scene: &'a [u8],
+    /// Esfera de cielo: degradado azul oscuro → azul cielo con brillo alineado al sol.
+    pub sky: SkyUniform,
+    /// Sombra solo mientras el sol está sobre el horizonte (si no, el mapa se
+    /// capturaría desde debajo del suelo y se rompería).
+    pub sun_above_horizon: bool,
     pub shadows: bool,
     /// Lado del shadow map (px) exigido por el tier de sombras. `FrameRenderer` reasigna el mapa
     /// cuando cambia; sin esto el tier solo movía un número en el log.
@@ -960,7 +966,7 @@ impl FrameRenderer {
                 .sim(slot, input.particles, &device, cmd)?;
         }
         self.trace_background(slot, input, &pipes, &device, cmd)?;
-        if input.shadows {
+        if input.shadows && input.sun_above_horizon {
             self.shadow_pass(slot, input, &pipes, &device, cmd)?;
         } else {
             // Sin pase de sombras el mapa nunca pasó a READ_ONLY; el descriptor lo espera

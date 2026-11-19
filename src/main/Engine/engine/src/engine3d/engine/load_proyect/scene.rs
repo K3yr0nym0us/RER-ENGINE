@@ -343,6 +343,11 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
             ambient: Some(light_ambient),
             intensity: Some(light_intensity),
             shadow_darkness: Some(shadow_darkness),
+            sun_cycle_enabled: None,
+            sun_rise_cardinal: None,
+            sun_cycle_day: None,
+            sun_cycle_night: None,
+            sun_cycle_phase: None,
         },
     ));
     crate::engine3d::config_3d::entity_textures::apply_graphics_settings_from_world_wire(
@@ -698,6 +703,16 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
             }
         }
     }
+
+    // El sol ya existe en escena: aplicar su configuración guardada aquí para
+    // que la fase guardada recoloque el icono en su órbita exacta.
+    state.apply_sun_cycle_settings(
+        view.world.sunCycleEnabled,
+        view.world.sunRiseCardinal.as_deref(),
+        view.world.sunCycleDay,
+        view.world.sunCycleNight,
+        view.world.sunCyclePhase,
+    );
 
     match (saved_player.as_ref(), saved_config_camera.as_ref()) {
         (Some(player_entity), Some(cam)) => {

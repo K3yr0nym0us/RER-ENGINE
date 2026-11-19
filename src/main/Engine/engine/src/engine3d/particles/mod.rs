@@ -778,7 +778,12 @@ impl ParticleSystem {
 
     /// Mantiene la corona del sol pegada al icono y al tamaño de su esfera. Si el
     /// emisor no existe (escena recién cargada o `clear`), lo recrea.
-    pub(crate) fn sync_sun_emitter(&mut self, origin: [f32; 3], radius: f32) {
+    pub(crate) fn sync_sun_emitter(
+        &mut self,
+        origin: [f32; 3],
+        radius: f32,
+        color: [f32; 4],
+    ) {
         if let Some(emitter) = self
             .emitters
             .iter_mut()
@@ -787,8 +792,13 @@ impl ParticleSystem {
             emitter.config.origin = origin;
             emitter.config.radius = radius;
             emitter.config.size = radius * 6.0;
+            emitter.config.color_start = color;
+            emitter.config.color_end = color;
         } else {
-            let mut emitter = Emitter::new(SUN_EMITTER_ID, EmitterConfig::sun(origin, radius));
+            let mut config = EmitterConfig::sun(origin, radius);
+            config.color_start = color;
+            config.color_end = color;
+            let mut emitter = Emitter::new(SUN_EMITTER_ID, config);
             // Si el sol se recreó tras limpiar la escena, el pool puede conservar
             // chispas de la posición anterior: las descarta en el primer lote.
             emitter.reset = true;
@@ -1351,8 +1361,8 @@ mod tests {
     #[test]
     fn sun_emitter_follows_the_icon_and_stays_reserved() {
         let mut system = ParticleSystem::new();
-        system.sync_sun_emitter([1.0, 2.0, 3.0], 0.5);
-        system.sync_sun_emitter([9.0, 8.0, 7.0], 1.25);
+        system.sync_sun_emitter([1.0, 2.0, 3.0], 0.5, [1.0, 0.95, 0.72, 1.0]);
+        system.sync_sun_emitter([9.0, 8.0, 7.0], 1.25, [1.0, 0.95, 0.72, 1.0]);
 
         assert_eq!(system.len(), 1);
         let emitter = &system.emitters[0];
@@ -1367,7 +1377,7 @@ mod tests {
     #[test]
     fn sun_emitter_is_not_saved_or_pickable() {
         let mut system = ParticleSystem::new();
-        system.sync_sun_emitter([3.0, 4.0, 5.0], 0.75);
+        system.sync_sun_emitter([3.0, 4.0, 5.0], 0.75, [1.0, 0.95, 0.72, 1.0]);
 
         assert!(system.contains(SUN_EMITTER_ID));
         assert_eq!(system.pickable().count(), 0);
@@ -1379,7 +1389,7 @@ mod tests {
     #[test]
     fn sun_emitter_spawns_one_particle_that_never_expires() {
         let mut system = ParticleSystem::new();
-        system.sync_sun_emitter([1.0, 2.0, 3.0], 0.5);
+        system.sync_sun_emitter([1.0, 2.0, 3.0], 0.5, [1.0, 0.95, 0.72, 1.0]);
 
         let first = system.batches(0.016, [0.0; 3]).remove(0);
         assert_eq!(first.spawn, 1);

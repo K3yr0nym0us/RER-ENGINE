@@ -78,6 +78,11 @@ pub(crate) fn send_project_loaded_3d(
         lightAmbient: view.world.lightAmbient,
         lightIntensity: view.world.lightIntensity,
         shadowDarkness: view.world.shadowDarkness,
+        sunCycleEnabled: view.world.sunCycleEnabled,
+        sunRiseCardinal: view.world.sunRiseCardinal.clone(),
+        sunCycleDay: view.world.sunCycleDay,
+        sunCycleNight: view.world.sunCycleNight,
+        sunCyclePhase: view.world.sunCyclePhase,
         graphicsTextureTier: view
             .world
             .graphicsTextureTier

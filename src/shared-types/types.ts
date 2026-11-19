@@ -313,6 +313,12 @@ export interface SavedWorldConfig {
   lightIntensity?:   number
   /** 3D: oscuridad de sombras proyectadas (0.9–1, mayor = más oscuro). */
   shadowDarkness?:   number
+  /** 3D: ciclo día/noche del sol y su posición guardada. */
+  sunCycleEnabled?:  boolean
+  sunRiseCardinal?:  'east' | 'north' | 'west' | 'south'
+  sunCycleDay?:      number
+  sunCycleNight?:    number
+  sunCyclePhase?:    number
   /** 3D: nivel global de texturas GLB embebidas. */
   graphicsTextureTier?: 'low' | 'medium' | 'high' | 'ultra'
   /** 3D: distancia (m) con textura al tope del tier activo. */

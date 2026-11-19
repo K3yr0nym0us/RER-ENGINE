@@ -106,7 +106,6 @@ pub struct State {
     pub(crate) grid_config: GridConfig,
     pub(crate) world_bounds_3d: WorldBounds3D,
     pub(crate) world_bounds_buffer: GizmoBuffer,
-    pub(crate) world_sky_buffer: GizmoBuffer,
     /// Buffers reutilizables de overlays dinámicos (evitan asignar Vulkan por frame).
     pub(crate) collision_overlay_buffer: GizmoBuffer,
     pub(crate) skeleton_overlay_buffer: GizmoBuffer,
@@ -420,6 +419,16 @@ pub struct State {
     pub(crate) texture_lod_last_update: Instant,
     /// Entidad icono del sol (luz direccional).
     pub(crate) sun_entity: Option<EntityId>,
+    /// Ciclo día/noche activo: el sol orbita automáticamente la esfera del cielo.
+    pub(crate) sun_cycle_enabled: bool,
+    /// Cardinal por el que sale el sol (la puesta es el opuesto).
+    pub(crate) sun_rise_cardinal: crate::engine3d::config_3d::directional_light::SunRiseCardinal,
+    /// Segundos que tarda la parte diurna (fase [0,0.5)); 1000 UI = 1 h = 3600 s.
+    pub(crate) sun_cycle_day_secs: f32,
+    /// Segundos que tarda la parte nocturna (fase [0.5,1)); 1000 UI = 1 h.
+    pub(crate) sun_cycle_night_secs: f32,
+    /// Fase actual del ciclo [0,1).
+    pub(crate) sun_cycle_phase: f32,
     /// Mesh y textura compartidos del icono esférico del sol.
     pub(crate) sun_icon_mesh_idx: Option<usize>,
     pub(crate) sun_icon_tex_idx: Option<usize>,

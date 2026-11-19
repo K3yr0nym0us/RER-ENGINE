@@ -111,7 +111,6 @@ impl State {
         let world_bounds_3d = WorldBounds3D::default();
         let grid_config = GridConfig::default();
         let world_bounds_buffer = world_bounds_3d.build_buffer(&vulkan);
-        let world_sky_buffer = world_bounds_3d.build_sky_buffer(&vulkan);
 
         let audio_slot = start_audio_thread();
 
@@ -169,7 +168,6 @@ impl State {
             grid_config,
             world_bounds_3d,
             world_bounds_buffer,
-            world_sky_buffer,
             collision_overlay_buffer: crate::engine3d::gizmo::build_lines_from_vertices(
                 &vulkan,
                 &[],
@@ -365,6 +363,12 @@ impl State {
             entity_texture_effective_cap: HashMap::new(),
             texture_lod_last_update: Instant::now(),
             sun_entity: None,
+            sun_cycle_enabled: true,
+            sun_rise_cardinal: crate::engine3d::config_3d::directional_light::SunRiseCardinal::East,
+            sun_cycle_day_secs: crate::engine3d::config_3d::directional_light::DEFAULT_SUN_CYCLE_SEGMENT_SECS,
+            sun_cycle_night_secs: crate::engine3d::config_3d::directional_light::DEFAULT_SUN_CYCLE_SEGMENT_SECS,
+            // Demo: el sol arranca en su punto más alto (mediodía).
+            sun_cycle_phase: 0.25,
             sun_icon_mesh_idx: None,
             sun_icon_tex_idx: None,
             editor_box_mesh_idx: None,

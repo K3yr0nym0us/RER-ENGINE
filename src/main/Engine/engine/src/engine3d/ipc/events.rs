@@ -608,6 +608,9 @@ pub enum EngineEvent {
         play_character_yaw: Option<f32>,
         #[serde(skip_serializing_if = "Option::is_none")]
         play_character_pitch: Option<f32>,
+        /// Fase actual del ciclo día/noche [0,1) para sincronizar el slider de la UI.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sun_cycle_phase: Option<f32>,
     },
     /// Emitido cuando el preview cambia de estado desde el motor.
     PreviewPlayingChanged {
