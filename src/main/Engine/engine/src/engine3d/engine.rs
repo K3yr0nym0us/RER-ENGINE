@@ -157,8 +157,10 @@ pub struct State {
     pub(crate) bone_index_cache: std::collections::HashMap<(EntityId, String), usize>,
     /// Sistema de partículas GPU-driven (F1: fuego) del lado CPU del motor.
     pub(crate) particles: crate::engine3d::particles::ParticleSystem,
-    /// Agua de bloques estilo Minecraft (autómata celular, independiente del GPU).
+    /// Cubo de líquidos (autómata celular, independiente del GPU).
     pub(crate) water: crate::engine3d::water::WaterSystem,
+    /// B7 — gotas locales en la frontera del charco, con solver propio.
+    pub(crate) splash: crate::engine3d::water::SplashLayer,
     /// Modo editor: seleccionar hueso con click para un socket.
     pub(crate) socket_bone_pick_entity: Option<EntityId>,
     pub(crate) socket_bone_pick_hovered_joint: Option<usize>,

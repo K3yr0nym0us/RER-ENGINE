@@ -1,4 +1,5 @@
-//! Agua de bloques estilo Minecraft: autómata celular en CPU, sin partículas.
+//! Cubo de líquidos: autómata celular en CPU con volumen conservado y
+//! superficie continua.
 //!
 //! Cada celda de la rejilla guarda un nivel 0..=7 (7 = fuente infinita). En cada
 //! tick el agua cae sin perder nivel si hay hueco debajo y, si no, se reparte a
@@ -23,13 +24,35 @@ use crate::engine3d::ecs::{
 };
 use crate::engine3d::ipc::SaveParticleEmitterSnapshot;
 use crate::engine3d::mesh::Vertex;
+use crate::engine3d::particles::fluid::{FluidBounds, FluidConfig, FluidSolver};
 
 /// Wire del elemento del sidebar (comparte snapshot con los emisores).
-pub(crate) const WATER_WIRE: &str = "water_block";
+pub(crate) const LIQUID_WIRE: &str = "liquid_cube";
 /// Tamaño de celda por defecto (m).
 pub(crate) const DEFAULT_CELL_SIZE: f32 = 0.5;
-/// Nivel de una fuente: nunca se agota.
+/// Convierte un color RGB lineal del líquido a bytes para la textura; `boost`
+/// aclara las gotas para que destaquen sobre la superficie.
+fn liquid_rgba(color: [f32; 3], boost: u8) -> [u8; 4] {
+    let channel = |value: f32| {
+        (value * 255.0 + boost as f32)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    [channel(color[0]), channel(color[1]), channel(color[2]), 255]
+}
+
+/// Propiedades por defecto del líquido común y corriente (agua).
+pub(crate) const DEFAULT_LIQUID_COLOR: [f32; 3] = [0.22, 0.55, 0.87];
+pub(crate) const DEFAULT_VISCOSITY: f32 = 0.15;
+pub(crate) const DEFAULT_COHESION: f32 = 0.35;
+/// Nivel máximo de una celda: 7 = altura `cs` (un cubo lleno). El agua se mide
+/// en unidades de 1/8 de celda, así que una celda llena tiene 8 unidades.
 const SOURCE_LEVEL: u8 = 7;
+/// Volumen total que suelta una fuente, en unidades de 1/8 de celda (8 = un
+/// cubo). Se reparte entre las celdas que alcanza: la altura inicial baja a
+/// medida que crece el charco, hasta quedar en la mínima (1 unidad) en todas.
+/// Ajusta este valor para charcos más grandes o más pequeños.
+const SOURCE_VOLUME: u32 = 96;
 /// Tick del autómata (5 Hz, como Minecraft).
 pub(crate) const TICK_INTERVAL: f32 = 0.2;
 const MIN_CELL: f32 = 0.1;
@@ -39,6 +62,24 @@ const MAX_CELLS: usize = 24_000;
 /// Origen del raycast que busca el suelo de cada columna.
 const RAY_TOP: f32 = 1000.0;
 const RAY_MAX: f32 = 2000.0;
+/// Margen con el que la fila final se apoya sobre el terreno. Si coincide con
+/// la altura del suelo, la malla y el terreno hacen z-fighting y parpadean al
+/// mover la cámara.
+const EDGE_LIFT: f32 = 0.02;
+/// Radio (en celdas) del redondeo de la unión entre fuentes cercanas. Con una
+/// unión dura los dos círculos se cortan en un pico cóncavo; `smooth_min` lo
+/// rellena hacia afuera, como si la atracción superficial fusionara los charcos.
+const SOURCE_BLEND: f32 = 2.5;
+/// B1 — margen sobre la media de los 8 vecinos para aplicar suavizado de
+/// curvatura. Solo corrige bultos reales; no aplana un charco ya nivelado.
+const CURVATURE_MARGIN: f32 = 1.5;
+/// B2 — parámetros del flujo con inercia (shallow-water simplificado). La
+/// velocidad no mueve fracciones de unidad (eso rompería la conservación
+/// entera): sesga qué cesiones se permiten y se transporta con el agua.
+const SW_GRAVITY: f32 = 0.16;
+const SW_MAX_SPEED: f32 = 1.4;
+const SW_MIN_PUSH: f32 = 0.12;
+const SW_VELOCITY_SHARE: f32 = 0.35;
 
 /// Celda de la rejilla (índices X, Y, Z).
 type Cell = (i32, i32, i32);
@@ -50,17 +91,31 @@ pub(crate) struct WaterSource {
     pub id: u64,
     pub position: [f32; 3],
     pub cell_size: f32,
+    /// Propiedades del líquido de esta fuente.
+    pub color: [f32; 3],
+    pub viscosity: f32,
+    pub cohesion: f32,
     /// Celda snapped (puede moverse hacia arriba si el terreno la tapa).
     cell: Cell,
 }
 
 impl WaterSource {
-    fn new(id: u64, position: [f32; 3], cell_size: f32) -> Self {
+    fn with_liquid(
+        id: u64,
+        position: [f32; 3],
+        cell_size: f32,
+        color: [f32; 3],
+        viscosity: f32,
+        cohesion: f32,
+    ) -> Self {
         let cell = snap(position, cell_size);
         Self {
             id,
             position,
             cell_size,
+            color,
+            viscosity,
+            cohesion,
             cell,
         }
     }
@@ -84,16 +139,283 @@ fn is_solid(cell: Cell, cell_size: f32, floors: &HashMap<(i32, i32), f32>) -> bo
     cell_bottom(cell, cell_size) + 1.0e-3 < floor
 }
 
+/// B9 — contadores ligeros del sistema de agua, para medir coste sin tocar el
+/// resultado de la simulación.
+#[derive(Default, Debug, Clone, Copy)]
+pub(crate) struct WaterStats {
+    pub steps: u64,
+    pub cells: usize,
+    pub mesh_vertices: usize,
+    pub mesh_indices: usize,
+    pub splash_particles: usize,
+    pub terrain_points: usize,
+}
+
+/// Altura del terreno en un punto arbitrario, interpolada bilinealmente desde
+/// el centro de las columnas ya consultadas por raycast.
+fn terrain_height_at(x: f32, z: f32, floors: &HashMap<(i32, i32), f32>, cell_size: f32) -> f32 {
+    let fx = x / cell_size - 0.5;
+    let fz = z / cell_size - 0.5;
+    let ix = fx.floor() as i32;
+    let iz = fz.floor() as i32;
+    let tx = fx - ix as f32;
+    let tz = fz - iz as f32;
+    let h00 = floors.get(&(ix, iz)).copied().unwrap_or(0.0);
+    let h10 = floors.get(&(ix + 1, iz)).copied().unwrap_or(h00);
+    let h01 = floors.get(&(ix, iz + 1)).copied().unwrap_or(h00);
+    let h11 = floors.get(&(ix + 1, iz + 1)).copied().unwrap_or(h00);
+    (h00 * (1.0 - tx) + h10 * tx) * (1.0 - tz) + (h01 * (1.0 - tx) + h11 * tx) * tz
+}
+
+/// B5 — Nube de puntos que muestrea la superficie del terreno. Se construye
+/// una sola vez y se reutiliza como frontera del solver de partículas, de modo
+/// que el agua choque con el heightfield real y no con una caja genérica.
+#[derive(Default)]
+pub(crate) struct TerrainBoundary {
+    points: Vec<[f32; 3]>,
+    volumes: Vec<f32>,
+    dirty: bool,
+}
+
+impl TerrainBoundary {
+    fn invalidate(&mut self) {
+        self.dirty = true;
+    }
+
+    /// Vuelve a muestrear la región cubierta por `floors` con separación de
+    /// dos radios de partícula (o media celda, la que sea mayor).
+    fn rebuild(&mut self, floors: &HashMap<(i32, i32), f32>, cell_size: f32, particle_radius: f32) {
+        self.points.clear();
+        self.volumes.clear();
+        self.dirty = false;
+        let Some(&(min_ix, min_iz)) = floors.keys().min_by_key(|column| (column.0, column.1)) else {
+            return;
+        };
+        let Some(&(max_ix, max_iz)) = floors.keys().max_by_key(|column| (column.0, column.1)) else {
+            return;
+        };
+        let spacing = (particle_radius * 2.0).max(cell_size * 0.5).max(0.01);
+        let x0 = min_ix as f32 * cell_size - spacing;
+        let x1 = (max_ix as f32 + 1.0) * cell_size + spacing;
+        let z0 = min_iz as f32 * cell_size - spacing;
+        let z1 = (max_iz as f32 + 1.0) * cell_size + spacing;
+        let volume = spacing * spacing * spacing;
+        let mut x = x0;
+        while x <= x1 + 1.0e-4 {
+            let mut z = z0;
+            while z <= z1 + 1.0e-4 {
+                let y = terrain_height_at(x, z, floors, cell_size);
+                self.points.push([x, y, z]);
+                self.volumes.push(volume);
+                z += spacing;
+            }
+            x += spacing;
+        }
+    }
+
+    pub(crate) fn points(&self) -> &[[f32; 3]] {
+        &self.points
+    }
+
+    pub(crate) fn volumes(&self) -> &[f32] {
+        &self.volumes
+    }
+}
+
+/// B7 — gotas localizadas en la frontera del charco. Son espuma visual: no
+/// prestan volumen al grid, así que la conservación de la rejilla no cambia.
+pub(crate) struct SplashLayer {
+    solver: FluidSolver,
+    lifetimes: Vec<f32>,
+    bounds_key: Option<(i32, i32, i32, i32)>,
+    mesh_idx: Option<usize>,
+    entity: Option<EntityId>,
+    tex_idx: Option<usize>,
+    spawn_carry: f32,
+}
+
+impl Default for SplashLayer {
+    fn default() -> Self {
+        Self {
+            solver: FluidSolver::new(FluidConfig::default(), FluidBounds::new([0.0; 3], [1.0; 3])),
+            lifetimes: Vec::new(),
+            bounds_key: None,
+            mesh_idx: None,
+            entity: None,
+            tex_idx: None,
+            spawn_carry: 0.0,
+        }
+    }
+}
+
+impl SplashLayer {
+    fn ensure_bounds(
+        &mut self,
+        min_ix: i32,
+        max_ix: i32,
+        min_iz: i32,
+        max_iz: i32,
+        cell_size: f32,
+        viscosity: f32,
+        cohesion: f32,
+    ) -> bool {
+        let key = (min_ix, max_ix, min_iz, max_iz);
+        self.solver.config.viscosity = viscosity.clamp(0.0, 1.0);
+        self.solver.config.cohesion = cohesion.clamp(0.0, 1.0);
+        self.solver.config.curvature = 0.05 + 0.12 * cohesion.clamp(0.0, 1.0);
+        if self.bounds_key == Some(key) {
+            return false;
+        }
+        self.bounds_key = Some(key);
+        self.lifetimes.clear();
+        self.solver.clear_particles();
+        let margin = cell_size * 2.0;
+        let min = [
+            min_ix as f32 * cell_size - margin,
+            -cell_size,
+            min_iz as f32 * cell_size - margin,
+        ];
+        let max = [
+            (max_ix as f32 + 1.0) * cell_size + margin,
+            cell_size * 8.0,
+            (max_iz as f32 + 1.0) * cell_size + margin,
+        ];
+        let config = FluidConfig {
+            smoothing_radius: (cell_size * 0.8).max(0.08),
+            particle_mass: 1.0,
+            solver_iterations: 3,
+            min_solver_iterations: 1,
+            max_density_error: 0.05,
+            viscosity: viscosity.clamp(0.0, 1.0),
+            cohesion: cohesion.clamp(0.0, 1.0),
+            curvature: 0.05 + 0.12 * cohesion.clamp(0.0, 1.0),
+            boundary_support: 1.0,
+            ..Default::default()
+        };
+        self.solver = FluidSolver::new(config, FluidBounds::new(min, max));
+        true
+    }
+
+    fn spawn(&mut self, position: [f32; 3], velocity: [f32; 3], life: f32) {
+        self.solver.spawn_particle(position, velocity);
+        self.lifetimes.push(life);
+    }
+
+    fn update(&mut self, dt: f32) {
+        if self.solver.particle_count() == 0 {
+            return;
+        }
+        self.solver.step(dt);
+        for life in &mut self.lifetimes {
+            *life -= dt;
+        }
+        let mut dead: Vec<usize> = self
+            .lifetimes
+            .iter()
+            .enumerate()
+            .filter(|(_, life)| **life <= 0.0)
+            .map(|(index, _)| index)
+            .collect();
+        dead.sort_unstable_by(|a, b| b.cmp(a));
+        for index in dead {
+            self.solver.remove_particle(index);
+            self.lifetimes.swap_remove(index);
+        }
+    }
+
+    /// Malla de gotas: un octaedro pequeño por partícula, suficiente para que
+    /// se lean como perlas de agua desde cualquier ángulo sin parecer cubos.
+    fn build_mesh(&self, radius: f32) -> (Vec<Vertex>, Vec<u32>, [f32; 3], [f32; 3]) {
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+        let mut min = [f32::MAX; 3];
+        let mut max = [f32::MIN; 3];
+        let offsets = [
+            [radius, 0.0, 0.0],
+            [-radius, 0.0, 0.0],
+            [0.0, radius, 0.0],
+            [0.0, -radius, 0.0],
+            [0.0, 0.0, radius],
+            [0.0, 0.0, -radius],
+        ];
+        let faces = [
+            [2, 0, 4], [2, 4, 1], [2, 1, 5], [2, 5, 0],
+            [3, 4, 0], [3, 1, 4], [3, 5, 1], [3, 0, 5],
+        ];
+        for &position in self.solver.positions() {
+            let base = vertices.len() as u32;
+            for offset in offsets {
+                let point = [
+                    position[0] + offset[0],
+                    position[1] + offset[1],
+                    position[2] + offset[2],
+                ];
+                let normal = Vec3::new(offset[0], offset[1], offset[2]).normalize();
+                vertices.push(Vertex {
+                    position: point,
+                    normal: [normal.x, normal.y, normal.z],
+                    uv: [0.0, 0.0],
+                });
+                for axis in 0..3 {
+                    min[axis] = min[axis].min(point[axis]);
+                    max[axis] = max[axis].max(point[axis]);
+                }
+            }
+            for face in faces {
+                indices.extend_from_slice(&[
+                    base + face[0] as u32,
+                    base + face[1] as u32,
+                    base + face[2] as u32,
+                ]);
+            }
+        }
+        if vertices.is_empty() {
+            return (
+                vec![Vertex {
+                    position: [0.0; 3],
+                    normal: [0.0, 1.0, 0.0],
+                    uv: [0.0, 0.0],
+                }],
+                vec![0, 0, 0],
+                [0.0; 3],
+                [0.0; 3],
+            );
+        }
+        (vertices, indices, min, max)
+    }
+}
+
 /// Rejilla de agua + estado de render. Toda la lógica del autómata es pura
 /// (recibe las alturas de suelo ya consultadas por el motor).
 #[derive(Default)]
 pub(crate) struct WaterSystem {
     sources: Vec<WaterSource>,
     cells: HashMap<Cell, u8>,
+    /// Unidades (1..=8) justo antes del último tick. La malla interpola entre
+    /// este estado y `cells` para que el agua salga suavemente de la celda
+    /// anterior en vez de aparecer de golpe.
+    prev_units: HashMap<Cell, u32>,
+    /// Volumen aún no vertido por cada fuente (unidades de 1/8 de celda).
+    reservoir: HashMap<u64, u32>,
+    /// B2 — velocidad horizontal por celda (unidades de celda/tick). Da inercia
+    /// al reparto: el agua puede seguir avanzando poco después de nivelarse.
+    velocity: HashMap<Cell, [f32; 2]>,
     cell_size: f32,
+    /// Propiedades del líquido compartidas por el charco (las pone la última
+    /// fuente alta/editada; una sola malla implica un solo color por charco).
+    color: [f32; 3],
+    viscosity: f32,
+    cohesion: f32,
     /// Suelo ya consultado por columna: el raycast contra el trimesh del terreno
     /// es caro y la altura de una columna no cambia mientras no se regenere.
     floor_cache: HashMap<(i32, i32), f32>,
+    /// B5 — frontera muestreada del terreno para el solver de partículas.
+    terrain: TerrainBoundary,
+    /// Columnas que hay que consultar, recalculadas solo cuando cambia la
+    /// rejilla. Evita reconstruir un `HashSet` nuevo en cada tick (5 Hz).
+    query_cache: HashSet<(i32, i32)>,
+    /// B9 — contadores del último estado conocido.
+    stats: WaterStats,
     pub(crate) tick_accum: f32,
     /// `true` cuando la rejilla cambió y la malla hay que subirla de nuevo.
     pub(crate) dirty: bool,
@@ -124,6 +446,24 @@ impl WaterSystem {
         self.cells.len()
     }
 
+    /// B9 — instantánea de contadores (sin cronómetros, coste despreciable).
+    /// La consume el futuro panel de perfilado; se mantiene disponible mientras
+    /// no haya interfaz que la muestre.
+    #[allow(dead_code)]
+    pub(crate) fn stats(&self) -> WaterStats {
+        self.stats
+    }
+
+    /// ¿Queda una transición entre ticks por dibujar? Mientras sea `true` la
+    /// malla se reinterpola cada frame con el alpha del acumulador.
+    pub(crate) fn is_animating(&self) -> bool {
+        self.prev_units.len() != self.cells.len()
+            || self
+                .cells
+                .iter()
+                .any(|(&cell, &level)| self.prev_units.get(&cell) != Some(&(level as u32 + 1)))
+    }
+
     /// Fuentes pickables por el viewport: comparte el cableado de hover y click
     /// derecho de los emisores (F5).
     pub(crate) fn pickable(&self) -> Vec<(u64, [f32; 3])> {
@@ -133,17 +473,46 @@ impl WaterSystem {
             .collect()
     }
 
-    /// Alta o reemplazo de una fuente. Todas las fuentes comparten el tamaño de
-    /// celda de la más reciente: cambiarlo reconstruye el snapped de las demás.
+    /// Alta o reemplazo de una fuente con propiedades de líquido por defecto.
     pub(crate) fn add_source(&mut self, id: u64, position: [f32; 3], cell_size: f32) {
+        self.add_liquid_source(
+            id,
+            position,
+            cell_size,
+            DEFAULT_LIQUID_COLOR,
+            DEFAULT_VISCOSITY,
+            DEFAULT_COHESION,
+        );
+    }
+
+    /// Alta o reemplazo con propiedades configurables. Todas las fuentes
+    /// comparten el tamaño de celda y el color de la más reciente.
+    pub(crate) fn add_liquid_source(
+        &mut self,
+        id: u64,
+        position: [f32; 3],
+        cell_size: f32,
+        color: [f32; 3],
+        viscosity: f32,
+        cohesion: f32,
+    ) {
         let cell_size = cell_size.clamp(MIN_CELL, MAX_CELL);
+        self.color = [
+            color[0].clamp(0.0, 1.0),
+            color[1].clamp(0.0, 1.0),
+            color[2].clamp(0.0, 1.0),
+        ];
+        self.viscosity = viscosity.clamp(0.0, 1.0);
+        self.cohesion = cohesion.clamp(0.0, 1.0);
         if self.cell_size != cell_size {
             self.cell_size = cell_size;
             self.floor_cache.clear();
+            self.terrain.invalidate();
             // Las celdas son índices de rejilla: con otro tamaño de celda los
             // mismos índices apuntan a otra parte del mundo (y sin nivelación
             // entre celdas jamás se drenarían). Se reconstruye desde cero.
             self.cells.clear();
+            self.prev_units.clear();
             for source in &mut self.sources {
                 source.cell_size = cell_size;
                 source.cell = snap(source.position, cell_size);
@@ -153,38 +522,56 @@ impl WaterSystem {
             self.cell_size = cell_size;
         }
         match self.sources.iter_mut().find(|source| source.id == id) {
-            Some(source) => *source = WaterSource::new(id, position, cell_size),
-            None => self.sources.push(WaterSource::new(id, position, cell_size)),
+            Some(source) => {
+                *source = WaterSource::with_liquid(id, position, cell_size, color, viscosity, cohesion)
+            }
+            None => self.sources.push(WaterSource::with_liquid(
+                id, position, cell_size, color, viscosity, cohesion,
+            )),
         }
+        // Una fuente nueva trae su propio cubo: se recarga el reservorio.
+        self.reservoir.insert(id, SOURCE_VOLUME);
+        self.refresh_query_cache();
         self.dirty = true;
     }
 
     pub(crate) fn remove_source(&mut self, id: u64) {
         let before = self.sources.len();
         self.sources.retain(|source| source.id != id);
+        self.reservoir.remove(&id);
         if self.sources.len() != before && self.sources.is_empty() {
             self.cells.clear();
+            self.prev_units.clear();
         }
+        self.refresh_query_cache();
         self.dirty = true;
     }
 
     pub(crate) fn clear(&mut self) {
         self.sources.clear();
         self.cells.clear();
+        self.prev_units.clear();
+        self.reservoir.clear();
+        self.velocity.clear();
         self.floor_cache.clear();
+        self.terrain.invalidate();
+        self.refresh_query_cache();
         self.dirty = true;
     }
 
-    /// Columnas XZ que hay que consultar: celdas vivas, sus vecinas laterales y
-    /// las fuentes. Con eso basta para decidir caída y expansión.
-    pub(crate) fn columns_to_query(&self) -> HashSet<(i32, i32)> {
-        let mut out = HashSet::new();
+    /// Columnas XZ que hay que consultar: celdas vivas, las 24 columnas que las
+    /// rodean (el anillo en rampa usa su suelo) y las fuentes.
+    /// Se recalcula solo cuando cambia la rejilla; reutiliza la capacidad del
+    /// `HashSet` anterior en vez de asignar uno nuevo en cada tick.
+    fn refresh_query_cache(&mut self) {
+        let mut out = std::mem::take(&mut self.query_cache);
+        out.clear();
         let mut add = |cell: Cell| {
-            out.insert((cell.0, cell.2));
-            out.insert((cell.0 + 1, cell.2));
-            out.insert((cell.0 - 1, cell.2));
-            out.insert((cell.0, cell.2 + 1));
-            out.insert((cell.0, cell.2 - 1));
+            for dx in -2..=2 {
+                for dz in -2..=2 {
+                    out.insert((cell.0 + dx, cell.2 + dz));
+                }
+            }
         };
         for &cell in self.cells.keys() {
             add(cell);
@@ -192,19 +579,49 @@ impl WaterSystem {
         for source in &self.sources {
             add(source.cell);
         }
-        out
+        self.query_cache = out;
+    }
+
+    /// Cache de columnas del estado actual (ver `refresh_query_cache`).
+    pub(crate) fn columns_to_query(&self) -> &HashSet<(i32, i32)> {
+        &self.query_cache
+    }
+
+    /// Quita del caché de suelos las columnas que ya no están cerca del agua.
+    /// Sin esto, mover fuentes acumularía raycasts viejos indefinidamente.
+    fn prune_floor_cache(&mut self) {
+        self.floor_cache
+            .retain(|column, _| self.query_cache.contains(column));
     }
 
     /// Un tick del autómata. `floors` son las alturas de terreno por columna.
+    ///
+    /// El agua se CONSERVA: cada fuente suelta un volumen finito (`SOURCE_VOLUME`)
+    /// que se reparte entre las celdas que alcanza. La altura de la fuente baja a
+    /// medida que el charco crece y al final todas las celdas quedan en la altura
+    /// mínima (1 unidad = 1/8 de celda), en vez de haber una fuente infinita con
+    /// un cono alto en el centro.
     pub(crate) fn step(&mut self, floors: &HashMap<(i32, i32), f32>) {
         let cs = self.cell_size();
-        let prev = self.cells.clone();
-        let mut next: HashMap<Cell, u8> = HashMap::new();
-        let mut source_cells: HashSet<Cell> = HashSet::new();
+        // La viscosidad del líquido se traduce en amortiguamiento de la
+        // inercia: 0.15 (agua) ≈ 0.86, 1.0 (jarabe) ≈ 0.35.
+        let damping = 0.95 - 0.6 * self.viscosity;
+        // Unidades de agua por celda (1..=8). El nivel guardado es unidades - 1.
+        let mut units: HashMap<Cell, u32> = self
+            .cells
+            .iter()
+            .map(|(&cell, &level)| (cell, level as u32 + 1))
+            .collect();
+        // Estado de partida para la interpolación. En el PRIMER llenado se
+        // iguala al resultado: el cubo inicial aparece entero y son las celdas
+        // vecinas las que salen de él en los ticks siguientes.
+        let before = units.clone();
+        let first_fill = before.is_empty();
+        let mut injected: HashSet<Cell> = HashSet::new();
 
-        // Resuelve primero las fuentes enterradas (lectura) para poder mutarlas
-        // después sin solapar préstamos con el resto de la rejilla.
-        let targets: Vec<Cell> = self
+        // Fuentes enterradas: se recolocan hacia arriba. Sus celdas se resuelven
+        // antes de mutarlas para no solapar préstamos con la rejilla.
+        let targets: Vec<(u64, Cell)> = self
             .sources
             .iter()
             .map(|source| {
@@ -214,165 +631,296 @@ impl WaterSystem {
                     iy += 1;
                     guard += 1;
                 }
-                (ix, iy, iz)
+                (source.id, (ix, iy, iz))
             })
             .collect();
 
-        // Las fuentes primero: son infinitas y además alimentan la columna que
-        // cae cuando no tienen suelo inmediato.
-        for (source, target) in self.sources.iter_mut().zip(targets) {
-            source.cell = target;
-            let (ix, iy, iz) = target;
-            source_cells.insert(target);
-            let mut put = |cell: Cell, level: u8| {
-                if !is_solid(cell, cs, floors) && next.len() < MAX_CELLS {
-                    next.insert(cell, level);
-                }
-            };
-            put(target, SOURCE_LEVEL);
-            // Chorrito permanente hacia abajo: el agua de una fuente suspendida
-            // cae hasta encontrar suelo y entonces se reparte.
-            put((ix, iy - 1, iz), SOURCE_LEVEL);
-            // La fuente también se reparte en este mismo tick: si solo se
-            // mantuviera a sí misma, el agua nunca saldría de la celda inicial.
-            for neighbor in [
-                (ix + 1, iy, iz),
-                (ix - 1, iy, iz),
-                (ix, iy, iz + 1),
-                (ix, iy, iz - 1),
-            ] {
-                if !is_solid(neighbor, cs, floors)
-                    && !prev.contains_key(&neighbor)
-                    && !source_cells.contains(&neighbor)
-                    && next.get(&neighbor).map_or(true, |&l| l < SOURCE_LEVEL - 1)
-                    && next.len() < MAX_CELLS
-                {
-                    next.insert(neighbor, SOURCE_LEVEL - 1);
-                }
+        // Cada fuente vierte lo que le queda de su cubo, hasta llenar su celda.
+        for &(id, target) in &targets {
+            let remaining = self.reservoir.get(&id).copied().unwrap_or(0);
+            let current = units.get(&target).copied().unwrap_or(0);
+            let added = remaining.min(8u32.saturating_sub(current));
+            if added > 0 {
+                units.insert(target, current + added);
+                self.reservoir.insert(id, remaining - added);
+                // La celda que acaba de recibir el cubo NO reparte en este tick:
+                // primero se ve el cubo, después salen los vecinos de él.
+                injected.insert(target);
+            }
+        }
+        for source in &mut self.sources {
+            if let Some((_, target)) = targets.iter().find(|(id, _)| *id == source.id) {
+                source.cell = *target;
             }
         }
 
-        for (cell, level) in &prev {
-            if source_cells.contains(cell) || is_solid(*cell, cs, floors) {
+        // Caída: se recogen todas las transferencias desde un snapshot y se
+        // aplican al final, para que el resultado no dependa del orden en que
+        // el HashMap devuelva las celdas (mismo estado → mismo charco).
+        let falling_from = units.clone();
+        let mut fall_give: HashMap<Cell, u32> = HashMap::new();
+        let mut fall_take: HashMap<Cell, u32> = HashMap::new();
+        let mut falling_cells: Vec<Cell> = falling_from.keys().copied().collect();
+        falling_cells.sort_unstable();
+        for cell in falling_cells {
+            let amount = falling_from[&cell];
+            let given = fall_give.get(&cell).copied().unwrap_or(0);
+            let current = amount.saturating_sub(given);
+            if current == 0 {
                 continue;
             }
-            let (ix, iy, iz) = *cell;
+            let (ix, iy, iz) = cell;
             let below = (ix, iy - 1, iz);
-            let can_fall = !is_solid(below, cs, floors)
-                && !prev.contains_key(&below)
-                && !source_cells.contains(&below);
-            if can_fall {
-                if next.len() < MAX_CELLS {
-                    next.insert(below, *level);
-                }
+            if is_solid(below, cs, floors) {
                 continue;
             }
-            // Sin hueco debajo: repartirse a los lados con un nivel menos.
-            if *level > 1 {
-                for neighbor in [
-                    (ix + 1, iy, iz),
-                    (ix - 1, iy, iz),
-                    (ix, iy, iz + 1),
-                    (ix, iy, iz - 1),
-                ] {
-                    if is_solid(neighbor, cs, floors)
-                        || prev.contains_key(&neighbor)
-                        || source_cells.contains(&neighbor)
-                    {
+            let occupied = falling_from.get(&below).copied().unwrap_or(0);
+            let taken = fall_take.get(&below).copied().unwrap_or(0);
+            let space = 8u32.saturating_sub(occupied + taken);
+            if space == 0 {
+                continue;
+            }
+            let moved = space.min(current);
+            fall_give.insert(cell, given + moved);
+            fall_take.insert(below, taken + moved);
+        }
+        let mut flowed = units;
+        apply_transfers(&mut flowed, &fall_give, &fall_take);
+
+        // B2 — velocidad horizontal desde el gradiente de altura con inercia y
+        // amortiguamiento. No mueve fracciones de unidad: sesga qué cesiones se
+        // permiten y se transporta con el agua cuando una cesión se acepta.
+        let mut velocity = HashMap::with_capacity(self.velocity.len());
+        let mut vel_cells: Vec<Cell> = flowed.keys().copied().collect();
+        vel_cells.sort_unstable();
+        for cell in vel_cells {
+            let (ix, iy, iz) = cell;
+            let h_xp = flowed.get(&(ix + 1, iy, iz)).copied().unwrap_or(0) as f32;
+            let h_xm = flowed.get(&(ix - 1, iy, iz)).copied().unwrap_or(0) as f32;
+            let h_zp = flowed.get(&(ix, iy, iz + 1)).copied().unwrap_or(0) as f32;
+            let h_zm = flowed.get(&(ix, iy, iz - 1)).copied().unwrap_or(0) as f32;
+            let v = self.velocity.get(&cell).copied().unwrap_or([0.0; 2]);
+            let mut next = [
+                (v[0] - SW_GRAVITY * (h_xp - h_xm) * 0.5) * damping,
+                (v[1] - SW_GRAVITY * (h_zp - h_zm) * 0.5) * damping,
+            ];
+            let speed = next[0].hypot(next[1]);
+            if speed > SW_MAX_SPEED {
+                let scale = SW_MAX_SPEED / speed;
+                next[0] *= scale;
+                next[1] *= scale;
+            }
+            velocity.insert(cell, next);
+        }
+
+        // Reparto lateral: gravedad (diferencia ≥2 unidades) o inercia (el
+        // vector de velocidad empuja hacia el vecino aunque ya esté nivelado).
+        let spreading_from = flowed.clone();
+        let mut proposals: Vec<(Cell, Cell)> = Vec::new();
+        let mut spreading_cells: Vec<Cell> = spreading_from.keys().copied().collect();
+        spreading_cells.sort_unstable();
+        for cell in spreading_cells {
+            if injected.contains(&cell) {
+                continue;
+            }
+            let amount = spreading_from[&cell];
+            if amount <= 1 {
+                continue;
+            }
+            let (ix, iy, iz) = cell;
+            let v = velocity.get(&cell).copied().unwrap_or([0.0; 2]);
+            for (dx, dz, neighbor) in [
+                (1i32, 0i32, (ix + 1, iy, iz)),
+                (-1, 0, (ix - 1, iy, iz)),
+                (0, 1, (ix, iy, iz + 1)),
+                (0, -1, (ix, iy, iz - 1)),
+            ] {
+                if is_solid(neighbor, cs, floors) {
+                    continue;
+                }
+                let neighbor_amount = spreading_from.get(&neighbor).copied().unwrap_or(0);
+                if amount <= neighbor_amount {
+                    continue;
+                }
+                let push = v[0] * dx as f32 + v[1] * dz as f32;
+                if amount < neighbor_amount + 2 && push <= SW_MIN_PUSH {
+                    continue;
+                }
+                proposals.push((cell, neighbor));
+            }
+        }
+        let mut spread = flowed;
+        let accepted = commit_flow(&mut spread, proposals);
+        // La velocidad viaja con el agua cedida (snapshot → aplicar junto).
+        let mut vel_give: HashMap<Cell, [f32; 2]> = HashMap::new();
+        let mut vel_take: HashMap<Cell, [f32; 2]> = HashMap::new();
+        for (cell, neighbor) in accepted {
+            if let Some(&v) = velocity.get(&cell) {
+                let share = [v[0] * SW_VELOCITY_SHARE, v[1] * SW_VELOCITY_SHARE];
+                vel_give
+                    .entry(cell)
+                    .and_modify(|sum| {
+                        sum[0] += share[0];
+                        sum[1] += share[1];
+                    })
+                    .or_insert(share);
+                vel_take
+                    .entry(neighbor)
+                    .and_modify(|sum| {
+                        sum[0] += share[0];
+                        sum[1] += share[1];
+                    })
+                    .or_insert(share);
+            }
+        }
+        for (cell, delta) in vel_give {
+            if let Some(v) = velocity.get_mut(&cell) {
+                v[0] -= delta[0];
+                v[1] -= delta[1];
+            }
+        }
+        for (cell, delta) in vel_take {
+            let entry = velocity.entry(cell).or_insert([0.0; 2]);
+            entry[0] += delta[0];
+            entry[1] += delta[1];
+        }
+
+        // B1 — suavizado por curvatura con estencil de 8 vecinos: una celda muy
+        // por encima de la media cede una unidad al vecino más seco. Conserva
+        // el volumen y borra bultos residuales sin aplanar el charco nivelado.
+        let curvature_from = spread.clone();
+        let mut curvature_proposals: Vec<(Cell, Cell)> = Vec::new();
+        let mut curvature_cells: Vec<Cell> = curvature_from.keys().copied().collect();
+        curvature_cells.sort_unstable();
+        for cell in curvature_cells {
+            if injected.contains(&cell) {
+                continue;
+            }
+            let amount = curvature_from[&cell];
+            if amount <= 2 {
+                continue;
+            }
+            let (ix, iy, iz) = cell;
+            let mut sum = 0u32;
+            let mut count = 0u32;
+            let mut driest: Option<(Cell, u32)> = None;
+            for dx in -1..=1 {
+                for dz in -1..=1 {
+                    if dx == 0 && dz == 0 {
                         continue;
                     }
-                    if next.get(&neighbor).map_or(true, |&l| l < level - 1)
-                        && next.len() < MAX_CELLS
-                    {
-                        next.insert(neighbor, level - 1);
+                    let neighbor = (ix + dx, iy, iz + dz);
+                    if is_solid(neighbor, cs, floors) {
+                        continue;
+                    }
+                    let other = curvature_from.get(&neighbor).copied().unwrap_or(0);
+                    sum += other;
+                    count += 1;
+                    if driest.is_none_or(|(_, best)| other < best) {
+                        driest = Some((neighbor, other));
                     }
                 }
             }
-            // El agua que no pudo moverse permanece (o se refuerza si varios
-            // vecinos la alimentan).
-            next.entry(*cell)
-                .and_modify(|l| *l = (*l).max(*level))
-                .or_insert(*level);
+            if count == 0 {
+                continue;
+            }
+            let average = sum as f32 / count as f32;
+            if amount as f32 >= average + CURVATURE_MARGIN
+                && let Some((neighbor, other)) = driest
+                && amount > other
+            {
+                curvature_proposals.push((cell, neighbor));
+            }
         }
+        commit_flow(&mut spread, curvature_proposals);
 
         // Un piso por debajo de la rejilla es sólido: evita caída infinita en
         // escenas sin colisionadores (el raycast devuelve 0.0 por defecto).
         let cs_min = cell_bottom((0, -1, 0), cs);
-        next.retain(|cell, _| cell_bottom(*cell, cs) > cs_min);
+        spread.retain(|cell, _| cell_bottom(*cell, cs) > cs_min);
 
+        velocity.retain(|cell, _| spread.contains_key(cell));
+        self.velocity = velocity;
+
+        let next: HashMap<Cell, u8> = spread
+            .into_iter()
+            .filter(|(_, amount)| *amount > 0)
+            .map(|(cell, amount)| (cell, (amount - 1) as u8))
+            .collect();
+        self.prev_units = if first_fill {
+            // El cubo inicial se muestra entero desde el primer frame; la
+            // animación empieza en el tick siguiente, cuando sale hacia afuera.
+            next.iter()
+                .map(|(&cell, &level)| (cell, level as u32 + 1))
+                .collect()
+        } else {
+            before
+        };
+        self.stats.steps += 1;
+        self.stats.cells = next.len();
         if next != self.cells {
             self.cells = next;
+            self.refresh_query_cache();
             self.dirty = true;
         }
     }
 
-    /// Vértices, índices y AABB de la superficie de agua. Se omiten las caras
-    /// cubiertas por otra celda de agua para no pagar triángulos invisibles.
-    pub(crate) fn build_mesh(&self) -> (Vec<Vertex>, Vec<u32>, [f32; 3], [f32; 3]) {
+    /// Vértices, índices y AABB de la superficie de agua.
+    ///
+    /// La malla es un campo de alturas **continuo**: en cada vértice de la
+    /// rejilla se promedia el techo de las columnas que lo comparten, así que el
+    /// agua se nivela de punta a punta sin escalones entre celdas. El charco se
+    /// cierra con una fila extra de celdas secas que bajan en rampa desde la
+    /// última altura hasta el suelo, en vez de cortarse en una pared vertical.
+    pub(crate) fn build_mesh(
+        &self,
+        floors: &HashMap<(i32, i32), f32>,
+        alpha: f32,
+    ) -> (Vec<Vertex>, Vec<u32>, [f32; 3], [f32; 3]) {
         let cs = self.cell_size();
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
+        // La malla se reconstruye cada frame durante la animación: reservar de
+        // entrada evita varias reasignaciones por frame.
+        let cell_hint = self.cells.len().max(self.prev_units.len());
+        let mut vertices = Vec::with_capacity(cell_hint * 24);
+        let mut indices = Vec::with_capacity(cell_hint * 36);
         let mut min = [f32::MAX; 3];
         let mut max = [f32::MIN; 3];
 
-        for (&cell, &level) in &self.cells {
-            let x0 = cell.0 as f32 * cs;
-            let x1 = x0 + cs;
-            let z0 = cell.2 as f32 * cs;
-            let z1 = z0 + cs;
-            let y0 = cell_bottom(cell, cs);
-            let y1 = y0 + (level as f32 + 1.0) / 8.0 * cs;
-            min = [min[0].min(x0), min[1].min(y0), min[2].min(z0)];
-            max = [max[0].max(x1), max[1].max(y1), max[2].max(z1)];
-
-            let covered = |neighbor: Cell| self.cells.get(&neighbor).is_some_and(|&l| l >= level);
-            // Cara superior (+Y).
-            if !covered((cell.0, cell.1 + 1, cell.2)) {
-                quad(
-                    &mut vertices,
-                    &mut indices,
-                    [[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]],
-                    [0.0, 1.0, 0.0],
-                );
-            }
-            // +X.
-            if !covered((cell.0 + 1, cell.1, cell.2)) {
-                quad(
-                    &mut vertices,
-                    &mut indices,
-                    [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]],
-                    [1.0, 0.0, 0.0],
-                );
-            }
-            // -X.
-            if !covered((cell.0 - 1, cell.1, cell.2)) {
-                quad(
-                    &mut vertices,
-                    &mut indices,
-                    [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]],
-                    [-1.0, 0.0, 0.0],
-                );
-            }
-            // +Z.
-            if !covered((cell.0, cell.1, cell.2 + 1)) {
-                quad(
-                    &mut vertices,
-                    &mut indices,
-                    [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]],
-                    [0.0, 0.0, 1.0],
-                );
-            }
-            // -Z.
-            if !covered((cell.0, cell.1, cell.2 - 1)) {
-                quad(
-                    &mut vertices,
-                    &mut indices,
-                    [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]],
-                    [0.0, 0.0, -1.0],
-                );
-            }
+        // Unidades interpoladas entre el estado anterior y el actual. Una celda
+        // nueva nace con 0 unidades y crece hasta la suya en un tick; la que la
+        // alimenta baja al mismo tiempo. Así el agua parece salir de la celda
+        // anterior en vez de aparecer de la nada.
+        let mut animated: HashMap<Cell, f32> = HashMap::new();
+        for (&cell, &units) in &self.prev_units {
+            animated.insert(cell, units as f32 * (1.0 - alpha));
         }
-        if vertices.is_empty() {
+        for (&cell, &level) in &self.cells {
+            let entry = animated.entry(cell).or_insert(0.0);
+            *entry += (level as f32 + 1.0) * alpha;
+        }
+        animated.retain(|_, units| *units > 1.0e-4);
+
+        // Techo y suelo de cada columna XZ: el agua se apila en Y.
+        let mut column_top: HashMap<(i32, i32), f32> = HashMap::new();
+        let mut column_bottom: HashMap<(i32, i32), f32> = HashMap::new();
+        for (&cell, &units) in &animated {
+            let bottom = cell_bottom(cell, cs);
+            let top = bottom + units / 8.0 * cs;
+            let col = (cell.0, cell.2);
+            column_top
+                .entry(col)
+                .and_modify(|v| *v = v.max(top))
+                .or_insert(top);
+            column_bottom
+                .entry(col)
+                .and_modify(|v| *v = v.min(bottom))
+                .or_insert(bottom);
+            let x0 = cell.0 as f32 * cs;
+            let z0 = cell.2 as f32 * cs;
+            min = [min[0].min(x0), min[1].min(bottom), min[2].min(z0)];
+            max = [max[0].max(x0 + cs), max[1].max(top), max[2].max(z0 + cs)];
+        }
+        if column_top.is_empty() {
             return (
                 vec![Vertex {
                     position: [0.0; 3],
@@ -384,32 +932,431 @@ impl WaterSystem {
                 [0.0; 3],
             );
         }
+
+        // Suelo real (raycast) en cada vértice: el MÁXIMO de las columnas que lo
+        // tocan, para que agua y fila final queden por encima del terreno y no
+        // se superpongan con él.
+        let mut floor_at_vertex: HashMap<(i32, i32), f32> = HashMap::new();
+        for (&(cx, cz), &floor) in floors {
+            for gx in cx..=cx + 1 {
+                for gz in cz..=cz + 1 {
+                    floor_at_vertex
+                        .entry((gx, gz))
+                        .and_modify(|v| *v = v.max(floor))
+                        .or_insert(floor);
+                }
+            }
+        }
+
+        // Altura en cada VÉRTICE mojado: media de los techos de las columnas que
+        // lo comparten. El suelo máximo de esas columnas es el límite inferior
+        // para que la rampa no se hunda bajo un desnivel; el suelo del raycast
+        // con margen evita que el agua muy fina se corte contra el terreno.
+        let mut accum: HashMap<(i32, i32), (f32, u32, f32)> = HashMap::new();
+        for (&(ix, iz), &top) in &column_top {
+            let bottom = column_bottom[&(ix, iz)];
+            for corner in [(ix, iz), (ix + 1, iz), (ix, iz + 1), (ix + 1, iz + 1)] {
+                let entry = accum.entry(corner).or_insert((0.0, 0, f32::MIN));
+                entry.0 += top;
+                entry.1 += 1;
+                entry.2 = entry.2.max(bottom);
+            }
+        }
+        let surface: HashMap<(i32, i32), f32> = accum
+            .into_iter()
+            .map(|(corner, (sum, count, bottom))| {
+                let floor = floor_at_vertex.get(&corner).copied().unwrap_or(f32::MIN);
+                (
+                    corner,
+                    (sum / count as f32).max(bottom).max(floor + EDGE_LIFT),
+                )
+            })
+            .collect();
+
+        // Extiende el campo dos celdas hacia afuera. Donde no hay agua, la altura
+        // es el suelo local de las columnas mojadas cercanas, levantado un margen
+        // sobre el terreno: la superficie baja en rampa desde el borde del charco
+        // hasta apoyarse justo por encima del suelo. Dos filas dan sitio a las
+        // celdas intermedias que redondean el rombo en las diagonales.
+        let mut ground: HashMap<(i32, i32), f32> = HashMap::new();
+        for (&(ix, iz), &bottom) in &column_bottom {
+            for gx in (ix - 2)..=(ix + 3) {
+                for gz in (iz - 2)..=(iz + 3) {
+                    let floor = floor_at_vertex.get(&(gx, gz)).copied().unwrap_or(f32::MIN);
+                    // `min_bottom` evita rampas hacia el suelo lejano cuando el
+                    // agua cae en el aire; `floor + EDGE_LIFT` evita el parpadeo.
+                    let edge = bottom.max(floor + EDGE_LIFT);
+                    ground
+                        .entry((gx, gz))
+                        .and_modify(|v| *v = (*v).min(edge))
+                        .or_insert(edge);
+                }
+            }
+        }
+        let heightmap: HashMap<(i32, i32), f32> = ground
+            .iter()
+            .map(|(&corner, &floor)| (corner, surface.get(&corner).copied().unwrap_or(floor)))
+            .collect();
+
+        // El autómata reparte por distancia MANHATTAN (4 vecinos), lo que dibuja
+        // un rombo. Para la malla usamos una distancia EUCLIDEA a las fuentes:
+        // el radio sale del nivel más bajo alcanzado (7 - level pasos). El corte
+        // de esta señal por cero da un contorno circular, no un rombo.
+        // Se restan DOS celdas al alcance: el agua sigue propagándose igual,
+        // pero el círculo dibujado crece una celda menos que antes (mismo
+        // comportamiento, menos distancia máxima por cubo).
+        let steps = self
+            .cells
+            .values()
+            .fold(0u8, |max, &level| max.max(SOURCE_LEVEL.saturating_sub(level)))
+            .max(1);
+        let radius = steps.saturating_sub(2).max(1) as f32;
+        let sources_xy: Vec<(f32, f32)> = self
+            .sources
+            .iter()
+            .map(|source| {
+                (
+                    (source.cell.0 as f32 + 0.5) * cs,
+                    (source.cell.2 as f32 + 0.5) * cs,
+                )
+            })
+            .collect();
+        let radial: HashMap<(i32, i32), f32> = heightmap
+            .keys()
+            .map(|&(gx, gz)| {
+                let x = gx as f32 * cs;
+                let z = gz as f32 * cs;
+                let distance = sources_xy
+                    .iter()
+                    .map(|&(sx, sz)| ((x - sx) * (x - sx) + (z - sz) * (z - sz)).sqrt() / cs)
+                    .fold(f32::MAX, |nearest, d| smooth_min(nearest, d, SOURCE_BLEND));
+                ((gx, gz), radius - distance)
+            })
+            .collect();
+
+        let height = |gx: i32, gz: i32| -> f32 {
+            heightmap.get(&(gx, gz)).copied().unwrap_or(0.0)
+        };
+        // Normal suave a partir del gradiente del campo de alturas, compartida
+        // por la tapa y la fila final para que no haya costura de iluminación.
+        let normal_at = |gx: i32, gz: i32| -> [f32; 3] {
+            let here = height(gx, gz);
+            let left = heightmap.get(&(gx - 1, gz)).copied().unwrap_or(here);
+            let right = heightmap.get(&(gx + 1, gz)).copied().unwrap_or(here);
+            let back = heightmap.get(&(gx, gz - 1)).copied().unwrap_or(here);
+            let front = heightmap.get(&(gx, gz + 1)).copied().unwrap_or(here);
+            let span_x = if heightmap.contains_key(&(gx - 1, gz)) && heightmap.contains_key(&(gx + 1, gz))
+            {
+                2.0 * cs
+            } else {
+                cs
+            };
+            let span_z = if heightmap.contains_key(&(gx, gz - 1)) && heightmap.contains_key(&(gx, gz + 1))
+            {
+                2.0 * cs
+            } else {
+                cs
+            };
+            let n = Vec3::new(-(right - left) / span_x, 1.0, -(front - back) / span_z).normalize();
+            [n.x, n.y, n.z]
+        };
+
+        // Esquinas de una celda en orden 0,1,2,3 alrededor del cuadrado. `radial`
+        // es la señal del contorno circular: positiva dentro del círculo, negativa
+        // fuera. El recorte interpola dónde cruza cero en cada arista.
+        let cell_corners = |ix: i32, iz: i32| -> [SurfaceCorner; 4] {
+            let offsets = [(0, 0), (0, 1), (1, 1), (1, 0)];
+            std::array::from_fn(|i| {
+                let gx = ix + offsets[i].0;
+                let gz = iz + offsets[i].1;
+                let field = radial.get(&(gx, gz)).copied().unwrap_or(-1.0);
+                SurfaceCorner {
+                    x: gx as f32 * cs,
+                    z: gz as f32 * cs,
+                    height: height(gx, gz),
+                    ground: ground.get(&(gx, gz)).copied().unwrap_or(0.0),
+                    normal: normal_at(gx, gz),
+                    radial: field,
+                    inside: field > 0.0,
+                }
+            })
+        };
+
+        // Tapa del charco: una sola por columna (la de arriba), con la altura
+        // interpolada del tick.
+        for (&cell, &units) in &animated {
+            let (ix, _, iz) = cell;
+            let bottom = cell_bottom(cell, cs);
+            let top = bottom + units / 8.0 * cs;
+            if (top - column_top[&(ix, iz)]).abs() <= 1.0e-4 {
+                emit_surface_cell(&mut vertices, &mut indices, cell_corners(ix, iz));
+            }
+        }
+
+        // Filas finales: celdas secas hasta dos celdas del agua. Se recortan con
+        // marching squares contra el círculo: las aristas se cortan donde la
+        // señal radial cruza cero, dando una orilla redonda en vez de un rombo.
+        let mut skirt: HashSet<(i32, i32)> = HashSet::new();
+        // Techo máximo en el entorno de cada columna, calculado de una pasada.
+        // Antes se reescaneaba TODA la rejilla por cada celda del anillo (O(n²)).
+        let mut nearby_top: HashMap<(i32, i32), f32> = HashMap::new();
+        for &(ix, iz) in column_top.keys() {
+            let top = column_top[&(ix, iz)];
+            for dx in -2..=2 {
+                for dz in -2..=2 {
+                    let col = (ix + dx, iz + dz);
+                    nearby_top
+                        .entry(col)
+                        .and_modify(|value| *value = (*value).max(top))
+                        .or_insert(top);
+                    if !column_top.contains_key(&col) {
+                        skirt.insert(col);
+                    }
+                }
+            }
+        }
+        for (ix, iz) in skirt {
+            let corners = cell_corners(ix, iz);
+            // Solo se omite la celda si el terreno sobresale por encima de la
+            // SUPERFICIE del charco (un pilar). Compararlo con el fondo dejaba
+            // huecos en el anillo exterior por pequeñas variaciones del raycast,
+            // que se veían como picos hacia adentro en el contorno.
+            let water_top = nearby_top.get(&(ix, iz)).copied().unwrap_or(f32::MIN);
+            if floors
+                .get(&(ix, iz))
+                .is_some_and(|&floor| floor > water_top + 1.0e-3)
+            {
+                continue;
+            }
+            for corner in &corners {
+                grow_bounds(
+                    &mut min,
+                    &mut max,
+                    [corner.x, corner.height, corner.z],
+                );
+            }
+            emit_surface_cell(&mut vertices, &mut indices, corners);
+        }
         (vertices, indices, min, max)
     }
 }
 
-fn quad(
-    vertices: &mut Vec<Vertex>,
-    indices: &mut Vec<u32>,
-    corners: [[f32; 3]; 4],
+/// Aplica de una vez las unidades cedidas y recibidas calculadas desde un
+/// snapshot. Resta primero y suma después: una celda puede dar y recibir en el
+/// mismo tick (columnas que caen sobre agua existente).
+fn apply_transfers(units: &mut HashMap<Cell, u32>, give: &HashMap<Cell, u32>, take: &HashMap<Cell, u32>) {
+    for (&cell, &amount) in give {
+        let current = units.get(&cell).copied().unwrap_or(0);
+        if amount >= current {
+            units.remove(&cell);
+        } else {
+            units.insert(cell, current - amount);
+        }
+    }
+    for (&cell, &amount) in take {
+        let current = units.get(&cell).copied().unwrap_or(0);
+        units.insert(cell, (current + amount).min(8));
+    }
+}
+
+/// Aplica una lista de cesiones de una unidad con los límites de capacidad y
+/// `MAX_CELLS`. Devuelve las cesiones aceptadas (B2 las usa para transportar
+/// velocidad). Todo se decide desde el estado de entrada y se aplica junto.
+fn commit_flow(units: &mut HashMap<Cell, u32>, proposals: Vec<(Cell, Cell)>) -> Vec<(Cell, Cell)> {
+    let mut give: HashMap<Cell, u32> = HashMap::new();
+    let mut take: HashMap<Cell, u32> = HashMap::new();
+    let mut accepted = Vec::new();
+    let mut new_cells = 0usize;
+    let base_len = units.len();
+    for (cell, neighbor) in proposals {
+        let amount = units.get(&cell).copied().unwrap_or(0);
+        let given = give.get(&cell).copied().unwrap_or(0);
+        if given >= amount.saturating_sub(1) {
+            continue;
+        }
+        let other = units.get(&neighbor).copied().unwrap_or(0);
+        let taken = take.get(&neighbor).copied().unwrap_or(0);
+        if other + taken >= 8 {
+            continue;
+        }
+        if other == 0 && !take.contains_key(&neighbor) {
+            if base_len + new_cells >= MAX_CELLS {
+                continue;
+            }
+            new_cells += 1;
+        }
+        give.insert(cell, given + 1);
+        take.insert(neighbor, taken + 1);
+        accepted.push((cell, neighbor));
+    }
+    apply_transfers(units, &give, &take);
+    accepted
+}
+
+fn grow_bounds(min: &mut [f32; 3], max: &mut [f32; 3], point: [f32; 3]) {
+    for axis in 0..3 {
+        min[axis] = min[axis].min(point[axis]);
+        max[axis] = max[axis].max(point[axis]);
+    }
+}
+
+/// Esquina de una celda del campo de alturas. `radial` es la señal euclídea del
+/// contorno (positiva dentro del círculo); `inside` es su signo. `ground` es la
+/// altura de suelo con margen, usada para apoyar el borde de la rampa.
+#[derive(Clone, Copy)]
+struct SurfaceCorner {
+    x: f32,
+    z: f32,
+    height: f32,
+    ground: f32,
     normal: [f32; 3],
-) {
+    radial: f32,
+    inside: bool,
+}
+
+fn blend_normals(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    let n = Vec3::new(
+        a[0] * (1.0 - t) + b[0] * t,
+        a[1] * (1.0 - t) + b[1] * t,
+        a[2] * (1.0 - t) + b[2] * t,
+    )
+    .normalize();
+    [n.x, n.y, n.z]
+}
+
+/// Mínimo suave (unión redondeada) con radio `k`, en unidades de celda. Donde
+/// dos campos de distancia se parecen, devuelve un valor menor que el mínimo,
+/// lo que empuja el contorno hacia afuera y funde los charcos sin el pico
+/// cóncavo que deja `min`.
+fn smooth_min(a: f32, b: f32, k: f32) -> f32 {
+    if k <= 0.0 {
+        return a.min(b);
+    }
+    let h = (0.5 + 0.5 * (b - a) / k).clamp(0.0, 1.0);
+    b * (1.0 - h) + a * h - k * h * (1.0 - h)
+}
+
+/// Emite un polígono (posición + normal por vértice) como abanico de triángulos.
+fn emit_poly(vertices: &mut Vec<Vertex>, indices: &mut Vec<u32>, poly: &[([f32; 3], [f32; 3])]) {
+    if poly.len() < 3 {
+        return;
+    }
     let base = vertices.len() as u32;
-    for position in corners {
+    for (position, normal) in poly {
         vertices.push(Vertex {
-            position,
-            normal,
+            position: *position,
+            normal: *normal,
             uv: [0.0, 0.0],
         });
     }
-    indices.extend_from_slice(&[base, base + 1, base + 2, base + 2, base + 3, base]);
+    for i in 1..poly.len() - 1 {
+        indices.extend_from_slice(&[base, base + i as u32, base + (i + 1) as u32]);
+    }
+}
+
+/// Recorte `marching squares` de una celda contra el contorno circular.
+///
+/// Cada arista se corta donde la señal radial cruza cero (interpolando entre
+/// sus dos extremos), no a mitad de celda: el contorno sigue una circunferencia
+/// en vez del rombo que produce la propagación Manhattan del autómata. Los
+/// vértices compartidos cortan igual en ambas celdas, así que no hay huecos.
+/// La altura del punto de corte es la del SUELO, para que la orilla apoye en el
+/// terreno y no flote a media altura de la rampa.
+fn emit_surface_cell(
+    vertices: &mut Vec<Vertex>,
+    indices: &mut Vec<u32>,
+    corners: [SurfaceCorner; 4],
+) {
+    let mask = corners
+        .iter()
+        .enumerate()
+        .fold(0u8, |acc, (i, c)| acc | ((c.inside as u8) << i));
+    if mask == 0 {
+        return;
+    }
+
+    let corner_point = |i: usize| -> ([f32; 3], [f32; 3]) {
+        let c = corners[i];
+        ([c.x, c.height, c.z], c.normal)
+    };
+    let edge_point = |i: usize| -> ([f32; 3], [f32; 3]) {
+        let a = corners[i];
+        let b = corners[(i + 1) % 4];
+        let denominator = a.radial - b.radial;
+        let t = if denominator.abs() < 1.0e-6 {
+            0.5
+        } else {
+            (a.radial / denominator).clamp(0.0, 1.0)
+        };
+        (
+            [
+                a.x + (b.x - a.x) * t,
+                a.ground + (b.ground - a.ground) * t,
+                a.z + (b.z - a.z) * t,
+            ],
+            blend_normals(a.normal, b.normal, t),
+        )
+    };
+
+    // Casos silla (dos esquinas diagonales mojadas): dos triángulos separados
+    // en vez de un hexágono que se cortaría a sí mismo.
+    if mask == 0b0101 {
+        emit_poly(
+            vertices,
+            indices,
+            &[corner_point(0), edge_point(0), edge_point(3)],
+        );
+        emit_poly(
+            vertices,
+            indices,
+            &[edge_point(1), corner_point(2), edge_point(2)],
+        );
+        return;
+    }
+    if mask == 0b1010 {
+        emit_poly(
+            vertices,
+            indices,
+            &[edge_point(0), corner_point(1), edge_point(1)],
+        );
+        emit_poly(
+            vertices,
+            indices,
+            &[edge_point(2), corner_point(3), edge_point(3)],
+        );
+        return;
+    }
+
+    // Recorrido 0→1→2→3: añade cada esquina dentro del círculo y el punto de
+    // cruce por cero de las aristas que cambian de estado. Mantiene el devanado.
+    let mut poly = Vec::with_capacity(6);
+    for i in 0..4 {
+        let j = (i + 1) % 4;
+        if corners[i].inside {
+            poly.push(corner_point(i));
+        }
+        if corners[i].inside != corners[j].inside {
+            poly.push(edge_point(i));
+        }
+    }
+    emit_poly(vertices, indices, &poly);
 }
 
 impl crate::engine3d::engine::State {
     /// Alta desde el ghost del viewport. Se snapped a la rejilla; el primer
     /// step ya consulta el suelo y recoloca la fuente si cae dentro del terreno.
-    pub(crate) fn water_add_source(&mut self, id: u64, position: [f32; 3], cell_size: f32) {
-        self.water.add_source(id, position, cell_size);
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn water_add_source(
+        &mut self,
+        id: u64,
+        position: [f32; 3],
+        cell_size: f32,
+        color: [f32; 3],
+        viscosity: f32,
+        cohesion: f32,
+    ) {
+        self.water
+            .add_liquid_source(id, position, cell_size, color, viscosity, cohesion);
         self.water_step_once();
     }
 
@@ -420,70 +1367,129 @@ impl crate::engine3d::engine::State {
 
     pub(crate) fn water_clear(&mut self) {
         self.water.clear();
+        self.splash.solver.clear_particles();
+        self.splash.lifetimes.clear();
         self.water_step_once();
+    }
+
+    /// B5 — entrega al solver de partículas la nube de puntos que representa
+    /// el terreno, para que sus paredes dejen de ser una caja genérica.
+    #[allow(dead_code)]
+    pub(crate) fn water_feed_boundary_to_solver(
+        &mut self,
+        solver: &mut crate::engine3d::particles::fluid::FluidSolver,
+    ) {
+        if self.water.terrain.dirty {
+            let floors = std::mem::take(&mut self.water.floor_cache);
+            let cell = self.water.cell_size();
+            self.water.terrain.rebuild(&floors, cell, cell * 0.5);
+            self.water.floor_cache = floors;
+        }
+        solver.set_terrain_boundary(self.water.terrain.points(), self.water.terrain.volumes());
     }
 
     /// Avance del autómata a 5 Hz, enganchado al update del motor.
     pub(crate) fn water_tick(&mut self, dt: f32) {
-        if self.water.is_empty() {
-            return;
+        let dt = dt.min(0.05);
+        if !self.water.is_empty() {
+            self.water.tick_accum += dt;
+            if self.water.tick_accum < TICK_INTERVAL {
+                // Entre ticks no se simula, pero sí se reinterpola la malla: la
+                // celda nueva crece desde 0 mientras la anterior se vacía.
+                if self.water.is_animating() {
+                    let alpha = self.water.tick_accum / TICK_INTERVAL;
+                    self.water_sync_mesh(alpha);
+                }
+            } else {
+                self.water.tick_accum -= TICK_INTERVAL;
+                self.water_step_once();
+            }
         }
-        self.water.tick_accum += dt.min(0.05);
-        if self.water.tick_accum < TICK_INTERVAL {
-            return;
+        // Las gotas siguen cayendo y apagándose aunque ya no quede charco.
+        if self.splash.solver.particle_count() > 0 {
+            self.water_update_splashes(dt);
         }
-        self.water.tick_accum -= TICK_INTERVAL;
-        self.water_step_once();
     }
 
     /// Consulta el suelo por raycast y ejecuta un tick (o regenera la malla si
     /// solo cambió la configuración). Público en el crate para la restauración
     /// de escenas desde `particles::restore_particles_from_value`.
     pub(crate) fn water_step_once(&mut self) {
-        let columns = self.water.columns_to_query();
         let cs = self.water.cell_size();
-        for (ix, iz) in &columns {
-            if self.water.floor_cache.contains_key(&(*ix, *iz)) {
+        // `step` solo lee los suelos: mover el mapa evita clonar cientos de
+        // entradas en cada tick (5 Hz) solo por el borrow checker.
+        let floors = std::mem::take(&mut self.water.floor_cache);
+        self.water.step(&floors);
+        self.water.floor_cache = floors;
+        // La rejilla puede haber cambiado: consultar el suelo de las columnas
+        // nuevas y soltar las que ya no están cerca del agua (si no, el caché
+        // crecería sin límite al mover fuentes).
+        let columns: Vec<_> = self.water.columns_to_query().iter().copied().collect();
+        for (ix, iz) in columns {
+            if self.water.floor_cache.contains_key(&(ix, iz)) {
                 continue;
             }
-            let x = (*ix as f32 + 0.5) * cs;
-            let z = (*iz as f32 + 0.5) * cs;
+            let x = (ix as f32 + 0.5) * cs;
+            let z = (iz as f32 + 0.5) * cs;
             let origin = Vec3::new(x, RAY_TOP, z);
             let floor = self
                 .physics
                 .raycast_first_hit_distance(origin, Vec3::NEG_Y, RAY_MAX, &[])
                 .map(|distance| RAY_TOP - distance)
                 .unwrap_or(0.0);
-            self.water.floor_cache.insert((*ix, *iz), floor);
+            self.water.floor_cache.insert((ix, iz), floor);
         }
-        let floors = self.water.floor_cache.clone();
-        self.water.step(&floors);
-        if self.water.dirty {
-            self.water_sync_mesh();
-            self.water.dirty = false;
+        self.water.prune_floor_cache();
+        if self.water.terrain.dirty {
+            // El muestreo del terreno es caro: solo se hace cuando cambia el
+            // suelo, no en cada tick. Se mueve el mapa para no clonarlo.
+            let floors = std::mem::take(&mut self.water.floor_cache);
+            let cell = self.water.cell_size();
+            self.water.terrain.rebuild(&floors, cell, cell * 0.5);
+            self.water.floor_cache = floors;
         }
+        // alpha=0: justo después del tick se dibuja el estado anterior, para
+        // que la transición arranque desde donde estaba y no haya salto.
+        self.water_sync_mesh(0.0);
+        self.water.dirty = false;
+        self.water.stats.splash_particles = self.splash.solver.particle_count();
+        self.water.stats.terrain_points = self.water.terrain.points().len();
+        self.water_spawn_splashes();
     }
 
     /// Sube la geometría resultante y la deja dibujándose como entidad estática.
-    fn water_sync_mesh(&mut self) {
-        let (vertices, indices, min, max) = self.water.build_mesh();
-        let mesh = crate::engine3d::mesh::upload(&self.vulkan, &vertices, &indices, "water", None);
+    fn water_sync_mesh(&mut self, alpha: f32) {
+        let (vertices, indices, min, max) = self.water.build_mesh(&self.water.floor_cache, alpha);
+        self.water.stats.mesh_vertices = vertices.len();
+        self.water.stats.mesh_indices = indices.len();
         let mesh_idx = if let Some(index) = self.water.mesh_idx {
-            self.meshes[index] = mesh;
+            // Durante la animación esto ocurre cada frame: reutilizar los
+            // buffers evita crear/destruir memoria Vulkan 60 veces por segundo.
+            if !self.meshes[index].update_dynamic(&vertices, &indices) {
+                self.meshes[index] = crate::engine3d::mesh::upload_dynamic(
+                    &self.vulkan,
+                    &vertices,
+                    &indices,
+                    "water",
+                );
+            }
             index
         } else {
             let index = self.meshes.len();
-            self.meshes.push(mesh);
+            self.meshes.push(crate::engine3d::mesh::upload_dynamic(
+                &self.vulkan,
+                &vertices,
+                &indices,
+                "water",
+            ));
             self.water.mesh_idx = Some(index);
             index
         };
-        let tex_idx = if let Some(index) = self.water.tex_idx {
-            index
-        } else {
-            let index = self.ensure_plane_tool_colored_texture([56, 140, 222, 255]);
-            self.water.tex_idx = Some(index);
-            index
-        };
+        // El color viene del líquido configurado. La textura se cachea por RGB
+        // en el motor, así que pedirla cada frame es solo una búsqueda en mapa.
+        let rgba = liquid_rgba(self.water.color, 255);
+        let tex_idx = self.ensure_plane_tool_colored_texture(rgba);
+        self.water.tex_idx = Some(tex_idx);
         if let Some(entity) = self.water.entity {
             self.world
                 .insert(entity, MeshComponent { mesh_idx, tex_idx });
@@ -531,15 +1537,169 @@ impl crate::engine3d::engine::State {
         }
     }
 
+    /// B7 — genera gotas en las celdas de la orilla y bajo las fuentes. Salen
+    /// con la inercia de la rejilla más un impulso vertical, y se reciclan al
+    /// caducar. No descuentan volumen del grid: son espuma, no agua a granel.
+    pub(crate) fn water_spawn_splashes(&mut self) {
+        if self.water.cells.is_empty() {
+            return;
+        }
+        let cs = self.water.cell_size();
+        let min_ix = self.water.cells.keys().map(|cell| cell.0).min().unwrap();
+        let max_ix = self.water.cells.keys().map(|cell| cell.0).max().unwrap();
+        let min_iz = self.water.cells.keys().map(|cell| cell.2).min().unwrap();
+        let max_iz = self.water.cells.keys().map(|cell| cell.2).max().unwrap();
+        let recreated = self.splash.ensure_bounds(
+            min_ix,
+            max_ix,
+            min_iz,
+            max_iz,
+            cs,
+            self.water.viscosity,
+            self.water.cohesion,
+        );
+        if recreated {
+            if self.water.terrain.dirty {
+                let floors = std::mem::take(&mut self.water.floor_cache);
+                self.water.terrain.rebuild(&floors, cs, cs * 0.5);
+                self.water.floor_cache = floors;
+            }
+            self.splash
+                .solver
+                .set_terrain_boundary(self.water.terrain.points(), self.water.terrain.volumes());
+        }
+
+        let mut frontier: Vec<Cell> = self
+            .water
+            .cells
+            .keys()
+            .copied()
+            .filter(|&(ix, iy, iz)| {
+                [(ix + 1, iy, iz), (ix - 1, iy, iz), (ix, iy, iz + 1), (ix, iy, iz - 1)]
+                    .iter()
+                    .any(|neighbor| !self.water.cells.contains_key(neighbor))
+            })
+            .collect();
+        frontier.sort_unstable();
+        if frontier.is_empty() {
+            return;
+        }
+
+        const MAX_SPLASH_PARTICLES: usize = 128;
+        self.splash.spawn_carry += 1.5;
+        let budget = self.splash.spawn_carry as usize;
+        self.splash.spawn_carry -= budget as f32;
+        for cell in frontier.into_iter().take(budget) {
+            if self.splash.solver.particle_count() >= MAX_SPLASH_PARTICLES {
+                break;
+            }
+            let level = self.water.cells[&cell];
+            let (ix, _, iz) = cell;
+            let bottom = cell_bottom(cell, cs);
+            let position = [
+                (ix as f32 + 0.5) * cs,
+                bottom + (level as f32 + 1.0) / 8.0 * cs,
+                (iz as f32 + 0.5) * cs,
+            ];
+            let flow = self.water.velocity.get(&cell).copied().unwrap_or([0.0; 2]);
+            let mut velocity = [flow[0] * cs, 0.35 + level as f32 * 0.08, flow[1] * cs];
+            if self.water.sources.iter().any(|source| source.cell == cell) {
+                velocity[1] += 1.2;
+            }
+            let life = 0.45 + ((ix * 7 + iz * 13).rem_euclid(5)) as f32 * 0.08;
+            self.splash.spawn(position, velocity, life);
+        }
+    }
+
+    /// Avance por frame de las gotas y subida de su malla.
+    pub(crate) fn water_update_splashes(&mut self, dt: f32) {
+        self.splash.update(dt);
+        self.water_sync_splash_mesh();
+    }
+
+    /// Sube la geometría de las gotas como una entidad transparente separada.
+    fn water_sync_splash_mesh(&mut self) {
+        let cs = self.water.cell_size();
+        let (vertices, indices, min, max) = self.splash.build_mesh((cs * 0.09).max(0.012));
+        let mesh = crate::engine3d::mesh::upload_dynamic(
+            &self.vulkan,
+            &vertices,
+            &indices,
+            "water-splash",
+        );
+        let mesh_idx = if let Some(index) = self.splash.mesh_idx {
+            if !self.meshes[index].update_dynamic(&vertices, &indices) {
+                self.meshes[index] = mesh;
+            }
+            index
+        } else {
+            let index = self.meshes.len();
+            self.meshes.push(mesh);
+            self.splash.mesh_idx = Some(index);
+            index
+        };
+        let rgba = liquid_rgba(self.water.color, 40);
+        let tex_idx = self.ensure_plane_tool_colored_texture(rgba);
+        self.splash.tex_idx = Some(tex_idx);
+        if let Some(entity) = self.splash.entity {
+            self.world
+                .insert(entity, MeshComponent { mesh_idx, tex_idx });
+            if let Some(aabb) = self.world.get_mut::<MeshLocalAabb>(entity) {
+                aabb.min = Vec3::from(min);
+                aabb.max = Vec3::from(max);
+            } else {
+                self.world.insert(
+                    entity,
+                    MeshLocalAabb {
+                        min: Vec3::from(min),
+                        max: Vec3::from(max),
+                    },
+                );
+            }
+        } else {
+            let entity = self.world.spawn(Some("WaterSplashes"));
+            self.world
+                .insert(entity, MeshComponent { mesh_idx, tex_idx });
+            self.world.insert(
+                entity,
+                Transform {
+                    position: Vec3::ZERO,
+                    ..Default::default()
+                },
+            );
+            self.world.insert(
+                entity,
+                MeshLocalAabb {
+                    min: Vec3::from(min),
+                    max: Vec3::from(max),
+                },
+            );
+            self.world.insert(entity, NonSelectable);
+            self.world.insert(
+                entity,
+                SurfacePbr {
+                    roughness: 0.1,
+                    metallic: 0.0,
+                    ior: 1.33,
+                    opacity: 0.72,
+                },
+            );
+            self.splash.entity = Some(entity);
+        }
+    }
+
     /// Las fuentes van en el mismo snapshot que los emisores (la UI las lista
-    /// juntas) con material `water_block` y su tamaño de celda.
+    /// juntas) con material `liquid_cube` y su tamaño de celda.
     pub(crate) fn water_export_into(&self, emitters: &mut Vec<SaveParticleEmitterSnapshot>) {
         for source in self.water.sources() {
             emitters.push(SaveParticleEmitterSnapshot {
                 id: source.id,
-                material: WATER_WIRE.to_string(),
+                material: LIQUID_WIRE.to_string(),
                 position: source.position,
                 cell_size: Some(source.cell_size),
+                color: Some(source.color),
+                viscosity: Some(source.viscosity),
+                cohesion: source.cohesion,
                 soft: true,
                 ..Default::default()
             });
@@ -554,7 +1714,8 @@ mod tests {
     fn flat_floor(cells: &WaterSystem) -> HashMap<(i32, i32), f32> {
         cells
             .columns_to_query()
-            .into_iter()
+            .iter()
+            .copied()
             .map(|column| (column, 0.0))
             .collect()
     }
@@ -563,19 +1724,217 @@ mod tests {
     fn source_spreads_and_a_finite_puddle_forms() {
         let mut water = WaterSystem::default();
         water.add_source(1, [0.25, 0.25, 0.25], 0.5);
-        for _ in 0..30 {
+        for _ in 0..60 {
             let floors = flat_floor(&water);
             water.step(&floors);
         }
-        assert_eq!(
-            water.cells.get(&(0, 0, 0)),
-            Some(&SOURCE_LEVEL),
-            "la fuente no se agota"
-        );
-        assert_eq!(water.cells.get(&(1, 0, 0)), Some(&6), "el agua se reparte");
+        // El cubo se reparte: el volumen total se conserva y la fuente se agota.
+        let total: u32 = water.cells.values().map(|&level| level as u32 + 1).sum();
+        assert_eq!(total, SOURCE_VOLUME, "el volumen debe conservarse: {total}");
+        assert_eq!(water.reservoir[&1], 0, "la fuente debe agotarse");
         assert!(water.cell_count() > 20, "el charco debe extenderse");
         assert!(water.cell_count() < MAX_CELLS, "el charco debe ser finito");
-        assert!(water.cells.values().all(|&level| level >= 1 && level <= 7));
+        assert!(water.cells.values().all(|&level| level <= SOURCE_LEVEL));
+        assert!(
+            water.cells.get(&(0, 0, 0)).is_some_and(|&level| level < SOURCE_LEVEL),
+            "la altura de la fuente debe bajar al repartirse"
+        );
+    }
+
+    /// Entre ticks la malla interpola: la celda que cede agua baja y las
+    /// nuevas crecen desde 0, en vez de aparecer completas de golpe.
+    #[test]
+    fn new_cells_grow_from_zero_between_ticks() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        let floors = flat_floor(&water);
+        water.step(&floors); // cubo inicial, entero
+        water.step(&floors); // las celdas vecinas salen de él
+        assert!(water.is_animating());
+
+        let (at_start, _, _, _) = water.build_mesh(&floors, 0.0);
+        let (at_half, _, _, _) = water.build_mesh(&floors, 0.5);
+        let (at_end, _, _, _) = water.build_mesh(&floors, 1.0);
+
+        let highest = |vertices: &[Vertex]| {
+            vertices.iter().map(|v| v.position[1]).fold(f32::MIN, f32::max)
+        };
+        let start = highest(&at_start);
+        let half = highest(&at_half);
+        let end = highest(&at_end);
+        assert!(
+            start > half && half > end,
+            "la altura debe bajar suavemente en la fuente: {start} > {half} > {end}"
+        );
+    }
+
+    /// El cubo inicial aparece él solo; las celdas vecinas salen de él en el
+    /// tick siguiente, no en el mismo en que se coloca la fuente.
+    /// B1 + B2: el volumen sigue conservándose exactamente y se genera
+    /// velocidad a partir del gradiente de altura, que se amortigua al asentarse.
+    #[test]
+    fn curvature_and_inertia_keep_conservation_and_velocity_bounded() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        let mut peak_speed = 0.0f32;
+        for _ in 0..60 {
+            let floors = flat_floor(&water);
+            water.step(&floors);
+            for &v in water.velocity.values() {
+                peak_speed = peak_speed.max(v[0].hypot(v[1]));
+            }
+        }
+        let total: u32 = water.cells.values().map(|&level| level as u32 + 1).sum();
+        assert_eq!(total, SOURCE_VOLUME, "el volumen debe conservarse: {total}");
+        assert!(peak_speed > 0.0, "debe generarse velocidad por el gradiente");
+        assert!(
+            peak_speed <= SW_MAX_SPEED + 1.0e-5,
+            "la velocidad debe estar acotada: {peak_speed}"
+        );
+        let settled_speed = water
+            .velocity
+            .values()
+            .map(|&v| v[0].hypot(v[1]))
+            .fold(0.0f32, f32::max);
+        assert!(
+            settled_speed < peak_speed,
+            "la velocidad debe amortiguarse: {settled_speed} vs {peak_speed}"
+        );
+    }
+
+    /// B5: el muestreador produce puntos sobre el heightfield con la altura
+    /// interpolada y un espaciado regular, y se puede regenerar.
+    /// B7: las gotas se generan, se simulan y se reciclan al caducar; la malla
+    /// devuelve el placeholder cuando no queda ninguna.
+    #[test]
+    fn liquid_properties_are_applied_and_exported() {
+        let mut water = WaterSystem::default();
+        water.add_liquid_source(1, [0.25, 0.25, 0.25], 0.5, [0.9, 0.2, 0.4], 0.7, 0.25);
+        assert_eq!(water.color, [0.9, 0.2, 0.4]);
+        assert_eq!(water.viscosity, 0.7);
+        assert_eq!(water.cohesion, 0.25);
+        let source = &water.sources()[0];
+        assert_eq!(source.color, [0.9, 0.2, 0.4]);
+        assert_eq!(source.viscosity, 0.7);
+        assert_eq!(source.cohesion, 0.25);
+    }
+
+    #[test]
+    fn stats_track_simulation_state() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        for _ in 0..20 {
+            let floors = flat_floor(&water);
+            water.step(&floors);
+        }
+        let stats = water.stats();
+        assert!(stats.steps >= 20);
+        assert_eq!(stats.cells, water.cell_count());
+    }
+
+    #[test]
+    fn splash_layer_spawns_simulates_and_recycles() {
+        let mut splash = SplashLayer::default();
+        splash.ensure_bounds(0, 4, 0, 4, 0.5, 0.15, 0.35);
+        splash.spawn([1.0, 0.5, 1.0], [0.0, 1.0, 0.0], 0.12);
+
+        let (vertices, indices, _, _) = splash.build_mesh(0.05);
+        assert_eq!(vertices.len(), 6);
+        assert_eq!(indices.len(), 24);
+
+        for _ in 0..10 {
+            splash.update(0.05);
+        }
+        assert_eq!(splash.solver.particle_count(), 0);
+        assert!(splash.lifetimes.is_empty());
+        let (vertices, _, _, _) = splash.build_mesh(0.05);
+        assert_eq!(vertices.len(), 1, "sin gotas debe haber un placeholder");
+    }
+
+    #[test]
+    fn terrain_boundary_samples_the_heightfield() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 1.25, 0.25], 0.5);
+        let floors: HashMap<(i32, i32), f32> = flat_floor(&water)
+            .into_keys()
+            .map(|column| (column, 1.0))
+            .collect();
+        let cell = water.cell_size();
+        water.terrain.rebuild(&floors, cell, cell * 0.5);
+
+        assert!(water.terrain.points().len() > 4);
+        assert_eq!(water.terrain.points().len(), water.terrain.volumes().len());
+        assert!(
+            water.terrain.points().iter().all(|point| {
+                let column = (
+                    (point[0] / cell - 0.5).floor() as i32,
+                    (point[2] / cell - 0.5).floor() as i32,
+                );
+                // Fuera de la región consultada el suelo vale 0 por defecto.
+                !floors.contains_key(&column) || (point[1] - 1.0).abs() < 1.0e-4
+            }),
+            "los puntos sobre columnas conocidas deben apoyarse en el terreno"
+        );
+        let first = water.terrain.points()[0];
+        let second = water.terrain.points()[1];
+        assert!((second[2] - first[2]).abs() > 0.0, "debe haber espaciado en Z");
+        assert!(water.terrain.volumes().iter().all(|&volume| volume > 0.0));
+    }
+
+    #[test]
+    fn floor_cache_discards_columns_away_from_the_water() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        water.floor_cache.insert((0, 0), 0.0);
+        water.floor_cache.insert((50, 50), 0.0); // columna vieja de otra fuente
+        water.prune_floor_cache();
+        assert!(water.floor_cache.contains_key(&(0, 0)));
+        assert!(!water.floor_cache.contains_key(&(50, 50)));
+    }
+
+    #[test]
+    fn source_cell_precedes_its_neighbors() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        let floors = flat_floor(&water);
+
+        water.step(&floors);
+        assert_eq!(water.cells.len(), 1, "el primer tick solo debe crear el cubo");
+        assert!(water.cells.contains_key(&(0, 0, 0)));
+        assert!(
+            !water.is_animating(),
+            "el cubo inicial se muestra entero desde el primer frame"
+        );
+
+        water.step(&floors);
+        assert!(
+            water.cells.len() > 1,
+            "las celdas vecinas deben salir en el tick siguiente"
+        );
+        assert!(water.is_animating());
+    }
+
+    #[test]
+    fn water_height_flattens_as_it_spreads() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        assert_eq!(water.reservoir[&1], SOURCE_VOLUME, "el cubo nace lleno");
+        for _ in 0..120 {
+            let floors = flat_floor(&water);
+            water.step(&floors);
+        }
+        let source_level = water.cells.get(&(0, 0, 0)).copied().unwrap();
+        assert!(
+            source_level <= 1,
+            "la fuente debe perder altura al repartirse: {source_level}"
+        );
+        let max_level = water.cells.values().copied().max().unwrap();
+        let average_units = water.cells.values().map(|&level| level as u32 + 1).sum::<u32>()
+            / water.cell_count() as u32;
+        assert!(
+            max_level <= 4 && average_units <= 3,
+            "todas las capas deben quedar cerca de la altura mínima: max {max_level}, media {average_units}"
+        );
     }
 
     #[test]
@@ -607,8 +1966,8 @@ mod tests {
         let mut water = WaterSystem::default();
         water.add_source(1, [0.25, 0.25, 0.25], 0.5);
         let floors = flat_floor(&water)
-            .into_iter()
-            .map(|(column, _)| (column, 1.0))
+            .into_keys()
+            .map(|column| (column, 1.0))
             .collect();
         water.step(&floors);
         let source_cell = water.sources[0].cell;
@@ -616,7 +1975,10 @@ mod tests {
             source_cell.1 >= 2,
             "la fuente enterrada debe subir sobre el terreno: {source_cell:?}"
         );
-        assert_eq!(water.cells.get(&source_cell), Some(&SOURCE_LEVEL));
+        assert!(
+            water.cells.contains_key(&source_cell),
+            "la fuente debe verter agua en su celda: {source_cell:?}"
+        );
     }
 
     #[test]
@@ -630,5 +1992,226 @@ mod tests {
         assert!(water.cell_count() > 0);
         water.remove_source(1);
         assert!(water.cell_count() == 0 && water.is_empty());
+    }
+
+    /// Itera los triángulos de la malla (tapa y fila final pueden tener
+    /// polígonos de 3 a 6 vértices, no solo quads).
+    fn triangles<'a>(
+        vertices: &'a [Vertex],
+        indices: &'a [u32],
+    ) -> impl Iterator<Item = [&'a Vertex; 3]> + 'a {
+        indices.chunks(3).map(move |tri| {
+            [
+                &vertices[tri[0] as usize],
+                &vertices[tri[1] as usize],
+                &vertices[tri[2] as usize],
+            ]
+        })
+    }
+
+    /// Toda la malla (tapa + fila final) sale de un único campo de alturas:
+    /// un mismo punto de rejilla (incluidos los puntos medios del recorte) tiene
+    /// una sola altura, compartida por las caras que lo tocan.
+    #[test]
+    fn surface_and_final_row_share_the_same_heightfield() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        for _ in 0..20 {
+            let floors = flat_floor(&water);
+            water.step(&floors);
+        }
+        let floors = flat_floor(&water);
+        let (vertices, indices, _, _) = water.build_mesh(&floors, 1.0);
+        let cs = water.cell_size();
+        // Cuantización fina: el corte del círculo cae en posiciones arbitrarias
+        // dentro de la celda, así que agrupar por media celda daría falsos
+        // choques entre un vértice mojado y un punto de corte cercano.
+        let key = |v: &Vertex| {
+            (
+                (v.position[0] / cs * 1000.0).round() as i32,
+                (v.position[2] / cs * 1000.0).round() as i32,
+            )
+        };
+
+        let mut heights: HashMap<(i32, i32), f32> = HashMap::new();
+        let mut faces = 0;
+        for tri in triangles(&vertices, &indices) {
+            faces += 1;
+            for vertex in tri {
+                assert!(
+                    vertex.normal[1] > 0.0,
+                    "cara vertical en {:?}: normal {:?}",
+                    key(vertex),
+                    vertex.normal
+                );
+                match heights.get(&key(vertex)) {
+                    Some(&previous) => assert!(
+                        (previous - vertex.position[1]).abs() < 1.0e-5,
+                        "altura distinta para el mismo vértice {:?}: {previous} vs {}",
+                        key(vertex),
+                        vertex.position[1]
+                    ),
+                    None => {
+                        heights.insert(key(vertex), vertex.position[1]);
+                    }
+                }
+            }
+        }
+        assert!(faces > 4, "el charco debe tener varias caras: {faces}");
+    }
+
+    /// El contorno es circular: los puntos de la orilla están a la misma
+    /// distancia euclídea de la fuente en todos los sectores, sin huecos. El
+    /// radio es una celda menor que el alcance del autómata (6 → 5). Con la
+    /// propagación Manhattan pura el rombo daba ~4.2 en diagonales por 6 en
+    /// los ejes; ahora todos los sectores rondan el mismo valor.
+    #[test]
+    fn border_follows_a_circular_contour() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        for _ in 0..20 {
+            let floors = flat_floor(&water);
+            water.step(&floors);
+        }
+        let floors = flat_floor(&water);
+        let (vertices, _, _, _) = water.build_mesh(&floors, 1.0);
+        let cs = water.cell_size();
+        let source = &water.sources[0];
+        let sx = (source.cell.0 as f32 + 0.5) * cs;
+        let sz = (source.cell.2 as f32 + 0.5) * cs;
+
+        const SECTORS: usize = 16;
+        let mut sector_radius = [0.0f32; SECTORS];
+        let mut contour_points = 0;
+        for vertex in &vertices {
+            if (vertex.position[1] - EDGE_LIFT).abs() > 1.0e-4 {
+                continue;
+            }
+            contour_points += 1;
+            let dx = (vertex.position[0] - sx) / cs;
+            let dz = (vertex.position[2] - sz) / cs;
+            let angle = dz.atan2(dx);
+            let slice = 2.0 * std::f32::consts::PI / SECTORS as f32;
+            let sector = (((angle + std::f32::consts::PI) / slice).floor() as usize)
+                .clamp(0, SECTORS - 1);
+            sector_radius[sector] = sector_radius[sector].max(dx.hypot(dz));
+        }
+        assert!(contour_points > 16, "pocos puntos de contorno: {contour_points}");
+        for (sector, &radius) in sector_radius.iter().enumerate() {
+            assert!(radius > 0.0, "hueco en el contorno, sector {sector}");
+            assert!(
+                (radius - 5.0).abs() < 5.0 * 0.12,
+                "sector {sector}: radio {radius}, esperado ~5"
+            );
+        }
+    }
+
+    /// Dos fuentes cercanas se unen hacia AFUERA: en la bisectriz la orilla
+    /// llega más lejos que con `min` puro. Con centros a 7 celdas y radio 5,
+    /// la unión dura daría sqrt(5² − 3.5²) ≈ 3.57 celdas; el redondeo debe
+    /// superar ese valor para borrar el pico cóncavo.
+    #[test]
+    fn nearby_sources_merge_with_an_outward_blend() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        water.add_source(2, [3.75, 0.25, 0.25], 0.5);
+        for _ in 0..60 {
+            let floors = flat_floor(&water);
+            water.step(&floors);
+        }
+        let floors = flat_floor(&water);
+        let (vertices, _, _, _) = water.build_mesh(&floors, 1.0);
+        let cs = water.cell_size();
+        let middle_x = 2.0f32;
+        let middle_z = 0.25f32;
+
+        let mut widest_at_seam = 0.0f32;
+        let mut points_at_seam = 0;
+        for vertex in &vertices {
+            if (vertex.position[1] - EDGE_LIFT).abs() > 1.0e-4 {
+                continue;
+            }
+            if (vertex.position[0] - middle_x).abs() > cs * 0.5 {
+                continue;
+            }
+            points_at_seam += 1;
+            widest_at_seam = widest_at_seam.max((vertex.position[2] - middle_z).abs() / cs);
+        }
+        assert!(points_at_seam > 0, "no hay orilla en la unión");
+        assert!(
+            widest_at_seam > 3.9,
+            "la unión quedó cóncava: {widest_at_seam} celdas (min puro daría ~3.57)"
+        );
+    }
+
+    /// El charco ya no termina en una línea vertical: la última fila de celdas
+    /// secas baja en rampa desde la superficie hasta apoyarse justo por encima
+    /// del suelo, con margen para no hacer z-fighting con el terreno.
+    #[test]
+    fn puddle_ends_with_a_sloped_row_instead_of_a_vertical_wall() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 0.25, 0.25], 0.5);
+        for _ in 0..20 {
+            let floors = flat_floor(&water);
+            water.step(&floors);
+        }
+        let floors = flat_floor(&water);
+        let (vertices, indices, _, _) = water.build_mesh(&floors, 1.0);
+        assert_last_row_reaches(
+            &water,
+            &vertices,
+            &indices,
+            0.0 + EDGE_LIFT,
+            "el charco debe cerrarse con una fila en rampa",
+        );
+    }
+
+    /// El margen anti-z-fighting se mide sobre el suelo del raycast, no sobre un
+    /// suelo imaginario en y=0: con el terreno a otra altura la fila final debe
+    /// seguir quedando justo por encima de él.
+    #[test]
+    fn final_row_clears_a_nonzero_terrain_floor() {
+        let mut water = WaterSystem::default();
+        water.add_source(1, [0.25, 1.25, 0.25], 0.5);
+        let mut floors: HashMap<(i32, i32), f32> = flat_floor(&water)
+            .into_keys()
+            .map(|column| (column, 1.0))
+            .collect();
+        for _ in 0..20 {
+            water.step(&floors);
+            floors = flat_floor(&water)
+                .into_keys()
+                .map(|column| (column, 1.0))
+                .collect();
+        }
+        let (vertices, indices, _, _) = water.build_mesh(&floors, 1.0);
+        assert_last_row_reaches(
+            &water,
+            &vertices,
+            &indices,
+            1.0 + EDGE_LIFT,
+            "la fila final se superpone con el terreno",
+        );
+    }
+
+    /// Comprueba que la malla tiene una orilla apoyada en `ground_y` (suelo +
+    /// margen anti-z-fighting) y que desde ahí sube en rampa hasta el agua.
+    fn assert_last_row_reaches(
+        _water: &WaterSystem,
+        vertices: &[Vertex],
+        _indices: &[u32],
+        ground_y: f32,
+        message: &str,
+    ) {
+        let lowest = vertices.iter().map(|v| v.position[1]).fold(f32::MAX, f32::min);
+        let highest = vertices.iter().map(|v| v.position[1]).fold(f32::MIN, f32::max);
+        assert!(
+            (lowest - ground_y).abs() < 1.0e-4,
+            "{message}: borde en {lowest} (esperado {ground_y})"
+        );
+        assert!(
+            highest > lowest + 1.0e-3,
+            "{message}: no hay rampa (de {lowest} a {highest})"
+        );
     }
 }

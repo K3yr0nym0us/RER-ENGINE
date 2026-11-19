@@ -67,6 +67,34 @@ impl Mesh {
     pub fn rt_index_buffer(&self) -> &GpuBuffer {
         self.rt_index_buffer.as_ref().unwrap_or(&self.index_buffer)
     }
+
+    /// Reescribe una malla creada con `upload_dynamic`. Devuelve `false` si los
+    /// datos ya no caben en la capacidad reservada (el llamador debe recrearla).
+    pub(crate) fn update_dynamic(&mut self, vertices: &[Vertex], indices: &[u32]) -> bool {
+        let vertex_bytes = bytemuck::cast_slice(vertices);
+        let index_bytes = bytemuck::cast_slice(indices);
+        if vertex_bytes.len() as u64 > self.vertex_buffer.size
+            || index_bytes.len() as u64 > self.index_buffer.size
+        {
+            return false;
+        }
+        if self.vertex_buffer.write(0, vertex_bytes).is_err()
+            || self.index_buffer.write(0, index_bytes).is_err()
+        {
+            return false;
+        }
+        self.index_count = indices.len() as u32;
+        // `clear` + `extend` reutiliza la capacidad: sin esto cada frame de
+        // animación asignaría tres `Vec` nuevos para los datos de raytracing.
+        self.rt_positions.clear();
+        self.rt_positions
+            .extend(vertices.iter().map(|vertex| vertex.position));
+        self.rt_uvs.clear();
+        self.rt_uvs.extend(vertices.iter().map(|vertex| vertex.uv));
+        self.rt_indices.clear();
+        self.rt_indices.extend_from_slice(indices);
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -345,4 +373,43 @@ pub(crate) fn upload(
         rt_indices: rt_indices_vec,
         rt_index_buffer,
     }
+}
+
+/// Como `upload`, pero con capacidad de sobra para reescribir los buffers cada
+/// frame sin crear/destruir memoria Vulkan (lo usa el agua al interpolar ticks).
+pub(crate) fn upload_dynamic(
+    gpu: &SharedGpu,
+    vertices: &[Vertex],
+    indices: &[u32],
+    label: &str,
+) -> Mesh {
+    let vertex_capacity = (vertices.len() * 3).max(256);
+    let index_capacity = (indices.len() * 3).max(512);
+    let vertex_buffer = gpu
+        .create_buffer(
+            vertex_capacity as u64 * std::mem::size_of::<Vertex>() as u64,
+            VERTEX_USAGE_RAW,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+            &format!("{label}-vbo"),
+        )
+        .expect("no se pudo crear el buffer dinámico de vértices");
+    let index_buffer = gpu
+        .create_buffer(
+            index_capacity as u64 * std::mem::size_of::<u32>() as u64,
+            INDEX_USAGE_RAW,
+            gpu_allocator::MemoryLocation::CpuToGpu,
+            &format!("{label}-ibo"),
+        )
+        .expect("no se pudo crear el buffer dinámico de índices");
+    let mut mesh = Mesh {
+        vertex_buffer,
+        index_buffer,
+        index_count: 0,
+        rt_positions: Vec::new(),
+        rt_uvs: Vec::new(),
+        rt_indices: Vec::new(),
+        rt_index_buffer: None,
+    };
+    debug_assert!(mesh.update_dynamic(vertices, indices));
+    mesh
 }

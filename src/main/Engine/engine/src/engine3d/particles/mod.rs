@@ -8,7 +8,7 @@
 //! F1 (slice vertical): fuego. Los demás materiales llegan en F2–F4 reutilizando esta
 //! misma estructura.
 
-mod fluid;
+pub(crate) mod fluid;
 mod params;
 
 pub(crate) use params::{
@@ -959,6 +959,8 @@ impl ParticleSystem {
                 size_end: Some(config.size_end),
                 stretch: Some(config.stretch),
                 cell_size: None,
+                color: None,
+                viscosity: None,
             });
         }
         SaveParticlesSnapshot { weather, emitters }
@@ -1159,6 +1161,7 @@ impl crate::engine3d::engine::State {
         ground_collision: Option<bool>,
         accumulate: Option<bool>,
         splash: Option<bool>,
+        color: Option<[f32; 3]>,
         id: Option<u64>,
     ) -> u64 {
         let mut config = match material {
@@ -1183,6 +1186,34 @@ impl crate::engine3d::engine::State {
         };
         config.material = material;
         config.origin = position;
+        if let Some(color) = color {
+            // El preset define la curva alfa; el color configurable solo cambia
+            // el RGB, manteniendo el desvanecimiento y el brillo del borde.
+            let start_alpha = config.color_start[3];
+            let end_alpha = config.color_end[3];
+            let channel = |value: f32| value.clamp(0.0, 1.0);
+            config.color_start = [
+                channel(color[0]),
+                channel(color[1]),
+                channel(color[2]),
+                start_alpha,
+            ];
+            let end_ratio = |index: usize| {
+                let start = config.color_start[index];
+                if start.abs() > 1.0e-4 {
+                    config.color_end[index] / start
+                } else {
+                    0.65
+                }
+            };
+            let ratios = [end_ratio(0), end_ratio(1), end_ratio(2)];
+            config.color_end = [
+                channel(color[0]) * ratios[0],
+                channel(color[1]) * ratios[1],
+                channel(color[2]) * ratios[2],
+                end_alpha,
+            ];
+        }
         if let Some(value) = radius {
             config.radius = value;
         }
@@ -1244,7 +1275,7 @@ impl crate::engine3d::engine::State {
                 let water: Vec<_> = snapshot
                     .emitters
                     .iter()
-                    .filter(|saved| saved.material == crate::engine3d::water::WATER_WIRE)
+                    .filter(|saved| saved.material == crate::engine3d::water::LIQUID_WIRE)
                     .collect();
                 for saved in water {
                     self.water.add_source(
@@ -1258,7 +1289,7 @@ impl crate::engine3d::engine::State {
                 if !snapshot
                     .emitters
                     .iter()
-                    .any(|saved| saved.material == crate::engine3d::water::WATER_WIRE)
+                    .any(|saved| saved.material == crate::engine3d::water::LIQUID_WIRE)
                 {
                     self.water.clear();
                 } else {

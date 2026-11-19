@@ -16,14 +16,17 @@
 
 pub mod tables;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use glam::Vec3;
+use glam::{Vec3, Vec3A};
 
 use self::tables::{CORNER_OFFSETS, EDGE_CORNERS, EDGE_TABLE, TRI_TABLE};
 
 /// Isosuperficie del campo de densidad.
 pub const ISO_LEVEL: f32 = 0.0;
+
+/// Ranura todavía no asignada en la tabla de vértices compartidos.
+const NULL_SLOT: u32 = u32::MAX;
 
 /// Buffer de geometría de un chunk (posiciones/normales/UV separados + índices).
 ///
@@ -32,7 +35,8 @@ pub const ISO_LEVEL: f32 = 0.0;
 pub struct MeshBuffer {
     /// Posiciones de vértice en coordenadas de mundo (metros).
     pub positions: Vec<[f32; 3]>,
-    /// Normales de vértice (unitarias, orientadas hacia fuera del sólido).
+    /// Normales de vértice (orientadas hacia fuera del sólido, sin normalizar;
+    /// su longitud depende de cuántas celdas comparten el vértice).
     pub normals: Vec<[f32; 3]>,
     /// UVs. El terreno usa splat mapping por coordenadas de mundo, así que los UVs
     /// son un placeholder (0,0) hasta la fase de splat.
@@ -133,13 +137,44 @@ impl DensityGrid {
 
 /// Interpolación lineal en una arista cortada por la isosuperficie.
 #[inline]
-fn edge_point(pa: Vec3, va: f32, pb: Vec3, vb: f32) -> Vec3 {
+fn edge_point(pa: Vec3A, va: f32, pb: Vec3A, vb: f32) -> Vec3A {
     let delta = vb - va;
     if delta.abs() < f32::EPSILON {
         return pa;
     }
     let mu = ((ISO_LEVEL - va) / delta).clamp(0.0, 1.0);
     pa + (pb - pa) * mu
+}
+
+/// Ranura de la tabla de vértices correspondiente a una arista de la rejilla.
+///
+/// Las tres orientaciones se almacenan en bloques consecutivos de `dim³`; los
+/// corners van en un cuarto bloque (ver [`corner_slot`]).
+#[inline]
+fn edge_slot(dim: u32, axis: usize, x: u32, y: u32, z: u32) -> usize {
+    let d = dim as usize;
+    axis * d * d * d + (z as usize) * d * d + (y as usize) * d + x as usize
+}
+
+/// Ranura de la tabla de vértices correspondiente a un corner de la rejilla.
+///
+/// Se usa cuando el cruce cae exactamente sobre el corner: varias aristas
+/// convergentes deben compartir el mismo vértice para no romper la malla.
+#[inline]
+fn corner_slot(dim: u32, x: u32, y: u32, z: u32) -> usize {
+    let d = dim as usize;
+    3 * d * d * d + (z as usize) * d * d + (y as usize) * d + x as usize
+}
+
+/// Clave de posición cuantizada, con la misma resolución que usa el mesher
+/// para considerar que dos puntos son el mismo vértice.
+#[inline]
+fn quantize_key(p: Vec3A, quant: f32) -> [i64; 3] {
+    [
+        (p.x * quant).round() as i64,
+        (p.y * quant).round() as i64,
+        (p.z * quant).round() as i64,
+    ]
 }
 
 /// Meshea el chunk representado por `grid` (toma propiedad del grid).
@@ -170,14 +205,22 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
         return;
     }
 
-    // Deduplicación por posición cuantizada a 1/1024 de voxel.
-    let quant = 1024.0 / grid.voxel_size;
-    let mut dedup: HashMap<[i64; 3], u32> = HashMap::new();
+    let dim = grid.dim;
+    let d = dim as usize;
+    // Tabla plana de vértices compartidos: acceso directo por arista o corner,
+    // sin búsqueda por hash ni asignaciones por vértice.
+    let mut vertex_slots = vec![NULL_SLOT; 4 * d * d * d];
+
+    let origin = Vec3A::from(grid.origin);
+    let voxel = grid.voxel_size;
+    let quant = 1024.0 / voxel;
 
     let mut values = [0.0f32; 8];
     let mut corners = [[0u32; 3]; 8];
-    let mut edge_pos = [Vec3::ZERO; 12];
-    let mut edge_normal = [Vec3::ZERO; 12];
+    let mut corner_gradients = [Vec3A::ZERO; 8];
+    let mut edge_pos = [Vec3A::ZERO; 12];
+    let mut edge_normal = [Vec3A::ZERO; 12];
+    let mut edge_slots = [0usize; 12];
 
     for cz in 0..cells {
         for cy in 0..cells {
@@ -200,26 +243,67 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                     continue;
                 }
 
-                // Puntos y normales por gradiente en cada arista cortada.
+                // De los 8 corners solo se usan los que aparecen en alguna
+                // arista cortada. Calcular el gradiente una vez por celda evita
+                // re-leer el grid en cada arista y en cada celda vecina.
+                let mut used = 0u8;
+                for (edge, [a, b]) in EDGE_CORNERS.iter().enumerate() {
+                    if edges & (1u16 << edge) != 0 {
+                        used |= (1u8 << *a) | (1u8 << *b);
+                    }
+                }
+                for i in 0..8usize {
+                    if used & (1u8 << i) != 0 {
+                        let [x, y, z] = corners[i];
+                        // Densidad positiva = sólido: el gradiente apunta hacia
+                        // dentro, la normal es su opuesto (hacia el aire).
+                        corner_gradients[i] = -Vec3A::from(grid.gradient(x, y, z));
+                    }
+                }
+
+                // Puntos, normales y ranuras compartidas de cada arista cortada.
                 for edge in 0..12usize {
                     if edges & (1u16 << edge) == 0 {
                         continue;
                     }
                     let [a, b] = EDGE_CORNERS[edge];
                     let (a, b) = (a as usize, b as usize);
-                    let (xa, ya, za) = (corners[a][0], corners[a][1], corners[a][2]);
-                    let (xb, yb, zb) = (corners[b][0], corners[b][1], corners[b][2]);
-                    edge_pos[edge] = edge_point(
-                        grid.point_world(xa, ya, za),
+                    let ca = corners[a];
+                    let cb = corners[b];
+                    let pa = origin + Vec3A::new(ca[0] as f32, ca[1] as f32, ca[2] as f32) * voxel;
+                    let pb = origin + Vec3A::new(cb[0] as f32, cb[1] as f32, cb[2] as f32) * voxel;
+                    let p = edge_point(pa, values[a], pb, values[b]);
+                    edge_pos[edge] = p;
+                    edge_normal[edge] = edge_normal_at(
                         values[a],
-                        grid.point_world(xb, yb, zb),
                         values[b],
+                        corner_gradients[a],
+                        corner_gradients[b],
                     );
-                    // Densidad positiva = sólido: el gradiente apunta hacia
-                    // dentro, la normal es su opuesto (hacia el aire).
-                    let ga = -grid.gradient(xa, ya, za);
-                    let gb = -grid.gradient(xb, yb, zb);
-                    edge_normal[edge] = edge_normal_at(values[a], values[b], ga, gb);
+
+                    // Si el cruce cuantiza al mismo punto que un corner, todas
+                    // las aristas que llegan a él comparten el mismo vértice.
+                    let qp = quantize_key(p, quant);
+                    edge_slots[edge] = if qp == quantize_key(pa, quant) {
+                        corner_slot(dim, ca[0], ca[1], ca[2])
+                    } else if qp == quantize_key(pb, quant) {
+                        corner_slot(dim, cb[0], cb[1], cb[2])
+                    } else {
+                        let axis = if ca[0] != cb[0] {
+                            0
+                        } else if ca[1] != cb[1] {
+                            1
+                        } else {
+                            2
+                        };
+                        edge_slot(
+                            dim,
+                            axis,
+                            ca[0].min(cb[0]),
+                            ca[1].min(cb[1]),
+                            ca[2].min(cb[2]),
+                        )
+                    };
                 }
 
                 // Triángulos de la tabla.
@@ -240,16 +324,40 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                     let mut nb = edge_normal[eb];
                     let mut nc = edge_normal[ec];
                     let na = edge_normal[ea];
+                    let (mut sb, mut sc) = (edge_slots[eb], edge_slots[ec]);
+                    let sa = edge_slots[ea];
                     let face_normal = (vb - va).cross(vc - va);
                     let outward = (na + nb + nc) * 0.333_333_34;
                     if face_normal.dot(outward) < 0.0 {
                         std::mem::swap(&mut vb, &mut vc);
                         std::mem::swap(&mut nb, &mut nc);
+                        std::mem::swap(&mut sb, &mut sc);
                     }
 
-                    let ia = vertex_index(out, &mut dedup, va, na, quant, chunk_uv(grid, va));
-                    let ib = vertex_index(out, &mut dedup, vb, nb, quant, chunk_uv(grid, vb));
-                    let ic = vertex_index(out, &mut dedup, vc, nc, quant, chunk_uv(grid, vc));
+                    let ia = vertex_index(
+                        out,
+                        &mut vertex_slots,
+                        sa,
+                        va,
+                        na,
+                        chunk_uv(grid, va.into()),
+                    );
+                    let ib = vertex_index(
+                        out,
+                        &mut vertex_slots,
+                        sb,
+                        vb,
+                        nb,
+                        chunk_uv(grid, vb.into()),
+                    );
+                    let ic = vertex_index(
+                        out,
+                        &mut vertex_slots,
+                        sc,
+                        vc,
+                        nc,
+                        chunk_uv(grid, vc.into()),
+                    );
                     if ia != ib && ib != ic && ia != ic {
                         out.indices.push(ia);
                         out.indices.push(ib);
@@ -263,14 +371,11 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
     if grid.lod > 0 {
         add_lod_skirt(grid, out);
     }
-    for normal in &mut out.normals {
-        *normal = Vec3::from_array(*normal).normalize_or_zero().to_array();
-    }
 }
 
 /// Interpola el gradiente (normal) en el punto de la arista.
 #[inline]
-fn edge_normal_at(va: f32, vb: f32, ga: Vec3, gb: Vec3) -> Vec3 {
+fn edge_normal_at(va: f32, vb: f32, ga: Vec3A, gb: Vec3A) -> Vec3A {
     let delta = vb - va;
     if delta.abs() < f32::EPSILON {
         return ga.normalize_or_zero();
@@ -279,30 +384,27 @@ fn edge_normal_at(va: f32, vb: f32, ga: Vec3, gb: Vec3) -> Vec3 {
     (ga * (1.0 - mu) + gb * mu).normalize_or_zero()
 }
 
-/// Busca o inserta un vértice por posición cuantizada; acumula normales de los
-/// vértices duplicados para suavizar juntas entre celdas.
+/// Busca o inserta el vértice de una ranura; acumula normales de los vértices
+/// compartidos para suavizar juntas entre celdas.
 #[inline]
 fn vertex_index(
     out: &mut MeshBuffer,
-    dedup: &mut HashMap<[i64; 3], u32>,
-    pos: Vec3,
-    normal: Vec3,
-    quant: f32,
+    vertex_slots: &mut [u32],
+    slot: usize,
+    pos: Vec3A,
+    normal: Vec3A,
     uv: [f32; 2],
 ) -> u32 {
-    let key = [
-        (pos.x * quant).round() as i64,
-        (pos.y * quant).round() as i64,
-        (pos.z * quant).round() as i64,
-    ];
-    if let Some(&index) = dedup.get(&key) {
-        let slot = Vec3::from_array(out.normals[index as usize]);
-        // Suma cruda: la normalización única ocurre al cerrar el chunk.
-        out.normals[index as usize] = (slot + normal).to_array();
-        return index;
+    let existing = vertex_slots[slot];
+    if existing != NULL_SLOT {
+        let index = existing as usize;
+        let summed = Vec3A::from_array(out.normals[index]) + normal;
+        // Suma cruda: la normalización la aplica el shader al presentar la malla.
+        out.normals[index] = summed.to_array();
+        return existing;
     }
     let index = out.positions.len() as u32;
-    dedup.insert(key, index);
+    vertex_slots[slot] = index;
     out.positions.push(pos.to_array());
     out.normals.push(normal.to_array());
     out.uvs.push(uv);
@@ -339,10 +441,9 @@ fn add_lod_skirt(grid: &DensityGrid, out: &mut MeshBuffer) {
     let on_x = |x: f32| (x - min.x).abs() <= eps || (max_x - x).abs() <= eps;
     let on_z = |z: f32| (z - min.z).abs() <= eps || (max_z - z).abs() <= eps;
 
-    let indices = out.indices.clone();
     let mut seen = HashSet::<(u32, u32)>::new();
     let mut quads: Vec<([f32; 3], [f32; 3], [f32; 3])> = Vec::new();
-    for tri in indices.chunks_exact(3) {
+    for tri in out.indices.chunks_exact(3) {
         for k in 0..3 {
             let ia = tri[k];
             let ib = tri[(k + 1) % 3];

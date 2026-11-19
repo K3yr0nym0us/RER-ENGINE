@@ -655,6 +655,7 @@ impl State {
                 ground_collision,
                 accumulate,
                 splash,
+                color,
                 id,
             }) => match crate::engine3d::particles::MaterialKind::from_wire(&material) {
                 Some(material) => {
@@ -678,6 +679,7 @@ impl State {
                         ground_collision,
                         accumulate,
                         splash,
+                        color,
                         id,
                     );
                     if replacing {
@@ -709,11 +711,14 @@ impl State {
             EngineCommand::Only3d(EngineCommand3dOnly::AddWaterSource {
                 position,
                 cell_size,
+                color,
+                viscosity,
+                cohesion,
                 id,
             }) => {
                 let id =
                     id.unwrap_or_else(|| 0x7000_0000_0000_0000 + self.water.sources().len() as u64);
-                self.water_add_source(id, position, cell_size);
+                self.water_add_source(id, position, cell_size, color, viscosity, cohesion);
                 log::info!(
                     "[agua] fuente {id} colocada en {position:?} (celda {cell_size:.2} m, {} celdas)",
                     self.water.cell_count()

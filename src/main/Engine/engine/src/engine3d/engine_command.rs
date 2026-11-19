@@ -371,6 +371,10 @@ pub enum EngineCommand3dOnly {
         accumulate: Option<bool>,
         #[serde(default)]
         splash: Option<bool>,
+        /// Color RGB base de los líquidos (solo `water`); el motor conserva el
+        /// gradiente alfa del preset.
+        #[serde(default)]
+        color: Option<[f32; 3]>,
         /// F5: id asignado por la UI (ids altos) para poder borrar el emisor después.
         #[serde(default)]
         id: Option<u64>,
@@ -379,13 +383,19 @@ pub enum EngineCommand3dOnly {
         id: u64,
     },
     ClearParticleEmitters,
-    /// Agua de bloques estilo Minecraft: añade una fuente que se expande por
+    /// Cubo de líquidos: añade una fuente que se expande por
     /// la rejilla de agua. `cell_size` en metros (0.5 por defecto en la UI).
     AddWaterSource {
         #[serde(default)]
         position: [f32; 3],
         #[serde(default = "default_water_cell_size")]
         cell_size: f32,
+        #[serde(default = "default_water_color")]
+        color: [f32; 3],
+        #[serde(default = "default_water_viscosity")]
+        viscosity: f32,
+        #[serde(default = "default_water_cohesion")]
+        cohesion: f32,
         #[serde(default)]
         id: Option<u64>,
     },
@@ -412,6 +422,18 @@ fn default_particle_material() -> String {
 
 fn default_water_cell_size() -> f32 {
     crate::engine3d::water::DEFAULT_CELL_SIZE
+}
+
+fn default_water_color() -> [f32; 3] {
+    crate::engine3d::water::DEFAULT_LIQUID_COLOR
+}
+
+fn default_water_viscosity() -> f32 {
+    crate::engine3d::water::DEFAULT_VISCOSITY
+}
+
+fn default_water_cohesion() -> f32 {
+    crate::engine3d::water::DEFAULT_COHESION
 }
 
 #[cfg(test)]

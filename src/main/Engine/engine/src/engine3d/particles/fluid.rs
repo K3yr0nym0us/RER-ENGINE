@@ -34,7 +34,7 @@
 //! Sin Vulkan ni dependencias: lógica pura y determinista. Vive dentro de una
 //! caja contenedora cerrada; no tiene acoplamiento con actores ni con el
 //! generador de mundos. El agua jugable del editor es el autómata celular de
-//! `engine3d::water` (bloques que se distribuyen estilo Minecraft).
+//! `engine3d::water` (celdas que comparten un volumen conservado).
 //!
 //! Todavía no se llama desde el tick de partículas; `dead_code` / clippy se
 //! retiran al enganchar `FluidSolver` a `ParticleSystem`.
@@ -43,6 +43,7 @@
 #![allow(clippy::needless_range_loop)]
 
 use std::collections::HashMap;
+use std::hash::{BuildHasher, Hasher};
 
 /// Margen anti-atascamiento en los kernels (evita división por cero en r→0).
 const SMALL: f32 = 1e-4;
@@ -86,8 +87,13 @@ pub(crate) struct FluidConfig {
     pub smoothing_radius: f32,
     /// Masa por partícula (kg).
     pub particle_mass: f32,
-    /// Iteraciones del solver por substep (KawaiiFluid usa 3–4).
+    /// Máximo de iteraciones del solver por substep (KawaiiFluid usa 3–4).
     pub solver_iterations: u32,
+    /// Iteraciones mínimas antes de permitir la salida anticipada (B3).
+    pub min_solver_iterations: u32,
+    /// Error medio de densidad aceptable para salir antes (B3). Umbral
+    /// conservador del 3%, acorde con el constraint de solo-compresión.
+    pub max_density_error: f32,
     /// Compliance XPBD (m·s²/kg): 0 = PBF clásico estrictamente incompresible.
     pub compliance: f32,
     /// Gravedad +Y (m/s²); caída = −9.8.
@@ -122,6 +128,11 @@ pub(crate) struct FluidConfig {
     /// que quitan (sin ellas, el agua contra suelo/paredes mide ~0.4·ρ0 aunque
     /// esté perfectamente apoyada).
     pub boundary_support: f32,
+    /// B6 — curvatura de superficie: suaviza el contorno usando la diferencia
+    /// de normales entre partículas vecinas. 0 = desactivada.
+    pub curvature: f32,
+    /// B6 — adhesión a las partículas de frontera. 0 = desactivada.
+    pub boundary_adhesion: f32,
 }
 
 impl Default for FluidConfig {
@@ -131,6 +142,8 @@ impl Default for FluidConfig {
             smoothing_radius: 0.3,
             particle_mass: 4.0,
             solver_iterations: 4,
+            min_solver_iterations: 2,
+            max_density_error: 0.03,
             compliance: 0.0,
             gravity: -9.8,
             damping: 0.995,
@@ -142,6 +155,8 @@ impl Default for FluidConfig {
             tensile_n: 4,
             tensile_delta_q: 0.3,
             boundary_support: 1.0,
+            curvature: 0.05,
+            boundary_adhesion: 0.05,
         }
     }
 }
@@ -166,6 +181,16 @@ pub(crate) struct FluidSolver {
     boundary_psi: Vec<f32>,
     boundary_grid: Option<SpatialGrid>,
     boundary_built: bool,
+    /// B3/B9 — iteraciones realmente usadas en el último substep y error medio
+    /// de densidad con el que se salió (perfilado y early-out).
+    pub last_iterations: u32,
+    pub last_density_error: f32,
+    /// B6 — normales de superficie por partícula, derivadas del gradiente del
+    /// kernel de sus vecinos.
+    normals: Vec<[f32; 3]>,
+    /// B5 — puntos del terreno que sustituyen a la caja como frontera cuando
+    /// se proporcionan. Cada volumen sirve para calibrar la masa efectiva.
+    terrain_boundary: Option<(Vec<[f32; 3]>, Vec<f32>)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -234,21 +259,103 @@ fn akinci_cohesion(r: f32, h: f32) -> f32 {
     }
 }
 
+/// Curva de adhesión a la frontera: solo actúa en la media cáscara
+/// `r ∈ (h/2, h]`; dentro de h/2 la repulsión de corta distancia evita que la
+/// partícula se pegue al extremo de la pared.
+fn surface_adhesion(r: f32, h: f32) -> f32 {
+    if r <= 0.5 * h || r > h {
+        return 0.0;
+    }
+    let raw = (-4.0 * r * r / h + 6.0 * r - 2.0 * h).max(0.0);
+    0.007 / h.powf(3.25) * raw.powf(0.25)
+}
+
+/// B6 — normales de superficie por partícula, derivadas del gradiente del
+/// kernel de sus vecinos y ponderadas por la densidad de cada uno.
+fn compute_surface_normals(
+    normals: &mut Vec<[f32; 3]>,
+    neighbors: &[Vec<Neighbor>],
+    densities: &[f32],
+    h: f32,
+    mass: f32,
+) {
+    normals.clear();
+    normals.resize(neighbors.len(), [0.0; 3]);
+    for (i, normal) in normals.iter_mut().enumerate() {
+        let mut sum = [0.0f32; 3];
+        for neighbor in &neighbors[i] {
+            let j = neighbor.index as usize;
+            let grad = spiky_grad(neighbor.dir, neighbor.rlen, h);
+            let weight = mass / densities[j].max(SMALL) * h;
+            sum[0] += grad[0] * weight;
+            sum[1] += grad[1] * weight;
+            sum[2] += grad[2] * weight;
+        }
+        let len2 = dot(sum, sum);
+        *normal = if len2 > SMALL {
+            let inv = 1.0 / len2.sqrt();
+            [sum[0] * inv, sum[1] * inv, sum[2] * inv]
+        } else {
+            [0.0; 3]
+        };
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Hash espacial 3D (port simplificado de `KawaiiFluidSpatialHash.ush` + sorting)
 // ---------------------------------------------------------------------------
+
+/// B4 — hasher de búsqueda con semilla fija. El `DefaultHasher` de `std` se
+/// siembra al azar por proceso, así que el orden de vecinos cambiaba entre
+/// ejecuciones y con él el resultado en coma flotante.
+struct FnvHasher(u64);
+
+impl Hasher for FnvHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 ^= *byte as u64;
+            self.0 = self.0.wrapping_mul(0x1000_0000_01b3);
+        }
+    }
+}
+
+#[derive(Default)]
+struct FnvBuildHasher;
+
+impl BuildHasher for FnvBuildHasher {
+    type Hasher = FnvHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        FnvHasher(0xcbf2_9ce4_8422_2325 ^ 1820)
+    }
+}
 
 /// Grid de celdas de tamaño h: celda → índices de partículas. Se reconstruye por
 /// substep y la lista de vecinos se cachea a partir de él (las iteraciones del
 /// solver reutilizan la cache con chequeo de distancia, como en el shader GPU).
 struct SpatialGrid {
     cell_size: f32,
-    cells: HashMap<(i32, i32, i32), Vec<u32>>,
+    cells: HashMap<(i32, i32, i32), Vec<u32>, FnvBuildHasher>,
+}
+
+/// B4 — datos del vecino calculados una vez al construir la lista y
+/// reutilizados por todas las fases que lean posiciones reales. `dir` es la
+/// dirección normalizada desde la partícula hacia el vecino (i − j).
+#[derive(Clone, Copy)]
+struct Neighbor {
+    index: u32,
+    dir: [f32; 3],
+    rlen: f32,
+    w: f32,
 }
 
 impl SpatialGrid {
     fn build(positions: &[[f32; 3]], cell_size: f32) -> Self {
-        let mut cells: HashMap<(i32, i32, i32), Vec<u32>> = HashMap::new();
+        let mut cells: HashMap<(i32, i32, i32), Vec<u32>, FnvBuildHasher> = HashMap::default();
         for (i, p) in positions.iter().enumerate() {
             let key = (
                 (p[0] / cell_size).floor() as i32,
@@ -296,6 +403,55 @@ impl SpatialGrid {
                         if dot(d, d) < h2 {
                             out.push(j as u32);
                         }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// Igual que `neighbors`, pero guarda también distancia, dirección y peso
+    /// del kernel. Convierte cada búsqueda en un único `sqrt`/`pow`.
+    fn neighbors_detailed(
+        &self,
+        source: &[[f32; 3]],
+        skip: usize,
+        p: [f32; 3],
+        h: f32,
+        cap: usize,
+    ) -> Vec<Neighbor> {
+        let base = (
+            (p[0] / self.cell_size).floor() as i32,
+            (p[1] / self.cell_size).floor() as i32,
+            (p[2] / self.cell_size).floor() as i32,
+        );
+        let h2 = h * h;
+        let mut out: Vec<Neighbor> = Vec::new();
+        for dz in -1..=1 {
+            for dy in -1..=1 {
+                for dx in -1..=1 {
+                    let Some(cell) = self.cells.get(&(base.0 + dx, base.1 + dy, base.2 + dz))
+                    else {
+                        continue;
+                    };
+                    for &j in cell {
+                        let j = j as usize;
+                        if j == skip || out.len() >= cap {
+                            continue;
+                        }
+                        let r = sub(p, source[j]);
+                        let r2 = dot(r, r);
+                        if r2 >= h2 || r2 <= SMALL {
+                            continue;
+                        }
+                        let rlen = r2.sqrt();
+                        let scale = 1.0 / rlen;
+                        out.push(Neighbor {
+                            index: j as u32,
+                            dir: [r[0] * scale, r[1] * scale, r[2] * scale],
+                            rlen,
+                            w: poly6(r2, h),
+                        });
                     }
                 }
             }
@@ -367,6 +523,10 @@ impl FluidSolver {
             boundary_psi: Vec::new(),
             boundary_grid: None,
             boundary_built: false,
+            last_iterations: 0,
+            last_density_error: 0.0,
+            normals: Vec::new(),
+            terrain_boundary: None,
         }
     }
 
@@ -448,6 +608,21 @@ impl FluidSolver {
         spawned
     }
 
+    /// B8 — substeps adaptativos por velocidad: se divide el intervalo para
+    /// que ninguna partícula avance más que una fracción de su radio de
+    /// suavizado (acotado a 1..10). Con agua rápida se subdivide; en reposo
+    /// cuesta un solo substep, que es el caso habitual.
+    fn cfl_substeps(&self, dt: f32) -> u32 {
+        let h = self.config.smoothing_radius;
+        let speed = self
+            .velocities
+            .iter()
+            .map(|&v| length(v))
+            .fold(0.0f32, f32::max);
+        let cfl = 0.8 * h / speed.max(SMALL);
+        ((dt / cfl).ceil() as u32).clamp(1, 10)
+    }
+
     /// Un frame de fluido: predict → solver de constraints → post-step.
     /// `dt` se acota a 0.05 s como el `MAX_DT` del sistema de partículas.
     pub(crate) fn step(&mut self, dt: f32) {
@@ -456,13 +631,22 @@ impl FluidSolver {
             return;
         }
         self.ensure_boundary();
+        let substeps = self.cfl_substeps(dt);
+        let sub_dt = dt / substeps as f32;
+        for _ in 0..substeps {
+            self.step_substep(sub_dt);
+        }
+    }
+
+    /// Un substep del solver. Extraído de `step` para poder repetirlo con CFL.
+    fn step_substep(&mut self, dt: f32) {
         // Cache de vecinos del SUBSTEP (no por iteración): primera búsqueda con
         // hash espacial, el resto de iteraciones reutiliza (chequeo de distancia
         // incluido porque las posiciones corrigen).
         let grid = SpatialGrid::build(&self.positions, self.config.smoothing_radius);
-        let neighbors: Vec<Vec<u32>> = (0..self.positions.len())
+        let neighbors: Vec<Vec<Neighbor>> = (0..self.positions.len())
             .map(|i| {
-                grid.neighbors(
+                grid.neighbors_detailed(
                     &self.positions,
                     i,
                     self.positions[i],
@@ -489,7 +673,14 @@ impl FluidSolver {
             None => (0..self.positions.len()).map(|_| empty.clone()).collect(),
         };
 
-        self.predict(dt, &neighbors);
+        compute_surface_normals(
+            &mut self.normals,
+            &neighbors,
+            &self.densities,
+            self.config.smoothing_radius,
+            self.config.particle_mass,
+        );
+        self.predict(dt, &neighbors, &b_neighbors);
         // Δp acumulado del FRAME: el guard anti-explosión es el desplazamiento
         // TOTAL del constraint por frame (0.2·h), no el de cada iteración.
         // Clampar por iteración permite 4×0.2·h = 0.8·h por substep ≈ 14 m/s de
@@ -501,10 +692,81 @@ impl FluidSolver {
         // y el bloque se quedaba congelado flotando en el aire.
         let kinematic: Vec<[f32; 3]> = self.predicted.clone();
         let mut dp_accum = vec![[0.0f32; 3]; self.positions.len()];
-        for _ in 0..self.config.solver_iterations {
+        let max_iter = self.config.solver_iterations;
+        let min_iter = self.config.min_solver_iterations.min(max_iter);
+        let rho0 = self.config.rest_density.max(SMALL);
+        let count = self.positions.len().max(1) as f32;
+        let mut used = 0u32;
+        let mut average_error = 0.0f32;
+        for iteration in 0..max_iter {
             self.solve_constraints(dt, &neighbors, &b_neighbors, &kinematic, &mut dp_accum);
+            used = iteration + 1;
+            // El constraint es SOLO compresión (C = ρ/ρ0 − 1, C>0). El error
+            // relevante es cuánto se excede ρ0: una lámina asentada mide menos
+            // de ρ0 legítimamente y no debe forzar iteraciones extra.
+            average_error = self
+                .densities
+                .iter()
+                .map(|&rho| (rho / rho0 - 1.0).max(0.0))
+                .sum::<f32>()
+                / count;
+            // B3: salida anticipada por convergencia. Solo cuando llevamos las iteraciones
+            // mínimas y el error medio ya es aceptable.
+            if used >= min_iter && average_error <= self.config.max_density_error {
+                break;
+            }
         }
+        self.last_iterations = used;
+        self.last_density_error = average_error;
         self.post_step(dt);
+    }
+
+    /// Añade una partícula suelta con estado inicial completo.
+    pub(crate) fn spawn_particle(&mut self, position: [f32; 3], velocity: [f32; 3]) -> usize {
+        let index = self.positions.len();
+        self.positions.push(position);
+        self.velocities.push(velocity);
+        self.predicted.push(position);
+        self.densities.push(self.config.rest_density);
+        self.lambdas.push(0.0);
+        self.normals.push([0.0; 3]);
+        index
+    }
+
+    /// Elimina una partícula por índice (intercambio con la última).
+    pub(crate) fn remove_particle(&mut self, index: usize) {
+        if index >= self.positions.len() {
+            return;
+        }
+        self.positions.swap_remove(index);
+        self.velocities.swap_remove(index);
+        self.predicted.swap_remove(index);
+        self.densities.swap_remove(index);
+        self.lambdas.swap_remove(index);
+        if index < self.normals.len() {
+            self.normals.swap_remove(index);
+        }
+    }
+
+    pub(crate) fn velocities_mut(&mut self) -> &mut [[f32; 3]] {
+        &mut self.velocities
+    }
+
+    pub(crate) fn clear_particles(&mut self) {
+        self.positions.clear();
+        self.velocities.clear();
+        self.predicted.clear();
+        self.densities.clear();
+        self.lambdas.clear();
+        self.normals.clear();
+    }
+
+    /// B5 — establece la nube de puntos del terreno como frontera. Se copian
+    /// los datos porque el muestreador puede regenerarse mientras el solver
+    /// sigue vivo; la nube se reconstruye en el próximo `step`.
+    pub(crate) fn set_terrain_boundary(&mut self, points: &[[f32; 3]], volumes: &[f32]) {
+        self.terrain_boundary = Some((points.to_vec(), volumes.to_vec()));
+        self.boundary_built = false;
     }
 
     /// Genera (una sola vez) la nube de partículas de frontera (Akinci 2012).
@@ -522,6 +784,19 @@ impl FluidSolver {
             return;
         }
         self.boundary_built = true;
+        // B5 — si hay terreno muestreado, esas partículas son la frontera.
+        // La masa efectiva se calibra con el espaciado real de la nube.
+        if let Some((points, volumes)) = self.terrain_boundary.clone() {
+            let h = self.config.smoothing_radius;
+            let rho0 = self.config.rest_density.max(SMALL);
+            let spacing = volumes.first().map(|volume| volume.cbrt()).unwrap_or(h * 0.5);
+            let psi = rho0 / lattice_density(spacing, h, 1.0).max(SMALL);
+            let grid = SpatialGrid::build(&points, h);
+            self.boundary = points;
+            self.boundary_psi = vec![psi; self.boundary.len()];
+            self.boundary_grid = Some(grid);
+            return;
+        }
         let h = self.config.smoothing_radius;
         let sb = h * 0.5;
         let margin = h * 0.25;
@@ -564,9 +839,14 @@ impl FluidSolver {
     }
 
     /// Fase 1 — Predict (`KawaiiFluidSimulationPredict.usf`): fuerzas + predicción.
-    fn predict(&mut self, dt: f32, neighbors: &[Vec<u32>]) {
+    fn predict(&mut self, dt: f32, neighbors: &[Vec<Neighbor>], b_neighbors: &[Vec<u32>]) {
         let h = self.config.smoothing_radius;
         let mass = self.config.particle_mass;
+        let normals = &self.normals;
+        let boundary = &self.boundary;
+        let boundary_psi = &self.boundary_psi;
+        let curvature = self.config.curvature;
+        let adhesion = self.config.boundary_adhesion;
         for i in 0..self.positions.len() {
             let mut vel = self.velocities[i];
             // Gravedad + cohesión Akinci (K_ij corrige por asimetría de densidad).
@@ -574,16 +854,20 @@ impl FluidSolver {
             if self.config.cohesion > 0.0 {
                 let rho_i = self.densities[i].max(SMALL);
                 let mut force = [0.0f32; 3];
-                for &j in &neighbors[i] {
-                    let j = j as usize;
-                    let r = sub(self.positions[i], self.positions[j]);
-                    let rlen = length(r).max(SMALL);
+                for neighbor in &neighbors[i] {
+                    let j = neighbor.index as usize;
                     let rho_j = self.densities[j].max(SMALL);
                     let k_ij = (2.0 * self.config.rest_density / (rho_i + rho_j)).clamp(0.5, 2.0);
-                    let c = akinci_cohesion(rlen, h);
-                    // Dirección HACIA el vecino (atracción): −r̂ con r = i − j.
-                    let dir = scale(normalize(r), -1.0);
+                    let c = akinci_cohesion(neighbor.rlen, h);
+                    // Dirección HACIA el vecino (atracción): opuesta a dir.
+                    let dir = scale(neighbor.dir, -1.0);
                     force = add(force, scale(dir, k_ij * c * mass));
+                    // B6 — curvatura: la diferencia de normales entre vecinos
+                    // suaviza el contorno y redondea las gotas.
+                    if curvature > 0.0 {
+                        let delta = sub(normals[i], normals[j]);
+                        force = add(force, scale(delta, -curvature * k_ij));
+                    }
                 }
                 // a = F/m_i, con clamp de estabilidad (MaxCohesionForce del shader).
                 let accel = scale(force, self.config.cohesion / mass);
@@ -595,16 +879,32 @@ impl FluidSolver {
                 };
                 vel = add(vel, scale(clamped, dt));
             }
+            // B6 — adhesión a las partículas de frontera.
+            if adhesion > 0.0 {
+                let mut force = [0.0f32; 3];
+                for &b in &b_neighbors[i] {
+                    let b = b as usize;
+                    let r = sub(self.positions[i], boundary[b]);
+                    let rlen = length(r);
+                    let w = surface_adhesion(rlen, h);
+                    if w <= 0.0 {
+                        continue;
+                    }
+                    // Hacia la pared: el vector va de la pared a la partícula,
+                    // así que se RESTA para que la atracción la acerque.
+                    let dir = if rlen > SMALL { scale(r, 1.0 / rlen) } else { [0.0; 3] };
+                    force = add(force, scale(dir, -adhesion * w * boundary_psi[b]));
+                }
+                vel = add(vel, scale(force, dt / mass));
+            }
             // Viscosidad XSPH: difusión de velocidad (Σ(vj−vi)·W / ΣW).
             if self.config.viscosity > 0.0 {
                 let mut corr = [0.0f32; 3];
                 let mut weight = 0.0;
-                for &j in &neighbors[i] {
-                    let j = j as usize;
-                    let d = sub(self.positions[j], self.positions[i]);
-                    let w = poly6(dot(d, d), h);
-                    corr = add(corr, scale(sub(self.velocities[j], vel), w));
-                    weight += w;
+                for neighbor in &neighbors[i] {
+                    let j = neighbor.index as usize;
+                    corr = add(corr, scale(sub(self.velocities[j], vel), neighbor.w));
+                    weight += neighbor.w;
                 }
                 if weight > SMALL {
                     vel = add(vel, scale(scale(corr, 1.0 / weight), self.config.viscosity));
@@ -620,7 +920,7 @@ impl FluidSolver {
     fn solve_constraints(
         &mut self,
         dt: f32,
-        neighbors: &[Vec<u32>],
+        neighbors: &[Vec<Neighbor>],
         b_neighbors: &[Vec<u32>],
         kinematic: &[[f32; 3]],
         dp_accum: &mut [[f32; 3]],
@@ -638,8 +938,8 @@ impl FluidSolver {
             let mut density = mass * poly6(0.0, h); // auto-contribución
             let mut sum_sq = 0.0f32;
             let mut grad_i = [0.0f32; 3];
-            for &j in &neighbors[i] {
-                let j = j as usize;
+            for neighbor in &neighbors[i] {
+                let j = neighbor.index as usize;
                 let r = sub(self.predicted[i], self.predicted[j]);
                 let r2 = dot(r, r);
                 if r2 >= h2 {
@@ -693,8 +993,8 @@ impl FluidSolver {
         // Sub-pase B: corrección de posición con los λ recién calculados.
         for i in 0..n {
             let mut dp = [0.0f32; 3];
-            for &j in &neighbors[i] {
-                let j = j as usize;
+            for neighbor in &neighbors[i] {
+                let j = neighbor.index as usize;
                 let r = sub(self.predicted[i], self.predicted[j]);
                 let r2 = dot(r, r);
                 if r2 >= h2 || r2 <= SMALL {
@@ -886,6 +1186,100 @@ mod tests {
             b.positions(),
             "mismo input → mismo resultado"
         );
+    }
+
+    /// B4: la lista detallada guarda el mismo peso y dirección que se
+    /// calcularían en sitio, de modo que las fases de fuerzas no repitan sqrt.
+    #[test]
+    fn detailed_neighbors_cache_kernel_data() {
+        let positions: Vec<[f32; 3]> = vec![[0.0, 0.0, 0.0], [0.1, 0.0, 0.0]];
+        let grid = SpatialGrid::build(&positions, 0.3);
+        let found = grid.neighbors_detailed(&positions, 0, positions[0], 0.3, 48);
+        assert_eq!(found.len(), 1);
+        let neighbor = found[0];
+        assert_eq!(neighbor.index, 1);
+        assert!((neighbor.rlen - 0.1).abs() < 1e-6);
+        assert!((neighbor.dir[0] + 1.0).abs() < 1e-6);
+        assert!((neighbor.w - poly6(0.01, 0.3)).abs() < 1e-6);
+    }
+
+    /// B5: las partículas de frontera del terreno sustituyen a las paredes de
+    /// la caja cuando se proporcionan.
+    #[test]
+    fn terrain_boundary_replaces_box_walls() {
+        let mut solver = solver_with_block();
+        let points: Vec<[f32; 3]> = vec![[0.2, 0.0, 0.2], [0.4, 0.0, 0.2], [0.6, 0.0, 0.2]];
+        let volumes = vec![0.008; points.len()];
+        solver.set_terrain_boundary(&points, &volumes);
+        solver.step(1.0 / 60.0);
+        assert_eq!(solver.boundary, points);
+        assert!(solver.boundary_grid.is_some());
+        assert!(solver.boundary_psi.iter().all(|&psi| psi > 0.0));
+    }
+
+    /// B8: con partículas rápidas el criterio CFL debe subdividir el frame.
+    #[test]
+    fn cfl_adds_substeps_for_fast_fluid() {
+        let mut solver = FluidSolver::new(
+            FluidConfig::default(),
+            FluidBounds::new([0.0; 3], [10.0, 10.0, 10.0]),
+        );
+        assert!(solver.spawn_block([5.0, 1.0, 5.0], [0.2, 0.2, 0.2], 0.15) > 0);
+        for velocity in solver.velocities.iter_mut() {
+            *velocity = [20.0, 0.0, 0.0];
+        }
+        assert!(solver.cfl_substeps(1.0 / 60.0) > 1);
+        for velocity in solver.velocities.iter_mut() {
+            *velocity = [0.0; 3];
+        }
+        assert_eq!(solver.cfl_substeps(1.0 / 60.0), 1);
+    }
+
+    /// B3: con el fluido asentado el early-out debe reducir iteraciones por
+    /// debajo del máximo, manteniendo el error de densidad dentro del umbral.
+    #[test]
+    fn solver_exits_early_when_settled() {
+        let mut solver = solver_with_block();
+        for _ in 0..180 {
+            solver.step(1.0 / 60.0);
+        }
+        assert!(
+            solver.last_iterations < solver.config.solver_iterations,
+            "debe salir antes: {} de {}",
+            solver.last_iterations,
+            solver.config.solver_iterations
+        );
+        assert!(solver.last_density_error <= solver.config.max_density_error);
+    }
+
+    /// B6: las normales de superficie se calculan y la simulación sigue estable
+    /// con curvatura y adhesión activas.
+    #[test]
+    fn surface_normals_are_computed_and_simulation_stays_stable() {
+        let config = FluidConfig {
+            curvature: 0.4,
+            boundary_adhesion: 0.4,
+            ..Default::default()
+        };
+        let mut solver = FluidSolver::new(config, FluidBounds::new([0.0; 3], [1.8, 1.2, 1.8]));
+        let count = solver.spawn_block([0.9, 0.75, 0.9], [0.3, 0.3, 0.3], 0.15);
+        assert!(count > 40);
+        for _ in 0..120 {
+            solver.step(1.0 / 60.0);
+        }
+        assert_eq!(solver.normals.len(), count);
+        assert!(
+            solver
+                .normals
+                .iter()
+                .any(|n| n[0].abs() + n[1].abs() + n[2].abs() > 0.1),
+            "deben calcularse normales de superficie"
+        );
+        let margin = solver.config.smoothing_radius * 0.25;
+        for &p in solver.positions() {
+            assert!(p.iter().all(|component| component.is_finite()));
+            assert!(solver.position_inside(p, margin * 0.5), "fuera: {p:?}");
+        }
     }
 
     #[test]

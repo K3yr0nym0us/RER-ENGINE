@@ -152,9 +152,15 @@ pub struct SaveParticleEmitterSnapshot {
     pub size_end: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stretch: Option<f32>,
-    /// Solo `water_block`: tamaño de celda del agua (m).
+    /// Solo `liquid_cube`: tamaño de celda del agua (m).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cell_size: Option<f32>,
+    /// Solo `liquid_cube`: color RGB del líquido (0..1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<[f32; 3]>,
+    /// Solo `liquid_cube`: viscosidad (0..1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub viscosity: Option<f32>,
 }
 
 fn default_true() -> bool {

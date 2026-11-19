@@ -236,7 +236,7 @@ impl State {
         self.tick_fp_baseline_defer();
         // Plugin worldgen: avanza la cola de chunks con presupuesto por frame.
         self.worldgen_tick();
-        // Agua de bloques: autómata celular a 5 Hz (independiente de worldgen).
+        // Cubo de líquidos: autómata celular a 5 Hz (independiente de worldgen).
         self.water_tick(self.delta_time);
 
         self.metrics_frame_count += 1;

@@ -208,6 +208,7 @@ impl State {
                 particles
             },
             water: crate::engine3d::water::WaterSystem::default(),
+            splash: crate::engine3d::water::SplashLayer::default(),
             socket_bone_pick_entity: None,
             socket_bone_pick_hovered_joint: None,
             bone_physics_editor_entity: None,

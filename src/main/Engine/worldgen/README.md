@@ -30,7 +30,7 @@ defecto); `fit_config_to_world` escala features al área generada.
 
 ## Configuración (modal del editor)
 
-`src/renderer/src/plugins/worldgen/WorldGenModalBody.tsx` arma el JSON.
+`src/main/Engine/engine/src/editor/worldgen.rs` arma el JSON (`PanelState::config_json`).
 
 - **Tamaño** del mundo visible (m) y **voxel size** (m): el voxel es la celda de
   Marching Cubes. Más pequeño = más detalle y **muchas más columnas** (el chunk
@@ -55,7 +55,7 @@ defecto); `fit_config_to_world` escala features al área generada.
   bajan (lago o salida del mapa). No se plantan en un punto interior.
 - Semilla, colinas/llanuras/acantilados, cuevas, cascadas, scatter.
 
-Límites de tamaño y biomas: `worldgenLimits.ts` (frontend) y `scale.rs` /
+Límites de tamaño y biomas: `editor/worldgen.rs` (ventana nativa) y `scale.rs` /
 `config.rs` (Rust).
 
 ## Biomas y splat
