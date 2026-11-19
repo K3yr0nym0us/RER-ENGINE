@@ -171,9 +171,11 @@ impl ParticleWindow {
 
     pub(crate) fn render(&mut self, app: &mut EditorApp) -> Result<(), String> {
         let raw_input = self.egui_state.take_egui_input(self.window.as_ref());
-        let full_output = self.egui_ctx.run_ui(raw_input, |ui| {
+        let mut full_output = self.egui_ctx.run_ui(raw_input, |ui| {
             crate::editor::ui::show_particle_editor(ui, app);
         });
+        let texture_sets = std::mem::take(&mut full_output.textures_delta.set);
+        let texture_frees = std::mem::take(&mut full_output.textures_delta.free);
         self.egui_state
             .handle_platform_output(self.window.as_ref(), full_output.platform_output);
         self.fit_to_content();
@@ -185,7 +187,7 @@ impl ParticleWindow {
         let Some(egui_renderer) = self.egui_renderer.as_mut() else {
             return Ok(());
         };
-        for (id, deltas) in &full_output.textures_delta.set {
+        for (id, deltas) in &texture_sets {
             for delta in deltas {
                 egui_renderer
                     .set_texture(self.present.gpu().queue(), self.ui_pool, *id, delta)
@@ -275,7 +277,7 @@ impl ParticleWindow {
             Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
         }
 
-        for id in &full_output.textures_delta.free {
+        for id in &texture_frees {
             egui_renderer
                 .free_texture(*id)
                 .map_err(|error| format!("No se pudieron liberar texturas egui extra: {error}"))?;

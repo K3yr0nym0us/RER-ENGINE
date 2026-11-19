@@ -102,7 +102,11 @@ impl EditorGpu {
     ) -> Result<bool, String> {
         let raw_input = egui_state.take_egui_input(window);
         let cursor_captured = engine.as_ref().is_some_and(|app| app.is_cursor_captured());
-        let full_output = egui_ctx.run_ui(raw_input, build);
+        let mut full_output = egui_ctx.run_ui(raw_input, build);
+        // Extraemos los deltas: egui exige vaciar `textures_delta` antes de
+        // soltarlo (debug_assert en builds debug), también en early-returns.
+        let texture_sets = std::mem::take(&mut full_output.textures_delta.set);
+        let texture_frees = std::mem::take(&mut full_output.textures_delta.free);
         egui_state.handle_platform_output(window, full_output.platform_output);
         // egui_winit vuelve a mostrar el cursor al aplicar el icono; en modo play
         // el cursor debe permanecer oculto aunque la UI siga dibujándose.
@@ -121,7 +125,7 @@ impl EditorGpu {
         // para no invalidar el command buffer que devuelve `begin_frame`.
         // egui 0.36 agrupa varias actualizaciones por TextureId; el renderer 0.13
         // expone `set_texture` (set_textures quedó obsoleto).
-        for (id, deltas) in &full_output.textures_delta.set {
+        for (id, deltas) in &texture_sets {
             for delta in deltas {
                 self.egui_renderer
                     .set_texture(self.gpu.queue(), self.ui_pool, *id, delta)
@@ -241,7 +245,7 @@ impl EditorGpu {
             Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
         }
 
-        for id in &full_output.textures_delta.free {
+        for id in &texture_frees {
             self.egui_renderer
                 .free_texture(*id)
                 .map_err(|error| format!("No se pudieron liberar texturas egui: {error}"))?;
