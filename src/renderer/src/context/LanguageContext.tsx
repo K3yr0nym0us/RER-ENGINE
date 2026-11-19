@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import { send2d } from '../engine/engineSend'
+import { useEngineSend } from '../hooks/useEngineSend'
 
 export type Locale = 'en' | 'es'
 
@@ -14,13 +14,19 @@ interface LanguageContextValue {
 
 const LanguageContext = createContext<LanguageContextValue | null>(null)
 
+function localeFromUrl(): Locale {
+  const value = new URLSearchParams(window.location.search).get('locale')
+  return value === 'es' ? 'es' : 'en'
+}
+
 export function LanguageProvider({
   children,
-  initialLocale = 'en',
+  initialLocale = localeFromUrl(),
 }: {
   children: ReactNode
   initialLocale?: Locale
 }) {
+  const { send2d } = useEngineSend()
   const [locale, setLocaleState] = useState<Locale>(initialLocale)
 
   useEffect(() => {
@@ -31,7 +37,7 @@ export function LanguageProvider({
     if (next === locale) return
     setLocaleState(next)
     try { send2d({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
-  }, [locale])
+  }, [locale, send2d])
 
   const syncLocale = useCallback((next: Locale) => {
     setLocaleState(next)
@@ -41,7 +47,7 @@ export function LanguageProvider({
     const next: Locale = locale === 'en' ? 'es' : 'en'
     setLocaleState(next)
     try { send2d({ cmd: 'set_locale', locale: next }) } catch { /* engine no iniciado */ }
-  }, [locale])
+  }, [locale, send2d])
 
   return (
     <LanguageContext.Provider value={{ locale, setLocale, syncLocale, toggleLocale }}>

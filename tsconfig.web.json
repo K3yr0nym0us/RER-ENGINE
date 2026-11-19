@@ -7,11 +7,7 @@
     "lib":              ["ESNext", "DOM", "DOM.Iterable"],
     "paths": {
       "@shared-types": ["./src/shared-types/types.ts"],
-      "@modal": ["./src/renderer/src/context/ModalContext.tsx"],
-      "@engine": ["./src/renderer/src/context/useContextEngine.tsx"],
       "@hooks": ["./src/renderer/src/hooks/index.ts"],
-      "@components": ["./src/renderer/src/components/index.ts"],
-      "@context": ["./src/renderer/src/context/index.ts"],
     },
     "outDir":           "out",
     "strict":                        true,

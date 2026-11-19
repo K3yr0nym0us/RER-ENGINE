@@ -71,8 +71,8 @@ Editor de **pantallas HUD del jugador** en el acordeón UI (scope `player`). El 
 
 | Pieza | Archivo |
 |-------|---------|
-| Pantallas y edición | `EngineView/components/sidebar/UIAccordion/components/PlayerUiEditorPanel.tsx` (modal Electron) |
-| Lista de elementos | `EditingUiElementGroups.tsx` (texto, objeto, imagen; botones en lista IPC) |
+| Pantallas y edición | Migrado a ventana nativa Rust (`editor/ui/hud_editor_modal.rs`) |
+| Lista de elementos | Migrado a Rust (`editor/hud_editor.rs`: texto, objeto, imagen) |
 | Dibujo de polígonos | `hooks/usePlayerUiObjectDrawing.ts` → `set_player_ui_object_draw` |
 | Estado | `useContextEngine/types.ts` — `editingUiElements`, `SET_EDITING_UI_OBJECTS` vía `player_ui_text_boxes_list` |
 | IPC | `createEngineActions.ts`, `createEngineEventHandler.ts`, `shared-types/types.ts` |
@@ -105,7 +105,7 @@ Editor de grafos que compila a scripts Rhai para **escena** (`on_scene_start`, `
 | Entidades para el modal | `visualScripting/resolveSceneEntities.ts` |
 | Persistencia escena | `visualScripting/sceneVisualScript.ts`, `sceneStateStore` |
 | Persistencia entidad | `visualScripting/entityVisualScript.ts` |
-| Canvas / modal | `visualScripting/components/VisualScriptingModalBody.tsx` |
+| Canvas / modal | Migrado a ventana nativa Rust (`editor/ui/visual_script_modal.rs`) |
 
 **Dónde se abre en el editor principal:**
 
@@ -114,9 +114,9 @@ Editor de grafos que compila a scripts Rhai para **escena** (`on_scene_start`, `
 | Escena | **Escenas → Programación** → *Lógica de escena (nodos)* o *Script de escena* | `useSceneManager` |
 | Entidad | **Propiedades → Programar entidad** → *Lógica de entidad (nodos)* o *Nuevo script* | `useScripting` |
 
-Programación se abre desde el editor Rust vía `onLegacyWindowOpen` (`HeadlessEditorHost` → `LegacyWindowListener` → `useSceneManager`); no hay acordeón en React.
+Programación se abre en la ventana nativa del editor Rust (`NativeModal::SceneVisualScript`); no quedan `onLegacyWindowOpen` ni hosts React.
 
-**Modal Electron:** el canvas abre en ventana hija **sin** `EngineProvider`. `VisualScriptingModalBody` recibe `sceneEntities` y demás props serializables desde la ventana principal (`resolveSceneEntitiesForVisualScript` + `sanitizeSceneEntitiesForModal`). No usar `useContextEngine()` dentro del modal.
+**Ventana nativa:** el canvas y el inspector viven en `editor/ui/visual_script_modal.rs` con su propio `egui::Context`. Los datos del grafo se leen del `project_state` que el editor mantiene en Rust.
 
 Flujo al guardar grafo de escena:
 

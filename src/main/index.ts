@@ -19,24 +19,8 @@ import type {
   SavedScript,
 } from '../shared-types/types';
 import { entityPathMarker } from '../shared-types/types';
-import {
-  initModalElectron,
-  openModalElectronWindow,
-  closeModalElectronWindow,
-  resendPendingRenderToModal,
-  destroyModalElectronWindow,
-  applyModalElectronContentHeight,
-  sendPatchToModal,
-  restackModalElectronIfOpen,
-  repositionViewportCornerModalIfOpen,
-  setModalElectronAnchorRect,
-  preloadModalElectronWindow,
-  forwardEngineEventToModal,
-  publishEditorLocale,
-} from './modalElectronWindow';
 import { resolveAppWindowIcon } from './appWindowIcon';
 import { registerDevToolsShortcut } from './devToolsShortcut';
-import { engineWindowRectToDip } from './modalElectronSizes';
 import { registerEngineCmdIpc } from './Engine/registerEngineCmdIpc';
 
 /** Logs informativos del host Electron: solo con RER_VERBOSE_ELECTRON=1. */
@@ -45,28 +29,8 @@ function electronLog(...args: unknown[]): void {
   if (verboseElectronLogs) console.log(...args);
 }
 import { sendEngineStartupScene } from './Engine/engineStartupScene';
-import { autoStartEnabledPlugins, registerPluginIpc } from './plugins/registerPluginIpc';
+import { autoStartEnabledPlugins } from './plugins/registerPluginIpc';
 import { stopOpenCodeServer } from './plugins/local-ai-assistant/openCodeRuntime'
-import {
-  destroyAiAssistantOverlay,
-  initAiAssistantOverlay,
-  hideAiAssistantOverlayForMainMinimize,
-  repositionAiAssistantOverlayIfOpen,
-  resendAiAssistantConfig,
-  restackAiAssistantOverlayIfOpen,
-  setAiAssistantOverlayLayout,
-  showAiAssistantOverlay,
-  hideAiAssistantOverlay,
-  beginAiAssistantFabDrag,
-  endAiAssistantFabDrag,
-  updateAiAssistantOverlayConfig,
-} from './aiAssistantWindow';
-import type { AiAssistantOverlayConfig } from './aiAssistantWindow';
-import type {
-  ModalElectronDelegateRequest,
-  ModalElectronOpenRequest,
-  ModalElectronResultPayload,
-} from '../shared-types/types';
 
 // Sin GPU hardware disponible: deshabilitar el proceso GPU de Chromium
 // para evitar spam de viz_main_impl / command_buffer_proxy_impl
@@ -148,8 +112,6 @@ function sendEventToRenderer(event: EngineEvent): void {
   } else {
     eventBuffer.push(event)
   }
-  // La modal worldgen abierta necesita eventos del engine (models_list).
-  forwardEngineEventToModal(event)
 }
 
 function focusMainEditorWindow(): void {
@@ -190,43 +152,20 @@ function createMainWindow(): void {
 
   // En desarrollo carga el servidor de Vite; en producción, el build.
   if (process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+    const url = new URL(process.env['ELECTRON_RENDERER_URL'])
+    url.searchParams.set('locale', currentLocale)
+    mainWindow.loadURL(url.toString())
   } else {
     mainWindow.loadFile(
       path.join(__dirname, '../renderer/index.html'),
+      { query: { locale: currentLocale } },
     )
   }
 
   mainWindow.on('closed', () => {
     rendererReady = false
-    destroyAiAssistantOverlay()
-    destroyModalElectronWindow()
     stopEngine()
     mainWindow = null
-  })
-
-  const syncViewportAndModalOnMainWindowChange = (): void => {
-    repositionViewportCornerModalIfOpen()
-    repositionAiAssistantOverlayIfOpen()
-  }
-
-  // Windows: el motor usa WinEventHook; la modal de propiedades se recoloca aquí.
-  const hideOverlaysOnMainMinimize = (): void => {
-    hideAiAssistantOverlayForMainMinimize()
-    repositionViewportCornerModalIfOpen()
-  }
-
-  mainWindow.on('move', syncViewportAndModalOnMainWindowChange)
-  mainWindow.on('resize', syncViewportAndModalOnMainWindowChange)
-  mainWindow.on('minimize', hideOverlaysOnMainMinimize)
-  mainWindow.on('hide', hideOverlaysOnMainMinimize)
-  mainWindow.on('restore', syncViewportAndModalOnMainWindowChange)
-  mainWindow.on('show', syncViewportAndModalOnMainWindowChange)
-
-  // Clic en el viewport winit: la ventana principal pierde foco; mantener la modal encima del motor.
-  mainWindow.on('blur', () => {
-    restackModalElectronIfOpen()
-    restackAiAssistantOverlayIfOpen()
   })
 
   // Una vez que el renderer cargó y sus listeners están activos,
@@ -314,38 +253,10 @@ function handleEditorMessage(message: Record<string, unknown>): boolean {
     case 'editor_locale': {
       const locale = message.locale === 'es' ? 'es' : 'en'
       currentLocale = locale
-      mainWindow?.webContents.send('editor:locale', locale)
-      publishEditorLocale(locale)
-      updateAiAssistantOverlayConfig({ locale })
       return true
     }
     case 'editor_ready': {
       hideMainWindowForEditor();
-      // Precarga la modal oculta después de que el editor nativo ya está en pantalla,
-      // para no competir con el arranque del motor/GPU.
-      setTimeout(() => preloadModalElectronWindow(), 600);
-      return true
-    }
-    case 'legacy_window_request': {
-      const kind = typeof message.kind === 'string' ? message.kind : ''
-      if (!kind) return true
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('legacy-window:open', {
-          kind,
-          payload: message.payload ?? {},
-        })
-      } else {
-        console.warn('[legacy] no hay host React disponible para abrir', kind)
-      }
-      return true
-    }
-    case 'exit_request': {
-      requestExitModal(message.rect)
-      return true
-    }
-    case 'project_state_request': {
-      const id = Number(message.id ?? 0)
-      mainWindow?.webContents.send('project-state:request', id)
       return true
     }
     case 'project_saved': {
@@ -520,7 +431,6 @@ function sendToEngine(cmd: EngineCommand): void {
     return
   }
   if (cmd.cmd === 'set_locale') {
-    updateAiAssistantOverlayConfig({ locale: currentLocale })
     console.log(`[i18n] set_locale con motor inactivo (overlay actualizado): ${currentLocale}`)
   }
 }
@@ -567,51 +477,15 @@ function clearAssetWatchers(): void {
 
 // ---------------------------------------------------------------------------
 // IPC: renderer → motor y herramientas del editor
-// ---------------------------------------------------------------------------
-registerPluginIpc(() => mainWindow, sendToEngine)
-
-ipcMain.handle('editor:get-locale', () => currentLocale)
 
 registerEngineCmdIpc({
   getProjectType: () => currentProjectType,
   sendToEngine,
-  setLocale: (locale) => {
-    updateAiAssistantOverlayConfig({ locale })
+  setLocale: () => {
   },
   watchPngAsset: watchAsset,
 })
 
-initAiAssistantOverlay(() => mainWindow)
-
-ipcMain.handle(
-  'ai-assistant:show',
-  async (_event, config: AiAssistantOverlayConfig) => {
-    await showAiAssistantOverlay(config ?? {})
-  },
-)
-
-ipcMain.handle('ai-assistant:hide', () => {
-  hideAiAssistantOverlay()
-})
-
-ipcMain.on('ai-assistant:set-layout', (_event, layout: string) => {
-  const allowed = ['intro', 'thinking', 'input', 'answer', 'fab', 'panel'] as const
-  if (allowed.includes(layout as (typeof allowed)[number])) {
-    setAiAssistantOverlayLayout(layout as (typeof allowed)[number])
-  }
-})
-
-ipcMain.on('ai-assistant:fab-drag-start', () => {
-  beginAiAssistantFabDrag()
-})
-
-ipcMain.on('ai-assistant:fab-drag-end', () => {
-  endAiAssistantFabDrag()
-})
-
-ipcMain.on('ai-assistant:ready', (event) => {
-  resendAiAssistantConfig(event.sender.id)
-})
 
 // Diálogo para abrir imagen PNG como sprite (lo usan las modales)
 ipcMain.handle('open-sprite-dialog', async () => {
@@ -656,172 +530,6 @@ ipcMain.handle('get-image-data-url', async (_event, filePath: string): Promise<s
     console.error('[ipc] get-image-data-url error:', error)
     return null
   }
-})
-
-// ---------------------------------------------------------------------------
-// Modal Electron
-// ---------------------------------------------------------------------------
-
-ipcMain.handle('modal-electron:open', async (_event, payload: ModalElectronOpenRequest) => {
-  await openModalElectronWindow(payload)
-})
-
-ipcMain.handle('modal-electron:close', () => {
-  closeModalElectronWindow()
-})
-
-ipcMain.on('modal-electron:ready', (event) => {
-  resendPendingRenderToModal(event.sender.id)
-})
-
-ipcMain.on('modal-electron:resize', (_event, contentHeight: number) => {
-  if (typeof contentHeight === 'number' && Number.isFinite(contentHeight)) {
-    applyModalElectronContentHeight(contentHeight)
-  }
-})
-
-ipcMain.handle(
-  'modal-electron:delegate',
-  async (_event, request: ModalElectronDelegateRequest): Promise<{ blueprints?: unknown[] } | null> => {
-    const win = mainWindow
-    if (!win || win.isDestroyed()) return null
-    return new Promise((resolve) => {
-      const requestId = `${Date.now()}-${Math.random()}`
-      const channel = `modal-electron:delegate-response-${requestId}`
-      const timeout = setTimeout(() => {
-        ipcMain.removeAllListeners(channel)
-        resolve(null)
-      }, 30_000)
-      ipcMain.once(channel, (_replyEvent, result) => {
-        clearTimeout(timeout)
-        resolve(result ?? null)
-      })
-      win.webContents.send('modal-electron:delegate-request', { ...request, requestId })
-    })
-  },
-)
-
-ipcMain.on('modal-electron:parent-open', (_event, data: {
-  parentHandlerId: string
-  action: string
-  payload?: Record<string, unknown>
-}) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('modal-electron:parent-open', data)
-  }
-})
-
-ipcMain.on('modal-electron:patch', (_event, data: {
-  handlerId: string
-  playerUiEditorState?: unknown
-  entityPropertiesState?: unknown
-    socketConfigModalState?: unknown
-    models?: unknown
-}) => {
-  sendPatchToModal(data)
-})
-
-ipcMain.handle(
-  'modal-electron:player-ui-action',
-  async (_event, req: { handlerId: string; action: unknown }) => {
-    const win = mainWindow
-    if (!win || win.isDestroyed()) return
-    return new Promise<void>((resolve) => {
-      const requestId = `${Date.now()}-${Math.random()}`
-      const channel = `modal-electron:player-ui-action-done-${requestId}`
-      const timeout = setTimeout(() => {
-        ipcMain.removeAllListeners(channel)
-        resolve()
-      }, 30_000)
-      ipcMain.once(channel, () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-      win.webContents.send('modal-electron:player-ui-action-request', {
-        ...req,
-        requestId,
-      })
-    })
-  },
-)
-
-ipcMain.handle(
-  'modal-electron:entity-properties-action',
-  async (_event, req: { handlerId: string; action: unknown }) => {
-    const win = mainWindow
-    if (!win || win.isDestroyed()) return
-    return new Promise<void>((resolve) => {
-      const requestId = `${Date.now()}-${Math.random()}`
-      const channel = `modal-electron:entity-properties-action-done-${requestId}`
-      const timeout = setTimeout(() => {
-        ipcMain.removeAllListeners(channel)
-        resolve()
-      }, 30_000)
-      ipcMain.once(channel, () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-      win.webContents.send('modal-electron:entity-properties-action-request', {
-        ...req,
-        requestId,
-      })
-    })
-  },
-)
-
-ipcMain.handle(
-  'modal-electron:socket-config-modal-action',
-  async (_event, req: { handlerId: string; action: unknown }) => {
-    const win = mainWindow
-    if (!win || win.isDestroyed()) return
-    return new Promise<void>((resolve) => {
-      const requestId = `${Date.now()}-${Math.random()}`
-      const channel = `modal-electron:socket-config-modal-action-done-${requestId}`
-      const timeout = setTimeout(() => {
-        ipcMain.removeAllListeners(channel)
-        resolve()
-      }, 30_000)
-      ipcMain.once(channel, () => {
-        clearTimeout(timeout)
-        resolve()
-      })
-      win.webContents.send('modal-electron:socket-config-modal-action-request', {
-        ...req,
-        requestId,
-      })
-    })
-  },
-)
-
-ipcMain.handle(
-  'modal-electron:player-ui-state',
-  async (_event, req: { handlerId: string }) => {
-    const win = mainWindow
-    if (!win || win.isDestroyed()) return null
-    return new Promise<unknown>((resolve) => {
-      const requestId = `${Date.now()}-${Math.random()}`
-      const channel = `modal-electron:player-ui-state-done-${requestId}`
-      const timeout = setTimeout(() => {
-        ipcMain.removeAllListeners(channel)
-        resolve(null)
-      }, 10_000)
-      ipcMain.once(channel, (_replyEvent, result) => {
-        clearTimeout(timeout)
-        resolve(result ?? null)
-      })
-      win.webContents.send('modal-electron:player-ui-state-request', {
-        ...req,
-        requestId,
-      })
-    })
-  },
-)
-
-ipcMain.on('modal-electron:result', (_event, data: ModalElectronResultPayload) => {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('modal-electron:result', data)
-  }
-  closeModalElectronWindow()
 })
 
 // ---------------------------------------------------------------------------
@@ -1282,12 +990,6 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
   return { filePath, extractDir, project: meta }
 })
 
-// Diálogo para elegir ruta del .save (sin empaquetar aún).
-// El renderer responde al editor con el estado de proyecto para guardar en Rust.
-ipcMain.on('project-state:response', (_event, id: number, state: unknown) => {
-  sendToEditor({ type: 'project_state', id, state })
-})
-
 // El botón Guardar del renderer delega el empaquetado en el editor Rust.
 ipcMain.on('project-state:save-request', () => {
   sendToEditor({ type: 'save_request' })
@@ -1330,54 +1032,6 @@ ipcMain.on('set-game-style', (_event, arg: unknown) => {
   }
   hideMainWindowForEditor()
   setImmediate(() => startEngineSession())
-})
-
-let exitDialogOpen = false
-let exitModalActionHandled = false
-
-/** Abre la modal React de salida en Electron (por encima del editor nativo). */
-function requestExitModal(engineRect?: unknown): void {
-  if (exitDialogOpen) return
-  exitDialogOpen = true
-  exitModalActionHandled = false
-  setModalElectronAnchorRect(engineWindowRectToDip(engineRect))
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('legacy-window:open', {
-      kind: 'exit_confirm',
-      payload: {},
-    })
-    return
-  }
-  setModalElectronAnchorRect(null)
-  exitDialogOpen = false
-  sendToEditor({ type: 'exit_cancelled' })
-}
-
-ipcMain.on('ui-screens:sync', (_event, screens: unknown) => {
-  if (!screens || typeof screens !== 'object') return
-  sendToEditor({ type: 'ui_screens_sync', screens })
-})
-
-ipcMain.on('quick-build:state', (_event, state: unknown) => {
-  if (!state || typeof state !== 'object') return
-  sendToEditor({ type: 'quick_build_state', state })
-})
-
-ipcMain.on('editor:exit-action', (_event, action: unknown) => {
-  if (!exitDialogOpen || exitModalActionHandled) return
-  const value: 'save' | 'discard' | 'cancel' =
-    action === 'save' || action === 'discard' || action === 'cancel' ? action : 'cancel'
-  exitModalActionHandled = true
-  exitDialogOpen = false
-  sendToEditor({
-    type:
-      value === 'save'
-        ? 'exit_after_save'
-        : value === 'discard'
-          ? 'exit'
-          : 'exit_cancelled',
-  })
-  closeModalElectronWindow()
 })
 
 // ---------------------------------------------------------------------------
@@ -1436,7 +1090,6 @@ app.whenReady().then(() => {
   })
 
   createMainWindow()
-  initModalElectron(() => mainWindow)
   void autoStartEnabledPlugins()
 
   app.on('activate', () => {
@@ -1459,8 +1112,6 @@ app.on('before-quit', (event) => {
 })
 
 app.on('window-all-closed', () => {
-  destroyAiAssistantOverlay()
-  destroyModalElectronWindow()
   stopEngine()
   cleanupExtractedProjectDirs()
   clearAssetWatchers()
