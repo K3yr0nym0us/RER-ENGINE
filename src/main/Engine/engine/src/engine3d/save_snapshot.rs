@@ -63,6 +63,7 @@ impl State {
                 reflection_probes: Some(self.reflection_probes_enabled),
                 shadow_tier: Some(self.shadow_tier.wire().to_string()),
                 msaa_tier: Some(self.msaa_tier.wire().to_string()),
+                ssaa_tier: Some(self.ssaa_tier.wire().to_string()),
                 taa_enabled: Some(self.taa_enabled),
                 taa_blend: Some(self.taa_blend),
                 taa_jitter_scale: Some(self.taa_jitter_scale),

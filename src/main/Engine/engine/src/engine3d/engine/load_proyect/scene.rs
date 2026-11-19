@@ -364,6 +364,10 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
         state,
         view.world.msaaTier.as_deref(),
     );
+    crate::engine3d::config_3d::ssaa_settings::apply_ssaa_settings_from_world_wire(
+        state,
+        view.world.ssaaTier.as_deref(),
+    );
     let taa_enabled = view.world.taaEnabled.unwrap_or(false);
     let taa_blend = view.world.taaBlend.unwrap_or(0.2);
     let taa_jitter_scale = view.world.taaJitterScale.unwrap_or(1.0);
@@ -400,6 +404,10 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
     send_event(&EngineEvent::MsaaTierChanged {
         tier: state.msaa_tier.wire().to_string(),
         sample_count: state.msaa_sample_count,
+    });
+    send_event(&EngineEvent::SsaaTierChanged {
+        tier: state.ssaa_tier.wire().to_string(),
+        scale: state.ssaa_scale,
     });
     send_event(&EngineEvent::TaaChanged {
         enabled: state.taa_enabled,

@@ -23,7 +23,7 @@ pub(crate) mod vulkan;
 pub(crate) mod water;
 
 #[path = "config_3d/mod.rs"]
-mod config_3d;
+pub(crate) mod config_3d;
 #[cfg(feature = "editor")]
 pub(crate) use config_3d::character_anchor::PLAY_CHARACTER_CAMERA_CLIP_RADIUS;
 #[cfg(feature = "editor")]

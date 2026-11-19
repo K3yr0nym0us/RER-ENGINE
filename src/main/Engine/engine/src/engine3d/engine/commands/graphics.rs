@@ -78,6 +78,16 @@ impl State {
                     log::warn!("[msaa] tier IPC no reconocido: {tier}");
                 }
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetSsaaTier { tier }) => {
+                log::info!("[ssaa] IPC set_ssaa_tier: {tier}");
+                if let Some(t) =
+                    crate::engine3d::config_3d::ssaa_graphics::SsaaTier::from_wire(&tier)
+                {
+                    self.set_ssaa_tier(t);
+                } else {
+                    log::warn!("[ssaa] tier IPC no reconocido: {tier}");
+                }
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::SetWorldRadius { radius }) => {
                 let old_bounds = self.world_bounds_3d;
                 self.set_world_bounds_3d_radius(radius);

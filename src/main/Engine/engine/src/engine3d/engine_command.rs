@@ -198,6 +198,9 @@ pub enum EngineCommand3dOnly {
     SetMsaaTier {
         tier: String,
     },
+    SetSsaaTier {
+        tier: String,
+    },
     SetWorldRadius {
         radius: f32,
     },

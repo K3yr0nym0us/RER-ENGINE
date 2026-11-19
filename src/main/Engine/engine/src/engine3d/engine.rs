@@ -40,6 +40,10 @@ pub struct State {
     pub(crate) msaa_tier: crate::engine3d::config_3d::msaa_graphics::MsaaTier,
     /// `sample_count` efectivo tras clamp al soporte del dispositivo.
     pub(crate) msaa_sample_count: u32,
+    /// Nivel de SSAA (supersampling): escala del G-buffer antes de reducir al presentar.
+    pub(crate) ssaa_tier: crate::engine3d::config_3d::ssaa_graphics::SsaaTier,
+    /// Escala de supersampling efectiva tras recortarla al límite del adaptador (1 = desactivado).
+    pub(crate) ssaa_scale: f32,
     /// TAA del pase de escena (historial + velocity).
     pub(crate) taa_enabled: bool,
     pub(crate) taa_blend: f32,

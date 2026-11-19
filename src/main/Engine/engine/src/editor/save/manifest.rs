@@ -287,6 +287,7 @@ fn build_world(world: Option<&Value>) -> Value {
         ("reflectionProbes", "reflection_probes"),
         ("shadowTier", "shadow_tier"),
         ("msaaTier", "msaa_tier"),
+        ("ssaaTier", "ssaa_tier"),
         ("taaEnabled", "taa_enabled"),
         ("taaBlend", "taa_blend"),
         ("taaJitterScale", "taa_jitter_scale"),

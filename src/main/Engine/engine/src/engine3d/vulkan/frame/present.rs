@@ -234,10 +234,12 @@ impl FrameRenderer {
             vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
         );
         // Área del swapchain donde se dibuja la escena. En standalone es toda la imagen;
-        // el editor la reduce al rectángulo del viewport.
+        // el editor la reduce al rectángulo del viewport. Con SSAA los targets están a `extent`
+        // (supersampleado) pero el swapchain sigue a `frame.extent` (nativo): el shader de
+        // `present` muestrea la imagen de origen con filtrado bilineal y la reduce al tamaño real.
         let area = vk::Rect2D {
             offset: frame.offset,
-            extent,
+            extent: frame.extent,
         };
         begin_swapchain(device, cmd, frame.color_view, area);
         set_viewport_rect(device, cmd, area);

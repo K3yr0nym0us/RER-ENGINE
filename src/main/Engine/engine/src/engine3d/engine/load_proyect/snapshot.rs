@@ -122,6 +122,7 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             reflectionProbes: p.world.reflection_probes,
             shadowTier: p.world.shadow_tier.clone(),
             msaaTier: p.world.msaa_tier.clone(),
+            ssaaTier: p.world.ssaa_tier.clone(),
             taaEnabled: p.world.taa_enabled,
             taaBlend: p.world.taa_blend,
             taaJitterScale: p.world.taa_jitter_scale,
@@ -222,6 +223,11 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         ),
         msaaTier: Some(
             crate::engine3d::config_3d::msaa_graphics::DEFAULT_MSAA_TIER
+                .wire()
+                .to_string(),
+        ),
+        ssaaTier: Some(
+            crate::engine3d::config_3d::ssaa_graphics::DEFAULT_SSAA_TIER
                 .wire()
                 .to_string(),
         ),

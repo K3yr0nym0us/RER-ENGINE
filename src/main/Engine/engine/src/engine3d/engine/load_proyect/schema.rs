@@ -123,6 +123,8 @@ pub(crate) struct SavedWorldConfig {
     #[serde(default)]
     pub(crate) msaaTier: Option<String>,
     #[serde(default)]
+    pub(crate) ssaaTier: Option<String>,
+    #[serde(default)]
     pub(crate) taaEnabled: Option<bool>,
     #[serde(default)]
     pub(crate) taaBlend: Option<f32>,

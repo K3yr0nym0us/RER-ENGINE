@@ -564,6 +564,12 @@ pub enum EngineEvent {
         tier: String,
         sample_count: u32,
     },
+    #[serde(rename = "ssaa_tier_changed")]
+    SsaaTierChanged {
+        tier: String,
+        /// Escala lineal de supersampling efectiva (1 = sin SSAA).
+        scale: f32,
+    },
     #[serde(rename = "reflection_debug_view_changed")]
     ReflectionDebugViewChanged {
         view: String,

@@ -109,6 +109,13 @@ pub(crate) fn send_project_loaded_3d(
                     .to_string(),
             )
         }),
+        ssaaTier: view.world.ssaaTier.clone().or_else(|| {
+            Some(
+                crate::engine3d::config_3d::ssaa_graphics::DEFAULT_SSAA_TIER
+                    .wire()
+                    .to_string(),
+            )
+        }),
         taaEnabled: view.world.taaEnabled,
         taaBlend: view.world.taaBlend,
         taaJitterScale: view.world.taaJitterScale,

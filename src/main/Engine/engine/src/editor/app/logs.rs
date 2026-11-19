@@ -71,6 +71,7 @@ fn engine_event_layer(name: &str) -> LogLayer {
             || n.starts_with("ssr_")
             || n.starts_with("shadow_")
             || n.starts_with("msaa_")
+            || n.starts_with("ssaa_")
             || n.starts_with("taa_")
             || n.starts_with("graphics_")
             || n.starts_with("texture_")

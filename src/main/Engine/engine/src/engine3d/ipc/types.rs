@@ -53,6 +53,8 @@ pub struct SaveWorldSnapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub msaa_tier: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ssaa_tier: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taa_enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub taa_blend: Option<f32>,
@@ -811,6 +813,8 @@ pub struct ProjectLoaded3dWorld {
     pub shadowTier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub msaaTier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssaaTier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub taaEnabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]

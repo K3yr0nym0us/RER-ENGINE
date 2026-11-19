@@ -146,6 +146,53 @@ impl MsaaTier {
     }
 }
 
+/// Nivel de SSAA (supersampling) del editor. Mismas muestras lógicas que MSAA (1/2/4/8), pero
+/// la escala lineal de render es `sqrt(muestras)` (1×, √2×, 2×, √8×).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SsaaTier {
+    Low,
+    Medium,
+    High,
+    Ultra,
+}
+
+impl SsaaTier {
+    pub const ALL: [Self; 4] = [Self::Low, Self::Medium, Self::High, Self::Ultra];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Ultra => "ultra",
+        }
+    }
+
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_lowercase().as_str() {
+            "medium" | "medio" => Self::Medium,
+            "high" | "alto" => Self::High,
+            "ultra" => Self::Ultra,
+            _ => Self::Low,
+        }
+    }
+
+    /// Muestras lógicas pedidas por el tier antes del clamp del adaptador.
+    pub fn desired_samples(self) -> u32 {
+        match self {
+            Self::Low => 1,
+            Self::Medium => 2,
+            Self::High => 4,
+            Self::Ultra => 8,
+        }
+    }
+
+    /// Escala lineal de supersampling derivada de las muestras lógicas.
+    pub fn desired_scale(self) -> f32 {
+        (self.desired_samples() as f32).sqrt()
+    }
+}
+
 /// Vistas de depuración de reflejos (mismas claves que el motor).
 pub const REFLECTION_DEBUG_VIEWS: [(&str, &str); 12] = [
     ("final", "Final"),
@@ -213,6 +260,10 @@ pub struct WorldSettings {
     /// Muestras efectivas que confirmó el motor para `msaa_tier` (puede ser menor que el tier
     /// si el adaptador recorta, p. ej. Ultra 8× → 4×).
     pub msaa_sample_count: u32,
+    pub ssaa_tier: SsaaTier,
+    /// Escala de supersampling efectiva confirmada por el motor (puede ser menor que la pedida
+    /// si el viewport no cabe en el límite de imagen del adaptador).
+    pub ssaa_scale: f32,
     pub taa_enabled: bool,
     pub taa_blend: f32,
     pub taa_jitter_scale: f32,
@@ -256,6 +307,8 @@ impl Default for WorldSettings {
             shadow_tier: ShadowTier::Low,
             msaa_tier: MsaaTier::Low,
             msaa_sample_count: 1,
+            ssaa_tier: SsaaTier::Low,
+            ssaa_scale: 1.0,
             taa_enabled: false,
             taa_blend: 0.2,
             taa_jitter_scale: 1.0,
@@ -392,6 +445,9 @@ impl WorldSettings {
         }
         if let Some(value) = world.get("msaa_tier").and_then(Value::as_str) {
             self.msaa_tier = MsaaTier::parse(value);
+        }
+        if let Some(value) = world.get("ssaa_tier").and_then(Value::as_str) {
+            self.ssaa_tier = SsaaTier::parse(value);
         }
         if let Some(value) = boolean(world, "taa_enabled") {
             self.taa_enabled = value;
@@ -546,6 +602,14 @@ impl WorldSettings {
                     self.msaa_sample_count = tier.desired_sample_count();
                 }
             }
+            "set_ssaa_tier" => {
+                if let Some(value) = command.get("tier").and_then(Value::as_str) {
+                    let tier = SsaaTier::parse(value);
+                    self.ssaa_tier = tier;
+                    // Provisional: el evento `ssaa_tier_changed` trae el recorte real del adaptador.
+                    self.ssaa_scale = tier.desired_scale();
+                }
+            }
             "set_taa" => {
                 if let Some(value) = boolean(command, "enabled") {
                     self.taa_enabled = value;
@@ -637,6 +701,14 @@ impl WorldSettings {
                     self.msaa_sample_count = value.max(1.0) as u32;
                 }
             }
+            "ssaa_tier_changed" => {
+                if let Some(value) = event.get("tier").and_then(Value::as_str) {
+                    self.ssaa_tier = SsaaTier::parse(value);
+                }
+                if let Some(value) = number(event, "scale") {
+                    self.ssaa_scale = value.max(1.0) as f32;
+                }
+            }
             "taa_changed" => {
                 if let Some(value) = boolean(event, "enabled") {
                     self.taa_enabled = value;
@@ -721,7 +793,8 @@ mod tests {
                 "light_ambient": 0.1, "light_intensity": 1.4, "shadow_darkness": 0.3,
                 "graphics_texture_tier": "high", "texture_detail_distance_m": 42.0,
                 "reflection_tier": "medium", "reflection_raytracing": true,
-                "reflection_probes": true, "shadow_tier": "ultra", "msaa_tier": "high"
+                "reflection_probes": true, "shadow_tier": "ultra", "msaa_tier": "high",
+                "ssaa_tier": "medium"
             }
         }));
         assert!(!world.grid_visible);
@@ -732,6 +805,7 @@ mod tests {
         assert!(world.reflection_raytracing);
         assert_eq!(world.shadow_tier, ShadowTier::Ultra);
         assert_eq!(world.msaa_tier, MsaaTier::High);
+        assert_eq!(world.ssaa_tier, SsaaTier::Medium);
         assert_eq!(world.texture_detail_distance, 42.0);
     }
 
@@ -767,6 +841,16 @@ mod tests {
     }
 
     #[test]
+    fn ssaa_tiers_request_expected_scales() {
+        assert_eq!(SsaaTier::Low.desired_samples(), 1);
+        assert_eq!(SsaaTier::Medium.desired_samples(), 2);
+        assert_eq!(SsaaTier::High.desired_samples(), 4);
+        assert_eq!(SsaaTier::Ultra.desired_samples(), 8);
+        assert_eq!(SsaaTier::Low.desired_scale(), 1.0);
+        assert!((SsaaTier::High.desired_scale() - 2.0).abs() < 1e-4);
+    }
+
+    #[test]
     fn applies_engine_confirmations() {
         let mut world = WorldSettings::default();
         world.apply_event(&json!({ "event": "reflection_tier_effective", "effective": "medium" }));
@@ -779,6 +863,11 @@ mod tests {
         );
         assert_eq!(world.msaa_tier, MsaaTier::Ultra);
         assert_eq!(world.msaa_sample_count, 8);
+        world.apply_event(
+            &json!({ "event": "ssaa_tier_changed", "tier": "high", "scale": 1.75 }),
+        );
+        assert_eq!(world.ssaa_tier, SsaaTier::High);
+        assert_eq!(world.ssaa_scale, 1.75);
         world
             .apply_event(&json!({ "event": "taa_changed", "enabled": false, "jitter_scale": 0.5 }));
         assert!(!world.taa_enabled);

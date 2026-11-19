@@ -43,6 +43,8 @@ impl State {
         let shadow_map_size = shadow_tier.shadow_map_size();
         let msaa_tier = crate::engine3d::config_3d::msaa_graphics::DEFAULT_MSAA_TIER;
         let msaa_sample_count = msaa_tier.desired_sample_count();
+        let ssaa_tier = crate::engine3d::config_3d::ssaa_graphics::DEFAULT_SSAA_TIER;
+        let ssaa_scale = ssaa_tier.desired_scale();
         let identity_vp = glam::Mat4::IDENTITY.to_cols_array_2d();
 
         let mut texture_array =
@@ -345,6 +347,8 @@ impl State {
             shadow_map_size,
             msaa_tier,
             msaa_sample_count,
+            ssaa_tier,
+            ssaa_scale,
             taa_enabled: false,
             taa_blend: 0.2,
             taa_jitter_scale: 1.0,

@@ -38,6 +38,8 @@ pub(crate) mod reflection_graphics;
 pub(crate) mod reflection_settings;
 pub(crate) mod shadow_graphics;
 pub(crate) mod shadow_settings;
+pub(crate) mod ssaa_graphics;
+pub(crate) mod ssaa_settings;
 pub(crate) mod skeleton_debug;
 pub(crate) mod skin_diag;
 pub(crate) mod socket_bone_pick;

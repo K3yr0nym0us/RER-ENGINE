@@ -134,7 +134,7 @@ impl ProjectContext {
         !self.is_3d()
     }
 
-    /// `SidebarRight`: iluminación, texturas, reflejos, sombras, MSAA y TAA solo en 3D.
+    /// `SidebarRight`: iluminación, texturas, reflejos, sombras, MSAA, SSAA y TAA solo en 3D.
     #[allow(dead_code)] // La Fase 4 (sidebar derecha) consume esta regla.
     pub fn shows_world_3d_sections(self) -> bool {
         self.is_3d()

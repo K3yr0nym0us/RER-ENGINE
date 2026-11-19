@@ -812,6 +812,7 @@ impl State {
                 != crate::engine3d::config_3d::shadow_graphics::ShadowTier::Off,
             shadow_map_size: self.active_shadow_map_size(),
             msaa_samples: self.msaa_sample_count,
+            ssaa_scale: self.ssaa_scale,
             debug_ssr_view: self.reflection_debug_view
                 != crate::engine3d::config_3d::reflection_graphics::ReflectionDebugView::Final,
             taa_enabled: self.taa_enabled,

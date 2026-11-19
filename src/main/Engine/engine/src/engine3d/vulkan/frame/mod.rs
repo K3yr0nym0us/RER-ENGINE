@@ -27,6 +27,20 @@ const DEPTH_READ_ONLY: vk::ImageLayout = vk::ImageLayout::DEPTH_STENCIL_READ_ONL
 const SHADOW_MAP_MIN: u32 = 512;
 const MRT: [vk::Format; 5] = [COLOR, COLOR, COLOR, WORLD, VELOCITY];
 
+/// Extent del G-buffer para SSAA: `viewport × escala`, recortado de forma uniforme para que
+/// ninguna dimensión supere el límite de imagen del adaptador (así se conserva el aspecto).
+fn supersampled_extent(extent: vk::Extent2D, scale: f32, max_dimension: u32) -> vk::Extent2D {
+    let limit = max_dimension.max(1) as f32;
+    let scale = (scale.max(1.0))
+        .min(limit / extent.width.max(1) as f32)
+        .min(limit / extent.height.max(1) as f32)
+        .max(1.0);
+    vk::Extent2D {
+        width: (extent.width as f32 * scale).round().max(1.0) as u32,
+        height: (extent.height as f32 * scale).round().max(1.0) as u32,
+    }
+}
+
 fn spv(name: &str) -> &'static [u8] {
     match name {
         "primary.rgen" => include_bytes!(concat!(env!("OUT_DIR"), "/primary.rgen.spv")),
@@ -172,6 +186,9 @@ pub struct FrameInput<'a> {
     /// Muestras de MSAA pedidas por el tier (1 = sin multisampling). `FrameRenderer` lo recorta
     /// a lo que el adaptador admite y recrea el G-buffer multisampleado.
     pub msaa_samples: u32,
+    /// Escala de SSAA pedida por el tier (1 = sin supersampling). El G-buffer se rasteriza a
+    /// `viewport × escala` y se reduce al presentar; `FrameRenderer` la recorta al límite de imagen.
+    pub ssaa_scale: f32,
     pub taa_enabled: bool,
     pub taa_blend: f32,
     pub reflections: bool,
@@ -272,6 +289,9 @@ pub struct FrameRenderer {
     shadow_size: u32,
     /// Muestras activas del G-buffer forward (1 = sin MSAA). Sigue al tier elegido por el editor.
     msaa_samples: u32,
+    /// Escala de SSAA activa (1 = sin supersampling). Redimensiona el G-buffer respecto al viewport
+    /// y el `present` reduce esa imagen al tamaño nativo con filtrado bilineal.
+    ssaa_scale: f32,
     /// `[forward, forward_blend, skinned, skinned_blend]` creados con `msaa_samples` muestras.
     ms_pipelines: Option<[vk::Pipeline; 5]>,
     /// `[depth_only, depth_only_skinned]` a 1×: rellenan `targets.depth` tras el pase MSAA.
@@ -790,6 +810,7 @@ impl FrameRenderer {
         );
         Ok(Self {
             msaa_samples: 1,
+            ssaa_scale: 1.0,
             ms_pipelines: None,
             forward_vert: vert,
             forward_frag: frag,
@@ -853,15 +874,23 @@ impl FrameRenderer {
         frame: &FrameTarget,
         input: &FrameInput<'_>,
     ) -> Result<(), VulkanError> {
-        if self.targets.extent != frame.extent {
-            self.targets.recreate(&self.gpu, frame.extent)?;
+        // SSAA: el G-buffer se rasteriza a `viewport × escala`. El tier puede cambiar en caliente
+        // igual que MSAA, así que se recalcula el extent antes de decidir si hay que recrear los
+        // targets; el pase `present` reduce de vuelta al extent nativo de `frame`.
+        if (self.ssaa_scale - input.ssaa_scale).abs() > 1e-4 {
+            self.ssaa_scale = input.ssaa_scale.max(1.0);
+        }
+        let render_extent =
+            supersampled_extent(frame.extent, self.ssaa_scale, self.gpu.max_image_dimension());
+        if self.targets.extent != render_extent {
+            self.targets.recreate(&self.gpu, render_extent)?;
             // Las imágenes nuevas nacen en su layout inicial (DEPTH → ATTACHMENT); el registro
             // anterior ya no describe la realidad y hay que reiniciarlo.
             self.depth_layout = DEPTH_ATTACHMENT;
             self.shadow_layout = DEPTH_ATTACHMENT;
             // `recreate` también destruye el G-buffer multisampleado y el shadow map en su tamaño
-            // base: hay que volver a crearlos, si no MSAA se apaga solo tras un resize porque
-            // `ensure_msaa` ve el mismo nivel de muestras y sale por su early-return.
+            // base: hay que volver a crearlos, si no MSAA (ni el tamaño SSAA) se apaga solo tras
+            // un resize porque `ensure_msaa` ve el mismo nivel de muestras y sale por su early-return.
             self.targets.ensure_ms(&self.gpu, self.msaa_samples)?;
             self.shadow_size = crate::engine3d::engine::SHADOW_MAP_SIZE;
             self.rewrite_target_descriptors()?;
@@ -1010,5 +1039,41 @@ impl FrameRenderer {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ssaa_extent_scales_and_clamps_uniformly() {
+        let viewport = vk::Extent2D {
+            width: 800,
+            height: 600,
+        };
+        assert_eq!(
+            supersampled_extent(viewport, 1.0, 4096),
+            viewport,
+            "1× no cambia el extent"
+        );
+        assert_eq!(
+            supersampled_extent(viewport, 2.0, 4096),
+            vk::Extent2D {
+                width: 1600,
+                height: 1200
+            }
+        );
+        // El límite se aplica a la vez en ambos ejes para no distorsionar el aspecto.
+        let capped = supersampled_extent(
+            vk::Extent2D {
+                width: 1000,
+                height: 500,
+            },
+            4.0,
+            2000,
+        );
+        assert_eq!(capped.width, 2000);
+        assert_eq!(capped.height, 1000);
     }
 }

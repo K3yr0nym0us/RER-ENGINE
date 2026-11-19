@@ -12,8 +12,8 @@ use crate::editor::app::{EditorApp, EditorStatus};
 use crate::editor::cli::Locale;
 use crate::editor::context::ProjectContext;
 use crate::editor::world::{
-    MsaaTier, REFLECTION_DEBUG_VIEWS, ReflectionTier, ShadowTier, TextureTier, WorldSettings,
-    normalize_debug_view,
+    MsaaTier, REFLECTION_DEBUG_VIEWS, ReflectionTier, ShadowTier, SsaaTier, TextureTier,
+    WorldSettings, normalize_debug_view,
 };
 
 use super::number_draft::NumberDraft;
@@ -81,6 +81,7 @@ enum WorldAction {
     SetReflectionDebugView(&'static str),
     SetShadowTier(ShadowTier),
     SetMsaaTier(MsaaTier),
+    SetSsaaTier(SsaaTier),
     SetTaa {
         enabled: bool,
         blend: f32,
@@ -111,12 +112,12 @@ mod gravity;
 mod grid;
 mod lighting;
 mod lod;
-mod metrics;
 mod msaa;
 /// Partículas GPU-driven (F5): dropdown de clima + emisores de escena.
 pub(crate) mod particles;
 mod reflections;
 mod shadows;
+mod ssaa;
 mod taa;
 mod textures;
 mod tiers;
@@ -126,11 +127,11 @@ use self::gravity::*;
 use self::grid::*;
 use self::lighting::*;
 use self::lod::*;
-use self::metrics::*;
 use self::msaa::*;
 use self::particles::*;
 use self::reflections::*;
 use self::shadows::*;
+use self::ssaa::*;
 use self::taa::*;
 use self::textures::*;
 use self::tiers::*;
@@ -322,6 +323,15 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                             "MSAA",
                             enabled,
                             |ui| msaa_body(ui, world, locale, &mut actions),
+                        );
+                        sub(
+                            ui,
+                            open,
+                            "world_ssaa",
+                            icons::ARROWS_OUT,
+                            "SSAA",
+                            enabled,
+                            |ui| ssaa_body(ui, world, locale, &mut actions),
                         );
                         sub(
                             ui,
@@ -533,6 +543,12 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
             app.world.msaa_sample_count = tier.desired_sample_count();
             app.send_engine(json!({ "cmd": "set_msaa_tier", "tier": tier.as_str() }));
             app.push_log(format!("[MSAA] Nivel: {}", tier.as_str()), false);
+        }
+        WorldAction::SetSsaaTier(tier) => {
+            app.world.ssaa_tier = tier;
+            app.world.ssaa_scale = tier.desired_scale();
+            app.send_engine(json!({ "cmd": "set_ssaa_tier", "tier": tier.as_str() }));
+            app.push_log(format!("[SSAA] Nivel: {}", tier.as_str()), false);
         }
         WorldAction::SetTaa {
             enabled,
