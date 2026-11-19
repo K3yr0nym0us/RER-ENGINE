@@ -865,6 +865,11 @@ impl State {
             particle_camera,
         };
 
+        // `last_draw_calls` se inicializaba a 0 y nunca se actualizaba en 3D
+        // (el 2D sí lo cuenta en `vulkan_render.rs`). Reflejamos los lotes que
+        // este frame envía al renderer antes de grabarlo.
+        self.last_draw_calls = count_frame_draws(&input);
+
         self.frame_renderer
             .as_mut()
             .expect("FrameRenderer no inicializado")
@@ -881,6 +886,27 @@ impl State {
             renderer.finish_present(frame);
         }
     }
+}
+
+/// Draws aproximados del frame: un draw por lote de geometría visible, más
+/// HUD y pase de sombras. El conteo exacto de `vkCmdDraw*` está repartido entre
+/// los pases del `FrameRenderer`; para el overlay basta con reflejar la carga.
+fn count_frame_draws(input: &crate::engine3d::vulkan::FrameInput<'_>) -> u32 {
+    let mut calls = 0u32;
+    calls += input.static_batches.len() as u32;
+    calls += input.static_transparent_batches.len() as u32;
+    calls += input.skinned_batches.len() as u32;
+    calls += input.skinned_transparent_batches.len() as u32;
+    calls += input.gizmos.len() as u32;
+    calls += input.rt.len() as u32;
+    calls += input.particles.len() as u32;
+    if input.hud_index_count > 0 {
+        calls += 1;
+    }
+    if input.shadows && input.sun_above_horizon {
+        calls += input.shadow_static_batches.len() as u32;
+    }
+    calls
 }
 
 #[cfg(test)]
