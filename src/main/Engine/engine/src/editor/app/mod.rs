@@ -2,6 +2,8 @@
 
 pub use self::events::{ControlSummary, DebugMetrics, PlayView, SelectedEntity};
 pub use self::logs::LogEntry;
+#[cfg(test)]
+pub use self::logs::format_log_entries;
 pub use self::save::PendingSave;
 use std::path::{Path, PathBuf};
 use std::time::Duration;

@@ -1531,6 +1531,25 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         // pedirlo por evento lanzaba un render completo de escena por cada
         // movimiento del mouse (CPU disparada e ignorando el límite de FPS).
         let _ = response.repaint;
+
+        // Copia global de la consola. En play el motor captura el teclado, así que
+        // egui no recibe el `Copy` y Ctrl+C no copiaba nada. Si egui ya consumió
+        // el evento (un TextEdit con selección), respetamos su copia.
+        let copy_shortcut = editor
+            .egui_ctx
+            .input(|input| input.modifiers.ctrl || input.modifiers.command)
+            && matches!(
+                &event,
+                WindowEvent::KeyboardInput { event: key, .. }
+                    if key.state == winit::event::ElementState::Pressed
+                        && key.physical_key == winit::keyboard::KeyCode::KeyC
+            );
+        if !response.consumed && copy_shortcut {
+            let text = editor.app.log_as_text();
+            editor.egui_ctx.copy_text(text);
+            return;
+        }
+
         // Al motor solo le llega lo que ocurre dentro del viewport (o todo en play).
         editor.forward_input(&event, response.consumed);
         if response.consumed {

@@ -105,7 +105,27 @@ fn scene_name(scenes: &[Value], id: u64) -> String {
         .unwrap_or_else(|| format!("#{id}"))
 }
 
+/// Texto plano de la consola (una línea por entrada, errores prefijados).
+pub fn format_log_entries(entries: &[LogEntry]) -> String {
+    let mut out = String::new();
+    for entry in entries {
+        if entry.is_error {
+            out.push_str("[ERROR] ");
+        }
+        out.push_str(&entry.text);
+        out.push('\n');
+    }
+    out
+}
+
 impl EditorApp {
+    /// Texto plano de la consola (una línea por entrada, errores prefijados).
+    /// Lo usa la UI y el atajo global de copia, que debe funcionar aunque el
+    /// motor tenga el cursor capturado en play.
+    pub fn log_as_text(&self) -> String {
+        format_log_entries(&self.log)
+    }
+
     /// Añade una línea a la consola inferior (máx. 200, como React).
     pub fn push_log(&mut self, text: impl Into<String>, is_error: bool) {
         let text = text.into();

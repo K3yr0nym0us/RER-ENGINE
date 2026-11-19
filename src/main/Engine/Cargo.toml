@@ -51,7 +51,10 @@ ash-window = "0.13"
 gpu-allocator = { version = "0.28", default-features = false, features = ["vulkan", "std"] }
 egui = "0.36"
 egui-ash-renderer = "0.13"
-egui-winit = { version = "0.36", default-features = false }
+# `clipboard` es necesario para que `ctx.copy_text()` llegue al portapapeles del SO:
+# sin él egui-winit usa un portapapeles interno en memoria y nada se puede pegar
+# fuera del editor (ni el botón "Copiar log", ni Ctrl+C en la consola).
+egui-winit = { version = "0.36", default-features = false, features = ["clipboard"] }
 egui-phosphor = "0.14"
 # Editor visual de nodos (0.12 exige egui 0.36).
 egui-snarl = { version = "0.12", features = ["serde"] }
