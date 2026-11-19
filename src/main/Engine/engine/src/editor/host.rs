@@ -57,6 +57,15 @@ impl InProcessEngine {
         }
     }
 
+    /// Métricas instantáneas del motor (fps, frame ms, draws, bodies, GPU%).
+    /// El editor las lee cada frame para el overlay dentro del viewport.
+    pub(crate) fn live_frame_metrics(&self) -> Option<(f32, f32, u32, u32, Option<f32>)> {
+        match self {
+            Self::Three(app) => app.live_frame_metrics(),
+            Self::Two(app) => app.live_frame_metrics(),
+        }
+    }
+
     /// Radio del mundo 3D tras un comando que pueda haberlo cambiado.
     pub(crate) fn world_radius(&self) -> Option<f32> {
         match self {
@@ -542,6 +551,21 @@ impl EditorWindow {
             }
             engine.tick();
             engine.frame_update();
+            // Métricas en caliente: se leen del motor cada frame, no del evento
+            // `debug_metrics` (1 Hz). CPU sigue viniendo de ese evento porque
+            // muestrearlo con sysinfo en cada frame es demasiado costoso.
+            if let Some((fps, frame_ms, draws, bodies, gpu_percent)) = engine.live_frame_metrics() {
+                let metrics = app
+                    .metrics
+                    .get_or_insert_with(crate::editor::app::DebugMetrics::default);
+                metrics.fps = fps;
+                metrics.frame_time_ms = frame_ms;
+                metrics.draw_calls = u64::from(draws);
+                metrics.physics_bodies = u64::from(bodies);
+                if gpu_percent.is_some() {
+                    metrics.gpu_percent = gpu_percent;
+                }
+            }
         }
 
         // Rect del frame anterior: el layout de egui se conoce al terminar de construir la UI.

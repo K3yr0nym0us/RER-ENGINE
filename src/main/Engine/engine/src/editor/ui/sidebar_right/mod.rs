@@ -145,22 +145,8 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let background_path = app.background_path.clone();
     let mut actions = Vec::new();
 
-    // Métricas fijas al fondo (React: .metrics-panel, 120 px).
-    egui::Panel::bottom("editor_right_metrics")
-        .exact_size(120.0)
-        .show_separator_line(false)
-        .frame(egui::Frame::new().fill(crate::editor::theme::METRICS_BG))
-        .show(ui, |ui| {
-            let rect = ui.max_rect();
-            ui.painter().hline(
-                rect.x_range(),
-                rect.top(),
-                egui::Stroke::new(1.0, crate::editor::theme::METRICS_BORDER),
-            );
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(7, 7))
-                .show(ui, |ui| metrics(ui, app));
-        });
+    // Las métricas de uso viven ahora en el viewport del motor
+    // (`ui::metrics_overlay`), no en un panel fijo de esta barra lateral.
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -645,10 +631,6 @@ fn on_off(value: bool) -> &'static str {
     if value { "on" } else { "off" }
 }
 
-const METRIC_GAP: f32 = 3.5;
-const METRIC_FONT_SIZE: f32 = 12.0;
-const METRIC_LINE_HEIGHT: f32 = 18.6;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -665,23 +647,6 @@ mod tests {
 
         state.toggle("world_grid");
         assert_eq!(state.open, None);
-    }
-
-    #[test]
-    fn fps_colors_follow_react_thresholds() {
-        assert_eq!(fps_color(60.0), crate::editor::theme::METRIC_FPS_GOOD);
-        assert_eq!(fps_color(55.0), crate::editor::theme::METRIC_FPS_GOOD);
-        assert_eq!(fps_color(45.0), crate::editor::theme::METRIC_FPS_WARN);
-        assert_eq!(fps_color(30.0), crate::editor::theme::METRIC_FPS_WARN);
-        assert_eq!(fps_color(20.0), crate::editor::theme::METRIC_FPS_BAD);
-    }
-
-    #[test]
-    fn percent_format_matches_react() {
-        assert_eq!(format_percent(Some(12.34)), "12.3%");
-        assert_eq!(format_percent(Some(0.0)), "0.0%");
-        assert_eq!(format_percent(None), "—");
-        assert_eq!(format_percent(Some(f32::NAN)), "—");
     }
 
     #[test]

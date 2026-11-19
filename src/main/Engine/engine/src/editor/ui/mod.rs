@@ -22,6 +22,8 @@ mod globalize_model_modal;
 /// Cuerpo de la ventana nativa del editor de HUD.
 pub(crate) mod hud_editor_modal;
 mod load_from_scene_modal;
+/// Overlay de métricas sobre el viewport del motor.
+pub(crate) mod metrics_overlay;
 mod model_import_modal;
 mod number_draft;
 /// Modal nativa del editor de emisores de partículas (F5).

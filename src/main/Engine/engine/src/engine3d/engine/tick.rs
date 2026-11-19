@@ -229,10 +229,30 @@ impl State {
         Some(base.max(min_scale * MARGIN))
     }
 
+    /// Métricas instantáneas para el overlay del editor (fps, frame time, draws,
+    /// bodies, GPU%). CPU se deja en el evento 1 Hz: muestrearlo cada frame es caro.
+    pub fn live_frame_metrics(&self) -> (f32, f32, u32, u32, Option<f32>) {
+        (
+            self.live_fps,
+            self.delta_time * 1000.0,
+            self.last_draw_calls,
+            self.physics.body_count(),
+            self.process_metrics_sampler.sample_gpu_percent(),
+        )
+    }
+
     pub fn update(&mut self) {
         let now = Instant::now();
         self.delta_time = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
+        // FPS suavizados en caliente: el overlay del editor los lee cada frame,
+        // sin depender del evento `debug_metrics` que se emite 1 vez por segundo.
+        let instant_fps = 1.0 / self.delta_time.max(1e-4);
+        self.live_fps = if self.live_fps <= 0.0 {
+            instant_fps
+        } else {
+            self.live_fps * 0.9 + instant_fps * 0.1
+        };
         self.tick_fp_baseline_defer();
         // Plugin worldgen: avanza la cola de chunks con presupuesto por frame.
         self.worldgen_tick();

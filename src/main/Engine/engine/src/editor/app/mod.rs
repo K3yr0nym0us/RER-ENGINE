@@ -54,6 +54,8 @@ pub struct EditorApp {
     /// Capas de log activas (consola inferior + stderr del motor).
     pub log_layers: rer_engine_core::logging::LogLayers,
     pub metrics: Option<DebugMetrics>,
+    /// Muestra el overlay de métricas dentro del viewport del motor.
+    pub show_metrics: bool,
     pub world: WorldSettings,
     pub world_sync_pending: bool,
     pub scenes: SceneList,
@@ -147,6 +149,7 @@ impl EditorApp {
             log: Vec::new(),
             log_layers: rer_engine_core::logging::layers(),
             metrics: None,
+            show_metrics: true,
             world: WorldSettings::default(),
             world_sync_pending: false,
             scenes: SceneList::default(),

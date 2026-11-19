@@ -257,6 +257,8 @@ pub struct State {
     metrics_last_emit: Instant,
     metrics_frame_count: u32,
     last_draw_calls: u32,
+    /// FPS suavizados en caliente para el overlay del editor (sin esperar al evento 1 Hz).
+    live_fps: f32,
     autosave_enabled: bool,
     autosave_last_tick: Instant,
     /// Límite de FPS del bucle (sincronizado con `set_target_fps`).

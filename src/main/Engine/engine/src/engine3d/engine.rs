@@ -339,6 +339,8 @@ pub struct State {
     pub(crate) metrics_last_emit: Instant,
     pub(crate) metrics_frame_count: u32,
     pub(crate) last_draw_calls: u32,
+    /// FPS suavizados en caliente para el overlay del editor (sin esperar al evento 1 Hz).
+    pub(crate) live_fps: f32,
     pub(crate) autosave_enabled: bool,
     pub(crate) autosave_last_tick: Instant,
     /// Metadatos de persistencia (rutas, tipo) y fuentes de scripts por entidad.

@@ -353,6 +353,12 @@ impl App {
         state.render_into(frame)
     }
 
+    /// Métricas instantáneas del motor para el overlay del editor.
+    #[cfg_attr(not(feature = "editor"), allow(dead_code))]
+    pub fn live_frame_metrics(&self) -> Option<(f32, f32, u32, u32, Option<f32>)> {
+        self.state.as_ref().map(|state| state.live_frame_metrics())
+    }
+
     /// Despacha un comando ya parseado (el editor lo usa in-process).
     #[cfg_attr(not(feature = "editor"), allow(dead_code))]
     pub fn handle_command(&mut self, cmd: EngineCommand) {

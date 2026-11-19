@@ -137,6 +137,17 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                     crate::editor::theme::TEXT,
                 );
             }
+
+            // Métricas en la esquina superior derecha del viewport, como un HUD
+            // de juego. El check de la consola controla su visibilidad.
+            if app.show_metrics && !app.engine_loading && app.engine_error.is_none() {
+                super::metrics_overlay::show(
+                    ui,
+                    rect,
+                    app.metrics,
+                    app.cli.locale,
+                );
+            }
         });
 }
 

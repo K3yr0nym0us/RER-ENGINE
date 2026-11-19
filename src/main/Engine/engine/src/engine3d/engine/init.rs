@@ -314,6 +314,7 @@ impl State {
             metrics_last_emit: Instant::now(),
             metrics_frame_count: 0,
             last_draw_calls: 0,
+            live_fps: 0.0,
             autosave_enabled: false,
             autosave_last_tick: Instant::now(),
             save_registry: EntitySaveRegistry::new(),
