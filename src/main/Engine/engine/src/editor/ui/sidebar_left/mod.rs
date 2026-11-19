@@ -24,6 +24,7 @@ enum Section {
     UserInterface,
     Tools,
     Controls,
+    InteractionTooltips,
 }
 
 impl Section {
@@ -36,6 +37,7 @@ impl Section {
             Self::UserInterface => "ui",
             Self::Tools => "tools",
             Self::Controls => "controls",
+            Self::InteractionTooltips => "interaction_tooltips",
         }
     }
 }
@@ -80,6 +82,16 @@ pub struct SidebarLeftState {
     pub(crate) pending_create_ui_screen: Option<CreateUiScreenDraft>,
     /// Renombrado de menú UI pendiente; la ventana nativa pide el nombre.
     pub(crate) pending_rename_ui_screen: Option<RenameUiScreenDraft>,
+    /// Borrador del tooltip en edición en el accordion de interacción.
+    pub(crate) tooltip_draft: interaction_tooltips::TooltipDraft,
+    /// Abre la modal nativa con el formulario del tooltip.
+    pub(crate) tooltip_modal_open: bool,
+    /// Confirmación de borrado de un tooltip con nombre.
+    pub(crate) pending_delete_interaction_tooltip: Option<DeleteInteractionTooltipDraft>,
+    /// Editor nativo del script asignado al tooltip (nombre, fuente).
+    pub(crate) tooltip_script_editor: Option<(String, String)>,
+    /// Confirmación de quitar el script/nodo del tooltip.
+    pub(crate) pending_remove_tooltip_script: bool,
     /// Guía de usuario abierta en su ventana nativa.
     pub(crate) user_guide_open: bool,
     /// Selector de blueprints abierto en su ventana nativa.
@@ -249,6 +261,13 @@ enum LeftAction {
     QuickBuild {
         active: bool,
     },
+    /// Abre la modal del tooltip (None = crear, Some = editar).
+    OpenTooltipModal(Option<interaction_tooltips::TooltipDraft>),
+    /// Borra un tooltip de interacción del proyecto.
+    DeleteInteractionTooltip {
+        id: String,
+        name: String,
+    },
 }
 
 impl SidebarLeftState {
@@ -274,6 +293,7 @@ impl SidebarLeftState {
 mod camera;
 mod controls;
 mod entities;
+mod interaction_tooltips;
 mod interface;
 mod resources;
 mod scenes;
@@ -285,6 +305,9 @@ use self::interface::*;
 use self::resources::*;
 use self::scenes::*;
 use self::tools::*;
+pub(crate) use interaction_tooltips::{
+    DeleteInteractionTooltipDraft, TooltipDraft, demo_tooltips, sync_command,
+};
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let locale = app.cli.locale;
@@ -297,6 +320,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let ui_screens = app.ui_screens.clone();
     let quick_build_active = app.quick_build_active.clone();
     let controls = app.player_controls.clone();
+    let interaction_tooltips = app.project_state.interaction_tooltips.clone();
     let mut actions = Vec::new();
 
     let mut next_locale = None;
@@ -423,6 +447,26 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                         icons::GAME_CONTROLLER,
                         crate::editor::i18n::tr(locale, "Controles", "Controls"),
                         |ui, _state| controls_body(ui, locale, controls.as_ref(), &mut actions),
+                    );
+                    section(
+                        ui,
+                        state,
+                        Section::InteractionTooltips,
+                        icons::CHAT,
+                        crate::editor::i18n::tr(
+                            locale,
+                            "Tooltips de interacción",
+                            "Interaction tooltips",
+                        ),
+                        |ui, state| {
+                            interaction_tooltips::body(
+                                ui,
+                                state,
+                                &interaction_tooltips,
+                                locale,
+                                &mut actions,
+                            )
+                        },
                     );
                 });
         });
@@ -718,6 +762,14 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
                 app.left_sidebar.quick_build_open = true;
                 app.push_log("[Quick build] Abriendo blueprints…", false);
             }
+        }
+        LeftAction::OpenTooltipModal(draft) => {
+            app.left_sidebar.tooltip_draft = draft.unwrap_or_default();
+            app.left_sidebar.tooltip_modal_open = true;
+        }
+        LeftAction::DeleteInteractionTooltip { id, name } => {
+            app.left_sidebar.pending_delete_interaction_tooltip =
+                Some(DeleteInteractionTooltipDraft { id, name });
         }
     }
 }

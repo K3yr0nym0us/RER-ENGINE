@@ -346,6 +346,14 @@ impl State {
                         physics_enabled,
                         physics_type,
                         blueprint_id: self.entity_blueprint_ids.get(&id).cloned(),
+                        tooltip_id: self
+                            .world
+                            .get::<crate::engine3d::ecs::Interactable>(id)
+                            .and_then(|cfg| cfg.tooltip_id.clone()),
+                        interactable_enabled: self
+                            .world
+                            .get::<crate::engine3d::ecs::Interactable>(id)
+                            .is_some_and(|cfg| cfg.enabled),
                     });
                 }
             }
@@ -656,13 +664,18 @@ impl State {
             EngineCommand::Only3d(EngineCommand3dOnly::SetInteractable {
                 id,
                 enabled,
-                prompt_es,
-                prompt_en,
                 key,
                 once,
                 max_distance,
+                tooltip_id,
+                tooltip_distance,
+                trigger,
+                action,
+                action_name,
+                highlight,
+                highlight_color,
             }) => {
-                use crate::engine3d::ecs::Interactable;
+                use crate::engine3d::ecs::{Interactable, InteractionAction, InteractionTrigger};
                 let mut cfg = self
                     .world
                     .get::<Interactable>(id)
@@ -670,12 +683,6 @@ impl State {
                     .unwrap_or_default();
                 if let Some(v) = enabled {
                     cfg.enabled = v;
-                }
-                if let Some(v) = prompt_es {
-                    cfg.prompt_es = v;
-                }
-                if let Some(v) = prompt_en {
-                    cfg.prompt_en = v;
                 }
                 if let Some(v) = key {
                     let v = v.trim().to_string();
@@ -687,7 +694,122 @@ impl State {
                 if let Some(v) = max_distance {
                     cfg.max_distance = v.clamp(0.5, 100.0);
                 }
+                if let Some(v) = tooltip_id {
+                    cfg.tooltip_id = if v.trim().is_empty() { None } else { Some(v) };
+                }
+                if let Some(v) = tooltip_distance {
+                    cfg.tooltip_distance = v.clamp(0.5, 100.0);
+                }
+                if let Some(v) = trigger {
+                    cfg.trigger = if v.eq_ignore_ascii_case("hold") {
+                        InteractionTrigger::Hold
+                    } else {
+                        InteractionTrigger::Press
+                    };
+                }
+                if let Some(v) = action {
+                    cfg.action = match v.to_ascii_lowercase().as_str() {
+                        "animation" => InteractionAction::Animation,
+                        "node" | "nodes" => InteractionAction::Node,
+                        _ => InteractionAction::Script,
+                    };
+                }
+                if let Some(v) = action_name {
+                    cfg.action_name = v;
+                }
+                if let Some(v) = highlight {
+                    cfg.highlight = v;
+                }
+                if let Some(v) = highlight_color {
+                    cfg.highlight_color = v;
+                }
                 self.world.insert(id, cfg);
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SyncInteractionTooltips { tooltips }) => {
+                let registry = &mut self.interaction_tooltip_registry;
+                registry.clear();
+                for value in &tooltips {
+                    let Some(id) = value.get("id").and_then(serde_json::Value::as_str) else {
+                        continue;
+                    };
+                    let text = |key: &str| {
+                        value
+                            .get(key)
+                            .and_then(serde_json::Value::as_str)
+                            .unwrap_or_default()
+                            .to_string()
+                    };
+                    let key = text("key");
+                    registry.insert(
+                        id.to_string(),
+                        crate::engine3d::config_3d::interaction::InteractionTooltip {
+                            key: if key.is_empty() { "E".to_string() } else { key },
+                            trigger: {
+                                let trigger = text("trigger");
+                                if trigger.eq_ignore_ascii_case("hold") {
+                                    "hold".to_string()
+                                } else {
+                                    "press".to_string()
+                                }
+                            },
+                            action: {
+                                let action = text("action");
+                                if action.is_empty() {
+                                    "script".to_string()
+                                } else {
+                                    action
+                                }
+                            },
+                            action_ref_name: {
+                                let action = text("action");
+                                if action == "animation" {
+                                    text("animation_id")
+                                } else {
+                                    text("action_ref_name")
+                                }
+                            },
+                            action_ref_source: text("action_ref_source"),
+                            max_distance: text("max_distance").parse::<f32>().unwrap_or(3.5),
+                            tooltip_distance: text("tooltip_distance")
+                                .parse::<f32>()
+                                .unwrap_or(5.0),
+                            once: value
+                                .get("once")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false),
+                            highlight: value
+                                .get("highlight")
+                                .and_then(serde_json::Value::as_bool)
+                                .unwrap_or(false),
+                            highlight_color: crate::engine3d::config_3d::interaction::tooltip_color(
+                                value,
+                            ),
+                        },
+                    );
+                }
+                // Las entidades que usaban un tooltip borrado se quedan sin él;
+                // nunca se les asigna automáticamente otro.
+                use crate::engine3d::ecs::Interactable;
+                let ids: Vec<_> = self.world.entities().to_vec();
+                for id in ids {
+                    let Some(mut cfg) = self.world.get::<Interactable>(id).cloned() else {
+                        continue;
+                    };
+                    let Some(tooltip_id) = cfg.tooltip_id.clone() else {
+                        continue;
+                    };
+                    if !registry.contains_key(&tooltip_id) {
+                        // Sin tooltip ya no hay interacción: ni prompt ni disparo,
+                        // y no se le asigna otro automáticamente.
+                        cfg.tooltip_id = None;
+                        cfg.enabled = false;
+                        self.world.insert(id, cfg);
+                    }
+                }
+                log::info!(
+                    "[tooltip] registro sincronizado: {} definiciones",
+                    registry.len()
+                );
             }
             EngineCommand::Only3d(EngineCommand3dOnly::AddParticleEmitter {
                 material,

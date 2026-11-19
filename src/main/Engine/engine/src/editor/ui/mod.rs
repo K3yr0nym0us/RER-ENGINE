@@ -9,6 +9,7 @@ pub(crate) mod control_bindings_modal;
 pub(crate) mod create_scene_modal;
 /// Cuerpo de la ventana nativa de creación de pantalla UI.
 pub(crate) mod create_ui_screen_modal;
+pub(crate) mod delete_interaction_tooltip_modal;
 /// Cuerpo de la ventana nativa de confirmación de borrado de escena.
 pub(crate) mod delete_scene_modal;
 /// Cuerpo de la ventana nativa de confirmación de borrado de pantalla UI.
@@ -21,6 +22,7 @@ mod frame;
 mod globalize_model_modal;
 /// Cuerpo de la ventana nativa del editor de HUD.
 pub(crate) mod hud_editor_modal;
+pub(crate) mod interaction_tooltip_modal;
 mod load_from_scene_modal;
 /// Overlay de métricas sobre el viewport del motor.
 pub(crate) mod metrics_overlay;
@@ -34,6 +36,7 @@ pub(crate) mod plugins_modal;
 pub(crate) mod quick_build_modal;
 /// Cuerpo de la ventana nativa de confirmación para borrar un recurso.
 pub(crate) mod remove_asset_modal;
+pub(crate) mod remove_tooltip_script_modal;
 /// Cuerpo de la ventana nativa de renombrado de menú UI.
 pub(crate) mod rename_ui_screen_modal;
 /// Cuerpo de la ventana nativa del script Rhai de escena.
@@ -43,6 +46,7 @@ pub(crate) mod sidebar_right;
 /// Cuerpo de la ventana nativa de configuración de sockets.
 pub(crate) mod socket_config_modal;
 mod switch_scene_modal;
+pub(crate) mod tooltip_script_editor_modal;
 mod top_bar;
 /// Cuerpo de la ventana nativa de la guía de usuario.
 pub(crate) mod user_guide_modal;

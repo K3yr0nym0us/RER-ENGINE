@@ -121,12 +121,22 @@ mod save;
 
 impl EditorApp {
     pub fn new(cli: Cli) -> Self {
-        let project_state = cli
+        let mut project_state = cli
             .extract_dir
             .as_deref()
             .map(Path::new)
             .and_then(ProjectState::from_manifest_dir)
             .unwrap_or_default();
+        // Plantilla 3D nueva: los tooltips de la fila demo ya están creados y
+        // se pueden editar/borrar desde el accordion del SidebarLeft.
+        // Electron siempre pasa `--extract-dir` (sesión nueva), así que el
+        // criterio de proyecto nuevo es que no haya `--save-path`.
+        if cli.context.is_3d()
+            && cli.save_path.is_none()
+            && project_state.interaction_tooltips.is_empty()
+        {
+            project_state.interaction_tooltips = crate::editor::ui::sidebar_left::demo_tooltips();
+        }
         let ui_screens = UiScreenLists::from_state(&project_state);
         let scene_scripts: std::collections::BTreeMap<u64, String> = project_state
             .scenes
@@ -227,6 +237,21 @@ mod tests {
 
     fn test_app() -> EditorApp {
         EditorApp::new(Cli::default())
+    }
+
+    #[test]
+    fn new_3d_project_seeds_demo_tooltips_even_with_session_extract_dir() {
+        let mut cli = Cli::default();
+        // Electron siempre pasa `--extract-dir` aunque no haya .save.
+        cli.extract_dir = Some("C:/does-not-exist/rer-session".to_string());
+        let app = EditorApp::new(cli);
+        let ids: Vec<_> = app
+            .project_state
+            .interaction_tooltips
+            .iter()
+            .filter_map(|tooltip| tooltip.get("id").and_then(serde_json::Value::as_str))
+            .collect();
+        assert_eq!(ids, ["demo_move", "demo_vanish", "demo_drop", "demo_hold"]);
     }
 
     #[test]

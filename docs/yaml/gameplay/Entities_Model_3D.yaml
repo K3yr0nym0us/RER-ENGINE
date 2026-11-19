@@ -29,7 +29,7 @@ common: # FORMATO COMUN DE LAS ENTIDADES
   controls: optional # WASD / gamepad → Rhai en preview; (Solo para Player)
   colision: boolean # Colisiones de la entidad (Malla fisica del ultimo modelo 3D cargado on/off default:on)
   projectile: optional # Solo category projectile: { speed, lifetime_s, affected_by_gravity, gravity_scale, align_to_velocity, muzzle_socket, bounceable, max_bounces, bounce_speed_loss, hardness } — docs/yaml/gameplay/Projectiles_3D.yaml
-  interactable: optional # { enabled, prompt_es, prompt_en, key, once, max_distance } — tooltip anclado a la entidad en play
+  interactable: optional # { enabled, tooltip_id } — tooltip anclado en play; el resto se configura en interactionTooltips[]
 
 INTERACCION:
   descripcion: |
@@ -38,21 +38,104 @@ INTERACCION:
     en los scripts Rhai de esa entidad. El rayo parte de la cámara/jugador, respeta oclusión
     (usa el primer hit de física) y excluye el collider del jugador.
   campos:
-    enabled: boolean # false por defecto; la pestaña "Interacción" lo activa
-    prompt_es: string # Texto del prompt en español
-    prompt_en: string # Texto del prompt en inglés (fallback al español)
-    key: string # Tecla mostrada en el prompt y que dispara la interacción (default E)
+    enabled: boolean # Checkbox "Interactuable" en la modal de propiedades
+    tooltip_id: optional string # Tooltip con nombre creado en SidebarLeft → accordion "Tooltips de interacción"
+    texto: fijo «Para interactuar» / «To interact» (no se edita ni se persiste)
+    key: string # Tecla del botón del tooltip y que dispara la interacción (default E)
     once: boolean # Si true, la entidad se consume tras la primera interacción de la sesión
-    max_distance: number # Distancia máxima del rayo en metros (default 3.5, rango 0.5..20)
-  editor: Propiedades de entidad → pestaña "Interacción" (entidades 3D)
-  persistencia: manifest .save → entities[].interactable / player.interactable
+    max_distance: number # Distancia máxima para interactuar en metros (default 3.5)
+    tooltip_distance: number # Distancia desde el jugador a la que aparece el tooltip (default 5.0)
+    trigger: press | hold # Pulsar una vez o mantener (con cadencia de 0.25 s)
+    action: script | animation | node # Script Rhai, animación o nodos visuales (compilan a Rhai)
+    action_ref_name: string # Nombre del script/nodo cargado desde el formulario del tooltip
+    action_ref_source: string # Fuente Rhai (o grafo compilado) del script/nodo
+    action_ref_graph: object # Grafo de nodos serializado (cuando action = node)
+    highlight: boolean # Aura al estar a distancia de interacción (como el hover del editor)
+    highlight_color: [r, g, b] # Color RGB del aura (0..255), elegido con el color picker
+  editor: |
+    SidebarLeft → "Tooltips de interacción" (crear/listar/editar/borrar con texto y tecla).
+    Propiedades de entidad → pestaña "Interacción": checkbox Interactuable, select de tooltip,
+    distancias, trigger, acción y color del aura.
+  persistencia: manifest .save → entities[].interactable / player.interactable + interactionTooltips[] (proyecto)
   rhai: |
     engine.interact_target()   → id de la entidad mirada (-1 si ninguna)
     engine.interact_pressed()  → true el frame de la pulsación
     engine.interact_distance() → distancia hasta el objetivo
     engine.set_interactable(id, enabled)
-    engine.interact_prompt(id, text)
+    engine.despawn_entity(id)
     fn on_interact(target, actor) { ... }
+  demo_row: |
+    Plantilla 3D: fila de 4 interacciones en x=-10, z=-1/1/3/5 (espejo de la fila
+    de partículas en x=+10). Cada objeto recibe el MISMO resaltado que el hover
+    del editor (flag de instancia 8.0: tinte del color elegido + rim en el shader)
+    y el prompt "Pulsa/Mantén 'E' para ..." (EN: "Press/Hold 'E' to ..."):
+      MOVE   → sube/baja una plataforma (move_to)
+      VANISH → desaparece la caja (despawn_entity)
+      DROP   → suelta un orbe (set_physics dynamic → cae por gravedad)
+      HOLD   → mantener E llena un anillo blanco detrás del botón (1.1 s); al
+               soltar se vacía en 0.8 s y se puede reanudar desde el progreso
+               actual. Al completarse crea/destruye un emisor de fuego sobre el cubo.
+    Scripts demo (demo_move_script / demo_vanish_script / demo_drop_script /
+    demo_hold_script): viven en `action_ref_source` de cada tooltip, así que se
+    pueden editar o quitar desde el formulario igual que cualquier otro tooltip.
+    No hay lógica de interacción en código duro. El fuego del HOLD se dispara con
+    `engine.toggle_demo_fire()` dentro del script, no comparando ids en el motor.
+    Fuente: editor/ui/sidebar_left/interaction_tooltips.rs, engine3d/config_3d/interaction.rs
+  relacionado: docs/yaml/editor/Player_UI_Model.yaml, docs/yaml/scripting/RHAI_API.yaml
+
+Blueprints:
+  reference: docs/yaml/gameplay/Blueprints_Model_3D.yaml
+  summary: |
+    Plantillas globales (project.blueprints[]). Instancias usan blueprint_id.
+    model + model_id, física, scripts y animaciones se propagan; position es por instancia.
+    Crear: Propiedades → Convertir en Blueprint. Usar: Herramientas → Construcción rápida.  campos (en la entidad):
+    enabled: boolean # Checkbox "Interactuable" en la modal de propiedades
+    tooltip_id: optional string # Tooltip con nombre creado en SidebarLeft → accordion "Tooltips de interacción"
+  campos (en la definición del tooltip, interactionTooltips[]):
+    id / name: string # Identificador y nombre mostrado en el accordion
+    key: string # Tecla del botón del tooltip y que dispara la interacción (default E)
+    trigger: press | hold # Pulsar una vez o mantener
+    action: script | animation | node # Script Rhai, animación o nodos visuales (compilan a Rhai)
+    action_name: string # Nombre del script/nodo/animación a ejecutar
+    max_distance: number # Distancia máxima para interactuar en metros (default 3.5)
+    tooltip_distance: number # Distancia a la que aparece el tooltip (default 5.0)
+    once: boolean # Si true, la entidad se consume tras la primera interacción de la sesión
+    highlight: boolean # Aura al estar a distancia de interacción (como el hover del editor)
+    highlight_color: number # Índice 0..5 de la paleta: azul, verde, ámbar, rojo, violeta, naranja
+    texto: fijo «Para interactuar» / «To interact» (no se edita ni se persiste)
+  editor: |
+    SidebarLeft → "Tooltips de interacción": formulario con nombre, modo (press/hold), tecla,
+    acción, distancias, aura y color. Propiedades de entidad → pestaña "Interacción":
+    solo el checkbox "Interactuable" y el select del tooltip a usar.
+  resolución: |
+    La entidad consulta la definición por tooltip_id en tiempo real; editar el tooltip
+    actualiza el prompt y el comportamiento sin tocar cada entidad. Borrar un tooltip
+    deja las entidades que lo usaban sin tooltip y deshabilitadas (sin autoasignación).
+  persistencia: manifest .save → entities[].interactable / player.interactable + interactionTooltips[] (proyecto)
+  rhai: |
+    engine.interact_target()   → id de la entidad mirada (-1 si ninguna)
+    engine.interact_pressed()  → true el frame de la pulsación
+    engine.interact_distance() → distancia hasta el objetivo
+    engine.set_interactable(id, enabled)
+    engine.despawn_entity(id)
+    fn on_interact(target, actor) { ... }
+  demo_row: |
+    Plantilla 3D: fila de 4 interacciones en x=-10, z=-1/1/3/5 (espejo de la fila
+    de partículas en x=+10). Cada objeto recibe el MISMO resaltado que el hover
+    del editor (flag de instancia 8.0: tinte del color elegido + rim en el shader)
+    y el prompt "Pulsa/Mantén 'E' para ..." (EN: "Press/Hold 'E' to ..."):
+      MOVE   → sube/baja una plataforma (move_to)
+      VANISH → desaparece la caja (despawn_entity)
+      DROP   → suelta un orbe (set_physics dynamic → cae por gravedad)
+      HOLD   → mantener E llena un anillo blanco detrás del botón (1.1 s); al
+               soltar se vacía en 0.8 s y se puede reanudar desde el progreso
+               actual. Al completarse crea/destruye un emisor de fuego sobre el cubo.
+    Scripts demo (demo_move_script / demo_vanish_script / demo_drop_script /
+    demo_hold_script): viven en `action_ref_source` de cada tooltip, así que se
+    pueden editar o quitar desde el formulario igual que cualquier otro tooltip.
+    No hay lógica de interacción en código duro. El fuego del HOLD se dispara con
+    `engine.toggle_demo_fire()` dentro del script, no comparando ids en el motor.
+    Fuente: editor/ui/sidebar_left/interaction_tooltips.rs, engine3d/config_3d/interaction.rs
   relacionado: docs/yaml/editor/Player_UI_Model.yaml, docs/yaml/scripting/RHAI_API.yaml
 
 Blueprints:

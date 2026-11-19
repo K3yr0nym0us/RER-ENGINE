@@ -660,6 +660,10 @@ pub(crate) struct VisualScriptState {
     pub(crate) open_groups: BTreeSet<String>,
     /// Id canónico del nodo seleccionado (alimenta el inspector derecho).
     pub(crate) selected: Option<String>,
+    /// Si se abre desde un tooltip, id del tooltip al que guardar el grafo.
+    pub(crate) tooltip_target: Option<String>,
+    /// Nombre del tooltip al que guardar el grafo.
+    pub(crate) tooltip_name: String,
 }
 
 impl Default for VisualScriptState {
@@ -677,6 +681,8 @@ impl Default for VisualScriptState {
             loaded: false,
             open_groups: BTreeSet::new(),
             selected: None,
+            tooltip_target: None,
+            tooltip_name: String::new(),
         }
     }
 }
@@ -691,6 +697,20 @@ pub(crate) fn load_document(
 
     let mut scene_name = String::new();
     let mut entity_name = String::new();
+    // Al abrir desde un tooltip, el grafo vive en la definición del tooltip.
+    if let Some(tooltip_id) = app.visual_script.tooltip_target.as_deref() {
+        let graph_value = app
+            .project_state
+            .interaction_tooltips
+            .iter()
+            .find(|item| item.get("id").and_then(Value::as_str) == Some(tooltip_id))
+            .and_then(|item| item.get("action_ref_graph"));
+        return (
+            GraphDocument::from_json(graph_value, context, scene_id, entity_id),
+            String::new(),
+            app.visual_script.tooltip_name.clone(),
+        );
+    }
     let graph_value = match context {
         GraphContext::Scene => app
             .project_state

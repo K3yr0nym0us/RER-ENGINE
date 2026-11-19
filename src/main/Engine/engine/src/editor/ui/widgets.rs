@@ -508,6 +508,46 @@ pub fn modal_button(
     width: f32,
     enabled: bool,
 ) -> bool {
+    modal_button_font(
+        ui,
+        icon,
+        label,
+        style,
+        width,
+        enabled,
+        FontId::proportional(13.0),
+    )
+}
+
+/// Igual que `modal_button` pero con la fuente bold del tema.
+pub fn modal_button_bold(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    style: ModalButtonStyle,
+    width: f32,
+    enabled: bool,
+) -> bool {
+    modal_button_font(
+        ui,
+        icon,
+        label,
+        style,
+        width,
+        enabled,
+        FontId::new(13.0, egui::FontFamily::Name("rer-bold".into())),
+    )
+}
+
+fn modal_button_font(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    style: ModalButtonStyle,
+    width: f32,
+    enabled: bool,
+    font: FontId,
+) -> bool {
     let sense = if enabled {
         Sense::click()
     } else {
@@ -568,7 +608,7 @@ pub fn modal_button(
         rect.center(),
         Align2::CENTER_CENTER,
         text,
-        FontId::proportional(13.0),
+        font,
         text_color.linear_multiply(alpha),
     );
 

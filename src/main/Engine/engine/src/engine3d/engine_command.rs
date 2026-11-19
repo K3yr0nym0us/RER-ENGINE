@@ -355,15 +355,29 @@ pub enum EngineCommand3dOnly {
         #[serde(default)]
         enabled: Option<bool>,
         #[serde(default)]
-        prompt_es: Option<String>,
-        #[serde(default)]
-        prompt_en: Option<String>,
-        #[serde(default)]
         key: Option<String>,
         #[serde(default)]
         once: Option<bool>,
         #[serde(default)]
         max_distance: Option<f32>,
+        #[serde(default)]
+        tooltip_id: Option<String>,
+        #[serde(default)]
+        tooltip_distance: Option<f32>,
+        #[serde(default)]
+        trigger: Option<String>,
+        #[serde(default)]
+        action: Option<String>,
+        #[serde(default)]
+        action_name: Option<String>,
+        #[serde(default)]
+        highlight: Option<bool>,
+        #[serde(default)]
+        highlight_color: Option<[u8; 3]>,
+    },
+    /// Registro compartido de tooltips: cada entidad resuelve el suyo por id.
+    SyncInteractionTooltips {
+        tooltips: Vec<serde_json::Value>,
     },
     /// Partículas GPU-driven: alta de un emisor con preset del material + overrides.
     AddParticleEmitter {

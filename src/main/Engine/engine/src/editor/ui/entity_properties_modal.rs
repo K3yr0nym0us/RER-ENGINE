@@ -175,6 +175,15 @@ fn number_field(ui: &mut egui::Ui, draft: &mut String, width: f32) -> egui::Resp
     ui.add_sized([width, 26.0], egui::TextEdit::singleline(draft))
 }
 
+/// Reparte el ancho disponible en `count` celdas iguales para los campos de
+/// transformación. Se calcula una sola vez: `ui.available_width()` se reduce en
+/// cada iteración dentro de un `horizontal`, lo que daba inputs de tamaños
+/// distintos (el primero ancho, el último estrecho).
+fn axis_width(ui: &egui::Ui, count: usize) -> f32 {
+    let gap = 4.0;
+    (ui.available_width() - gap * (count - 1) as f32) / count as f32
+}
+
 /// Etiqueta de eje coloreada (X rojo, Y verde, Z azul, W gris).
 fn axis_label(ui: &mut egui::Ui, axis: usize) {
     let (text, color) = match axis {
@@ -219,7 +228,13 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                     ui.add_space(6.0);
                     physics(ui, state, locale, &mut commands);
                     ui.add_space(8.0);
-                    tabs(ui, state, locale, &mut commands);
+                    tabs(
+                        ui,
+                        state,
+                        locale,
+                        &mut commands,
+                        &app.project_state.interaction_tooltips,
+                    );
                 } else {
                     ui.label(
                         RichText::new(t(
@@ -234,6 +249,9 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                 }
             });
     });
+
+    // La modal externa usa esta altura para ajustarse al contenido real.
+    app.entity_properties.content_height = ui.min_rect().height();
 
     // Diálogos anidados: se pintan encima de todo el contenido.
     confirm_dialog(&ctx, app, locale, &mut commands);
@@ -451,10 +469,11 @@ fn model_actions(
     let id = state.entity.as_ref().map(|e| e.id).unwrap_or(0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        let width = ui.available_width() / 2.0 - 4.0;
+        // Los botones se ajustan a su texto + icono (width=None), no a la mitad
+        // fija de la ventana: así la modal no se ensancha por ellos.
         if is_3d && !state.is_from_blueprint {
             let label = t(locale, "Reemplazar modelo", "Replace model");
-            if outline_button(ui, icons::CUBE, &label, theme::INFO, true, Some(width)) {
+            if outline_button(ui, icons::CUBE, &label, theme::INFO, true, None) {
                 let intent = if state.is_player || state.is_character {
                     "character"
                 } else if state.is_environment {
@@ -545,12 +564,12 @@ fn model_actions(
                 &label,
                 theme::OUTLINE_SECONDARY,
                 false,
-                Some(width),
+                None,
             );
             ui.label(RichText::new("").size(1.0)).on_hover_text(tooltip);
         } else {
             let label = t(locale, "Convertir a Blueprint", "Convert to Blueprint");
-            if outline_button(ui, icons::SQUARE, &label, theme::ACCENT, true, Some(width)) {
+            if outline_button(ui, icons::SQUARE, &label, theme::ACCENT, true, None) {
                 state.confirm = Some(crate::editor::entity_properties::ConfirmDialog {
                     title: t(locale, "Convertir a Blueprint", "Convert to Blueprint"),
                     message: format!(
@@ -780,6 +799,7 @@ fn tabs(
     state: &mut EntityPropertiesState,
     locale: Locale,
     commands: &mut Vec<Value>,
+    tooltips: &[Value],
 ) {
     let is_3d = state.is_3d;
     let has_embedded = state
@@ -808,17 +828,37 @@ fn tabs(
         state.active_tab = tabs.first().copied().unwrap_or(PropTab::Transform);
     }
 
-    ui.horizontal(|ui| {
+    let labels: Vec<String> = tabs
+        .iter()
+        .map(|tab| match tab {
+            PropTab::Transform => t(locale, "Transformaciones", "Transformations"),
+            PropTab::Animations => t(locale, "Animaciones", "Animations"),
+            PropTab::Scripting => t(locale, "Programar entidad", "Program entity"),
+            PropTab::Bones => t(locale, "Huesos", "Bones"),
+            PropTab::Projectile => t(locale, "Proyectil", "Projectile"),
+            PropTab::Interaction => t(locale, "Interacción", "Interaction"),
+        })
+        .collect();
+    // Ancho que necesitan las pestañas en una sola fila; la ventana lo usa para
+    // adaptarse al contenido en vez de quedarse en 348 px y recortarlas.
+    let font = FontId::proportional(13.0);
+    let tabs_width: f32 = labels
+        .iter()
+        .map(|label| {
+            ui.painter()
+                .layout_no_wrap(label.clone(), font.clone(), theme::TEXT)
+                .size()
+                .x
+                + 16.0
+        })
+        .sum::<f32>()
+        + 2.0 * labels.len().saturating_sub(1) as f32;
+    // Ancho intrínseco de las pestañas, independiente del ancho de la ventana.
+    state.content_width = tabs_width + 80.0; // márgenes del frame y barra de scroll
+
+    ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(2.0, 0.0);
-        for tab in &tabs {
-            let label = match tab {
-                PropTab::Transform => t(locale, "Transformaciones", "Transformations"),
-                PropTab::Animations => t(locale, "Animaciones", "Animations"),
-                PropTab::Scripting => t(locale, "Programar entidad", "Program entity"),
-                PropTab::Bones => t(locale, "Huesos", "Bones"),
-                PropTab::Projectile => t(locale, "Proyectil", "Projectile"),
-                PropTab::Interaction => t(locale, "Interacción", "Interaction"),
-            };
+        for (tab, label) in tabs.iter().zip(labels) {
             if prop_tab(ui, &label, state.active_tab == *tab) {
                 state.active_tab = *tab;
             }
@@ -832,7 +872,7 @@ fn tabs(
         PropTab::Scripting => scripting_tab(ui, state, locale, commands),
         PropTab::Bones => bones_tab(ui, state, locale, commands),
         PropTab::Projectile => projectile_tab(ui, state, locale, commands, is_3d),
-        PropTab::Interaction => interaction_tab(ui, state, locale, commands),
+        PropTab::Interaction => interaction_tab(ui, state, locale, commands, tooltips),
     }
 }
 
@@ -851,8 +891,8 @@ fn transform_tab(
     section_label(ui, &t(locale, "Posición", "Position"));
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+        let w = axis_width(ui, 3);
         for axis in 0..3 {
-            let w = (ui.available_width() - 8.0) / 3.0;
             ui.allocate_ui_with_layout(
                 Vec2::new(w, 26.0),
                 egui::Layout::left_to_right(egui::Align::Center),
@@ -882,8 +922,8 @@ fn transform_tab(
             );
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                let w = axis_width(ui, 4);
                 for axis in 0..4 {
-                    let w = (ui.available_width() - 12.0) / 4.0;
                     ui.allocate_ui_with_layout(Vec2::new(w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         axis_label(ui, axis);
                         let mut draft = state.rot_draft[axis].clone();
@@ -903,8 +943,8 @@ fn transform_tab(
             section_label(ui, &t(locale, "Rotación (grados)", "Rotation (degrees)"));
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+                let w = axis_width(ui, 3);
                 for axis in 0..3 {
-                    let w = (ui.available_width() - 8.0) / 3.0;
                     ui.allocate_ui_with_layout(Vec2::new(w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         axis_label(ui, axis);
                         let mut draft = state.rot_draft[axis].clone();
@@ -961,8 +1001,8 @@ fn transform_tab(
         });
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
+            let w = axis_width(ui, 3);
             for axis in 0..3 {
-                let w = (ui.available_width() - 8.0) / 3.0;
                 ui.allocate_ui_with_layout(Vec2::new(w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     axis_label(ui, axis);
                     let mut draft = state.scl_draft[axis].clone();
@@ -1263,112 +1303,112 @@ fn interaction_tab(
     state: &mut EntityPropertiesState,
     locale: Locale,
     commands: &mut Vec<Value>,
+    tooltips: &[Value],
 ) {
     let id = state.entity.as_ref().map(|e| e.id).unwrap_or(0);
     let mut enabled = state.interaction_enabled_draft;
+    // Tanto el checkbox como su etiqueta alternan el estado. `ui.checkbox` ya
+    // invierte `enabled` al pulsarlo; la etiqueta lo invierte explícitamente.
+    let mut changed = false;
     ui.horizontal(|ui| {
         if ui.checkbox(&mut enabled, "").clicked() {
-            state.interaction_enabled_draft = enabled;
-            commit_interaction(state, id, commands);
+            changed = true;
         }
-        ui.label(body(
-            &t(locale, "Entidad interactuable", "Interactable entity"),
-            12.0,
-        ));
+        let label = ui
+            .label(body(&t(locale, "Interactuable", "Interactable"), 12.0))
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if label.clicked() {
+            enabled = !enabled;
+            changed = true;
+        }
     });
-    ui.add_space(6.0);
-    ui.label(muted(
-        &t(
-            locale,
-            "Muestra un prompt anclado a la entidad cuando se mira en play.",
-            "Shows an entity-anchored prompt when looked at in play.",
-        ),
-        11.0,
-    ));
+    if changed {
+        state.interaction_enabled_draft = enabled;
+        commit_interaction(state, id, commands);
+    }
     ui.add_space(8.0);
 
-    let field = |ui: &mut egui::Ui, label: String, draft: &mut String, width: f32| {
-        section_label(ui, &label);
-        let response = number_field(ui, draft, width);
-        ui.add_space(4.0);
-        response
+    // Tooltip con nombre creado en el SidebarLeft. Solo se puede elegir cuando
+    // la entidad es interactuable; si no, el select queda deshabilitado en «—».
+    section_label(ui, &t(locale, "Tooltip", "Tooltip"));
+    let tooltip_name = |selected: &str| {
+        tooltips
+            .iter()
+            .find(|tooltip| tooltip.get("id").and_then(Value::as_str) == Some(selected))
+            .and_then(|tooltip| tooltip.get("name").and_then(Value::as_str))
+            .unwrap_or("—")
     };
-
-    if field(
-        ui,
-        t(locale, "Texto del prompt (ES)", "Prompt text (ES)"),
-        &mut state.interaction_prompt_es_draft,
-        ui.available_width(),
-    )
-    .lost_focus()
-    {
-        commit_interaction(state, id, commands);
-    }
-    if field(
-        ui,
-        t(locale, "Texto del prompt (EN)", "Prompt text (EN)"),
-        &mut state.interaction_prompt_en_draft,
-        ui.available_width(),
-    )
-    .lost_focus()
-    {
-        commit_interaction(state, id, commands);
-    }
-    if field(
-        ui,
-        t(locale, "Tecla", "Key"),
-        &mut state.interaction_key_draft,
-        ui.available_width(),
-    )
-    .lost_focus()
-    {
-        commit_interaction(state, id, commands);
-    }
-    if field(
-        ui,
-        t(locale, "Distancia máxima (m)", "Max distance (m)"),
-        &mut state.interaction_max_distance_draft,
-        ui.available_width(),
-    )
-    .lost_focus()
-    {
-        commit_interaction(state, id, commands);
-    }
-
-    let mut once = state.interaction_once_draft;
-    ui.horizontal(|ui| {
-        if ui.checkbox(&mut once, "").clicked() {
-            state.interaction_once_draft = once;
-            commit_interaction(state, id, commands);
-        }
-        ui.label(body(&t(locale, "Solo una vez", "Only once"), 12.0));
+    let selected_name = if enabled {
+        state
+            .interaction_tooltip_id_draft
+            .as_deref()
+            .map(tooltip_name)
+            .unwrap_or("—")
+    } else {
+        "—"
+    };
+    ui.add_enabled_ui(enabled, |ui| {
+        egui::ComboBox::from_id_salt("interaction_tooltip_select")
+            .selected_text(selected_name)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_value(&mut state.interaction_tooltip_id_draft, None, "—")
+                    .changed()
+                {
+                    commit_interaction(state, id, commands);
+                }
+                for tooltip in tooltips {
+                    let tooltip_id = tooltip
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string();
+                    let name = tooltip
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Tooltip")
+                        .to_string();
+                    let selected =
+                        state.interaction_tooltip_id_draft.as_deref() == Some(&tooltip_id);
+                    if ui.selectable_label(selected, &name).clicked() {
+                        state.interaction_tooltip_id_draft = Some(tooltip_id);
+                        commit_interaction(state, id, commands);
+                    }
+                }
+            });
     });
+    // Los tooltips se gestionan en el accordion del SidebarLeft, no aquí.
+    ui.add_space(6.0);
+    egui::Frame::new()
+        .fill(theme::ACCORDION_BG)
+        .stroke(Stroke::new(1.0, theme::BORDER))
+        .corner_radius(egui::CornerRadius::same(5))
+        .inner_margin(egui::Margin::same(8))
+        .show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(
+                    RichText::new(icons::INFO)
+                        .size(14.0)
+                        .color(theme::INFO),
+                );
+                ui.label(muted(
+                    &t(
+                        locale,
+                        "Crea y edita los tooltips en el acordeón «Tooltips de interacción» del panel izquierdo.",
+                        "Create and edit tooltips in the «Interaction tooltips» accordion of the left sidebar.",
+                    ),
+                    11.0,
+                ));
+            });
+        });
 }
 
 fn commit_interaction(state: &EntityPropertiesState, id: u64, commands: &mut Vec<Value>) {
-    let key = {
-        let k = state.interaction_key_draft.trim();
-        if k.is_empty() {
-            "E".to_string()
-        } else {
-            k.to_string()
-        }
-    };
-    let max_distance = state
-        .interaction_max_distance_draft
-        .trim()
-        .parse::<f32>()
-        .unwrap_or(3.5)
-        .clamp(0.5, 100.0);
     commands.push(json!({
         "cmd": "set_interactable",
         "id": id,
         "enabled": state.interaction_enabled_draft,
-        "prompt_es": state.interaction_prompt_es_draft,
-        "prompt_en": state.interaction_prompt_en_draft,
-        "key": key,
-        "once": state.interaction_once_draft,
-        "max_distance": max_distance,
+        "tooltip_id": state.interaction_tooltip_id_draft,
     }));
 }
 

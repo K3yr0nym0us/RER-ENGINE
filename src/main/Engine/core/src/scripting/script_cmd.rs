@@ -103,9 +103,10 @@ pub enum ScriptCmd {
         id: u32,
         enabled: bool,
     },
-    /// Cambia el texto del prompt de una entidad interactuable (solo 3D).
-    SetInteractPrompt {
+    /// Elimina una entidad del mundo (solo 3D).
+    DespawnEntity {
         id: u32,
-        text: String,
     },
+    /// Crea/destruye el emisor de fuego del cuarto demo (solo 3D).
+    ToggleDemoFire,
 }

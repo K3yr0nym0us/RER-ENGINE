@@ -325,6 +325,11 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
         });
 
         let c = ctx.clone();
+        engine.register_fn("__engine_toggle_demo_fire", move || {
+            c.push(ScriptCmd::ToggleDemoFire);
+        });
+
+        let c = ctx.clone();
         engine.register_fn(
             "__engine_fire_projectile",
             move |template_id: i64, from_id: i64, dir_x: f64, dir_y: f64, dir_z: f64| {
@@ -496,11 +501,8 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
             },
         );
         let c = ctx.clone();
-        engine.register_fn("__engine_interact_prompt", move |id: i64, text: String| {
-            c.push(ScriptCmd::SetInteractPrompt {
-                id: id as u32,
-                text,
-            });
+        engine.register_fn("__engine_despawn_entity", move |id: i64| {
+            c.push(ScriptCmd::DespawnEntity { id: id as u32 });
         });
 
         let c = ctx.clone();
@@ -598,7 +600,8 @@ let engine = #{
     interact_pressed: || { __engine_interact_pressed() },
     interact_distance: || { __engine_interact_distance() },
     set_interactable: |id, enabled| { __engine_set_interactable(id, enabled); },
-    interact_prompt: |id, text| { __engine_interact_prompt(id, text); },
+    despawn_entity: |id| { __engine_despawn_entity(id); },
+    toggle_demo_fire: || { __engine_toggle_demo_fire(); },
     fire_projectile: |template_id, from_id, dir_x, dir_y, dir_z| { __engine_fire_projectile(template_id, from_id, dir_x, dir_y, dir_z); },
 };
 "#;

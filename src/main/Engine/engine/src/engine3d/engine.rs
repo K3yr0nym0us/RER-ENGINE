@@ -238,9 +238,45 @@ pub struct State {
     pub(crate) player_ui_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,
     /// Glifos del prompt de interacción (se reconstruyen cada frame en play).
     pub(crate) interaction_prompt_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,
+    /// Tecla pulsada este frame (la resuelve la entidad mirada, no el host).
+    pub(crate) interaction_key_pressed: Option<String>,
+    /// Objetivo de interacción del frame anterior (para el estado «mantener»).
+    pub(crate) interaction_target: Option<EntityId>,
+    /// Registro de tooltips con nombre; las entidades resuelven el suyo por id.
+    pub(crate) interaction_tooltip_registry: std::collections::HashMap<
+        String,
+        crate::engine3d::config_3d::interaction::InteractionTooltip,
+    >,
+    /// Alpha actual del tooltip (se interpola para fade in/out).
+    pub(crate) interaction_prompt_alpha: f32,
+    /// Progreso 0..1 de la interacción «mantener».
+    pub(crate) interaction_hold_progress: f32,
+    /// Ya se disparó la acción en este ciclo de mantenimiento.
+    pub(crate) interaction_hold_fired: bool,
+    /// Tras completarse, exige soltar la tecla antes de permitir otro ciclo.
+    pub(crate) interaction_hold_wait_release: bool,
+    /// Entidad a la que pertenece el progreso (se reinicia al cambiar de objetivo).
+    pub(crate) interaction_hold_target: Option<EntityId>,
+    /// Centro NDC y radio del anillo de progreso del botón.
+    pub(crate) interaction_ring_center: Option<[f32; 2]>,
+    pub(crate) interaction_ring_radius_px: f32,
+    /// Geometría del anillo de progreso (NDC).
+    pub(crate) interaction_ring_buffer: GizmoBuffer,
+    /// Estado del emisor de fuego del demo «mantener».
+    pub(crate) demo_fire_emitter_active: bool,
+    /// Entidad interactuable mirada: recibe el mismo resaltado que el hover del editor.
+    pub(crate) interaction_highlight_target: Option<EntityId>,
+    /// Índice de color del aura configurado en la entidad.
+    pub(crate) interaction_highlight_color: [u8; 3],
+    /// Tecla de interacción mantenida (modo «Hold»).
+    pub(crate) interaction_held: bool,
+    /// Cadencia del disparo mientras se mantiene la tecla.
+    pub(crate) interaction_hold_cooldown: f32,
     /// UV en caché de los prompts ya empaquetados en `player_ui_text_atlas`.
     pub(crate) interaction_prompt_cache:
         std::collections::HashMap<String, crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
+    /// Fondo oscuro recortado del botón de tecla del prompt.
+    pub(crate) interaction_key_box: Option<crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
     /// Entidades `once` ya consumidas en la sesión de play actual.
     pub(crate) interaction_consumed: std::collections::HashSet<EntityId>,
     /// Flanco de pulsación de la tecla de interacción (lo marca el host).

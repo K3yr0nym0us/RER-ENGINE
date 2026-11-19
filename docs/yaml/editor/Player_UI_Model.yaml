@@ -54,6 +54,9 @@ interaction_prompt:
     una fuente del proyecto (la del HUD activo o cualquier fuente registrada en `fonts[]`).
   position: Se proyecta el centro del AABB de la entidad a píxeles y se coloca ~42 px arriba
   fade: Alfa de 1.0 cerca a 0.35 a la distancia máxima configurada en la entidad
+  highlight: |
+    El objeto mirado usa el flag de instancia 2.0 del forward shader (idéntico al
+    hover del editor): tinte azul translúcido al 38% + rim, sin ocultar los colores.
   text: "{prompt localizado}  [{tecla}]" — ver docs/yaml/gameplay/Entities_Model_3D.yaml
   source: config_3d/interaction.rs + config_3d/player_ui/font.rs (build_cached_hud_label_glyph)
 

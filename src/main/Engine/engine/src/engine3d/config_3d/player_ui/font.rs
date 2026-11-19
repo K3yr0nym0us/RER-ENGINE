@@ -16,6 +16,34 @@ pub(crate) fn load_font_arc(path: &str) -> Option<Arc<FontArc>> {
     FontArc::try_from_vec(bytes).ok().map(Arc::new)
 }
 
+/// Fuente de respaldo para textos del motor cuando el proyecto no registra ninguna
+/// (la plantilla 3D solo trae el crosshair). En el editor se reutiliza la fuente
+/// monospace integrada de egui (Hack); en binarios standalone se prueba una fuente
+/// del sistema.
+pub(crate) fn load_builtin_font_arc() -> Option<Arc<FontArc>> {
+    #[cfg(feature = "editor")]
+    {
+        let definitions = egui::FontDefinitions::default();
+        if let Some(data) = definitions.font_data.get("Hack")
+            && let Ok(font) = FontArc::try_from_vec(data.font.to_vec())
+        {
+            return Some(Arc::new(font));
+        }
+    }
+    for path in [
+        "C:/Windows/Fonts/consola.ttf",
+        "C:/Windows/Fonts/cour.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+        "/System/Library/Fonts/Menlo.ttc",
+    ] {
+        if let Some(font) = load_font_arc(path) {
+            return Some(font);
+        }
+    }
+    None
+}
+
 /// Segmento vertical del cursor en NDC (z = 0).
 pub(crate) struct TextCaretLineNdc {
     pub x: f32,
@@ -174,6 +202,38 @@ pub(crate) fn build_hud_label_glyph(
     }
 }
 
+/// Engrosa el canal alfa `radius` píxeles en todas direcciones para simular
+/// negrita sin una segunda fuente. El radio debe escalar con el supersampling.
+fn thicken_glyph_alpha(rgba: &mut [u8], width: u32, height: u32, radius: usize) {
+    let (w, h) = (width as usize, height as usize);
+    if w == 0 || h == 0 || rgba.len() < w * h * 4 {
+        return;
+    }
+    let source = rgba.to_vec();
+    let stride = w * 4;
+    let radius = radius.max(1);
+    for y in 0..h {
+        for x in 0..w {
+            let i = y * stride + x * 4 + 3;
+            let mut alpha = source[i];
+            for dy in -(radius as isize)..=(radius as isize) {
+                let sy = y as isize + dy;
+                if sy < 0 || sy >= h as isize {
+                    continue;
+                }
+                for dx in -(radius as isize)..=(radius as isize) {
+                    let sx = x as isize + dx;
+                    if sx < 0 || sx >= w as isize {
+                        continue;
+                    }
+                    alpha = alpha.max(source[(sy as usize) * stride + (sx as usize) * 4 + 3]);
+                }
+            }
+            rgba[i] = alpha;
+        }
+    }
+}
+
 /// Igual que `build_hud_label_glyph` pero reutiliza el bitmap empaquetado por
 /// texto+tamaño. El `alpha` se aplica en la instancia (fade por distancia), así
 /// que el raster queda en blanco y no hay que repintar el atlas cada frame.
@@ -182,6 +242,9 @@ pub(crate) fn build_cached_hud_label_glyph(
     text: &str,
     box_rect: UiHudRect,
     alpha: f32,
+    bold: bool,
+    // Factor de supersampling del bitmap (2–3 = texto nítido al reducirlo).
+    supersample: u32,
     viewport_w: f32,
     viewport_h: f32,
     gpu: &SharedGpu,
@@ -195,17 +258,24 @@ pub(crate) fn build_cached_hud_label_glyph(
 
     let width_px = (box_rect.width * 0.5 * viewport_w).round().max(8.0) as u32;
     let height_px = (box_rect.height * 0.5 * viewport_h).round().max(8.0) as u32;
-    let key = format!("{text}|{width_px}x{height_px}");
+    let ss = supersample.max(1);
+    let raster_w = width_px * ss;
+    let raster_h = height_px * ss;
+    let key = format!("{text}|{width_px}x{height_px}|{bold}|{ss}");
 
     let packed = if let Some(packed) = cache.get(&key) {
         *packed
     } else {
-        let font_px = (box_rect.height * 0.5 * viewport_h * 0.62).clamp(10.0, 72.0);
-        let Some(rgba) = rasterize_text_block(font, text, width_px, height_px, font_px, [1.0; 4])
+        let font_px = (height_px as f32 * 0.78).clamp(10.0, 72.0) * ss as f32;
+        let Some(mut rgba) =
+            rasterize_text_block(font, text, raster_w, raster_h, font_px, [1.0; 4])
         else {
             return;
         };
-        let packed = atlas.pack_rgba(gpu, &rgba, width_px, height_px);
+        if bold {
+            thicken_glyph_alpha(&mut rgba, raster_w, raster_h, ss as usize);
+        }
+        let packed = atlas.pack_rgba(gpu, &rgba, raster_w, raster_h);
         cache.insert(key, packed);
         packed
     };

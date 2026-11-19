@@ -236,10 +236,10 @@ engine_3d_only:
       description: Distancia en metros hasta la entidad mirada (0 si no hay objetivo).
     - function: engine.set_interactable(id, enabled)
       description: Habilita/deshabilita una entidad interactuable en runtime.
-    - function: engine.interact_prompt(id, text)
-      description: |
-        Cambia el texto del prompt en runtime (se aplica a ES y EN).
-        Para textos localizados usa la pestaña Interacción del editor.
+    - function: engine.despawn_entity(id)
+      description: Elimina la entidad del mundo (con limpieza física y de scripts).
+    - function: engine.toggle_demo_fire()
+      description: Crea/destruye el emisor de fuego del cuarto demo (usa el tooltip demo_hold).
 
   interaction_example: |
     // En el script de la entidad interactuable (ej. una puerta):

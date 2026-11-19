@@ -57,6 +57,14 @@ impl State {
             physics_enabled,
             physics_type,
             blueprint_id: self.entity_blueprint_ids.get(&id).cloned(),
+            tooltip_id: self
+                .world
+                .get::<crate::engine3d::ecs::Interactable>(id)
+                .and_then(|cfg| cfg.tooltip_id.clone()),
+            interactable_enabled: self
+                .world
+                .get::<crate::engine3d::ecs::Interactable>(id)
+                .is_some_and(|cfg| cfg.enabled),
         });
     }
 
@@ -451,6 +459,7 @@ impl State {
         self.ensure_default_physics_ball();
         self.ensure_material_validation_demo();
         self.ensure_particle_demo_row();
+        crate::engine3d::config_3d::interaction_demo::ensure_interaction_demo(self);
         if self.play_character_entity.is_none() {
             self.spawn_play_character();
         }

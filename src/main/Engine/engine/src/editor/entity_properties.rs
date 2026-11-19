@@ -100,43 +100,30 @@ pub(crate) struct PropEntity {
 #[derive(Debug, Clone)]
 pub(crate) struct PropInteractable {
     pub enabled: bool,
-    pub prompt_es: String,
-    pub prompt_en: String,
-    pub key: String,
-    pub once: bool,
-    pub max_distance: f32,
+    pub tooltip_id: Option<String>,
 }
 
 impl Default for PropInteractable {
     fn default() -> Self {
         Self {
             enabled: false,
-            prompt_es: String::new(),
-            prompt_en: String::new(),
-            key: "E".to_string(),
-            once: false,
-            max_distance: 3.5,
+            tooltip_id: None,
         }
     }
 }
 
 impl PropInteractable {
     pub(crate) fn from_value(value: &Value) -> Self {
-        let base = Self::default();
-        let key = str_field(value, "key");
         Self {
             enabled: value
                 .get("enabled")
                 .and_then(Value::as_bool)
-                .unwrap_or(base.enabled),
-            prompt_es: str_field(value, "prompt_es"),
-            prompt_en: str_field(value, "prompt_en"),
-            key: if key.is_empty() { base.key } else { key },
-            once: value
-                .get("once")
-                .and_then(Value::as_bool)
-                .unwrap_or(base.once),
-            max_distance: f32_field(value, "max_distance", base.max_distance),
+                .unwrap_or(false),
+            tooltip_id: value
+                .get("tooltip_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
         }
     }
 }
@@ -274,11 +261,11 @@ pub(crate) struct EntityPropertiesState {
     pub projectile_hardness_draft: String,
 
     pub interaction_enabled_draft: bool,
-    pub interaction_prompt_es_draft: String,
-    pub interaction_prompt_en_draft: String,
-    pub interaction_key_draft: String,
-    pub interaction_once_draft: bool,
-    pub interaction_max_distance_draft: String,
+    pub interaction_tooltip_id_draft: Option<String>,
+    /// Altura real del contenido para que la modal se ajuste (se rellena en la UI).
+    pub content_height: f32,
+    /// Ancho real del contenido (pestañas sobre todo) para ajustar la ventana.
+    pub content_width: f32,
 
     /// Posición/rotación/escala en texto, como los `input` number de React.
     pub pos_draft: [String; 3],
@@ -320,14 +307,14 @@ impl EntityPropertiesState {
         }
         let id_changed = self.entity.as_ref().map(|e| e.id) != selected.as_ref().map(|e| e.id);
         self.signature = signature;
-        self.entity = selected.map(|e| PropEntity {
+        self.entity = selected.as_ref().map(|e| PropEntity {
             id: e.id,
-            name: e.name,
+            name: e.name.clone(),
             position: e.position,
             rotation: e.rotation,
             scale: e.scale,
             physics_enabled: e.physics_enabled,
-            physics_type: e.physics_type,
+            physics_type: e.physics_type.clone(),
             animations: meta.as_ref().map(animations_from).unwrap_or_default(),
         });
 
@@ -436,12 +423,16 @@ impl EntityPropertiesState {
             self.active_tab = PropTab::Transform;
             self.hardness_draft = self.entity_hardness.to_string();
             let interaction = self.interactable.clone().unwrap_or_default();
-            self.interaction_enabled_draft = interaction.enabled;
-            self.interaction_prompt_es_draft = interaction.prompt_es;
-            self.interaction_prompt_en_draft = interaction.prompt_en;
-            self.interaction_key_draft = interaction.key;
-            self.interaction_once_draft = interaction.once;
-            self.interaction_max_distance_draft = interaction.max_distance.to_string();
+            // El motor es la fuente de verdad: las entidades demo tienen el
+            // Interactable solo en el motor, no en el entity_meta del proyecto.
+            self.interaction_enabled_draft = selected
+                .as_ref()
+                .map(|entity| entity.interactable_enabled)
+                .unwrap_or(interaction.enabled);
+            self.interaction_tooltip_id_draft = selected
+                .as_ref()
+                .and_then(|entity| entity.tooltip_id.clone())
+                .or(interaction.tooltip_id);
 
             if let Some(cfg) = self.projectile_config.as_ref() {
                 self.speed_draft = cfg.speed.to_string();

@@ -204,6 +204,43 @@ impl ScriptEngine {
         self.api_ctx.drain_cmds()
     }
 
+    /// Ejecuta `on_interact(target, actor)` de un script dado como fuente
+    /// (el asignado a un tooltip), con caché por nombre.
+    pub fn run_interact_source(
+        &mut self,
+        name: &str,
+        source: &str,
+        target_id: u32,
+        actor_id: u32,
+        target_snapshot: Option<&EntitySnapshot>,
+        actor_snapshot: Option<&EntitySnapshot>,
+    ) -> Vec<super::script_cmd::ScriptCmd> {
+        if source.trim().is_empty() {
+            return Vec::new();
+        }
+        let target = entity_to_dynamic(target_id, target_snapshot);
+        let actor = entity_to_dynamic(actor_id, actor_snapshot);
+        let cache_key = format!("tooltip::{name}::on_interact::invoke");
+        let profile = self.profile;
+        match self.invoke_script_ast(
+            &cache_key,
+            source,
+            "on_interact!(target, actor);",
+            move |s| wrap_user_source(profile, s),
+        ) {
+            Ok(ast) => {
+                let mut scope = Scope::new();
+                scope.push("target", target);
+                scope.push("actor", actor);
+                if let Err(e) = self.engine.run_ast_with_scope(&mut scope, &ast) {
+                    log::warn!("[scripting] tooltip on_interact '{name}': {e}");
+                }
+            }
+            Err(e) => log::warn!("[scripting] tooltip on_interact compile '{name}': {e}"),
+        }
+        self.api_ctx.drain_cmds()
+    }
+
     pub fn sync_graphics_texture_tier_readback(&self, tier: &str) {
         if self.profile != ScriptEngineProfile::Engine3d {
             return;

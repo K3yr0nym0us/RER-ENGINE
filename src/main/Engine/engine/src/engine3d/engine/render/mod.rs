@@ -74,7 +74,12 @@ impl State {
         is_hovered: bool,
     ) -> f32 {
         if self.preview_playing {
-            return 0.0;
+            // Aura del tooltip (flag 8.0): tinte del color elegido + rim.
+            return if self.interaction_highlight_target == Some(entity_id) {
+                8.0
+            } else {
+                0.0
+            };
         }
         if self.socket_bone_pick_entity == Some(entity_id) {
             return 0.0;
@@ -191,6 +196,10 @@ impl State {
                 self.worldgen.material_base.unwrap_or(0) as f32,
             ],
             shadow_bias: self.scene_shadow_bias(),
+            aura_color: {
+                let [r, g, b] = self.interaction_highlight_color;
+                [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 0.0]
+            },
         };
         self.prev_view_proj = vp_stable;
         let scene_bytes = bytemuck::bytes_of(&scene_uni);
@@ -698,6 +707,16 @@ impl State {
                     lines: false,
                 });
             }
+        }
+
+        // Anillo de progreso de la interacción «mantener» (NDC, detrás del botón HUD).
+        if self.preview_playing && self.interaction_ring_buffer.vertex_count > 0 {
+            gizmos.push(crate::engine3d::vulkan::GizmoBatch {
+                vertices: &self.interaction_ring_buffer.vertex_buffer,
+                vertex_count: self.interaction_ring_buffer.vertex_count,
+                uniform: &identity_uni_bytes,
+                lines: false,
+            });
         }
 
         let mut hud_scratch = self.player_ui_glyph_instances.clone();

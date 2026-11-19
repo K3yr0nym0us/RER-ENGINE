@@ -121,6 +121,23 @@ pub struct SurfacePbr {
     pub opacity: f32,
 }
 
+/// Cómo se dispara la interacción: una pulsación o mantener la tecla/click.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum InteractionTrigger {
+    #[default]
+    Press,
+    Hold,
+}
+
+/// Qué se ejecuta al interactuar. `Script` y `Node` comparten el hook `on_interact`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum InteractionAction {
+    #[default]
+    Script,
+    Animation,
+    Node,
+}
+
 /// Configuración de interacción: prompt anclado a la entidad cuando se mira en play.
 ///
 /// Se persiste en el `.save` (`interactable`) y se edita en la pestaña "Interacción".
@@ -128,17 +145,58 @@ pub struct SurfacePbr {
 pub struct Interactable {
     #[serde(default = "default_interact_enabled")]
     pub enabled: bool,
+    /// Tooltip con nombre del proyecto al que está asociada esta entidad.
     #[serde(default)]
-    pub prompt_es: String,
-    #[serde(default)]
-    pub prompt_en: String,
+    pub tooltip_id: Option<String>,
     #[serde(default = "default_interact_key")]
     pub key: String,
     /// Si se consume tras la primera interacción (no repetible).
     #[serde(default)]
     pub once: bool,
+    /// Distancia máxima a la que se puede interactuar.
     #[serde(default = "default_interact_max_distance")]
     pub max_distance: f32,
+    /// Distancia a la que aparece el tooltip (desde el jugador).
+    #[serde(default = "default_interact_tooltip_distance")]
+    pub tooltip_distance: f32,
+    #[serde(default)]
+    pub trigger: InteractionTrigger,
+    #[serde(default)]
+    pub action: InteractionAction,
+    /// Nombre del script/nodo/animación a ejecutar.
+    #[serde(default)]
+    pub action_name: String,
+    /// Fuente Rhai del script/nodo asignado al tooltip.
+    #[serde(default)]
+    pub action_source: String,
+    /// Resaltar la entidad con aura al estar a distancia de interacción.
+    #[serde(default)]
+    pub highlight: bool,
+    /// Color RGB del aura; acepta también el índice de paleta de saves antiguos.
+    #[serde(default, deserialize_with = "deserialize_aura_color")]
+    pub highlight_color: [u8; 3],
+}
+
+fn deserialize_aura_color<'de, D>(deserializer: D) -> Result<[u8; 3], D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Color {
+        Index(u64),
+        Rgb(Vec<u8>),
+    }
+
+    match Color::deserialize(deserializer)? {
+        Color::Index(index) => {
+            Ok(crate::engine3d::config_3d::interaction::AURA_PALETTE[(index as usize).min(5)])
+        }
+        Color::Rgb(rgb) if rgb.len() >= 3 => Ok([rgb[0], rgb[1], rgb[2]]),
+        Color::Rgb(_) => Ok([31, 153, 224]),
+    }
 }
 
 fn default_interact_enabled() -> bool {
@@ -153,39 +211,44 @@ fn default_interact_max_distance() -> f32 {
     3.5
 }
 
+fn default_interact_tooltip_distance() -> f32 {
+    5.0
+}
+
 impl Default for Interactable {
     fn default() -> Self {
         Self {
             enabled: default_interact_enabled(),
-            prompt_es: String::new(),
-            prompt_en: String::new(),
+            tooltip_id: None,
             key: default_interact_key(),
             once: false,
             max_distance: default_interact_max_distance(),
+            tooltip_distance: default_interact_tooltip_distance(),
+            trigger: InteractionTrigger::default(),
+            action: InteractionAction::default(),
+            action_name: String::new(),
+            action_source: String::new(),
+            highlight: false,
+            highlight_color: [31, 153, 224],
         }
     }
 }
 
 impl Interactable {
-    /// Texto localizado del prompt (es/en, con fallback).
-    pub fn prompt(&self, locale: &str) -> &str {
-        let es = self.prompt_es.trim();
-        let en = self.prompt_en.trim();
-        if locale.eq_ignore_ascii_case("en") {
-            if !en.is_empty() {
-                en
-            } else if !es.is_empty() {
-                es
-            } else {
-                "Interact"
-            }
-        } else if !es.is_empty() {
-            es
-        } else if !en.is_empty() {
-            en
+    /// Texto fijo del tooltip: «verbo del modo» + tecla + acción.
+    pub fn prompt_parts(&self, locale: &str) -> (String, String) {
+        let verb = match (&self.trigger, locale.eq_ignore_ascii_case("en")) {
+            (InteractionTrigger::Hold, true) => "Hold",
+            (InteractionTrigger::Hold, false) => "Mantén",
+            (InteractionTrigger::Press, true) => "Press",
+            (InteractionTrigger::Press, false) => "Pulsa",
+        };
+        let action = if locale.eq_ignore_ascii_case("en") {
+            "To interact"
         } else {
-            "Interactuar"
-        }
+            "Para interactuar"
+        };
+        (verb.to_string(), action.to_string())
     }
 }
 

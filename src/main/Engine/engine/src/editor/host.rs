@@ -676,6 +676,19 @@ impl EditorWindow {
             Some(NativeModal::UserGuide)
         } else if self.app.left_sidebar.quick_build_open {
             Some(NativeModal::QuickBuild)
+        } else if self.app.left_sidebar.pending_remove_tooltip_script {
+            Some(NativeModal::RemoveTooltipScript)
+        } else if self.app.left_sidebar.tooltip_script_editor.is_some() {
+            Some(NativeModal::TooltipScriptEditor)
+        } else if self
+            .app
+            .left_sidebar
+            .pending_delete_interaction_tooltip
+            .is_some()
+        {
+            Some(NativeModal::DeleteInteractionTooltip)
+        } else if self.app.left_sidebar.tooltip_modal_open {
+            Some(NativeModal::InteractionTooltip)
         } else if self.app.entity_properties.open {
             Some(NativeModal::EntityProperties)
         } else if self.app.socket_config.open {
@@ -756,6 +769,28 @@ impl EditorWindow {
             NativeModal::QuickBuild => tr(locale, "Construcción", "Construction").to_string(),
             NativeModal::EntityProperties => {
                 tr(locale, "Propiedades de entidad", "Entity properties").to_string()
+            }
+            NativeModal::InteractionTooltip => {
+                tr(locale, "Tooltip de interacción", "Interaction tooltip").to_string()
+            }
+            NativeModal::DeleteInteractionTooltip => {
+                let name = self
+                    .app
+                    .left_sidebar
+                    .pending_delete_interaction_tooltip
+                    .as_ref()
+                    .map(|draft| draft.name.as_str())
+                    .unwrap_or("");
+                format!(
+                    "{}: {name}",
+                    tr(locale, "Eliminar tooltip", "Delete tooltip")
+                )
+            }
+            NativeModal::TooltipScriptEditor => {
+                tr(locale, "Editar script del tooltip", "Edit tooltip script").to_string()
+            }
+            NativeModal::RemoveTooltipScript => {
+                tr(locale, "Quitar script", "Remove script").to_string()
             }
             NativeModal::SocketConfig => {
                 tr(locale, "Configuración de sockets", "Socket configuration").to_string()
@@ -846,6 +881,18 @@ impl EditorWindow {
                     }
                     NativeModal::EntityProperties => {
                         self.app.entity_properties.open = false;
+                    }
+                    NativeModal::InteractionTooltip => {
+                        self.app.left_sidebar.tooltip_modal_open = false;
+                    }
+                    NativeModal::DeleteInteractionTooltip => {
+                        self.app.left_sidebar.pending_delete_interaction_tooltip = None;
+                    }
+                    NativeModal::TooltipScriptEditor => {
+                        self.app.left_sidebar.tooltip_script_editor = None;
+                    }
+                    NativeModal::RemoveTooltipScript => {
+                        self.app.left_sidebar.pending_remove_tooltip_script = false;
                     }
                     NativeModal::SocketConfig => {
                         self.app.socket_config.open = false;
@@ -1196,6 +1243,19 @@ impl EditorApplication {
                 editor.app.entity_properties.open = false;
                 editor.app.entity_properties.confirm = None;
             }
+            Some(NativeModal::InteractionTooltip) => {
+                editor.app.left_sidebar.tooltip_modal_open = false;
+                editor.app.left_sidebar.tooltip_draft = Default::default();
+            }
+            Some(NativeModal::DeleteInteractionTooltip) => {
+                editor.app.left_sidebar.pending_delete_interaction_tooltip = None;
+            }
+            Some(NativeModal::TooltipScriptEditor) => {
+                editor.app.left_sidebar.tooltip_script_editor = None;
+            }
+            Some(NativeModal::RemoveTooltipScript) => {
+                editor.app.left_sidebar.pending_remove_tooltip_script = false;
+            }
             Some(NativeModal::SocketConfig) => {
                 // La X cierra la ventana: desactivar también el modo pick del viewport.
                 editor.app.socket_config.open = false;
@@ -1235,7 +1295,18 @@ impl EditorApplication {
             };
             let response = modal.on_window_event(&event);
             let is_redraw = matches!(event, WindowEvent::RedrawRequested);
-            if response.repaint && !is_redraw {
+            // egui_winit no marca `repaint` en un `MouseInput` de pulsación: solo
+            // lo hace al mover el cursor. Sin este redraw, un clic (p. ej. abrir un
+            // ComboBox) queda en la cola de input hasta que el usuario mueve el
+            // ratón. Igual para teclado y rueda.
+            let is_input = matches!(
+                event,
+                WindowEvent::MouseInput { .. }
+                    | WindowEvent::CursorMoved { .. }
+                    | WindowEvent::MouseWheel { .. }
+                    | WindowEvent::KeyboardInput { .. }
+            );
+            if (response.repaint || is_input) && !is_redraw {
                 modal.request_redraw();
             }
             if response.consumed && !is_redraw {
@@ -1382,6 +1453,9 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             UserEvent::EngineReady(state) => {
                 if let Some(editor) = self.editor.as_mut() {
                     editor.attach_engine(*state);
+                    editor
+                        .app
+                        .send_engine(crate::editor::ui::sidebar_left::sync_command(&editor.app));
                     editor.app.push_log("[Editor] motor 3D listo", false);
                 }
             }
@@ -1625,6 +1699,9 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 editor.window.request_redraw();
                 if let Some(particle) = editor.particle_window.as_ref() {
                     particle.request_redraw();
+                }
+                if let Some(modal) = editor.modal_window.as_ref() {
+                    modal.request_redraw();
                 }
             }
             self.next_frame_at += frame_duration;

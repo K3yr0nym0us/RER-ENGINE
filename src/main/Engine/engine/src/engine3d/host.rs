@@ -540,6 +540,11 @@ impl App {
             return;
         };
         if state.is_preview_playing() {
+            let interaction_held = self
+                .keyboard_mouse_pressed
+                .iter()
+                .any(|key| state.interaction_key_matches_target(key));
+            state.set_interaction_held(interaction_held);
             for control_key in &self.keyboard_mouse_pressed {
                 state.dispatch_on_keep_frame("keyboard_mouse", control_key);
             }
@@ -1367,13 +1372,13 @@ impl App {
                     {
                         preview_toggle = Some(false);
                     } else if state.is_preview_playing() {
-                        // Tecla de interacción configurable (E por defecto): flanco del callback.
+                        // El host solo registra la tecla; la entidad mirada decide
+                        // si le corresponde al resolver su tooltip.
                         if pressed
                             && !repeat
                             && let Some(key) = map_keyboard_control_key(code)
-                            && state.interaction_key_matches(&key)
                         {
-                            state.queue_interact();
+                            state.queue_interact_key(key);
                         }
                         if let Some(control_key) = map_keyboard_control_key(code) {
                             if pressed {

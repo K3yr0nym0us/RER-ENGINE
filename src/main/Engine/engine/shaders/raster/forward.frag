@@ -22,6 +22,7 @@ layout(set = 0, binding = 0) uniform Scene {
     // x = near, y = far, z = reflejos, w = capa GPU de Grass.
     vec4 depth_plane;
     vec4 shadow_bias;
+    vec4 aura_color; // rgb = color del aura de interacción
 } u;
 
 layout(set = 0, binding = 1) uniform sampler2DShadow shadow_map;
@@ -217,9 +218,16 @@ void main() {
     }
     float flag = v_flag.x;
     float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);
-    if (flag > 1.5) {
-        lit = mix(lit, vec3(0.12, 0.60, 0.88), 0.38);
-        lit += vec3(0.15, 0.65, 0.90) * rim;
+    if (flag > 7.5) {
+        // Aura de interacción: color libre elegido en el tooltip.
+        vec3 aura = u.aura_color.rgb;
+        lit = mix(lit, aura, 0.38);
+        lit += aura * rim;
+    } else if (flag > 1.5) {
+        // flag 2.0 = azul del hover del editor.
+        vec3 aura = vec3(0.12, 0.60, 0.88);
+        lit = mix(lit, aura, 0.38);
+        lit += aura * rim;
     } else if (flag > 0.5) {
         lit = mix(lit, vec3(1.0, 0.75, 0.10), 0.38);
         lit += vec3(1.0, 0.80, 0.15) * rim;

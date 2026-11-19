@@ -25,6 +25,8 @@ pub struct ProjectState {
     pub backgrounds: Vec<Value>,
     pub player_ui_screens: Vec<Value>,
     pub menu_ui_screens: Vec<Value>,
+    /// Tooltips de interacción creados en el SidebarLeft (`interactionTooltips`).
+    pub interaction_tooltips: Vec<Value>,
 }
 
 impl ProjectState {
@@ -45,6 +47,7 @@ impl ProjectState {
             backgrounds: array_field(value, "backgrounds"),
             player_ui_screens: array_field(value, "playerUiScreens"),
             menu_ui_screens: array_field(value, "menuUiScreens"),
+            interaction_tooltips: array_field(value, "interactionTooltips"),
         }
     }
 
@@ -77,6 +80,7 @@ impl ProjectState {
             "backgrounds": take("backgrounds"),
             "playerUiScreens": take("playerUiScreens"),
             "menuUiScreens": take("menuUiScreens"),
+            "interactionTooltips": take("interactionTooltips"),
         }));
         state.entity_meta = entity_meta_from_manifest(&manifest);
         Some(state)
@@ -137,6 +141,7 @@ fn entity_meta_from_manifest(manifest: &Value) -> BTreeMap<String, Value> {
                     ("blueprint_id", "blueprintId"),
                     ("visualGraph", "visualGraph"),
                     ("visualScriptRhai", "visualScriptRhai"),
+                    ("interactable", "interactable"),
                 ] {
                     if let Some(value) = entity.get(source)
                         && !value.is_null()

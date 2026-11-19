@@ -144,6 +144,10 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
         "menuUiScreens".into(),
         Value::Array(state.menu_ui_screens.clone()),
     );
+    root.insert(
+        "interactionTooltips".into(),
+        Value::Array(state.interaction_tooltips.clone()),
+    );
 
     copy_engine_list(
         &mut root,
@@ -934,6 +938,7 @@ mod tests {
             backgrounds: Vec::new(),
             player_ui_screens: vec![json!({ "id": "main", "name": "Main" })],
             menu_ui_screens: Vec::new(),
+            interaction_tooltips: Vec::new(),
         }
     }
 

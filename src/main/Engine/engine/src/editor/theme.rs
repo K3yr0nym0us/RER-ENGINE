@@ -211,6 +211,16 @@ fn install_fonts(ctx: &egui::Context) {
     }
 
     egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+    // La familia bold también necesita el fallback de iconos: si no, los
+    // glifos de Phosphor (p. ej. el disquete de guardar) salen como cuadrado.
+    if let Some(family) = fonts
+        .families
+        .get_mut(&egui::FontFamily::Name("rer-bold".into()))
+    {
+        if !family.iter().any(|name| name == "phosphor") {
+            family.push("phosphor".to_owned());
+        }
+    }
     if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
         family.insert(1, "phosphor".to_owned());
     }

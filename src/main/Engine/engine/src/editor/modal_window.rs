@@ -43,13 +43,22 @@ pub(crate) enum NativeModal {
     SocketConfig,
     SceneScript,
     SceneVisualScript,
+    /// Formulario de creación/edición de un tooltip de interacción.
+    InteractionTooltip,
+    /// Confirmación de borrado de un tooltip.
+    DeleteInteractionTooltip,
+    /// Editor nativo del script asignado a un tooltip.
+    TooltipScriptEditor,
+    /// Confirmación de quitar el script/nodo de un tooltip.
+    RemoveTooltipScript,
 }
 
 /// Ancho interior (puntos egui), alineado con el diseño de las modales nativas.
 const INNER_WIDTH: f64 = 380.0;
 const MIN_INNER_HEIGHT: f64 = 120.0;
-/// El modal de propiedades era `sm` en el renderer (300 de contenido + 48 de padding).
-const ENTITY_PROPS_WIDTH: f64 = 348.0;
+/// Ancho mínimo del modal de propiedades: lo suficiente para una pestaña y sus
+/// campos. El ancho real lo manda `content_width` (solo las pestañas visibles).
+const ENTITY_PROPS_WIDTH: f64 = 360.0;
 const ENTITY_PROPS_HEIGHT: f64 = 560.0;
 /// La guía es contenido estático largo: ventana ancha con scroll (antes `lg`).
 const GUIDE_WIDTH: f64 = 760.0;
@@ -80,6 +89,9 @@ const PLUGINS_HEIGHT: f64 = 640.0;
 /// El editor de HUD era una modal `sm` (300 de contenido + 48 de padding).
 const HUD_WIDTH: f64 = 348.0;
 const HUD_HEIGHT: f64 = 560.0;
+/// Editor del script asignado a un tooltip (520 de contenido + 48 de padding).
+const TOOLTIP_SCRIPT_WIDTH: f64 = 568.0;
+const TOOLTIP_SCRIPT_HEIGHT: f64 = 560.0;
 
 pub(crate) struct ModalWindow {
     window: Arc<Window>,
@@ -121,13 +133,17 @@ impl ModalWindow {
             NativeModal::WorldGen => (WORLDGEN_WIDTH, WORLDGEN_HEIGHT),
             NativeModal::Plugins => (PLUGINS_WIDTH, PLUGINS_HEIGHT),
             NativeModal::HudEditor => (HUD_WIDTH, HUD_HEIGHT),
+            NativeModal::TooltipScriptEditor => (TOOLTIP_SCRIPT_WIDTH, TOOLTIP_SCRIPT_HEIGHT),
             _ => (INNER_WIDTH, 320.0),
         };
-        let resizable = kind == NativeModal::SceneVisualScript;
-        let (min_width, min_height) = if resizable {
-            (VISUAL_SCRIPT_MIN_WIDTH, VISUAL_SCRIPT_MIN_HEIGHT)
-        } else {
-            (320.0, MIN_INNER_HEIGHT)
+        // Propiedades también debe poder crecer: con `resizable=false` Windows
+        // ignora `request_inner_size` y la ventana se queda en el ancho inicial.
+        let resizable = kind == NativeModal::SceneVisualScript
+            || kind == NativeModal::EntityProperties;
+        let (min_width, min_height) = match kind {
+            NativeModal::SceneVisualScript => (VISUAL_SCRIPT_MIN_WIDTH, VISUAL_SCRIPT_MIN_HEIGHT),
+            NativeModal::EntityProperties => (ENTITY_PROPS_WIDTH, MIN_INNER_HEIGHT),
+            _ => (320.0, MIN_INNER_HEIGHT),
         };
         let mut attributes = Window::default_attributes()
             .with_title(title)
@@ -223,8 +239,15 @@ impl ModalWindow {
                     | NativeModal::DeleteUiScreen
                     | NativeModal::CreateUiScreen
                     | NativeModal::RenameUiScreen
+                    | NativeModal::InteractionTooltip
+                    | NativeModal::DeleteInteractionTooltip
+                    | NativeModal::TooltipScriptEditor
+                    | NativeModal::RemoveTooltipScript
             ),
-            dynamic_size: kind == NativeModal::SocketConfig,
+            dynamic_size: matches!(
+                kind,
+                NativeModal::SocketConfig | NativeModal::EntityProperties
+            ),
             base_width: width,
             kind,
         })
@@ -302,6 +325,18 @@ impl ModalWindow {
             }
             NativeModal::SceneVisualScript => {
                 crate::editor::ui::visual_script_modal::show_in_window(ui, app)
+            }
+            NativeModal::InteractionTooltip => {
+                crate::editor::ui::interaction_tooltip_modal::show_in_window(ui, app)
+            }
+            NativeModal::DeleteInteractionTooltip => {
+                crate::editor::ui::delete_interaction_tooltip_modal::show_in_window(ui, app)
+            }
+            NativeModal::TooltipScriptEditor => {
+                crate::editor::ui::tooltip_script_editor_modal::show_in_window(ui, app)
+            }
+            NativeModal::RemoveTooltipScript => {
+                crate::editor::ui::remove_tooltip_script_modal::show_in_window(ui, app)
             }
         });
         self.egui_state
@@ -425,8 +460,20 @@ impl ModalWindow {
         }
         let scale = self.window.scale_factor();
         let (width, height) = if self.dynamic_size {
-            let height = f64::from(app.socket_config.content_height);
-            (self.base_width, height.ceil().max(MIN_INNER_HEIGHT))
+            let is_props = self.kind == NativeModal::EntityProperties;
+            let content_height = if is_props {
+                app.entity_properties.content_height
+            } else {
+                app.socket_config.content_height
+            };
+            let height = f64::from(content_height);
+            // Propiedades crece en ancho con sus pestañas; Sockets mantiene el suyo.
+            let width = if is_props {
+                f64::from(app.entity_properties.content_width).max(self.base_width)
+            } else {
+                self.base_width
+            };
+            (width, height.ceil().max(MIN_INNER_HEIGHT))
         } else {
             let used = self.egui_ctx.globally_used_rect();
             if !used.is_finite() || used.height() <= 1.0 {
@@ -442,6 +489,12 @@ impl ModalWindow {
             height.min(max_height)
         } else {
             height
+        };
+        let max_width = (f64::from(self.parent_outer.width) / scale) * 0.9;
+        let width = if max_width > self.base_width {
+            width.min(max_width)
+        } else {
+            width
         };
         let current = self.window.inner_size();
         if (f64::from(current.width) / scale - width).abs() < 1.0

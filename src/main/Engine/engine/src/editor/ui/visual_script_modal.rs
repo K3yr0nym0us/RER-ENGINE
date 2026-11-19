@@ -288,6 +288,31 @@ fn inspector_kind(kind: Option<NodeKind>) -> Option<NodeKind> {
 
 /// Persiste el grafo y aplica el Rhai al motor, igual que `saveSceneVisualGraph`.
 fn persist(app: &mut EditorApp, graph: serde_json::Value, source: String) {
+    // Guardado desde el formulario de un tooltip: el grafo y el Rhai compilado
+    // viven en la definición compartida, no en la entidad ni en la escena.
+    if let Some(tooltip_id) = app.visual_script.tooltip_target.clone() {
+        for tooltip in app.project_state.interaction_tooltips.iter_mut() {
+            if tooltip.get("id").and_then(serde_json::Value::as_str) == Some(tooltip_id.as_str()) {
+                tooltip["action_ref_graph"] = graph.clone();
+                tooltip["action_ref_source"] = serde_json::Value::String(source.clone());
+                let name = tooltip
+                    .get("action_ref_name")
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|n| !n.is_empty())
+                    .map(str::to_string)
+                    .unwrap_or_else(|| app.visual_script.tooltip_name.clone());
+                tooltip["action_ref_name"] = serde_json::Value::String(name);
+            }
+        }
+        app.left_sidebar.tooltip_draft.action_ref_graph = graph;
+        app.left_sidebar.tooltip_draft.action_ref_source = source;
+        if app.left_sidebar.tooltip_draft.action_ref_name.is_empty() {
+            app.left_sidebar.tooltip_draft.action_ref_name = app.visual_script.tooltip_name.clone();
+        }
+        app.send_engine(crate::editor::ui::sidebar_left::sync_command(app));
+        return;
+    }
+
     let context = app.visual_script.context;
     let scene_id = app.visual_script.scene_id.unwrap_or(0);
     let entity_id = app.visual_script.entity_id.unwrap_or(0);

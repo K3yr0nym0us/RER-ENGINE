@@ -66,6 +66,10 @@ pub enum EngineEvent {
         physics_type: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         blueprint_id: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tooltip_id: Option<String>,
+        /// Whether the entity is marked as interactable in the engine.
+        interactable_enabled: bool,
     },
     /// Emitido cuando el usuario hace click izquierdo en vacío.
     EntityDeselected,

@@ -165,6 +165,7 @@ impl State {
             self.player_ui_text_atlas.reset(&self.vulkan);
             self.player_ui_hud_texture_cache.clear();
             self.interaction_prompt_cache.clear();
+            self.interaction_key_box = None;
         }
 
         self.player_ui_glyph_instances.clear();

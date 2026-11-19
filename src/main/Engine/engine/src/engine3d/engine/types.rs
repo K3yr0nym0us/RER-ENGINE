@@ -128,4 +128,6 @@ pub(crate) struct SceneUniforms {
     pub(crate) depth_plane: [f32; 4],
     /// x = bias_min, y = bias_max, z = depth_const, w = depth_slope.
     pub(crate) shadow_bias: [f32; 4],
+    /// rgb = color del aura de interacción (flag 8.0 en play).
+    pub(crate) aura_color: [f32; 4],
 }

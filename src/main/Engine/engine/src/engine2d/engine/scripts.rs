@@ -543,7 +543,9 @@ impl State {
                 }
                 ScriptCmd::SetGraphicsTextureTier { .. } => {}
                 ScriptCmd::SetReflectionTier { .. } => {}
-                ScriptCmd::SetInteractable { .. } | ScriptCmd::SetInteractPrompt { .. } => {}
+                ScriptCmd::SetInteractable { .. }
+                | ScriptCmd::DespawnEntity { .. }
+                | ScriptCmd::ToggleDemoFire => {}
                 ScriptCmd::FireProjectile {
                     template_id,
                     from_id,

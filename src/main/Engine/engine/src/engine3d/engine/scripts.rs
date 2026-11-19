@@ -448,16 +448,13 @@ impl State {
                     cfg.enabled = enabled;
                     self.world.insert(id, cfg);
                 }
-                ScriptCmd::SetInteractPrompt { id, text } => {
-                    use crate::engine3d::ecs::Interactable;
-                    let mut cfg = self
-                        .world
-                        .get::<Interactable>(id)
-                        .cloned()
-                        .unwrap_or_default();
-                    cfg.prompt_es = text.clone();
-                    cfg.prompt_en = text;
-                    self.world.insert(id, cfg);
+                ScriptCmd::DespawnEntity { id } => {
+                    self.handle_command(EngineCommand::Common(EngineCommandCommon::RemoveEntity {
+                        id,
+                    }));
+                }
+                ScriptCmd::ToggleDemoFire => {
+                    self.toggle_demo_fire_emitter();
                 }
                 ScriptCmd::ApplyKinematicGravity { .. }
                 | ScriptCmd::ApplyKinematicImpulse { .. }

@@ -10,6 +10,10 @@ pub struct SelectedEntity {
     pub scale: [f32; 3],
     pub physics_enabled: bool,
     pub physics_type: String,
+    /// Tooltip con nombre asignado a la entidad (para el select de propiedades).
+    pub tooltip_id: Option<String>,
+    /// Si la entidad está marcada como interactuable en el motor.
+    pub interactable_enabled: bool,
 }
 
 impl SelectedEntity {
@@ -33,6 +37,14 @@ impl SelectedEntity {
                 .and_then(Value::as_str)
                 .unwrap_or("static")
                 .to_string(),
+            tooltip_id: event
+                .get("tooltip_id")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            interactable_enabled: event
+                .get("interactable_enabled")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
         })
     }
 }
