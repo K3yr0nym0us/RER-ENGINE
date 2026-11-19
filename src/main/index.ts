@@ -45,10 +45,6 @@ let currentGameStyle: GameStyle | null = null
 /** Cuando `gameStyle` es null, decide 2D vs 3D hasta arrancar el motor. */
 let currentProjectType: ProjectType | null = null
 
-// Buffer de eventos que llegaron antes de que el renderer estuviera listo
-let rendererReady = false
-const eventBuffer: EngineEvent[] = []
-
 // Path del proyecto abierto/guardado actualmente.
 let currentProjectFilePath: string | null = null
 /** Carpeta extraída de un `.save` abierto; contiene `manifest.json` + assets empaquetados. */
@@ -105,15 +101,6 @@ function isBenignEngineStderrLine(line: string): boolean {
   )
 }
 
-/** Solo si el proceso murió sin haber enviado `ready` (no usar stderr: avisos del loader son ruido). */
-function sendEventToRenderer(event: EngineEvent): void {
-  if (rendererReady && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('engine:event', event)
-  } else {
-    eventBuffer.push(event)
-  }
-}
-
 function focusMainEditorWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible()) return
   mainWindow.focus()
@@ -163,20 +150,10 @@ function createMainWindow(): void {
   }
 
   mainWindow.on('closed', () => {
-    rendererReady = false
     stopEngine()
     mainWindow = null
   })
 
-  // Una vez que el renderer cargó y sus listeners están activos,
-  // vaciar el buffer de eventos que llegaron antes de tiempo.
-  mainWindow.webContents.on('did-finish-load', () => {
-    rendererReady = true
-    for (const event of eventBuffer) {
-      mainWindow?.webContents.send('engine:event', event)
-    }
-    eventBuffer.length = 0
-  })
 }
 
 // ---------------------------------------------------------------------------
@@ -244,7 +221,6 @@ function handleEngineEvent(event: EngineEvent): void {
   ) {
     focusMainEditorWindow()
   }
-  sendEventToRenderer(event)
 }
 
 /** Mensajes propios del editor Rust (no son eventos del motor). */
@@ -372,7 +348,6 @@ function startEditorFrame(): void {
     }
 
     if (code === 0) {
-      sendEventToRenderer({ event: 'stopped', code } as EngineEvent)
       app.quit()
       return
     }
@@ -993,11 +968,6 @@ ipcMain.handle('open-project-dialog', async (): Promise<OpenProjectResult | null
 // El botón Guardar del renderer delega el empaquetado en el editor Rust.
 ipcMain.on('project-state:save-request', () => {
   sendToEditor({ type: 'save_request' })
-})
-
-ipcMain.handle('read-project-manifest', (): ProjectSaveData | null => {
-  if (!currentProjectExtractDir) return null
-  return loadProjectFromExtractDir(currentProjectExtractDir)
 })
 
 function isEngineStartPayload(v: unknown): v is EngineStartPayload {

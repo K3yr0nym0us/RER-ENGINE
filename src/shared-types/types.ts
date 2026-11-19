@@ -17,9 +17,6 @@ export type GameStyle =
 /** Modo de cámara 3D por defecto al crear un proyecto nuevo. */
 export const DEFAULT_3D_CAMERA_MODE: GameStyle = 'first-person'
 
-/** Escala del mesh placeholder del jugador 3D (debe coincidir con `engine_3d`). */
-export const PLAY_CHARACTER_BODY_SCALE: [number, number, number] = [0.8, 1.7, 0.8]
-
 /** Sincroniza tipo de proyecto, modo de cámara y rutas con Electron antes de arrancar el motor. */
 export interface EngineStartPayload {
   projectType: ProjectType
@@ -36,21 +33,6 @@ export interface OpenProjectManifestMeta {
   type:      ProjectType
   gameStyle: GameStyle
 }
-
-export function isMinimalOpenProject(
-  project: ProjectSaveData | OpenProjectManifestMeta,
-): project is OpenProjectManifestMeta {
-  return !('version' in project)
-}
-
-export interface ProjectConfig {
-  type:      ProjectType
-  /** Modo de cámara 3D (manifest); en 2D define perspectiva del juego (top-down, etc.). */
-  gameStyle: GameStyle
-}
-
-/** Debe coincidir con `DEFAULT_GRAVITY_MAGNITUDE` en `core` (Rust). */
-export const DEFAULT_GRAVITY_MAGNITUDE = 15
 
 /** Rutas simbólicas de entidad (no son archivos en disco). */
 export const ENTITY_MARKER_PATHS = [
@@ -74,51 +56,8 @@ export function entityPathMarker(p: string | null | undefined): EntityMarkerPath
     : null
 }
 
-export function isEditorBoxPath(p: string | null | undefined): boolean {
-  return entityPathMarker(p) === '[EditorBox]'
-}
-
-export function isPlayerPath(p: string | null | undefined): boolean {
-  return entityPathMarker(p) === '[Player]'
-}
-
-export function isEditorCameraPath(p: string | null | undefined): boolean {
-  return entityPathMarker(p) === '[EditorCamera]'
-}
-
-export function isEditorCameraEntity(
-  id: number,
-  meta: { path?: string } | undefined,
-  editorCameraEntityId: number | null,
-): boolean {
-  return isEditorCameraPath(meta?.path) || editorCameraEntityId === id
-}
-
-export function isSunPath(p: string | null | undefined): boolean {
-  return entityPathMarker(p) === '[Sun]'
-}
-
-export function isGroundPath(p: string | null | undefined): boolean {
-  return entityPathMarker(p) === '[Ground]'
-}
-
 /** Categoría IPC del motor para colisión/nombrado. */
 export type EntityCategory = 'environment' | 'object' | 'character' | 'weapon' | 'projectile'
-
-export function isPlayerEntity(
-  id: number,
-  meta: { path?: string } | undefined,
-  playerEntityId: number | null,
-): boolean {
-  return isPlayerPath(meta?.path) || playerEntityId === id
-}
-
-export function isEnvironmentEntity(
-  isScenario: boolean,
-  meta: { path?: string; entityCategory?: EntityCategory } | undefined,
-): boolean {
-  return isScenario || isEditorBoxPath(meta?.path) || meta?.entityCategory === 'environment'
-}
 
 // ── Modelo 3D (docs/yaml/gameplay/Entities_Model_3D.yaml) ─────────────────────────────────
 
@@ -354,11 +293,6 @@ export interface SavedScript {
   source: string
 }
 
-/** Valores por defecto de luz direccional 3D (alineados con el motor). */
-export const DEFAULT_LIGHT_AMBIENT = 0.06
-export const DEFAULT_LIGHT_INTENSITY = 1.0
-export const DEFAULT_SHADOW_DARKNESS = 0.9
-
 export interface SavedWorldConfig {
   worldWidth:   number
   worldHeight:  number
@@ -402,45 +336,6 @@ export interface SavedWorldConfig {
   lod1Distance?: number
   /** 3D: distancia (m) desde la que se usa LOD2. */
   lod2Distance?: number
-}
-
-/** @deprecated 3D: `player` + `config_camera`. Solo runtime 2D / migración UI. */
-export interface SavedPlayerTransform {
-  /** Pies del Player en el mundo. */
-  position: [number, number, number]
-  /** Posición absoluta del ojo de la cámara play character, independiente del Player (3D). */
-  camera_eye_position?: [number, number, number]
-  /** Yaw del cono de cámara play character en editor (rad); distinto del viewport orbital. */
-  fps_camera_yaw?: number
-  /** Pitch del cono de cámara play character en editor (rad). */
-  fps_camera_pitch?: number
-  scale:    [number, number, number]
-  /** 3D: yaw de cámara en radianes. */
-  yaw?:     number
-  /** 3D: pitch de cámara en radianes. */
-  pitch?:   number
-  /** Modelo visual (.glb/.fbx) del jugador si se reemplazó el placeholder. */
-  visual_model_path?: string
-  /** FOV vertical de la cámara en radianes (3D, cámara play character). */
-  fov_y?: number
-  /** Alcance del gizmo de frustum en el editor (metros). */
-  frustum_distance?: number
-  /** Seguimiento del ojo de cámara play character respecto al jugador en editor. */
-  camera_follow_mode?: PlayCameraFollowMode
-  /** Bindings de control Rhai del jugador principal. */
-  control_bindings?: SavedControlBindings
-  /** Scripts Rhai adjuntos al jugador (no confundir con scripts embebidos en bindings). */
-  scripts?: SavedScript[]
-  /** Rotación del mesh del jugador (quaternion xyzw) en editor. */
-  body_rotation?: [number, number, number, number]
-  /** Escala del transform del jugador en editor. */
-  body_scale?: [number, number, number]
-  /** Cápsula de colisión del jugador tras reemplazar el mesh (motor). */
-  mesh_collision_extents?: {
-    local_min_y: number
-    local_max_y: number
-    radius_xz: number
-  }
 }
 
 /** Contexto del grafo: escena (Level Blueprint) o entidad (Entity Blueprint). */
@@ -615,47 +510,6 @@ export interface OpenProjectResult {
   project:    ProjectSaveData | OpenProjectManifestMeta
 }
 
-/** Metadatos de editor enviados por el motor 2D tras cargar desde `extract_dir`. */
-/** Metadatos de editor enviados por el motor 3D tras cargar desde `extract_dir`. */
-export interface ProjectLoaded3dPayload {
-  activeSceneId: number
-  sceneName:     string
-  entityCount:   number
-  scenes?:       Array<{ id: number; name: string }>
-  language?:     string
-  models:        Array<{ name: string; path: string; category?: ModelCategory; model_id?: string; asset?: string }>
-  sounds:        Array<{ name: string; path: string }>
-  fonts:         Array<{ name: string; path: string }>
-  backgrounds:   Array<{ name: string; path: string }>
-  hudImages?:    Array<{ name: string; path: string }>
-  blueprints:    Blueprint3D[]
-  world:         SavedWorldConfig
-  player?: Entity3D | null
-  config_camera?: ConfigCamera | null
-  config_editor_camera?: ConfigEditorCamera | null
-  playerUiScreens?: Array<{ id: string; name: string; active?: boolean }>
-  menuUiScreens?:  Array<{ id: string; name: string }>
-}
-
-export interface ProjectLoaded2dPayload {
-  activeSceneId: number
-  sceneName:     string
-  entityCount:   number
-  scenes?:       Array<{ id: number; name: string }>
-  language?:     string
-  sprites:       Array<{ name: string; path: string }>
-  sounds:        Array<{ name: string; path: string }>
-  fonts:         Array<{ name: string; path: string }>
-  backgrounds:   Array<{ name: string; path: string }>
-  blueprints:    BluePrintEntry[]
-  world:         SavedWorldConfig
-  backgroundPath: string | null
-  camera2d:      { x: number; y: number; halfH: number } | null
-  hudImages?:    Array<{ name: string; path: string }>
-  playerUiScreens?: Array<{ id: string; name: string; active?: boolean }>
-  menuUiScreens?: Array<{ id: string; name: string }>
-}
-
 export interface EngineCommand {
   cmd: EngineCommandName2D | EngineCommandName3D
   [key: string]: unknown
@@ -669,7 +523,6 @@ export type {
   EngineCommandNameShared,
   Engine2dApi,
   Engine3dApi,
-  EngineApi,
 } from './engineCommands'
 
 export {
@@ -682,322 +535,9 @@ export {
   isCommandAllowedForMotor,
 } from './engineCommandCatalog'
 
-export interface EditorSceneListItem {
-  id: number
-  name: string
-  dirty?: boolean
-}
-
 export interface EngineEvent {
   event: 'ready' | 'pong' | 'error' | 'model_loaded' | 'entity_model_replaced' | 'model_clips_ready' | 'stopped' | 'entity_selected' | 'entity_deselected' | 'entity_properties_open' | 'entity_hovered' | 'entity_unhovered' | 'scenario_loaded' | 'character_loaded' | 'scene_imported' | 'project_loaded_2d' | 'project_loaded_3d' | 'project_load_2d_complete' | 'project_load_3d_complete' | 'load_progress' | 'camera_2d_updated' | 'background_loaded' | 'drawing_progress' | 'collider_created' | 'execution_area_created' | 'tool_cancelled' | 'pivot_selected' | 'physics_changed' | 'sprite_loaded' | 'sprite_removed' | 'sprites_list' | 'model_asset_loaded' | 'model_asset_removed' | 'models_list' | 'world_gen_status' | 'world_gen_progress' | 'world_gen_chunk_ready' | 'world_gen_completed' | 'world_gen_error' | 'world_gen_scatter_done' | 'sound_loaded' | 'sound_removed' | 'sounds_list' | 'font_loaded' | 'font_removed' | 'fonts_list' | 'hud_image_loaded' | 'hud_image_removed' | 'hud_images_list' | 'background_asset_loaded' | 'background_asset_removed' | 'backgrounds_list' | 'play_character_view_changed' | 'save_snapshot_ready' | 'default_scene_name_ready' | 'editor_scene_created' | 'editor_scene_switched' | 'editor_scene_switch_blocked' | 'editor_scenes_updated' | 'debug_metrics' | 'preview_playing_changed' | 'trigger_entered' | 'trigger_exited' | 'entity_removed' | 'quick_build_move' | 'quick_build_click' | 'animation_logical_resolved' | 'animation_finished' | 'autosave_tick' | 'atlas_exhausted' | 'player_ui_image_added' | 'player_ui_image_removed' | 'player_ui_object_added' | 'player_ui_object_removed' | 'player_ui_object_draw_ended'
   [key: string]: unknown
-}
-
-/** Escena activa exportada por el motor 3D (`export_save_snapshot`). */
-export interface EngineSaveSceneSnapshot {
-  world: {
-    world_radius: number
-    world_width: number
-    world_height: number
-    world_depth: number
-    grid_visible: boolean
-    grid_cell_size: number
-    gravity: number
-    target_fps: number
-    light_ambient?: number | null
-    light_intensity?: number | null
-    shadow_darkness?: number | null
-    graphics_texture_tier?: 'low' | 'medium' | 'high' | 'ultra' | null
-    texture_detail_distance_m?: number | null
-    reflection_tier?: 'off' | 'low' | 'medium' | 'high' | 'ultra' | null
-    reflection_raytracing?: boolean | null
-    reflection_probes?: boolean | null
-    shadow_tier?: 'off' | 'low' | 'medium' | 'high' | 'ultra' | null
-    msaa_tier?: 'low' | 'medium' | 'high' | 'ultra' | null
-    taa_enabled?: boolean | null
-    taa_blend?: number | null
-    taa_jitter_scale?: number | null
-  }
-  background_path?: string | null
-  entities: Entity3D[]
-  player?: Entity3D | null
-  config_camera?: ConfigCamera | null
-  config_editor_camera?: ConfigEditorCamera | null
-  camera2d?: { x: number; y: number; half_h: number } | null
-  sprites: Array<{ name: string; path: string }>
-  models?: Array<{
-    name: string
-    path: string
-    category?: ModelCategory
-    model_id?: string
-    asset?: string
-  }>
-  sounds: Array<{ name: string; path: string }>
-  backgrounds: Array<{ name: string; path: string }>
-  fonts?: Array<{ name: string; path: string }>
-  hud_images?: Array<{ name: string; path: string }>
-  player_ui_text_boxes?: Array<{
-    scope: string
-    screen_id: string
-    id: number
-    font_path: string
-    font_name: string
-    text: string
-    center_x: number
-    center_y: number
-    width: number
-    height: number
-    z_index?: number
-    locked?: boolean
-  }>
-  player_ui_buttons?: Array<{
-    scope: string
-    screen_id: string
-    id: number
-    type: string
-    round: number
-    background_color: [number, number, number, number]
-    texture_path?: string | null
-    transparency_background: number
-    text: string
-    text_color: [number, number, number, number]
-    transparency_text: number
-    font_path: string
-    font_name: string
-    border_color: [number, number, number, number]
-    border_weight: number
-    center_x: number
-    center_y: number
-    width: number
-    height: number
-    source_aspect?: number
-    z_index?: number
-    locked?: boolean
-  }>
-  player_ui_images?: Array<{
-    scope: string
-    screen_id: string
-    id: number
-    image_path: string
-    image_name: string
-    center_x: number
-    center_y: number
-    width: number
-    height: number
-    source_aspect: number
-    z_index?: number
-    locked?: boolean
-  }>
-  player_ui_objects?: Array<{
-    scope: string
-    screen_id: string
-    id: number
-    vertices: [number, number][]
-    fill_color: [number, number, number, number]
-    texture_path?: string | null
-    z_index?: number
-    locked?: boolean
-  }>
-}
-
-export interface SaveSnapshotReady {
-  event: 'save_snapshot_ready'
-  scene: EngineSaveSceneSnapshot
-}
-
-export interface DefaultSceneNameReady {
-  event: 'default_scene_name_ready'
-  id: number
-  name: string
-}
-
-export interface PlayCharacterViewChanged {
-  event:                 'play_character_view_changed'
-  player_id:             number | null
-  position:              [number, number, number]
-  camera_eye_position?:  [number, number, number]
-  fps_camera_yaw?:       number
-  fps_camera_pitch?:     number
-  yaw:                   number
-  pitch:                 number
-  fov_y:                 number
-  frustum_distance:      number
-  camera_follow_mode?:   PlayCameraFollowMode
-  body_center:           [number, number, number]
-  body_rotation:         [number, number, number, number]
-  body_scale:            [number, number, number]
-  sync_editor_viewport?: boolean
-  editor_camera_id?: number | null
-  editor_orbit_target?: [number, number, number]
-}
-
-export interface DebugMetrics {
-  fps:            number
-  frame_time_ms:  number
-  draw_calls:     number
-  physics_bodies: number
-  /** % CPU del proceso del motor (Rust/wgpu). */
-  cpu_percent?:   number
-  /** % GPU del proceso del motor (contadores por PID; no uso global del SO). */
-  gpu_percent?:   number
-  /** 3D: posición de pies del personaje jugable. */
-  play_character_position?: [number, number, number]
-  play_character_yaw?:     number
-  play_character_pitch?:   number
-}
-
-export interface Camera2dUpdated {
-  event:  'camera_2d_updated'
-  x:      number
-  y:      number
-  half_h: number
-}
-
-export interface ScenarioLoaded {
-  event: 'scenario_loaded'
-  id:    number
-  path:  string
-  name?: string
-  img_width: number
-  img_height: number
-  default_pivot_x: number
-  default_pivot_y: number
-}
-
-export interface CharacterLoaded {
-  event: 'character_loaded'
-  id:    number
-  path:  string
-  img_width: number
-  img_height: number
-  default_pivot_x: number
-  default_pivot_y: number
-}
-
-export interface EntityHovered {
-  event: 'entity_hovered'
-  id:    number
-}
-
-export interface EntityUnhovered {
-  event: 'entity_unhovered'
-}
-
-export interface BackgroundLoaded {
-  event: 'background_loaded'
-  path:  string
-}
-
-export interface AnimationFinished {
-  event:            'animation_finished'
-  entity_id:        number
-}
-
-export interface PhysicsChanged {
-  event:       'physics_changed'
-  entity_id:   number
-  enabled:     boolean
-  body_type:   string
-}
-
-export interface EntityPropertiesOpen {
-  event: 'entity_properties_open'
-  id:    number
-}
-
-export interface EntitySelected {
-  event:           'entity_selected'
-  id:              number
-  name:            string
-  position:        [number, number, number]
-  rotation:        [number, number, number, number]  // quaternion xyzw
-  scale:           [number, number, number]
-  physics_enabled: boolean
-  physics_type:    string
-  blueprint_id?:   string
-}
-
-export interface PivotSelected {
-  event:      'pivot_selected'
-  frame_path: string
-  pivot_x:    number
-  pivot_y:    number
-}
-
-export interface SpriteLoaded {
-  event:  'sprite_loaded'
-  path:   string
-  width:  number
-  height: number
-}
-
-export interface SpriteRemoved {
-  event:  'sprite_removed'
-  path:  string
-}
-
-export interface SpritesList {
-  event:  'sprites_list'
-  sprites: SpriteInfo[]
-}
-
-export interface TriggerEntered {
-  event:      'trigger_entered'
-  trigger_id: number
-  actor_id:   number
-  /** Scripts Rhai adjuntos en runtime (motor). */
-  has_attached_script?: boolean
-}
-
-export interface TriggerExited {
-  event:      'trigger_exited'
-  trigger_id: number
-  actor_id:   number
-}
-
-export interface EntityRemoved {
-  event: 'entity_removed'
-  id: number
-  kind: 'scenario' | 'character' | 'projectile' | 'model' | 'collider' | 'execution_area' | 'directional_light'
-  /** Vértices del quad (solo colisionadores / áreas de ejecución 2D). */
-  points?: [[number, number], [number, number], [number, number], [number, number]]
-}
-
-export interface AnimationLogicalResolved {
-  event: 'animation_logical_resolved'
-  id: number
-  name: string
-  logical_w: number
-  logical_h: number
-}
-
-export interface SpriteInfo {
-  path:   string
-  name:   string
-  width:  number
-  height: number
-}
-
-export interface ModelInfo {
-  path: string
-  name: string
-  /** true mientras el motor precarga en segundo plano */
-  loading?: boolean
-  /** Categoría de uso en modales de entidades 3D. */
-  category?: ModelCategory
-  /** ID estable del asset importado (.rerasset). */
-  model_id?: string
-  /** Ruta relativa al `.rerasset` en el `.save`. */
-  asset?: string
-  /** importing | ready | failed */
-  state?: string
-  /** Escena propietaria del recurso (recurso por escena). `undefined` = biblioteca global. */
-  scene_id?: number
-  /**
-   * `false` si el modelo pertenece a otra escena: los selectores del editor solo
-   * ofrecen modelos globales o de la escena activa.
-   */
-  available_in_scene?: boolean
 }
 
 export interface ResourceModelEntry {
@@ -1012,45 +552,14 @@ export interface ResourceModelEntry {
   global?: boolean
 }
 
-export interface SoundInfo {
-  path: string
-  name: string
-}
-
-export interface FontInfo {
-  path: string
-  name: string
-}
-
-export interface HudImageInfo {
-  path: string
-  name: string
-}
-
-export interface BackgroundInfo {
-  path: string
-  name: string
-}
-
-/** Pestañas de construcción rápida (inglés, alineado a `Entity3DCategory`). */
-export type BlueprintTabCategory = 'character' | 'environment' | 'object'
-
-/** @deprecated Usar `BlueprintTabCategory` */
-export type BluePrintCategory = BlueprintTabCategory
-
-/** @deprecated 3D usa `Blueprint3D` */
-export type BluePrintEntry = Blueprint3D
-
 // Extiende la interfaz global Window para el renderer
 declare global {
   interface Window {
-    engine: import('./engineCommands').EngineApi
     engine2d: import('./engineCommands').Engine2dApi
     engine3d: import('./engineCommands').Engine3dApi
     electronAPI: {
       setGameStyle:            (payload: EngineStartPayload) => void
       openProjectDialog:       () => Promise<OpenProjectResult | null>
-      readProjectManifest:     () => Promise<ProjectSaveData | null>
     }
   }
 }

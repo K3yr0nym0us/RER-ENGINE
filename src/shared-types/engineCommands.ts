@@ -4,8 +4,6 @@ import type {
   ENGINE_COMMANDS_SHARED,
 } from './engineCommandCatalog'
 
-export type ProjectType = '2D' | '3D'
-
 export type EngineCommandNameShared = (typeof ENGINE_COMMANDS_SHARED)[number]
 export type EngineCommandName2DOnly = (typeof ENGINE_COMMANDS_2D_ONLY)[number]
 export type EngineCommandName3DOnly = (typeof ENGINE_COMMANDS_3D_ONLY)[number]
@@ -26,9 +24,6 @@ export type EngineCommand3D = {
   cmd: EngineCommandName3D
 } & Record<string, unknown>
 
-/** Unión de ambos motores (compat / main IPC). */
-export type EngineCommand = EngineCommand2D | EngineCommand3D
-
 export interface EngineEventListener {
   (event: import('./types').EngineEvent): void
 }
@@ -46,8 +41,3 @@ export interface Engine3dApi extends EngineApiBase {
   send: (cmd: EngineCommand3D) => void
 }
 
-export interface EngineApi extends EngineApiBase {
-  send: (cmd: EngineCommand) => void
-  send2d: (cmd: EngineCommand2D) => void
-  send3d: (cmd: EngineCommand3D) => void
-}
