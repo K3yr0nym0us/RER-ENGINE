@@ -778,7 +778,10 @@ impl FluidSolver {
         if let Some((points, volumes)) = self.terrain_boundary.clone() {
             let h = self.config.smoothing_radius;
             let rho0 = self.config.rest_density.max(SMALL);
-            let spacing = volumes.first().map(|volume| volume.cbrt()).unwrap_or(h * 0.5);
+            let spacing = volumes
+                .first()
+                .map(|volume| volume.cbrt())
+                .unwrap_or(h * 0.5);
             let psi = rho0 / lattice_density(spacing, h, 1.0).max(SMALL);
             let grid = SpatialGrid::build(&points, h);
             self.boundary = points;
@@ -881,7 +884,11 @@ impl FluidSolver {
                     }
                     // Hacia la pared: el vector va de la pared a la partícula,
                     // así que se RESTA para que la atracción la acerque.
-                    let dir = if rlen > SMALL { scale(r, 1.0 / rlen) } else { [0.0; 3] };
+                    let dir = if rlen > SMALL {
+                        scale(r, 1.0 / rlen)
+                    } else {
+                        [0.0; 3]
+                    };
                     force = add(force, scale(dir, -adhesion * w * boundary_psi[b]));
                 }
                 vel = add(vel, scale(force, dt / mass));

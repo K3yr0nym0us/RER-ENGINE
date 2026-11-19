@@ -100,7 +100,6 @@ impl HudAtlas {
         self.row_h = self.row_h.max(h);
         uv
     }
-
 }
 
 #[cfg(test)]

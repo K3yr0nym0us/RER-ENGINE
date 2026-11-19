@@ -33,11 +33,7 @@ pub(crate) const DEFAULT_CELL_SIZE: f32 = 0.5;
 /// Convierte un color RGB lineal del líquido a bytes para la textura; `boost`
 /// aclara las gotas para que destaquen sobre la superficie.
 fn liquid_rgba(color: [f32; 3], boost: u8) -> [u8; 4] {
-    let channel = |value: f32| {
-        (value * 255.0 + boost as f32)
-            .round()
-            .clamp(0.0, 255.0) as u8
-    };
+    let channel = |value: f32| (value * 255.0 + boost as f32).round().clamp(0.0, 255.0) as u8;
     [channel(color[0]), channel(color[1]), channel(color[2]), 255]
 }
 
@@ -188,10 +184,12 @@ impl TerrainBoundary {
         self.points.clear();
         self.volumes.clear();
         self.dirty = false;
-        let Some(&(min_ix, min_iz)) = floors.keys().min_by_key(|column| (column.0, column.1)) else {
+        let Some(&(min_ix, min_iz)) = floors.keys().min_by_key(|column| (column.0, column.1))
+        else {
             return;
         };
-        let Some(&(max_ix, max_iz)) = floors.keys().max_by_key(|column| (column.0, column.1)) else {
+        let Some(&(max_ix, max_iz)) = floors.keys().max_by_key(|column| (column.0, column.1))
+        else {
             return;
         };
         let spacing = (particle_radius * 2.0).max(cell_size * 0.5).max(0.01);
@@ -339,8 +337,14 @@ impl SplashLayer {
             [0.0, 0.0, -radius],
         ];
         let faces = [
-            [2, 0, 4], [2, 4, 1], [2, 1, 5], [2, 5, 0],
-            [3, 4, 0], [3, 1, 4], [3, 5, 1], [3, 0, 5],
+            [2, 0, 4],
+            [2, 4, 1],
+            [2, 1, 5],
+            [2, 5, 0],
+            [3, 4, 0],
+            [3, 1, 4],
+            [3, 5, 1],
+            [3, 0, 5],
         ];
         for &position in self.solver.positions() {
             let base = vertices.len() as u32;
@@ -523,7 +527,8 @@ impl WaterSystem {
         }
         match self.sources.iter_mut().find(|source| source.id == id) {
             Some(source) => {
-                *source = WaterSource::with_liquid(id, position, cell_size, color, viscosity, cohesion)
+                *source =
+                    WaterSource::with_liquid(id, position, cell_size, color, viscosity, cohesion)
             }
             None => self.sources.push(WaterSource::with_liquid(
                 id, position, cell_size, color, viscosity, cohesion,
@@ -1008,7 +1013,9 @@ impl WaterSystem {
         let steps = self
             .cells
             .values()
-            .fold(0u8, |max, &level| max.max(SOURCE_LEVEL.saturating_sub(level)))
+            .fold(0u8, |max, &level| {
+                max.max(SOURCE_LEVEL.saturating_sub(level))
+            })
             .max(1);
         let radius = steps.saturating_sub(2).max(1) as f32;
         let sources_xy: Vec<(f32, f32)> = self
@@ -1034,9 +1041,7 @@ impl WaterSystem {
             })
             .collect();
 
-        let height = |gx: i32, gz: i32| -> f32 {
-            heightmap.get(&(gx, gz)).copied().unwrap_or(0.0)
-        };
+        let height = |gx: i32, gz: i32| -> f32 { heightmap.get(&(gx, gz)).copied().unwrap_or(0.0) };
         // Normal suave a partir del gradiente del campo de alturas, compartida
         // por la tapa y la fila final para que no haya costura de iluminación.
         let normal_at = |gx: i32, gz: i32| -> [f32; 3] {
@@ -1045,18 +1050,18 @@ impl WaterSystem {
             let right = heightmap.get(&(gx + 1, gz)).copied().unwrap_or(here);
             let back = heightmap.get(&(gx, gz - 1)).copied().unwrap_or(here);
             let front = heightmap.get(&(gx, gz + 1)).copied().unwrap_or(here);
-            let span_x = if heightmap.contains_key(&(gx - 1, gz)) && heightmap.contains_key(&(gx + 1, gz))
-            {
-                2.0 * cs
-            } else {
-                cs
-            };
-            let span_z = if heightmap.contains_key(&(gx, gz - 1)) && heightmap.contains_key(&(gx, gz + 1))
-            {
-                2.0 * cs
-            } else {
-                cs
-            };
+            let span_x =
+                if heightmap.contains_key(&(gx - 1, gz)) && heightmap.contains_key(&(gx + 1, gz)) {
+                    2.0 * cs
+                } else {
+                    cs
+                };
+            let span_z =
+                if heightmap.contains_key(&(gx, gz - 1)) && heightmap.contains_key(&(gx, gz + 1)) {
+                    2.0 * cs
+                } else {
+                    cs
+                };
             let n = Vec3::new(-(right - left) / span_x, 1.0, -(front - back) / span_z).normalize();
             [n.x, n.y, n.z]
         };
@@ -1129,11 +1134,7 @@ impl WaterSystem {
                 continue;
             }
             for corner in &corners {
-                grow_bounds(
-                    &mut min,
-                    &mut max,
-                    [corner.x, corner.height, corner.z],
-                );
+                grow_bounds(&mut min, &mut max, [corner.x, corner.height, corner.z]);
             }
             emit_surface_cell(&mut vertices, &mut indices, corners);
         }
@@ -1144,7 +1145,11 @@ impl WaterSystem {
 /// Aplica de una vez las unidades cedidas y recibidas calculadas desde un
 /// snapshot. Resta primero y suma después: una celda puede dar y recibir en el
 /// mismo tick (columnas que caen sobre agua existente).
-fn apply_transfers(units: &mut HashMap<Cell, u32>, give: &HashMap<Cell, u32>, take: &HashMap<Cell, u32>) {
+fn apply_transfers(
+    units: &mut HashMap<Cell, u32>,
+    give: &HashMap<Cell, u32>,
+    take: &HashMap<Cell, u32>,
+) {
     for (&cell, &amount) in give {
         let current = units.get(&cell).copied().unwrap_or(0);
         if amount >= current {
@@ -1575,9 +1580,14 @@ impl crate::engine3d::engine::State {
             .keys()
             .copied()
             .filter(|&(ix, iy, iz)| {
-                [(ix + 1, iy, iz), (ix - 1, iy, iz), (ix, iy, iz + 1), (ix, iy, iz - 1)]
-                    .iter()
-                    .any(|neighbor| !self.water.cells.contains_key(neighbor))
+                [
+                    (ix + 1, iy, iz),
+                    (ix - 1, iy, iz),
+                    (ix, iy, iz + 1),
+                    (ix, iy, iz - 1),
+                ]
+                .iter()
+                .any(|neighbor| !self.water.cells.contains_key(neighbor))
             })
             .collect();
         frontier.sort_unstable();
@@ -1736,7 +1746,10 @@ mod tests {
         assert!(water.cell_count() < MAX_CELLS, "el charco debe ser finito");
         assert!(water.cells.values().all(|&level| level <= SOURCE_LEVEL));
         assert!(
-            water.cells.get(&(0, 0, 0)).is_some_and(|&level| level < SOURCE_LEVEL),
+            water
+                .cells
+                .get(&(0, 0, 0))
+                .is_some_and(|&level| level < SOURCE_LEVEL),
             "la altura de la fuente debe bajar al repartirse"
         );
     }
@@ -1757,7 +1770,10 @@ mod tests {
         let (at_end, _, _, _) = water.build_mesh(&floors, 1.0);
 
         let highest = |vertices: &[Vertex]| {
-            vertices.iter().map(|v| v.position[1]).fold(f32::MIN, f32::max)
+            vertices
+                .iter()
+                .map(|v| v.position[1])
+                .fold(f32::MIN, f32::max)
         };
         let start = highest(&at_start);
         let half = highest(&at_half);
@@ -1786,7 +1802,10 @@ mod tests {
         }
         let total: u32 = water.cells.values().map(|&level| level as u32 + 1).sum();
         assert_eq!(total, SOURCE_VOLUME, "el volumen debe conservarse: {total}");
-        assert!(peak_speed > 0.0, "debe generarse velocidad por el gradiente");
+        assert!(
+            peak_speed > 0.0,
+            "debe generarse velocidad por el gradiente"
+        );
         assert!(
             peak_speed <= SW_MAX_SPEED + 1.0e-5,
             "la velocidad debe estar acotada: {peak_speed}"
@@ -1877,7 +1896,10 @@ mod tests {
         );
         let first = water.terrain.points()[0];
         let second = water.terrain.points()[1];
-        assert!((second[2] - first[2]).abs() > 0.0, "debe haber espaciado en Z");
+        assert!(
+            (second[2] - first[2]).abs() > 0.0,
+            "debe haber espaciado en Z"
+        );
         assert!(water.terrain.volumes().iter().all(|&volume| volume > 0.0));
     }
 
@@ -1899,7 +1921,11 @@ mod tests {
         let floors = flat_floor(&water);
 
         water.step(&floors);
-        assert_eq!(water.cells.len(), 1, "el primer tick solo debe crear el cubo");
+        assert_eq!(
+            water.cells.len(),
+            1,
+            "el primer tick solo debe crear el cubo"
+        );
         assert!(water.cells.contains_key(&(0, 0, 0)));
         assert!(
             !water.is_animating(),
@@ -1929,7 +1955,11 @@ mod tests {
             "la fuente debe perder altura al repartirse: {source_level}"
         );
         let max_level = water.cells.values().copied().max().unwrap();
-        let average_units = water.cells.values().map(|&level| level as u32 + 1).sum::<u32>()
+        let average_units = water
+            .cells
+            .values()
+            .map(|&level| level as u32 + 1)
+            .sum::<u32>()
             / water.cell_count() as u32;
         assert!(
             max_level <= 4 && average_units <= 3,
@@ -2092,11 +2122,14 @@ mod tests {
             let dz = (vertex.position[2] - sz) / cs;
             let angle = dz.atan2(dx);
             let slice = 2.0 * std::f32::consts::PI / SECTORS as f32;
-            let sector = (((angle + std::f32::consts::PI) / slice).floor() as usize)
-                .clamp(0, SECTORS - 1);
+            let sector =
+                (((angle + std::f32::consts::PI) / slice).floor() as usize).clamp(0, SECTORS - 1);
             sector_radius[sector] = sector_radius[sector].max(dx.hypot(dz));
         }
-        assert!(contour_points > 16, "pocos puntos de contorno: {contour_points}");
+        assert!(
+            contour_points > 16,
+            "pocos puntos de contorno: {contour_points}"
+        );
         for (sector, &radius) in sector_radius.iter().enumerate() {
             assert!(radius > 0.0, "hueco en el contorno, sector {sector}");
             assert!(
@@ -2203,8 +2236,14 @@ mod tests {
         ground_y: f32,
         message: &str,
     ) {
-        let lowest = vertices.iter().map(|v| v.position[1]).fold(f32::MAX, f32::min);
-        let highest = vertices.iter().map(|v| v.position[1]).fold(f32::MIN, f32::max);
+        let lowest = vertices
+            .iter()
+            .map(|v| v.position[1])
+            .fold(f32::MAX, f32::min);
+        let highest = vertices
+            .iter()
+            .map(|v| v.position[1])
+            .fold(f32::MIN, f32::max);
         assert!(
             (lowest - ground_y).abs() < 1.0e-4,
             "{message}: borde en {lowest} (esperado {ground_y})"
