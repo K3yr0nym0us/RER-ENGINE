@@ -48,6 +48,11 @@ other_callbacks:
     when: Tecla/control mantenido — cada frame mientras se mantiene pulsado
   - callback: on_trigger_enter(trigger, actor)
     when: Un actor entra en un execution area (2D AABB; 3D plano orientado)
+  - callback: on_interact(target, actor)
+    when: |
+      Se pulsa la tecla de interacción (E por defecto) mirando una entidad interactuable (3D).
+      `target` es la entidad mirada, `actor` quien interactúa (jugador). Requiere que la
+      entidad tenga `interactable.enabled = true` en el `.save` / pestaña Interacción.
 
 scene_callbacks:
   description: Scripts de escena (Level Blueprint / nodos visuales)
@@ -221,6 +226,26 @@ engine_3d_only:
       description: Componente Y del vector normalizado hacia la cruceta (cámara FPS en play).
     - function: engine.play_aim_dir_z()
       description: Componente Z del vector normalizado hacia la cruceta (cámara FPS en play).
+    - function: engine.interact_target()
+      description: |
+        ID de la entidad interactuable bajo la mira, o -1 si no hay ninguna.
+        El motor actualiza el objetivo cada frame con raycast y oclusión.
+    - function: engine.interact_pressed()
+      description: true solo el frame en que se pulsa la tecla de interacción.
+    - function: engine.interact_distance()
+      description: Distancia en metros hasta la entidad mirada (0 si no hay objetivo).
+    - function: engine.set_interactable(id, enabled)
+      description: Habilita/deshabilita una entidad interactuable en runtime.
+    - function: engine.interact_prompt(id, text)
+      description: |
+        Cambia el texto del prompt en runtime (se aplica a ES y EN).
+        Para textos localizados usa la pestaña Interacción del editor.
+
+  interaction_example: |
+    // En el script de la entidad interactuable (ej. una puerta):
+    fn on_interact(target, actor) {
+        engine.log("Interacted with " + target.id);
+    }
 
   example_fp_entity: |
     fn on_start(entity) {

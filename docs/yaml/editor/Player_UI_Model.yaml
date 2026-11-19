@@ -45,6 +45,18 @@ native_sidebar:
   default_3d: |
     Plantilla 3D: pantalla Player UI 01 + 2 objects de crosshair (horizontal y vertical).
 
+interaction_prompt:
+  description: |
+    Tooltip world→screen que el motor 3D dibuja sobre el HUD de pantalla cuando el jugador
+    mira una entidad interactuable en play. No es un elemento editable de Player UI: se
+    genera cada frame y se compone con los glifos del HUD activo en el mismo atlas/pipeline
+    (`screen_hud_pipeline`). No requiere que haya una pantalla Player UI activa, pero usa
+    una fuente del proyecto (la del HUD activo o cualquier fuente registrada en `fonts[]`).
+  position: Se proyecta el centro del AABB de la entidad a píxeles y se coloca ~42 px arriba
+  fade: Alfa de 1.0 cerca a 0.35 a la distancia máxima configurada en la entidad
+  text: "{prompt localizado}  [{tecla}]" — ver docs/yaml/gameplay/Entities_Model_3D.yaml
+  source: config_3d/interaction.rs + config_3d/player_ui/font.rs (build_cached_hud_label_glyph)
+
 element_types:
   text_box:
     fields: [id, font_path, text, center_x, center_y, width, height, z_index, locked]

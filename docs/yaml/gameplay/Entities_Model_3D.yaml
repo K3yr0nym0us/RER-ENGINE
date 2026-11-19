@@ -29,6 +29,31 @@ common: # FORMATO COMUN DE LAS ENTIDADES
   controls: optional # WASD / gamepad → Rhai en preview; (Solo para Player)
   colision: boolean # Colisiones de la entidad (Malla fisica del ultimo modelo 3D cargado on/off default:on)
   projectile: optional # Solo category projectile: { speed, lifetime_s, affected_by_gravity, gravity_scale, align_to_velocity, muzzle_socket, bounceable, max_bounces, bounce_speed_loss, hardness } — docs/yaml/gameplay/Projectiles_3D.yaml
+  interactable: optional # { enabled, prompt_es, prompt_en, key, once, max_distance } — tooltip anclado a la entidad en play
+
+INTERACCION:
+  descripcion: |
+    Sistema de interacción en play (rer_engine_3d). Con la tecla configurada (E por defecto)
+    se muestra un prompt anclado a la entidad mirada y se dispara on_interact(target, actor)
+    en los scripts Rhai de esa entidad. El rayo parte de la cámara/jugador, respeta oclusión
+    (usa el primer hit de física) y excluye el collider del jugador.
+  campos:
+    enabled: boolean # false por defecto; la pestaña "Interacción" lo activa
+    prompt_es: string # Texto del prompt en español
+    prompt_en: string # Texto del prompt en inglés (fallback al español)
+    key: string # Tecla mostrada en el prompt y que dispara la interacción (default E)
+    once: boolean # Si true, la entidad se consume tras la primera interacción de la sesión
+    max_distance: number # Distancia máxima del rayo en metros (default 3.5, rango 0.5..20)
+  editor: Propiedades de entidad → pestaña "Interacción" (entidades 3D)
+  persistencia: manifest .save → entities[].interactable / player.interactable
+  rhai: |
+    engine.interact_target()   → id de la entidad mirada (-1 si ninguna)
+    engine.interact_pressed()  → true el frame de la pulsación
+    engine.interact_distance() → distancia hasta el objetivo
+    engine.set_interactable(id, enabled)
+    engine.interact_prompt(id, text)
+    fn on_interact(target, actor) { ... }
+  relacionado: docs/yaml/editor/Player_UI_Model.yaml, docs/yaml/scripting/RHAI_API.yaml
 
 Blueprints:
   reference: docs/yaml/gameplay/Blueprints_Model_3D.yaml
