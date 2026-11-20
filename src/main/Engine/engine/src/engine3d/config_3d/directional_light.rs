@@ -202,14 +202,16 @@ pub(crate) fn sun_orbit_distance_from(bounds: &WorldBounds3D) -> f32 {
 /// nunca un valor que cambie con `dir.y`: el antiguo umbral `|dir.y| > 0.99`
 /// conmutaba entre X e Y y giraba la base de la luz 180°, reflejando el shadow map
 /// cada vez que el sol cruzaba el cenit.
-fn light_view_proj_from(center: Vec3, dir: Vec3, extent: f32, up: Vec3) -> [[f32; 4]; 4] {
+fn light_view_proj_from(
+    center: Vec3,
+    dir: Vec3,
+    extent: f32,
+    map_size: u32,
+    up: Vec3,
+) -> [[f32; 4]; 4] {
     let dir = dir.normalize();
     let eye = center + dir * extent * 2.5;
     let view = Mat4::look_at_rh(eye, center, up);
-    // La cámara de luz mira a `center`, así que el centro en espacio de luz es (0,0,-dist).
-    // Sin texel snapping: era residuo del CSM retirado. Con un único mapa centrado en el
-    // mundo, hacer floor() de un center_ls ≈ 0 daba 0 o -1 según ruido de coma flotante y
-    // saltaba la ortho un texel entero (0.119 m), moviendo TODAS las sombras de golpe.
     let proj = Mat4::orthographic_rh(
         -extent,
         extent,
@@ -218,7 +220,26 @@ fn light_view_proj_from(center: Vec3, dir: Vec3, extent: f32, up: Vec3) -> [[f32
         0.5,
         extent * 8.0,
     );
-    (proj * view).to_cols_array_2d()
+    let mut m = (proj * view).to_cols_array_2d();
+
+    // Texel snapping: anclar el centro del SUELO (donde se ven las sombras) a un
+    // centro de texel del shadow map. Sin esto, la matriz de luz rota cada frame
+    // con el sol y el punto se desliza subpíxel -> el comparador de profundidad
+    // oscila (temblor). Con round(), la rejilla salta en pasos enteros de texel
+    // y el depth de cada texel deja de recalcularse en cada micro-movimiento.
+    let half = map_size.max(1) as f32 * 0.5;
+    let anchor = glam::Vec4::new(center.x, 0.0, center.z, 1.0);
+    let clip_x = m[0][0] * anchor.x + m[1][0] * anchor.y + m[2][0] * anchor.z + m[3][0] * anchor.w;
+    let clip_y = m[0][1] * anchor.x + m[1][1] * anchor.y + m[2][1] * anchor.z + m[3][1] * anchor.w;
+    let clip_w = m[0][3] * anchor.x + m[1][3] * anchor.y + m[2][3] * anchor.z + m[3][3] * anchor.w;
+    let px = (clip_x / clip_w) * half;
+    let py = (clip_y / clip_w) * half;
+    let shift_x = (px.round() - px) / half;
+    let shift_y = (py.round() - py) / half;
+    // columna 3 = traslación NDC de la ortho; m[col][fila].
+    m[3][0] += shift_x;
+    m[3][1] += shift_y;
+    m
 }
 
 impl State {
@@ -496,6 +517,7 @@ impl State {
             self.directional_light_scene_center(),
             self.directional_light_dir,
             self.light_shadow_extent_m(),
+            self.active_shadow_map_size(),
             up,
         )
     }
@@ -990,9 +1012,9 @@ mod tests {
     #[test]
     fn light_view_proj_follows_the_sun_direction() {
         let center = Vec3::new(0.0, 10.0, 0.0);
-        let east = light_view_proj_from(center, Vec3::X, 100.0, Vec3::Z);
-        let west = light_view_proj_from(center, Vec3::NEG_X, 100.0, Vec3::Z);
-        let zenith = light_view_proj_from(center, Vec3::Y, 100.0, Vec3::Z);
+        let east = light_view_proj_from(center, Vec3::X, 100.0, 1024, Vec3::Z);
+        let west = light_view_proj_from(center, Vec3::NEG_X, 100.0, 1024, Vec3::Z);
+        let zenith = light_view_proj_from(center, Vec3::Y, 100.0, 1024, Vec3::Z);
 
         assert_ne!(
             east, west,
@@ -1016,7 +1038,7 @@ mod tests {
             let dy = 0.98 + a * 0.019; // 0.98 → 0.999, cruzando el viejo umbral 0.99
             let dx = -(1.0 - dy * dy).sqrt();
             let dir = Vec3::new(dx, dy, 0.0);
-            let m = light_view_proj_from(center, dir, extent, Vec3::Z);
+            let m = light_view_proj_from(center, dir, extent, 1024, Vec3::Z);
             let clip_x = m[0][0] * p.x + m[1][0] * p.y + m[2][0] * p.z + m[3][0];
             if let Some(prev_x) = prev {
                 assert!(
@@ -1029,27 +1051,31 @@ mod tests {
     }
 
     #[test]
-    fn light_ortho_stays_centered_without_texel_snapping() {
-        // Sin el snapping del CSM retirado, el centro de la escena debe caer
-        // siempre en el origen NDC de la ortho, aunque `center_ls` tenga ruido
-        // de coma flotante ~1e-7 al variar la dirección del sol.
+    fn shadow_anchor_lands_on_texel_center() {
+        // El centro del suelo debe caer siempre en un centro de texel del shadow
+        // map, aunque la dirección del sol varíe: asi la rejilla no se desliza
+        // subpíxel y el depth comparison no oscila (temblor de la sombra).
         let center = Vec3::new(0.0, 50.0, 0.0);
         let extent = 60.97;
+        let map = 1024u32;
+        let half = map as f32 * 0.5;
+        let anchor = glam::Vec4::new(center.x, 0.0, center.z, 1.0);
         for i in 0..256 {
-            let n = i as f32 * 1e-7;
-            let dir = Vec3::new(-0.05 + n, 0.998 + n * 0.1, 0.0);
-            let m = light_view_proj_from(center, dir, extent, Vec3::Z);
-            // m[col][fila]; w = 1 para una ortho.
-            let clip_x = m[0][0] * center.x + m[1][0] * center.y + m[2][0] * center.z + m[3][0];
-            let clip_y = m[0][1] * center.x + m[1][1] * center.y + m[2][1] * center.z + m[3][1];
-            let clip_w = m[0][3] * center.x + m[1][3] * center.y + m[2][3] * center.z + m[3][3];
+            let n = i as f32 * 1e-5;
+            let dir = Vec3::new(-0.05 + n, 0.998 + n * 0.1, 0.0).normalize();
+            let m = light_view_proj_from(center, dir, extent, map, Vec3::Z);
+            let clip_x = m[0][0] * anchor.x + m[1][0] * anchor.y + m[2][0] * anchor.z + m[3][0];
+            let clip_y = m[0][1] * anchor.x + m[1][1] * anchor.y + m[2][1] * anchor.z + m[3][1];
+            let clip_w = m[0][3] * anchor.x + m[1][3] * anchor.y + m[2][3] * anchor.z + m[3][3];
+            let px = (clip_x / clip_w) * half;
+            let py = (clip_y / clip_w) * half;
             assert!(
-                (clip_x / clip_w).abs() < 1e-4,
-                "la ortho se desplazó en X (residuo de texel snapping)"
+                (px - px.round()).abs() < 1e-3,
+                "el ancla no cae en centro de texel en X (px={px})"
             );
             assert!(
-                (clip_y / clip_w).abs() < 1e-4,
-                "la ortho se desplazó en Y (residuo de texel snapping)"
+                (py - py.round()).abs() < 1e-3,
+                "el ancla no cae en centro de texel en Y (py={py})"
             );
         }
     }
