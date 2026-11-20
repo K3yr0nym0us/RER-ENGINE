@@ -241,6 +241,36 @@ impl EditorApp {
                 self.selected_entity = None;
                 self.pending_properties = None;
             }
+            // Tras un reemplazo el meta sigue con la ruta anterior: actualizarla
+            // aquí para que el selector sepa cuál es el modelo actual.
+            "entity_model_replaced" => {
+                let Some(id) = event.get("id").and_then(Value::as_u64) else {
+                    return;
+                };
+                let Some(path) = event.get("path").and_then(Value::as_str) else {
+                    return;
+                };
+                let key = id.to_string();
+                if let Some(meta) = self.project_state.entity_meta.get_mut(&key) {
+                    meta["visualModelPath"] = json!(path);
+                    let is_marker = meta
+                        .get("path")
+                        .and_then(Value::as_str)
+                        .is_some_and(|p| p.starts_with('['));
+                    if !is_marker {
+                        meta["path"] = json!(path);
+                    }
+                } else {
+                    self.project_state.entity_meta.insert(
+                        key,
+                        json!({
+                            "kind": "model",
+                            "path": path,
+                            "visualModelPath": path,
+                        }),
+                    );
+                }
+            }
             // El motor enlazó un modelo skinned:refleja sus clips en el meta de
             // la entidad para que la modal de propiedades detecte las
             // animaciones incrustadas (p. ej. tras reemplazar el del jugador).

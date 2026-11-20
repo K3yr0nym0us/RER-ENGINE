@@ -156,11 +156,7 @@ pub(super) fn asset_section(
                     "Cargar desde otra escena",
                     "Load from another scene",
                 ),
-                crate::editor::i18n::tr(
-                    locale,
-                    "Convierte un modelo de otra escena en global para usarlo en todas",
-                    "Make a model from another scene global so every scene can use it",
-                ),
+                "",
                 crate::editor::theme::OUTLINE_SECONDARY,
             ) {
                 actions.push(LeftAction::OpenLoadFromScene);
@@ -176,15 +172,8 @@ pub(super) fn asset_section(
                             ui,
                             ui.available_width(),
                             icons::PLUS,
-                            &format!("+ {cat_title}"),
-                            &format!(
-                                "{} {cat_title}",
-                                crate::editor::i18n::tr(
-                                    locale,
-                                    "Importar modelo como",
-                                    "Import model as",
-                                )
-                            ),
+                            cat_title,
+                            "",
                             crate::editor::theme::ACCENT,
                         ) {
                             actions.push(LeftAction::ImportModelCategory(category));
@@ -221,7 +210,7 @@ pub(super) fn asset_section(
             width,
             icons::PLUS,
             import_label(kind, locale),
-            import_tooltip(kind, locale),
+            "",
             crate::editor::theme::ACCENT,
         ) {
             actions.push(LeftAction::ImportAsset(kind));
@@ -361,48 +350,14 @@ fn asset_rows(
 
 pub(super) fn import_label(kind: AssetKind, locale: Locale) -> &'static str {
     match kind {
-        AssetKind::Model => crate::editor::i18n::tr(locale, "+ Cargar modelo", "+ Load model"),
-        AssetKind::Sprite => crate::editor::i18n::tr(locale, "+ Cargar sprite", "+ Load sprite"),
-        AssetKind::Sound => crate::editor::i18n::tr(locale, "+ Cargar sonido", "+ Load sound"),
-        AssetKind::Font => crate::editor::i18n::tr(locale, "+ Cargar fuente", "+ Load font"),
-        AssetKind::HudImage => crate::editor::i18n::tr(locale, "+ Cargar imagen", "+ Load image"),
+        AssetKind::Model => crate::editor::i18n::tr(locale, "Cargar modelo", "Load model"),
+        AssetKind::Sprite => crate::editor::i18n::tr(locale, "Cargar sprite", "Load sprite"),
+        AssetKind::Sound => crate::editor::i18n::tr(locale, "Cargar sonido", "Load sound"),
+        AssetKind::Font => crate::editor::i18n::tr(locale, "Cargar fuente", "Load font"),
+        AssetKind::HudImage => crate::editor::i18n::tr(locale, "Cargar imagen", "Load image"),
         AssetKind::Background => {
-            crate::editor::i18n::tr(locale, "+ Cargar fondo", "+ Load background")
+            crate::editor::i18n::tr(locale, "Cargar fondo", "Load background")
         }
     }
 }
 
-fn import_tooltip(kind: AssetKind, locale: Locale) -> &'static str {
-    match kind {
-        AssetKind::Model => crate::editor::i18n::tr(
-            locale,
-            "Importar modelo al proyecto",
-            "Import model into project",
-        ),
-        AssetKind::Sprite => crate::editor::i18n::tr(
-            locale,
-            "Importar sprite al proyecto",
-            "Import sprite into project",
-        ),
-        AssetKind::Sound => crate::editor::i18n::tr(
-            locale,
-            "Importar sonido al proyecto",
-            "Import sound into project",
-        ),
-        AssetKind::Font => crate::editor::i18n::tr(
-            locale,
-            "Importar fuente al proyecto",
-            "Import font into project",
-        ),
-        AssetKind::HudImage => crate::editor::i18n::tr(
-            locale,
-            "Importar imagen al proyecto",
-            "Import image into project",
-        ),
-        AssetKind::Background => crate::editor::i18n::tr(
-            locale,
-            "Importar fondo al proyecto",
-            "Import background into project",
-        ),
-    }
-}

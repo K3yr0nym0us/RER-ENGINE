@@ -480,7 +480,9 @@ pub fn wide_button_click_sized(
     );
 
     let clicked = enabled && response.clicked();
-    let _ = response.on_hover_text(format!("{label} — {hint}"));
+    if !hint.is_empty() {
+        let _ = response.on_hover_text(format!("{label} — {hint}"));
+    }
     clicked
 }
 

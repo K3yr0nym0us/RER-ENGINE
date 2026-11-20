@@ -38,17 +38,16 @@ pub(crate) struct ModelChoice {
 
 #[derive(Debug, Clone)]
 pub(crate) struct ModelPicker {
-    pub hint: String,
     pub choices: Vec<ModelChoice>,
     pub selected: Option<String>,
-    /// Modelos de esta categoría aún en carga: se muestran como spinner y no
-    /// se pueden elegir hasta que el motor los marque como listos.
-    pub loading: usize,
     /// Datos para reconstruir la lista cada frame desde la biblioteca viva del
     /// motor (que se actualiza con `model_asset_loaded`).
     pub active_scene_id: u64,
     pub intent: String,
+    /// Ruta/meta del modelo asignado, para reconstruir el picker cada frame.
     pub current: String,
+    /// Nombre del modelo asignado, que se muestra arriba del select.
+    pub current_label: String,
 }
 
 #[derive(Debug, Clone)]

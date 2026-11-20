@@ -17,7 +17,7 @@ use rer_engine_core::vulkan::{FRAMES_IN_FLIGHT, FrameAcquire, PresentTarget, Sha
 use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
-use winit::window::{Window, WindowId};
+use winit::window::{Window, WindowButtons, WindowId};
 
 use super::app::EditorApp;
 use super::theme;
@@ -66,7 +66,9 @@ const ENTITY_PROPS_HEIGHT: f64 = 560.0;
 /// El selector de modelos es solo un combo + un botón: ventana compacta que se
 /// ajusta a su contenido (antes submodal `sm` del inspector en Electron).
 const MODEL_PICKER_WIDTH: f64 = 300.0;
-const MODEL_PICKER_HEIGHT: f64 = 150.0;
+/// Alto suficiente para el rótulo del modelo actual, el combo y el botón: la
+/// ventana es de tamaño fijo (no redimensionable), así que debe caber todo.
+const MODEL_PICKER_HEIGHT: f64 = 175.0;
 const MODEL_PICKER_MIN_WIDTH: f64 = 260.0;
 /// La guía es contenido estático largo: ventana ancha con scroll (antes `lg`).
 const GUIDE_WIDTH: f64 = 760.0;
@@ -160,16 +162,20 @@ impl ModalWindow {
             .with_inner_size(LogicalSize::new(width, height))
             .with_min_inner_size(LogicalSize::new(min_width, min_height))
             .with_resizable(resizable)
+            // El selector solo tiene botón de cerrar: ni minimizar ni maximizar.
+            .with_enabled_buttons(if kind == NativeModal::ModelPicker {
+                WindowButtons::CLOSE
+            } else {
+                WindowButtons::all()
+            })
+            // Estas ventanas acompañan al viewport: nunca deben quedar detrás
+            // de la ventana nativa del motor (p. ej. para elegir huesos clickeando
+            // en la escena con la modal de sockets abierta).
             // Estas ventanas acompañan al viewport: nunca deben quedar detrás
             // de la ventana nativa del motor (p. ej. para elegir huesos clickeando
             // en la escena con la modal de sockets abierta).
             .with_window_level(winit::window::WindowLevel::AlwaysOnTop)
             .with_visible(false);
-        // El selector es tamaño fijo: ni redimensionable por el usuario ni
-        // reajustable por `fit_to_content`.
-        if kind == NativeModal::ModelPicker {
-            attributes = attributes.with_max_inner_size(LogicalSize::new(width, height));
-        }
         if let Some(icon) = icon {
             attributes = attributes.with_window_icon(Some(icon));
         }

@@ -473,14 +473,15 @@ fn model_picker_for(
     active_scene_id: u64,
     intent: &str,
     current: &str,
-    hint: String,
 ) -> crate::editor::entity_properties::ModelPicker {
     let key = |v: &str| {
         v.replace('\\', "/")
             .trim_end_matches('/')
             .to_ascii_lowercase()
     };
+    let base = |v: &str| key(v.rsplit(['/', '\\']).next().unwrap_or(v));
     let current_key = key(current);
+    let current_base = base(current);
     let in_category = |m: &&crate::editor::assets::AssetEntry| {
         m.is_visible_in_scene(active_scene_id)
             && normalize_model_library_category(m.category.as_deref())
@@ -493,23 +494,41 @@ fn model_picker_for(
                     _ => "object",
                 }
     };
-    // Los modelos que aún se están importando NO son elegibles: el motor no
-    // tiene su malla lista y un reemplazo prematuro lo sacaría del cauce.
-    let loading = models
+    // El meta puede guardar la ruta de origen, el `model_id` o un marcador:
+    // compara por path, por nombre de archivo, por label y por `model_id`.
+    let is_current = |m: &&crate::editor::assets::AssetEntry| {
+        let label = if m.name.trim().is_empty() {
+            base(&m.path)
+        } else {
+            m.name.clone()
+        };
+        key(&m.path) == current_key
+            || base(&m.path) == current_base
+            || key(&label) == current_base
+            || m.model_id.as_deref().is_some_and(|id| key(id) == current_key)
+    };
+
+    // Nombre del modelo asignado, para mostrarlo encima del select.
+    let current_label = models
         .iter()
-        .filter(|m| in_category(m))
-        .filter(|m| matches!(m.state.as_deref(), Some("importing" | "failed")))
-        .count();
+        .find(|m| is_current(m))
+        .map(|m| {
+            if m.name.trim().is_empty() {
+                base(&m.path)
+            } else {
+                m.name.clone()
+            }
+        })
+        .unwrap_or_else(|| if current.is_empty() { "-".to_string() } else { base(current) });
+
     let mut choices: Vec<crate::editor::entity_properties::ModelChoice> = models
         .iter()
         .filter(|m| in_category(m))
+        // El modelo ya asignado no es una opción válida de reemplazo.
+        .filter(|m| !is_current(m))
         .map(|m| crate::editor::entity_properties::ModelChoice {
             label: if m.name.trim().is_empty() {
-                m.path
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or("model")
-                    .to_string()
+                base(&m.path)
             } else {
                 m.name.clone()
             },
@@ -519,28 +538,14 @@ fn model_picker_for(
         .collect();
     choices.sort_by_key(|choice| choice.label.to_ascii_lowercase());
 
-    // Preselecciona el modelo asignado: sigue en la lista, pero ya marcado.
-    // El meta puede guardar la ruta de origen y la biblioteca el `model_id`, así
-    // que se compara también por nombre de archivo.
-    let base = |v: &str| key(v.rsplit(['/', '\\']).next().unwrap_or(v));
-    let current_base = base(current);
-    let selected = choices
-        .iter()
-        .find(|choice| {
-            key(&choice.path) == current_key
-                || base(&choice.path) == current_base
-                || key(&choice.label) == current_base
-        })
-        .map(|choice| choice.path.clone())
-        .or_else(|| choices.first().map(|choice| choice.path.clone()));
     crate::editor::entity_properties::ModelPicker {
-        hint,
         choices,
-        selected,
-        loading,
+        // El select arranca vacío: el usuario elige explícitamente el nuevo modelo.
+        selected: None,
         active_scene_id,
         intent: intent.to_string(),
         current: current.to_string(),
+        current_label,
     }
 }
 
@@ -573,18 +578,12 @@ fn model_actions(
                 } else {
                     state.entity_category.as_deref().unwrap_or("object")
                 };
-                let hint = t(
-                    locale,
-                    "Selecciona el modelo con el que quieres reemplazar el actual.",
-                    "Pick the model you want to replace the current one with.",
-                );
                 let current = state.current_model_path.clone().unwrap_or_default();
                 state.model_picker = Some(model_picker_for(
                     models,
                     active_scene_id,
                     intent,
                     &current,
-                    hint,
                 ));
                 // El inspector se cierra mientras el selector está abierto. Si se
                 // cancela (X de la ventana) se reabrirá; si se confirma, no.
@@ -653,16 +652,24 @@ pub(crate) fn model_picker_window(ui: &mut egui::Ui, app: &mut EditorApp) {
         previous.active_scene_id,
         &previous.intent,
         &previous.current,
-        previous.hint.clone(),
     );
+    let is_ready = |path: &str| {
+        picker
+            .choices
+            .iter()
+            .find(|choice| choice.path == path)
+            .is_some_and(|choice| choice.state == "ready")
+    };
     if previous
         .selected
         .as_deref()
-        .is_some_and(|path| picker.choices.iter().any(|choice| choice.path == path))
+        .is_some_and(is_ready)
     {
         picker.selected = previous.selected;
-    } else {
-        picker.selected = picker.choices.first().map(|choice| choice.path.clone());
+    } else if !is_ready(picker.selected.as_deref().unwrap_or("")) {
+        // Nunca preseleccionar un modelo en carga: el actual ya viene marcado
+        // de `model_picker_for`; si no está listo, se deja sin selección.
+        picker.selected = None;
     }
 
     egui::CentralPanel::default()
@@ -672,59 +679,50 @@ pub(crate) fn model_picker_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                 .inner_margin(egui::Margin::same(12)),
         )
         .show(ui, |ui| {
-            ui.label(muted(&picker.hint, 12.0));
+            section_label(ui, &t(locale, "Modelo actual:", "Current model:"));
+            ui.label(body(&picker.current_label, 12.0));
             ui.add_space(8.0);
-            section_label(ui, &t(locale, "Modelo", "Model"));
-            let key = |v: &str| {
-                v.replace('\\', "/")
-                    .trim_end_matches('/')
-                    .to_ascii_lowercase()
-            };
-            let base = |v: &str| key(v.rsplit(['/', '\\']).next().unwrap_or(v));
-            let current_key = key(&picker.current);
-            let current_base = base(&picker.current);
-            let is_current = |path: &str, label: &str| {
-                key(path) == current_key || base(path) == current_base || key(label) == current_base
-            };
+            section_label(ui, &t(locale, "Nuevo modelo", "New model"));
 
             let selected_label = picker
                 .selected
                 .as_deref()
                 .and_then(|path| picker.choices.iter().find(|c| c.path == path))
                 .map(|choice| choice.label.clone())
-                .unwrap_or_else(|| "—".to_string());
+                .unwrap_or_else(|| "-".to_string());
             let mut changed: Option<String> = None;
             egui::ComboBox::from_id_salt("replace_model_picker")
                 .width(ui.available_width())
                 .selected_text(&selected_label)
                 .show_ui(ui, |ui| {
                     for choice in &picker.choices {
-                        let current = is_current(&choice.path, &choice.label);
                         let loading = choice.state == "importing";
                         let failed = choice.state == "failed";
-                        // El modelo asignado y los que aún cargan (o fallaron)
-                        // se muestran pero no se pueden elegir.
-                        let enabled = !current && !loading && !failed;
+                        // Los que aún cargan (o fallaron) se muestran con
+                        // spinner pero no se pueden elegir.
+                        let enabled = !loading && !failed;
                         ui.horizontal(|ui| {
                             if loading {
                                 ui.add(egui::Spinner::new().size(12.0));
                             }
-                            ui.add_enabled_ui(enabled, |ui| {
-                                let label = if current {
-                                    format!("{}  {}", icons::CHECK, choice.label)
-                                } else {
-                                    choice.label.clone()
-                                };
-                                if ui
-                                    .selectable_label(
-                                        picker.selected.as_deref() == Some(choice.path.as_str()),
-                                        label,
-                                    )
-                                    .clicked()
-                                {
-                                    changed = Some(choice.path.clone());
-                                }
-                            });
+                            // Ocupa todo el ancho de la opción: el click debe
+                            // funcionar en cualquier punto de la fila, no solo
+                            // sobre el texto del nombre.
+                            let width = ui.available_width();
+                            let response = ui.add_enabled(
+                                enabled,
+                                egui::Button::selectable(
+                                    picker.selected.as_deref() == Some(choice.path.as_str()),
+                                    choice.label.clone(),
+                                )
+                                .frame(false)
+                                .min_size(Vec2::new(width, 0.0)),
+                            );
+                            // `add_enabled` ya marca el Response como deshabilitado;
+                            // la guarda extra evita cualquier selección residual.
+                            if enabled && response.clicked() {
+                                changed = Some(choice.path.clone());
+                            }
                         });
                     }
                 });
@@ -733,7 +731,7 @@ pub(crate) fn model_picker_window(ui: &mut egui::Ui, app: &mut EditorApp) {
             }
 
             ui.add_space(12.0);
-            // El botón siempre se renderiza: si no hay cambio válido no envía nada.
+            // Se renderiza siempre, pero solo se habilita con un modelo elegido.
             if widgets::modal_button(
                 ui,
                 icons::CUBE,
@@ -744,8 +742,15 @@ pub(crate) fn model_picker_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                 ),
                 widgets::ModalButtonStyle::Primary,
                 ui.available_width(),
-                true,
+                picker.selected.is_some(),
             ) && let Some(path) = picker.selected.clone()
+                && picker
+                    .choices
+                    .iter()
+                    .find(|choice| choice.path == path)
+                    .is_some_and(|choice| {
+                        !matches!(choice.state.as_str(), "importing" | "failed")
+                    })
             {
                 let id = app.entity_properties.entity().map(|e| e.id).unwrap_or(0);
                 commands.push(json!({
@@ -2191,26 +2196,27 @@ mod tests {
             model("model_old", "Legacy", None, None),
         ];
 
-        let for_player = model_picker_for(&models, 1, "character", "", "hint".into());
+        let for_player = model_picker_for(&models, 1, "character", "");
         assert_eq!(paths(&for_player), ["model_hero"]);
-        assert_eq!(for_player.selected.as_deref(), Some("model_hero"));
+        assert_eq!(for_player.selected, None);
 
-        let for_object = model_picker_for(&models, 1, "object", "", "hint".into());
+        let for_object = model_picker_for(&models, 1, "object", "");
         assert_eq!(paths(&for_object), ["model_old", "model_rock"]);
     }
 
     #[test]
-    fn current_model_stays_in_the_list_and_comes_preselected() {
+    fn current_model_is_excluded_and_shown_above_the_select() {
         let models = vec![
             model("model_hero", "Hero", Some("character"), None),
             model("model_other", "Other", Some("character"), Some(7)),
-            model("model_old_hero", "Old", Some("character"), None),
+            model("model_old_hero", "Old Hero", Some("character"), None),
         ];
 
-        let picker = model_picker_for(&models, 1, "character", "model_old_hero", "hint".into());
-        // El de otra escena se oculta; el asignado sí aparece y viene marcado.
-        assert_eq!(paths(&picker), ["model_hero", "model_old_hero"]);
-        assert_eq!(picker.selected.as_deref(), Some("model_old_hero"));
+        let picker = model_picker_for(&models, 1, "character", "model_old_hero");
+        // El actual se excluye y se muestra arriba; el de otra escena se oculta.
+        assert_eq!(paths(&picker), ["model_hero"]);
+        assert_eq!(picker.current_label, "Old Hero");
+        assert_eq!(picker.selected, None);
     }
 
     #[test]
@@ -2221,9 +2227,9 @@ mod tests {
             model("model_hero", "Hero", Some("character"), None),
         ];
 
-        let weapon = model_picker_for(&models, 1, "weapon", "", "hint".into());
+        let weapon = model_picker_for(&models, 1, "weapon", "");
         assert_eq!(paths(&weapon), ["model_sword"]);
-        let projectile = model_picker_for(&models, 1, "projectile", "", "hint".into());
+        let projectile = model_picker_for(&models, 1, "projectile", "");
         assert_eq!(paths(&projectile), ["model_bullet"]);
     }
 
@@ -2235,13 +2241,12 @@ mod tests {
             model_with_state("model_failed", "Failed", Some("character"), "failed"),
         ];
 
-        let picker = model_picker_for(&models, 1, "character", "", "hint".into());
+        let picker = model_picker_for(&models, 1, "character", "");
         // Siguen en la lista (el combo los pinta con spinner / deshabilitados).
         assert_eq!(
             paths(&picker),
             ["model_failed", "model_hero", "model_loading"]
         );
-        assert_eq!(picker.loading, 2);
         let states: Vec<&str> = picker
             .choices
             .iter()
