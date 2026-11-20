@@ -11,9 +11,11 @@
   },
   "contributors": [],
   "scripts": {
-    "predev": "yarn rust:build:editor",
+    "predev": "cargo clean --manifest-path src/main/Engine/Cargo.toml --profile dev && yarn rust:build:editor",
     "dev": "cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true RER_ENGINE_PROFILE=debug electron-vite dev",
-    "start": "yarn rust:build:editor:release && cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true RER_ENGINE_PROFILE=release electron-vite dev",
+    "dev:local": "cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true RER_ENGINE_PROFILE=debug electron-vite dev",
+    "start": "cargo clean --manifest-path src/main/Engine/Cargo.toml --profile dev && yarn rust:build:editor:release && cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true RER_ENGINE_PROFILE=release electron-vite dev",
+    "start:local": "cross-env ELECTRON_DISABLE_SECURITY_WARNINGS=true RER_ENGINE_PROFILE=release electron-vite dev",
     "prebuild": "yarn rust:build",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
