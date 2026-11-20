@@ -123,6 +123,8 @@ pub(crate) fn saved_scene_from_snapshot_payload(
             graphicsTextureTier: p.world.graphics_texture_tier.clone(),
             textureDetailDistance: p.world.texture_detail_distance_m,
             reflectionTier: p.world.reflection_tier.clone(),
+            reflectionMode: p.world.reflection_mode.clone(),
+            rtTier: p.world.rt_tier.clone(),
             reflectionRaytracing: p.world.reflection_raytracing,
             reflectionProbes: p.world.reflection_probes,
             shadowTier: p.world.shadow_tier.clone(),
@@ -226,6 +228,8 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
                 .wire()
                 .to_string(),
         ),
+        reflectionMode: Some("off".to_string()),
+        rtTier: Some("low".to_string()),
         reflectionRaytracing: None,
         reflectionProbes: None,
         shadowTier: Some(

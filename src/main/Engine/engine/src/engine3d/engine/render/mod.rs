@@ -15,7 +15,7 @@ use winit::dpi::PhysicalSize;
 use rer_engine_core::surface::{SurfacePresentError, SurfacePresentError::*};
 
 use crate::engine3d::bvh::{RtMaterialGpu, RtSceneBlob, RtTriangle};
-use crate::engine3d::config_3d::reflection_graphics::ReflectionTier;
+use crate::engine3d::config_3d::reflection_graphics::{ReflectionDebugView, ReflectionMode};
 use crate::engine3d::ecs::{MeshComponent, SurfacePbr};
 use crate::engine3d::vulkan::{FrameAcquire, FrameTarget, MeshBatch, RtBatch, SkinnedBatch};
 
@@ -132,8 +132,10 @@ impl State {
 
         let size = self.size;
         let aspect = size.width as f32 / size.height.max(1) as f32;
-        let reflections = self.reflection_tier != ReflectionTier::Off;
-        let raytracing = reflections && self.reflection_raytracing_enabled;
+        // SSR y RTX son mutuamente excluyentes: el modo decide la cadena completa.
+        let reflections = self.reflection_mode.is_active();
+        let raytracing = self.reflection_mode == ReflectionMode::Rt;
+        let ssr = self.reflection_mode == ReflectionMode::Ssr;
 
         // Probes: la lista se resuelve una vez por frame (gizmos + captura).
         let mut probe_list: Vec<(crate::engine3d::ecs::EntityId, GlamVec3, usize)> = Vec::new();
@@ -905,12 +907,14 @@ impl State {
             shadow_map_size: self.active_shadow_map_size(),
             msaa_samples: self.msaa_sample_count,
             ssaa_scale: self.ssaa_scale,
-            debug_ssr_view: self.reflection_debug_view
-                != crate::engine3d::config_3d::reflection_graphics::ReflectionDebugView::Final,
+            debug_ssr_view: self.reflection_debug_view == ReflectionDebugView::SsrDebug,
+            debug_rt_view: self.reflection_debug_view == ReflectionDebugView::RtDebug,
             taa_enabled: self.taa_enabled,
             taa_blend: self.taa_blend,
             reflections,
+            ssr,
             raytracing,
+            rtx: self.rtx_preset(),
             probe_captures: &probe_captures,
             static_batches: &static_batches,
             shadow_static_batches: &shadow_static_batches,

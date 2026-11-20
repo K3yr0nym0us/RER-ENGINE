@@ -542,7 +542,9 @@ impl State {
                     self.clear_active_player_ui_screen();
                 }
                 ScriptCmd::SetGraphicsTextureTier { .. } => {}
-                ScriptCmd::SetReflectionTier { .. } => {}
+                ScriptCmd::SetReflectionTier { .. }
+                | ScriptCmd::SetRtTier { .. }
+                | ScriptCmd::SetReflectionMode { .. } => {}
                 ScriptCmd::SetInteractable { .. }
                 | ScriptCmd::DespawnEntity { .. }
                 | ScriptCmd::ToggleDemoFire => {}

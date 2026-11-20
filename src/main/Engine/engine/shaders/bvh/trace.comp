@@ -4,7 +4,8 @@ layout(local_size_x = 8, local_size_y = 8) in;
 // Mismos umbrales que el trazado por hardware (reflect.rgen) y que SSR/composite, para que el
 // fallback por software y el camino de RT no delimiten superficies distintas.
 const float REFL_MIRROR_ROUGHNESS_MAX = 0.04;
-const float REFL_MAX_ROUGHNESS = 0.70;
+const int MAX_RAYS = 4;
+const int MAX_BOUNCES = 3;
 
 struct BvhNode {
     vec4 bbox_min;
@@ -41,6 +42,7 @@ layout(set = 0, binding = 0) uniform TraceU {
     vec4 sky_top;           // rgb = azul (cara superior), w = punto de azul pleno
     vec4 sky_sun;           // xyz = dirección al sol, w = intensidad del brillo
     vec4 sky_sun_color;     // rgb = azul claro del brillo
+    vec4 rt_params;         // x = rayos/píxel, y = rebotes, z = distancia, w = roughness máx.
 } u;
 
 // Intersección con la esfera de cielo y degradado vertical: azul oscuro abajo, azul cielo arriba.
@@ -114,7 +116,7 @@ bool ray_tri(vec3 origin, vec3 dir, vec3 v0, vec3 v1, vec3 v2, out float t, out 
     return true;
 }
 
-bool trace_bvh(vec3 origin, vec3 dir, out vec3 hit_n, out uint slot) {
+bool trace_bvh(vec3 origin, vec3 dir, out vec3 hit_n, out uint slot, out float t_hit, float t_max) {
     if (u.counts.x == 0u) {
         return false;
     }
@@ -122,7 +124,7 @@ bool trace_bvh(vec3 origin, vec3 dir, out vec3 hit_n, out uint slot) {
     uint stack[32];
     int sp = 0;
     stack[0] = 0u;
-    float best_t = 1e9;
+    float best_t = max(t_max, 0.001);
     bool hit = false;
     while (sp >= 0) {
         uint idx = stack[sp];
@@ -148,7 +150,30 @@ bool trace_bvh(vec3 origin, vec3 dir, out vec3 hit_n, out uint slot) {
             stack[++sp] = node.right_or_tri_count;
         }
     }
+    if (hit) {
+        t_hit = best_t;
+    }
     return hit;
+}
+
+vec2 ray_jitter(int index) {
+    const vec2 offsets[4] = vec2[4](
+        vec2( 0.25,  0.33),
+        vec2(-0.30,  0.17),
+        vec2( 0.12, -0.28),
+        vec2(-0.18, -0.11)
+    );
+    return offsets[index % 4];
+}
+
+vec3 shade_hit(vec3 hit_n, vec3 dir, uint slot) {
+    if (dot(hit_n, dir) > 0.0) {
+        hit_n = -hit_n;
+    }
+    vec3 albedo = mats[min(slot, max(u.counts.w, 1u) - 1u)].albedo.rgb;
+    float ndotl = max(dot(hit_n, normalize(u.light_dir.xyz)), 0.0);
+    float ambient = clamp(u.light_dir.w, 0.0, 1.0);
+    return albedo * (ambient + (1.0 - ambient) * ndotl);
 }
 
 void main() {
@@ -159,47 +184,68 @@ void main() {
     vec2 uv = (vec2(pix) + vec2(0.5)) / max(u.resolution.xy, vec2(1.0));
     vec3 origin = u.cam_pos.xyz;
     vec3 dir;
-    vec3 sky = vec3(0.0);
     float confidence = 1.0;
+    int rays = clamp(int(u.rt_params.x), 1, MAX_RAYS);
+    int bounces = clamp(int(u.rt_params.y), 1, MAX_BOUNCES);
+    float t_max = max(u.rt_params.z, 1.0);
+
     if (u.counts.z == 0u) {
+        // Fondo: un solo rayo desde la cámara, igual que siempre.
         vec2 ndc = vec2(uv.x * 2.0 - 1.0, (1.0 - uv.y) * 2.0 - 1.0);
         vec4 target = u.inv_view_proj * vec4(ndc, 1.0, 1.0);
         dir = normalize(target.xyz / target.w - origin);
-    } else {
-        float depth = texture(depth_tex, uv).r;
-        if (depth >= 0.9999) {
-            imageStore(image_out, pix, vec4(0.0));
-            return;
+        vec3 color = sky_color(origin, dir);
+        vec3 hit_n;
+        uint slot;
+        float t_hit;
+        // El fondo usa su propia distancia: el preset RTX solo limita los reflejos.
+        if (trace_bvh(origin, dir, hit_n, slot, t_hit, 10000.0)) {
+            color = shade_hit(hit_n, dir, slot);
         }
-        vec4 nr = texture(normal_tex, uv);
-        // Espejos y materiales mates se resuelven en SSR/composite; mismos umbrales que el resto.
-        if (nr.w <= REFL_MIRROR_ROUGHNESS_MAX || nr.w > REFL_MAX_ROUGHNESS) {
-            imageStore(image_out, pix, vec4(0.0));
-            return;
-        }
-        vec2 ndc = vec2(uv.x * 2.0 - 1.0, (1.0 - uv.y) * 2.0 - 1.0);
-        vec4 world_h = u.inv_view_proj * vec4(ndc, depth, 1.0);
-        vec3 world = world_h.xyz / world_h.w;
-        vec3 n = normalize(nr.xyz * 2.0 - 1.0);
-        dir = reflect(normalize(world - origin), n);
-        origin = world + n * 0.03;
-        confidence = 1.0 - nr.w;
+        imageStore(image_out, pix, vec4(color, 1.0));
+        return;
     }
-    sky = sky_color(origin, dir);
-    vec3 hit_n;
-    uint slot = 0u;
-    vec3 color = sky;
-    if (trace_bvh(origin, dir, hit_n, slot)) {
-        if (dot(hit_n, dir) > 0.0) {
-            hit_n = -hit_n;
-        }
-        vec3 albedo = mats[min(slot, max(u.counts.w, 1u) - 1u)].albedo.rgb;
-        float ndotl = max(dot(hit_n, normalize(u.light_dir.xyz)), 0.0);
-        float ambient = clamp(u.light_dir.w, 0.0, 1.0);
-        color = albedo * (ambient + (1.0 - ambient) * ndotl);
-    } else if (u.counts.z != 0u) {
+
+    float depth = texture(depth_tex, uv).r;
+    if (depth >= 0.9999) {
         imageStore(image_out, pix, vec4(0.0));
         return;
     }
-    imageStore(image_out, pix, vec4(color, confidence));
+    vec4 nr = texture(normal_tex, uv);
+    if (nr.w <= REFL_MIRROR_ROUGHNESS_MAX || nr.w > u.rt_params.w) {
+        imageStore(image_out, pix, vec4(0.0));
+        return;
+    }
+    vec2 ndc = vec2(uv.x * 2.0 - 1.0, (1.0 - uv.y) * 2.0 - 1.0);
+    vec4 world_h = u.inv_view_proj * vec4(ndc, depth, 1.0);
+    vec3 world = world_h.xyz / world_h.w;
+    vec3 n = normalize(nr.xyz * 2.0 - 1.0);
+    dir = reflect(normalize(world - origin), n);
+    confidence = 1.0 - min(nr.w, u.rt_params.w);
+
+    vec3 accumulated = vec3(0.0);
+    for (int r = 0; r < rays; r++) {
+        vec3 ray_dir = normalize(dir + vec3(ray_jitter(r) * nr.w, 0.0));
+        vec3 ray_origin = world + n * 0.03;
+        vec3 color = vec3(0.0);
+        float throughput = 1.0;
+        for (int b = 0; b < bounces; b++) {
+            vec3 hit_n;
+            uint slot;
+            float t_hit;
+            if (!trace_bvh(ray_origin, ray_dir, hit_n, slot, t_hit, t_max)) {
+                color += sky_color(ray_origin, ray_dir) * throughput;
+                break;
+            }
+            color += shade_hit(hit_n, ray_dir, slot) * throughput;
+            if (dot(hit_n, ray_dir) > 0.0) {
+                hit_n = -hit_n;
+            }
+            ray_origin = ray_origin + ray_dir * t_hit + hit_n * 0.02;
+            ray_dir = reflect(ray_dir, hit_n);
+            throughput *= 0.5;
+        }
+        accumulated += color;
+    }
+    imageStore(image_out, pix, vec4(accumulated / float(rays), confidence));
 }

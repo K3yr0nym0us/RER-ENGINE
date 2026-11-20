@@ -402,11 +402,15 @@ pub struct State {
     /// Nivel gráfico global de texturas GLB embebidas.
     pub(crate) graphics_texture_tier:
         crate::engine3d::config_3d::texture_graphics::TextureGraphicsTier,
-    /// Nivel global de reflejos (Off / Low / Medium / High).
+    /// Tier de SSR. El nombre se conserva por compatibilidad con `.save` antiguos.
     pub(crate) reflection_tier: crate::engine3d::config_3d::reflection_graphics::ReflectionTier,
-    /// Captura y muestreo de reflection probes (toggle editor, independiente del SSR).
+    /// Sistema de reflejos activo: Off / SSR / RT (mutuamente excluyentes).
+    pub(crate) reflection_mode: crate::engine3d::config_3d::reflection_graphics::ReflectionMode,
+    /// Tier de RTX. Sus parámetros reales viven en `RtxPreset::for_tier`.
+    pub(crate) rt_tier: crate::engine3d::config_3d::reflection_graphics::ReflectionTier,
+    /// Captura y muestreo de reflection probes (toggle editor, sin cambios de comportamiento).
     pub(crate) reflection_probes_enabled: bool,
-    /// Ray tracing HW (toggle editor, independiente del tier).
+    /// Espejo de `reflection_mode == Rt` para los caminos que aún leen este flag.
     pub(crate) reflection_raytracing_enabled: bool,
     /// Vista debug de reflejos (editor).
     pub(crate) reflection_debug_view:

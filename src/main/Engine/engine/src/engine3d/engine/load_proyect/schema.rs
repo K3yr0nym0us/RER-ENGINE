@@ -125,6 +125,10 @@ pub(crate) struct SavedWorldConfig {
     #[serde(default)]
     pub(crate) reflectionTier: Option<String>,
     #[serde(default)]
+    pub(crate) reflectionMode: Option<String>,
+    #[serde(default)]
+    pub(crate) rtTier: Option<String>,
+    #[serde(default)]
     pub(crate) reflectionRaytracing: Option<bool>,
     #[serde(default)]
     pub(crate) reflectionProbes: Option<bool>,

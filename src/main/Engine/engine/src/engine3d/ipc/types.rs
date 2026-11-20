@@ -55,6 +55,12 @@ pub struct SaveWorldSnapshot {
     pub texture_detail_distance_m: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reflection_tier: Option<String>,
+    /// Sistema activo (off/ssr/rt). `None` en saves anteriores a la separación.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reflection_mode: Option<String>,
+    /// Tier de RTX. `None` en saves anteriores a la separación.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rt_tier: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reflection_raytracing: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -826,6 +832,10 @@ pub struct ProjectLoaded3dWorld {
     pub textureDetailDistance: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reflectionTier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reflectionMode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rtTier: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reflectionRaytracing: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]

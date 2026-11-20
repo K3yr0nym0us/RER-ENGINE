@@ -424,6 +424,24 @@ impl State {
                         self.set_reflection_tier(t);
                     }
                 }
+                ScriptCmd::SetRtTier { tier } => {
+                    if let Some(t) =
+                        crate::engine3d::config_3d::reflection_graphics::ReflectionTier::from_wire(
+                            &tier,
+                        )
+                    {
+                        self.set_rt_tier(t);
+                    }
+                }
+                ScriptCmd::SetReflectionMode { mode } => {
+                    if let Some(m) =
+                        crate::engine3d::config_3d::reflection_graphics::ReflectionMode::from_wire(
+                            &mode,
+                        )
+                    {
+                        self.set_reflection_mode(m);
+                    }
+                }
                 ScriptCmd::FireProjectile {
                     template_id,
                     from_id,

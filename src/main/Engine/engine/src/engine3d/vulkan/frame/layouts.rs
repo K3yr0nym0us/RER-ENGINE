@@ -308,6 +308,10 @@ pub(super) fn create_sets(
             alloc_set(device, pool, denoise)?,
             alloc_set(device, pool, denoise)?,
         ],
+        denoise_pingpong: [
+            alloc_set(device, pool, denoise)?,
+            alloc_set(device, pool, denoise)?,
+        ],
         composite: [
             alloc_set(device, pool, full)?,
             alloc_set(device, pool, full)?,

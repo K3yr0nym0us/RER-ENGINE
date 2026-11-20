@@ -105,6 +105,7 @@ ash_validation_audit:
       gizmo reutilizan `static_vertex()` (9 atributos). Inofensivo.
   pending_repro:
     - |
+      Para reflejos RT usar `rt_debug` (presenta `targets.reflection` en crudo).
       Eco/duplicado en reflejos SSR: separar con la vista de debug `ssr_debug` (presenta `targets.ssr`
       en crudo). Si el eco aparece ahí, es del marchado en espacio de pantalla; si no, de la capa A.
 

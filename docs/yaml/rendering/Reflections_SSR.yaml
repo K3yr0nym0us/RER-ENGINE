@@ -1,6 +1,6 @@
 # Screen-Space Reflections (SSR) — motor 3D
 #
-# Detalle on-screen de reflejos. Independiente del toggle RT; el tier define calidad.
+# Detalle on-screen de reflejos. SSR y RT son mutuamente excluyentes (ReflectionMode).
 #
 # Relacionado con:
 #   - docs/yaml/rendering/Reflections_3D.yaml (índice general)
@@ -8,8 +8,8 @@
 #   - docs/yaml/rendering/Reflections_Probes.yaml (fallback cubemap en miss SSR)
 #   - docs/yaml/rendering/TAA_3D.yaml (G-buffer, depth prepass)
 
-version: 5
-updated: 2026-11-09
+version: 6
+updated: 2026-11-20
 status: implemented
 
 principle:
@@ -19,16 +19,15 @@ principle:
     (depth D32 en layout READ_ONLY, normal+roughness, world pos) + la escena ya iluminada como
     color del hit. En miss, composite decide SSR o el trazado (RT/BVH) según confianza.
   tier_philosophy: |
-    En el renderizador Ash el tier SOLO enciende/apaga la cadena: `reflections = tier != Off`.
-    Los pasos de la marcha, la resolución del buffer y el blend temporal por tier eran de la era
-    wgpu (`reflections/quality_preset.rs`) y no se portaron: hoy la marcha es fija
-    (pasos i = 2..16 a radio 1× viewport) y el denoise usa radio de 1 texel.
+    El tier SSR sigue encendiendo/apagando su cadena, pero ahora el sistema lo elige
+    `ReflectionMode`: con `mode = ssr` corre SSR; con `mode = rt` NO corre el pase SSR.
+    Los pasos de la marcha y la resolución del buffer SSR siguen fijos (era wgpu, no portados).
+    Los parámetros por tier viven ahora en el preset RTX (ver Reflections_RT.yaml).
   opt_in: |
-    Umbrales compartidos como constantes GLSL en `ssr.frag`, `composite.frag`, `reflect.rgen` y
-    `trace.comp`: `REFL_MIRROR_ROUGHNESS_MAX = 0.04` y `REFL_MAX_ROUGHNESS = 0.70`.
-    `ssr.frag` marcha para roughness ≤ 0.70, espejos incluidos; `composite.frag` fuerza SSR puro en
-    roughness ≤ 0.04; el trazado (`reflect.rgen`, `trace.comp`) salta roughness ≤ 0.04 (espejo =
-    SSR) y roughness > 0.70.
+    `REFL_MIRROR_ROUGHNESS_MAX = 0.04` sigue fijo en `ssr.frag`/`composite.frag`/`reflect.rgen`/
+    `trace.comp`. `REFL_MAX_ROUGHNESS = 0.70` sigue en `ssr.frag`; en el trazado lo sustituye
+    `rt_params.w` del preset RTX. En modo RT la imagen SSR se limpia, así que `composite.frag`
+    solo fuerza SSR en espejos si el pase SSR se ejecutó.
 
 source_of_truth:
   rust:
@@ -58,11 +57,11 @@ resolution_by_tier:
 
 order_in_frame: |
   1. Forward MRT (scene / normal_rough / albedo / world / velocity) + sombra.
-  2. Si `reflections && raytracing`: trazado de reflejos (RT por hardware o BVH) a
-     `targets.reflection`, con barreras normal/depth → trazado y trazado → denoise.
-  3. `ssr.frag` → `targets.ssr` (si no hay trazado, `reflection` se limpia a 0 para que
-     composite caiga en SSR).
-  4. `denoise.frag` → `targets.denoise` (kernel 3×3 ponderado por profundidad y normal).
+  2. Si `mode = rt`: trazado de reflejos (RT por hardware o BVH) a `targets.reflection`,
+     con barreras normal/depth → trazado y trazado → denoise. `targets.ssr` se limpia a 0.
+  3. Si `mode = ssr`: `ssr.frag` → `targets.ssr`; `reflection` se limpia a 0 para que
+     composite caiga en SSR.
+  4. `denoise.frag` → `targets.denoise` (kernel 3×3; en RT, N pasadas del preset con ping-pong).
   5. `composite.frag` mezcla scene + reflejo (peso `(1 - roughness) × confianza`) → `history[slot]`.
   6. TAA de escena (opcional) y present.
 
@@ -128,6 +127,7 @@ profiler:
     `reflection_profiler` no se portaron a Ash; no hay `ssr_ms` en el motor actual.
 
 ipc:
-  tier: set_reflection_tier
+  mode: set_reflection_mode      # "ssr" activa SSR y desactiva RT
+  tier: set_reflection_tier      # tier de SSR
   debug: set_reflection_debug_view
-  note: SSR no tiene toggle propio; depende de tier ≠ off
+  note: el check del accordion es `reflectionMode == "ssr"`; rt_debug está en Reflections_RT.yaml

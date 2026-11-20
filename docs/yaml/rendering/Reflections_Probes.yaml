@@ -20,8 +20,8 @@ principle:
   toggle: |
     Editor: reflection_probes_enabled (persistido en .save como reflectionProbes).
     Si OFF: no captura y el termino IBL del forward queda en cero (`light_params.y = 0`).
-    Los probes solo existen con el tier de reflejos ≠ off (la lista de sondas se resuelve con
-    `reflections` activo).
+    Los probes solo existen con un sistema de reflejos activo (SSR o RT; antes: tier ≠ off).
+    Su comportamiento no ha cambiado: selección por volumen/radio y switch global.
   tier_philosophy: |
     En Ash el tier NO cambia la resolución del cubemap: todas las ranuras usan
     `PROBE_FACE_SIZE` fijo. El `cubemap_face_size` por tier de la era wgpu no se portó.

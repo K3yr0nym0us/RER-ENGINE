@@ -12,11 +12,11 @@ impl FrameRenderer {
     ) -> Result<(), VulkanError> {
         let extent = self.targets.extent;
         let clamp = self.samplers[2];
-        if self.last_reflections != input.reflections {
-            // Al activar/desactivar reflejos cambia el historial de destino; no se puede
-            // mezclar con el de la modalidad anterior.
+        let mode_key = u8::from(input.ssr) | (u8::from(input.raytracing) << 1);
+        if self.last_reflection_mode != mode_key {
+            // Al cambiar de sistema (o de Off a activo) cambia el historial de destino.
             self.taa_history_valid = false;
-            self.last_reflections = input.reflections;
+            self.last_reflection_mode = mode_key;
         }
         if input.reflections && !input.raytracing {
             // Sin trazado, el composite debe caer en SSR: limpia el reflejo RT anterior.
@@ -24,45 +24,58 @@ impl FrameRenderer {
                 device,
                 cmd,
                 self.targets.reflection.image,
+                self.rt_extent(),
+                [0.0, 0.0, 0.0, 0.0],
+            );
+        }
+        if input.reflections && !input.ssr {
+            // Con RT el composite no debe leer un SSR viejo: roughness baja fuerza SSR en el
+            // shader, así que dejamos la imagen limpia para que aporte cero.
+            clear_image_color(
+                device,
+                cmd,
+                self.targets.ssr.image,
                 extent,
                 [0.0, 0.0, 0.0, 0.0],
             );
         }
         let source = if input.reflections {
-            write_combined(
-                device,
-                self.sets.ssr[slot],
-                0,
-                self.targets.depth.view,
-                clamp,
-                vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
-            )?;
-            write_combined(
-                device,
-                self.sets.ssr[slot],
-                1,
-                self.targets.normal.view,
-                clamp,
-                vk::ImageLayout::GENERAL,
-            )?;
-            write_combined(
-                device,
-                self.sets.ssr[slot],
-                2,
-                self.targets.scene.view,
-                clamp,
-                vk::ImageLayout::GENERAL,
-            )?;
-            draw_fullscreen(
-                device,
-                cmd,
-                pipes.ssr,
-                self.layouts[6],
-                self.sets.ssr[slot],
-                self.targets.ssr.view,
-                extent,
-                &[],
-            );
+            if input.ssr {
+                write_combined(
+                    device,
+                    self.sets.ssr[slot],
+                    0,
+                    self.targets.depth.view,
+                    clamp,
+                    vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                )?;
+                write_combined(
+                    device,
+                    self.sets.ssr[slot],
+                    1,
+                    self.targets.normal.view,
+                    clamp,
+                    vk::ImageLayout::GENERAL,
+                )?;
+                write_combined(
+                    device,
+                    self.sets.ssr[slot],
+                    2,
+                    self.targets.scene.view,
+                    clamp,
+                    vk::ImageLayout::GENERAL,
+                )?;
+                draw_fullscreen(
+                    device,
+                    cmd,
+                    pipes.ssr,
+                    self.layouts[6],
+                    self.sets.ssr[slot],
+                    self.targets.ssr.view,
+                    extent,
+                    &[],
+                );
+            }
             write_combined(
                 device,
                 self.sets.denoise[slot],
@@ -87,7 +100,18 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
-            let step = 1.0f32.to_le_bytes();
+            // El preset RTX solo afecta al denoise cuando se traza; en SSR se mantiene la pasada única.
+            let passes = if input.raytracing {
+                input.rtx.denoise_passes.max(1)
+            } else {
+                1
+            };
+            let step = if input.raytracing {
+                input.rtx.denoise_step.max(0.25)
+            } else {
+                1.0
+            }
+            .to_le_bytes();
             draw_fullscreen(
                 device,
                 cmd,
@@ -98,6 +122,44 @@ impl FrameRenderer {
                 extent,
                 &step,
             );
+            // Pasadas extra del tier RTX (ping-pong). Se usan sets distintos para que las
+            // escrituras de descriptores no alteren las pasadas ya grabadas en el command buffer.
+            let mut denoised = self.targets.denoise.view;
+            for pass in 1..passes {
+                let set = self.sets.denoise_pingpong[slot];
+                write_combined(device, set, 0, denoised, clamp, vk::ImageLayout::GENERAL)?;
+                write_combined(
+                    device,
+                    set,
+                    1,
+                    self.targets.depth.view,
+                    clamp,
+                    vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+                )?;
+                write_combined(
+                    device,
+                    set,
+                    2,
+                    self.targets.normal.view,
+                    clamp,
+                    vk::ImageLayout::GENERAL,
+                )?;
+                denoised = if pass % 2 == 1 {
+                    self.targets.denoise2.view
+                } else {
+                    self.targets.denoise.view
+                };
+                draw_fullscreen(
+                    device,
+                    cmd,
+                    pipes.denoise,
+                    self.layouts[8],
+                    set,
+                    denoised,
+                    extent,
+                    &step,
+                );
+            }
             write_combined(
                 device,
                 self.sets.composite[slot],
@@ -110,7 +172,7 @@ impl FrameRenderer {
                 device,
                 self.sets.composite[slot],
                 1,
-                self.targets.denoise.view,
+                denoised,
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -182,8 +244,13 @@ impl FrameRenderer {
                 vk::ImageLayout::GENERAL,
             )?;
             let mut push = [0u8; 8];
-            let blend = if self.taa_history_valid {
+            let desired_blend = if input.raytracing {
+                input.rtx.temporal_blend
+            } else {
                 input.taa_blend
+            };
+            let blend = if self.taa_history_valid {
+                desired_blend
             } else {
                 0.0
             };
@@ -206,7 +273,9 @@ impl FrameRenderer {
         self.taa_history_valid = input.taa_enabled;
         // Vista de debug del editor: se presenta la imagen SSR/trazada en crudo, sin composite ni
         // TAA encima, para ver qué devuelve realmente el pase de reflejos.
-        let present_source = if input.debug_ssr_view && input.reflections {
+        let present_source = if input.debug_rt_view && input.raytracing {
+            self.targets.reflection.view
+        } else if input.debug_ssr_view && input.ssr {
             self.targets.ssr.view
         } else {
             present_source

@@ -13,19 +13,20 @@
 #   - docs/yaml/rendering/Shadows_3D.yaml
 #   - docs/yaml/rendering/Reflections_Diagnostics.yaml
 
-version: 8
-updated: 2026-11-09
+version: 9
+updated: 2026-11-20
 
 principle:
   owner: motor_3d
   philosophy: |
-    Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame/mod.rs`. El tier SOLO enciende o
-    apaga la cadena de reflejos (`reflections = tier != off`); la calidad por tier
-    (resolución, pasos, rebotes, denoise, material RT) era de la era wgpu y no se portó.
-    RT = fuente adicional de información (toggle editor reflectionRaytracing), con fallback BVH
-    por software cuando el adaptador no expone las extensiones de trazado.
-    RT OFF → SSR + composite. RT ON → SSR + trazado; los espejos (roughness ≤ 0.04) los resuelve
-    composite con SSR.
+    Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame/mod.rs`. SSR y RTX son
+    sistemas INDEPENDIENTES Y MUTUAMENTE EXCLUYENTES: `ReflectionMode` decide cuál corre (o ninguno).
+    Cada sistema tiene su propia fila de tiers en el accordion World → Reflejos:
+    - SSR: la fila histórica; cadena SSR → denoise → composite.
+    - RTX: `RtxPreset` por tier (resolución, rayos, rebotes, denoise, TAA, roughness, distancia, BVH).
+    Con RT activo no se ejecuta el pase SSR; con SSR activo no se trazan rayos. Fallback BVH por
+    software cuando el adaptador no expone las extensiones de trazado.
+    Las reflection probes conservan su comportamiento anterior (selección por volumen/radio).
   pipeline_layers:
     A_forward_ibl: shaders/raster/forward.frag — samplerCubeArray por instancia (ver docs/yaml/rendering/Reflections_Probes.yaml)
     B_ssr_rt: shaders/raster/ssr.frag + shaders/rt/* + shaders/bvh/trace.comp — detalle on-screen
@@ -52,26 +53,33 @@ graphics_tiers:
 
 quality_preset:
   status: |
-    No portado a Ash. El modulo `reflections/quality_preset.rs` de la era wgpu (ya no esta en el
-    repo) centraliza distancia RT, rebotes, shadow rays, denoise y material_quality por tier; hoy
-    no existe un preset que derive esos valores del tier. Lo unico que el tier produce es el
-    booleano `reflections` en `FrameInput`.
+    El tier SSR mantiene su comportamiento histórico (enciende/apaga la cadena). El tier RTX sí
+    tiene preset real en `config_3d/reflection_graphics.rs::RtxPreset`, aplicado en:
+    - `Targets::resize_rt` (resolución 50/67/85/100%)
+    - `rt/reflect.rgen` y `bvh/trace.comp` (rayos/píxel, rebotes, distancia, roughness)
+    - `present.rs` (pasadas de denoise y blend temporal)
+    - `accel.rs` / `bvh.rs` (calidad de BVH)
 
 editor_toggles:
-  reflectionTier: enciende/apaga la cadena (persistido .save, default off)
-  reflectionRaytracing: RT ON/OFF (persistido .save); requiere tier ≠ off
-  reflectionProbes: probes ON/OFF (persistido .save)
-  reflectionDebugView: final | ssr_debug (ver docs/yaml/rendering/Reflections_SSR.yaml)
+  reflectionMode: off | ssr | rt (persistido .save, default off). Los checks son radio:
+    activar uno desactiva el otro.
+  reflectionTier: tier de SSR (persistido .save como reflectionTier)
+  rtTier: tier de RTX (persistido .save como rtTier)
+  reflectionProbes: probes ON/OFF (persistido .save; comportamiento sin cambios)
+  reflectionDebugView: final | ssr_debug | rt_debug
+  reflectionRaytracing: alias legacy de `reflectionMode == rt` (solo lectura/migración)
 
 internal_settings:
   description: |
     El `ReflectionSettings` derivado del tier ya no existe; los parámetros están fijos en los
     shaders GLSL y en `vulkan/frame/mod.rs`.
   live_inputs:
-    - reflections (tier != off)
-    - raytracing (reflectionRaytracing && hw_rt)
-    - probe_captures (origen + ranura por sonda)
-    - debug_ssr_view (vista de debug)
+    - reflection_mode (off | ssr | rt)
+    - ssr (reflectionMode == ssr)
+    - raytracing (reflectionMode == rt && hw_rt)
+    - rtx (preset derivado de rtTier)
+    - probe_captures (origen + ranura por sonda; sin cambios)
+    - debug_ssr_view / debug_rt_view (vista de debug)
 
 g_buffer:
   scene_mrt: |
@@ -96,20 +104,25 @@ frame_order:
     - resolve_present (ssr → denoise → composite → TAA → present; gizmos y HUD después)
 
 commands:
+  set_reflection_mode:
+    params: { mode: off | ssr | rt }
   set_reflection_tier:
-    params: { tier: off | low | medium | high | ultra }
+    params: { tier: off | low | medium | high | ultra }   # SSR
+  set_rt_tier:
+    params: { tier: off | low | medium | high | ultra }   # RTX
   set_reflection_raytracing:
-    params: { enabled: bool }
+    params: { enabled: bool }   # legacy: equivale a mode=rt / off
   set_reflection_probes:
     params: { enabled: bool }
   spawn_reflection_probe:
     params: { position?: [f32; 3] }
   set_reflection_debug_view:
-    params: { view: final | ssr_debug }
-    note: el catálogo real y lo que no se portó está en docs/yaml/rendering/Reflections_SSR.yaml
+    params: { view: final | ssr_debug | rt_debug }
 
 events:
+  - reflection_mode_changed
   - reflection_tier_changed
+  - rt_tier_changed
   - reflection_raytracing_changed
   - reflection_probes_changed
   - reflection_debug_view_changed
@@ -121,13 +134,15 @@ removed_events:
 
 persistence:
   save_fields:
-    - reflectionTier
-    - reflectionRaytracing
+    - reflectionMode
+    - reflectionTier    # SSR
+    - rtTier            # RTX
+    - reflectionRaytracing  # legacy, se migra a reflectionMode
     - reflectionProbes
   default_tier: off
 
 ui:
-  accordion: World → Reflejos (tier, RT, probes, debug view)
+  accordion: World → Reflejos (fila SSR + fila RTX con checks radio, probes, debug view)
 
 diagnostics:
   audit_report: docs/yaml/rendering/Reflections_Diagnostics.yaml

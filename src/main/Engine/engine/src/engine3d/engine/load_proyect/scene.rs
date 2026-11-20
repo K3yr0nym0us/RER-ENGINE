@@ -360,6 +360,8 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
         view.world.reflectionTier.as_deref(),
         view.world.reflectionRaytracing,
         view.world.reflectionProbes,
+        view.world.reflectionMode.as_deref(),
+        view.world.rtTier.as_deref(),
     );
     crate::engine3d::config_3d::shadow_settings::apply_shadow_settings_from_world_wire(
         state,
@@ -396,6 +398,12 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
     });
     send_event(&EngineEvent::ReflectionTierChanged {
         tier: state.reflection_tier.wire().to_string(),
+    });
+    send_event(&EngineEvent::ReflectionModeChanged {
+        mode: state.reflection_mode.wire().to_string(),
+    });
+    send_event(&EngineEvent::RtTierChanged {
+        tier: state.rt_tier.wire().to_string(),
     });
     send_event(&EngineEvent::ReflectionProbesChanged {
         enabled: state.reflection_probes_enabled,

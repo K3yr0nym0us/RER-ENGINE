@@ -4,7 +4,12 @@
 #extension GL_EXT_scalar_block_layout : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
-layout(location = 0) rayPayloadInEXT vec3 payload;
+// Un único incoming payload, compartido con los raygen.
+struct RayPayload {
+    vec4 color;
+    vec4 hit;
+};
+layout(location = 0) rayPayloadInEXT RayPayload payload;
 hitAttributeEXT vec2 attribs;
 
 layout(set = 0, binding = 0) uniform Camera {
@@ -63,5 +68,6 @@ void main() {
     vec3 albedo = mats[slot].albedo.rgb;
     float ndotl = max(dot(n, normalize(cam.light_dir.xyz)), 0.0);
     float ambient = clamp(cam.light_dir.w, 0.0, 1.0);
-    payload = albedo * (ambient + (1.0 - ambient) * ndotl);
+    payload.color = vec4(albedo * (ambient + (1.0 - ambient) * ndotl), 1.0);
+    payload.hit = vec4(n, gl_RayTmaxEXT);
 }

@@ -201,14 +201,20 @@ pub struct FrameInput<'a> {
     pub ssaa_scale: f32,
     pub taa_enabled: bool,
     pub taa_blend: f32,
+    /// Cualquier sistema de reflejos activo (SSR o RT).
     pub reflections: bool,
+    /// `true`: se ejecuta la cadena SSR. `false`: solo RT (o ninguno).
+    pub ssr: bool,
     /// `true`: el pase de reflejos traza rayos (HW o BVH). `false`: solo SSR.
     pub raytracing: bool,
+    /// Parámetros reales del tier RTX (resolución, rayos, rebotes, denoise...).
+    pub rtx: crate::engine3d::config_3d::reflection_graphics::RtxPreset,
     /// Sondas a capturar este frame, cada una con su ranura del cubemap array.
     pub probe_captures: &'a [ProbeCapture],
-    /// Vista de debug: en vez del resultado final se presenta la imagen SSR/trazado en crudo.
-    /// Lo pide el editor con `set_reflection_debug_view`; no requiere cambiar ningún shader.
+    /// Vista de debug: en vez del resultado final se presenta la imagen SSR en crudo.
     pub debug_ssr_view: bool,
+    /// Vista de debug: presenta la imagen de reflejo trazado en crudo.
+    pub debug_rt_view: bool,
     pub static_batches: &'a [MeshBatch<'a>],
     /// Sin terreno ni suelo checker: evitan auto-sombra a escala de mundo.
     pub shadow_static_batches: &'a [MeshBatch<'a>],
@@ -290,8 +296,12 @@ pub struct FrameRenderer {
     history_slot: usize,
     taa_frame: u32,
     taa_history_valid: bool,
-    /// Último estado de `reflections`; al cambiar se invalida el historial TAA.
-    last_reflections: bool,
+    /// Última combinación SSR/RT (bit 0 = SSR, bit 1 = RT) para invalidar el historial TAA.
+    last_reflection_mode: u8,
+    /// Escala de resolución del target de reflejos RT (del tier RTX).
+    rt_scale: f32,
+    /// Calidad de BVH con la que se construyó la caché de BLAS.
+    blas_fast_trace: bool,
     static_offsets: Vec<u64>,
     /// Offsets de los lotes que escriben el shadow map. Es un SUBCONJUNTO filtrado
     /// de `static_batches`, así que no puede usar `static_offsets` (índice distinto).
@@ -357,6 +367,8 @@ struct DescriptorSets {
     taa: [vk::DescriptorSet; FRAMES],
     ssr: [vk::DescriptorSet; FRAMES],
     denoise: [vk::DescriptorSet; FRAMES],
+    /// Sets adicionales para las pasadas extra de denoise del tier RTX (ping-pong).
+    denoise_pingpong: [vk::DescriptorSet; FRAMES],
     composite: [vk::DescriptorSet; FRAMES],
     present: [vk::DescriptorSet; FRAMES],
     /// Fondo trazado para el quad del cielo del pase MSAA (misma layout que `full`).
@@ -903,7 +915,9 @@ impl FrameRenderer {
             history_slot: 0,
             taa_frame: 0,
             taa_history_valid: false,
-            last_reflections: false,
+            last_reflection_mode: 0,
+            rt_scale: 1.0,
+            blas_fast_trace: false,
             static_offsets: Vec::new(),
             shadow_offsets: Vec::new(),
             static_transparent_offsets: Vec::new(),
@@ -919,6 +933,16 @@ impl FrameRenderer {
             depth_layout: DEPTH_ATTACHMENT,
             shadow_size: crate::engine3d::engine::SHADOW_MAP_SIZE,
         })
+    }
+
+    /// Extent del target de reflejos RT según la resolución del tier RTX.
+    pub(super) fn rt_extent(&self) -> vk::Extent2D {
+        let base = self.targets.extent;
+        let scale = self.rt_scale.clamp(0.1, 1.0);
+        vk::Extent2D {
+            width: ((base.width as f32) * scale).round().max(1.0) as u32,
+            height: ((base.height as f32) * scale).round().max(1.0) as u32,
+        }
     }
 
     pub fn record(
@@ -949,6 +973,16 @@ impl FrameRenderer {
             self.targets.ensure_ms(&self.gpu, self.msaa_samples)?;
             self.shadow_size = crate::engine3d::engine::SHADOW_MAP_SIZE;
             self.rewrite_target_descriptors()?;
+        }
+        // Resolución RTX: se reasigna solo el target de reflejos, sin tocar el G-buffer.
+        if (self.rt_scale - input.rtx.resolution_scale).abs() > 1e-4 {
+            self.rt_scale = input.rtx.resolution_scale.clamp(0.1, 1.0);
+            let extent = self.rt_extent();
+            self.targets.resize_rt(&self.gpu, extent)?;
+        } else if self.targets.reflection.extent != self.rt_extent() {
+            // Tras un recreate de targets el reflection vuelve al extent base.
+            let extent = self.rt_extent();
+            self.targets.resize_rt(&self.gpu, extent)?;
         }
         // El tier de sombras exige otro resolución: se reasigna SOLO el shadow map. Es seguro
         // porque `begin_frame` espera a la GPU (`RER_VK_SYNC_FRAMES`) antes de grabar, así la
@@ -1030,14 +1064,8 @@ impl FrameRenderer {
             self.particle_pool
                 .rewrite_volumetric_views(&self.volumetric)?;
             let sampler = self.volumetric.sampler();
-            let light_views = [
-                self.volumetric.light_view(0),
-                self.volumetric.light_view(1),
-            ];
-            let ubos = [
-                self.volumetric.ubo(0).buffer,
-                self.volumetric.ubo(1).buffer,
-            ];
+            let light_views = [self.volumetric.light_view(0), self.volumetric.light_view(1)];
+            let ubos = [self.volumetric.ubo(0).buffer, self.volumetric.ubo(1).buffer];
             self.rewrite_scene_volume_descriptors(sampler, light_views, ubos)?;
         }
         let volume = &mut self.volumetric;

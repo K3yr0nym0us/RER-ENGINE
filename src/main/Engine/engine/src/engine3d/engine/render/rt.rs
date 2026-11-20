@@ -37,6 +37,8 @@ pub(crate) fn collect_rt_instances(
 
 pub(crate) fn rt_scene_hash(state: &State, records: &[RtInstanceRecord]) -> u64 {
     let mut hasher = DefaultHasher::new();
+    // La calidad de BVH forma parte del blob: al cambiar de tier hay que reconstruirlo.
+    state.rt_tier.wire().hash(&mut hasher);
     records.len().hash(&mut hasher);
     for rec in records {
         rec.entity_id.hash(&mut hasher);
@@ -142,7 +144,8 @@ pub(crate) fn build_rt_scene(state: &State, records: &[RtInstanceRecord]) -> RtS
         triangles.push(triangle);
     }
     materials.extend(state.rt_skinned_materials.iter().copied());
-    let (nodes, gpu_triangles) = crate::engine3d::bvh::build_bvh(triangles);
+    let leaf = crate::engine3d::bvh::bvh_leaf_for_rt_tier(state.rt_tier);
+    let (nodes, gpu_triangles) = crate::engine3d::bvh::build_bvh_with_quality(triangles, leaf);
     RtSceneBlob::from_parts(&nodes, &gpu_triangles, &materials)
 }
 

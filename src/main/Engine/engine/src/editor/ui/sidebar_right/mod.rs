@@ -82,7 +82,8 @@ enum WorldAction {
     SetTextureTier(TextureTier),
     SetTextureDetailDistance(f32),
     SetReflectionTier(ReflectionTier),
-    SetReflectionRaytracing(bool),
+    SetReflectionMode(&'static str),
+    SetRtTier(ReflectionTier),
     SetReflectionProbes(bool),
     SpawnReflectionProbe,
     SetReflectionDebugView(&'static str),
@@ -554,13 +555,16 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
                 false,
             );
         }
-        WorldAction::SetReflectionRaytracing(enabled) => {
-            app.world.reflection_raytracing = enabled;
-            app.send_engine(json!({ "cmd": "set_reflection_raytracing", "enabled": enabled }));
-            app.push_log(
-                format!("[Reflejos] Ray tracing: {}", on_off(enabled)),
-                false,
-            );
+        WorldAction::SetReflectionMode(mode) => {
+            app.world.reflection_mode = mode;
+            app.world.reflection_raytracing = mode == "rt";
+            app.send_engine(json!({ "cmd": "set_reflection_mode", "mode": mode }));
+            app.push_log(format!("[Reflejos] Sistema: {mode}"), false);
+        }
+        WorldAction::SetRtTier(tier) => {
+            app.world.rt_tier = tier;
+            app.send_engine(json!({ "cmd": "set_rt_tier", "tier": tier.as_str() }));
+            app.push_log(format!("[Reflejos] Nivel RTX: {}", tier.as_str()), false);
         }
         WorldAction::SetReflectionProbes(enabled) => {
             app.world.reflection_probes = enabled;

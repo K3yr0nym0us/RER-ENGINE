@@ -91,6 +91,12 @@ pub enum ScriptCmd {
     SetReflectionTier {
         tier: String,
     },
+    SetRtTier {
+        tier: String,
+    },
+    SetReflectionMode {
+        mode: String,
+    },
     FireProjectile {
         template_id: u32,
         from_id: u32,

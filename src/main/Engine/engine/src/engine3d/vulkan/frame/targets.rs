@@ -12,6 +12,8 @@ pub(super) struct Targets {
     pub(super) reflection: GpuImage,
     pub(super) ssr: GpuImage,
     pub(super) denoise: GpuImage,
+    /// Segundo buffer para las pasadas extra de denoise del tier RTX.
+    pub(super) denoise2: GpuImage,
     /// WBOIT (F3): acumulación ponderada (RGBA16F), revealage (R16F) y salida compuesta
     /// que `copy_color` lleva al HDR (el resolve no puede escribir la escena que muestrea).
     pub(super) particles_accum: GpuImage,
@@ -125,6 +127,7 @@ impl Targets {
         let reflection = color("reflection")?;
         let ssr = color("ssr")?;
         let denoise = color("denoise")?;
+        let denoise2 = color("denoise2")?;
         let refl_history = [color("refl-history-0")?, color("refl-history-1")?];
         let history = [color("history-0")?, color("history-1")?];
         // WBOIT (F3): a resolución 1× — la acumulación en un framebuffer multisampleado
@@ -229,6 +232,7 @@ impl Targets {
             reflection,
             ssr,
             denoise,
+            denoise2,
             particles_accum,
             particles_reveal,
             particles_out,
@@ -381,6 +385,30 @@ impl Targets {
         )?;
         Ok(())
     }
+
+    /// Reasigna solo el target de reflejos RT cuando cambia la resolución del tier RTX.
+    pub(super) fn resize_rt(
+        &mut self,
+        gpu: &SharedGpu,
+        extent: vk::Extent2D,
+    ) -> Result<(), VulkanError> {
+        if self.reflection.extent == extent {
+            return Ok(());
+        }
+        let usage = vk::ImageUsageFlags::COLOR_ATTACHMENT
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::STORAGE
+            | vk::ImageUsageFlags::TRANSFER_SRC
+            | vk::ImageUsageFlags::TRANSFER_DST;
+        self.reflection = gpu.create_image(
+            extent,
+            COLOR,
+            usage,
+            vk::ImageAspectFlags::COLOR,
+            "reflection",
+        )?;
+        Ok(())
+    }
 }
 
 impl FrameRenderer {
@@ -414,14 +442,8 @@ impl FrameRenderer {
         }
         // Sombras volumétricas: el forward muestrea la textura 3D desde el set de escena.
         let sampler = self.volumetric.sampler();
-        let light_views = [
-            self.volumetric.light_view(0),
-            self.volumetric.light_view(1),
-        ];
-        let ubos = [
-            self.volumetric.ubo(0).buffer,
-            self.volumetric.ubo(1).buffer,
-        ];
+        let light_views = [self.volumetric.light_view(0), self.volumetric.light_view(1)];
+        let ubos = [self.volumetric.ubo(0).buffer, self.volumetric.ubo(1).buffer];
         self.rewrite_scene_volume_descriptors(sampler, light_views, ubos)?;
         // Partículas (F3): la depth del soft particles y los samplers del resolve WBOIT
         // apuntan a imágenes recién recreadas.

@@ -24,86 +24,57 @@ pub(super) fn reflections_body(
         );
     }
 
-    let reflections_active = !world.reflection_tier.is_off();
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(crate::editor::i18n::tr(
-                locale,
-                "Nivel de reflejos",
-                "Reflection tier",
-            ))
-            .size(12.0)
-            .strong()
-            .color(crate::editor::theme::TEXT_MUTED),
-        );
-        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.spacing_mut().item_spacing.x = 4.0;
-            ui.label(
-                RichText::new("RT ON")
-                    .size(9.5)
-                    .color(if world.reflection_raytracing {
-                        crate::editor::theme::INFO
-                    } else {
-                        crate::editor::theme::TEXT_MUTED
-                    }),
-            );
-            ui.add_enabled_ui(reflections_active, |ui| {
-                let mut enabled = world.reflection_raytracing;
-                if widgets::switch_value(
-                    ui,
-                    &mut enabled,
-                    crate::editor::i18n::tr(
-                        locale,
-                        "Ray tracing de reflejos",
-                        "Reflection ray tracing",
-                    ),
-                ) {
-                    actions.push(WorldAction::SetReflectionRaytracing(enabled));
-                }
-            });
-            ui.label(
-                RichText::new("RT OFF")
-                    .size(9.5)
-                    .color(if world.reflection_raytracing {
-                        crate::editor::theme::TEXT_MUTED
-                    } else {
-                        crate::editor::theme::INFO
-                    }),
-            );
-        });
-    });
+    let ssr_active = world.reflection_mode == "ssr";
+    let rt_active = world.reflection_mode == "rt";
 
-    if let Some(index) = tier_choice(
+    // SSR: la fila de tiers de siempre, con su propio check.
+    reflection_section(
         ui,
         locale,
-        &ReflectionTier::ALL,
+        actions,
+        crate::editor::i18n::tr(locale, "SSR", "SSR"),
+        ssr_active,
         world.reflection_tier,
-        ReflectionTier::as_str,
+        "ssr",
         crate::editor::i18n::tr(
             locale,
-            "Nivel de reflejos (Off desactiva SSR y composición)",
-            "Reflection tier (Off disables SSR and composite)",
+            "Nivel de reflejos SSR (Off desactiva SSR y composición)",
+            "SSR reflection tier (Off disables SSR and composite)",
         ),
-    ) {
-        actions.push(WorldAction::SetReflectionTier(ReflectionTier::ALL[index]));
-    }
+    );
     ui.add_space(4.0);
 
+    // RTX: fila nueva con los parámetros del preset (resolución, rayos, rebotes...).
+    reflection_section(
+        ui,
+        locale,
+        actions,
+        crate::editor::i18n::tr(locale, "RTX", "RTX"),
+        rt_active,
+        world.rt_tier,
+        "rt",
+        crate::editor::i18n::tr(
+            locale,
+            "Nivel de reflejos RTX (resolución, rayos, rebotes, denoise)",
+            "RTX reflection tier (resolution, rays, bounces, denoise)",
+        ),
+    );
+    ui.add_space(4.0);
+
+    // Las probes siguen con su flujo y comportamiento actuales.
     ui.horizontal(|ui| {
-        ui.add_enabled_ui(reflections_active, |ui| {
-            let mut probes = world.reflection_probes;
-            if widgets::switch_value(
-                ui,
-                &mut probes,
-                crate::editor::i18n::tr(
-                    locale,
-                    "Reflection probes en el render",
-                    "Reflection probes in the render",
-                ),
-            ) {
-                actions.push(WorldAction::SetReflectionProbes(probes));
-            }
-        });
+        let mut probes = world.reflection_probes;
+        if widgets::switch_value(
+            ui,
+            &mut probes,
+            crate::editor::i18n::tr(
+                locale,
+                "Reflection probes en el render",
+                "Reflection probes in the render",
+            ),
+        ) {
+            actions.push(WorldAction::SetReflectionProbes(probes));
+        }
         let width = ui.available_width();
         if widgets::wide_button_click_sized(
             ui,
@@ -142,5 +113,59 @@ pub(super) fn reflections_body(
         actions.push(WorldAction::SetReflectionDebugView(normalize_debug_view(
             view,
         )));
+    }
+}
+
+/// Un bloque completo: check de activación + fila de tiers. Los checks son radio: activar uno
+/// desactiva el otro (SSR y RTX jamás están activos a la vez).
+fn reflection_section(
+    ui: &mut egui::Ui,
+    locale: Locale,
+    actions: &mut Vec<WorldAction>,
+    title: &'static str,
+    active: bool,
+    tier: ReflectionTier,
+    mode: &'static str,
+    hint: &str,
+) {
+    ui.horizontal(|ui| {
+        ui.label(
+            RichText::new(title)
+                .size(12.0)
+                .strong()
+                .color(crate::editor::theme::TEXT_MUTED),
+        );
+        let mut enabled = active;
+        if widgets::switch_value(
+            ui,
+            &mut enabled,
+            crate::editor::i18n::tr(locale, "Activar", "Enable"),
+        ) {
+            actions.push(WorldAction::SetReflectionMode(if enabled {
+                mode
+            } else {
+                "off"
+            }));
+        }
+    });
+
+    if let Some(index) = tier_choice(
+        ui,
+        locale,
+        &ReflectionTier::ALL,
+        tier,
+        ReflectionTier::as_str,
+        hint,
+    ) {
+        let chosen = ReflectionTier::ALL[index];
+        if mode == "rt" {
+            actions.push(WorldAction::SetRtTier(chosen));
+        } else {
+            actions.push(WorldAction::SetReflectionTier(chosen));
+        }
+        // Elegir un tier distinto de Off también activa el sistema correspondiente.
+        if !chosen.is_off() && !active {
+            actions.push(WorldAction::SetReflectionMode(mode));
+        }
     }
 }

@@ -339,6 +339,8 @@ impl State {
                 crate::engine3d::config_3d::texture_graphics::TextureGraphicsTier::Medium,
             reflection_tier:
                 crate::engine3d::config_3d::reflection_graphics::DEFAULT_REFLECTION_TIER,
+            reflection_mode: crate::engine3d::config_3d::reflection_graphics::ReflectionMode::Off,
+            rt_tier: crate::engine3d::config_3d::reflection_graphics::ReflectionTier::Low,
             reflection_probes_enabled: false,
             reflection_raytracing_enabled: false,
 
@@ -383,8 +385,10 @@ impl State {
             sun_entity: None,
             sun_cycle_enabled: true,
             sun_rise_cardinal: crate::engine3d::config_3d::directional_light::SunRiseCardinal::East,
-            sun_cycle_day_secs: crate::engine3d::config_3d::directional_light::DEFAULT_SUN_CYCLE_SEGMENT_SECS,
-            sun_cycle_night_secs: crate::engine3d::config_3d::directional_light::DEFAULT_SUN_CYCLE_SEGMENT_SECS,
+            sun_cycle_day_secs:
+                crate::engine3d::config_3d::directional_light::DEFAULT_SUN_CYCLE_SEGMENT_SECS,
+            sun_cycle_night_secs:
+                crate::engine3d::config_3d::directional_light::DEFAULT_SUN_CYCLE_SEGMENT_SECS,
             // Demo: el sol arranca en su punto más alto (mediodía).
             sun_cycle_phase: 0.25,
             sun_icon_mesh_idx: None,

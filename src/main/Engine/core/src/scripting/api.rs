@@ -431,6 +431,16 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
             c.push(ScriptCmd::SetReflectionTier { tier });
         });
 
+        let c = ctx.clone();
+        engine.register_fn("__engine_set_rt_tier", move |tier: String| {
+            c.push(ScriptCmd::SetRtTier { tier });
+        });
+
+        let c = ctx.clone();
+        engine.register_fn("__engine_set_reflection_mode", move |mode: String| {
+            c.push(ScriptCmd::SetReflectionMode { mode });
+        });
+
         let refl_ctx = ctx.reflection_tier.clone();
         engine.register_fn("__engine_get_reflection_tier", move || {
             refl_ctx
@@ -593,6 +603,8 @@ let engine = #{
     get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
     set_reflection_tier: |tier| { __engine_set_reflection_tier(tier); },
     get_reflection_tier: || { __engine_get_reflection_tier() },
+    set_rt_tier: |tier| { __engine_set_rt_tier(tier); },
+    set_reflection_mode: |mode| { __engine_set_reflection_mode(mode); },
     play_aim_dir_x: || { __engine_play_aim_dir_x() },
     play_aim_dir_y: || { __engine_play_aim_dir_y() },
     play_aim_dir_z: || { __engine_play_aim_dir_z() },
@@ -630,6 +642,8 @@ let engine = #{
     get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
     set_reflection_tier: |tier| { __engine_set_reflection_tier(tier); },
     get_reflection_tier: || { __engine_get_reflection_tier() },
+    set_rt_tier: |tier| { __engine_set_rt_tier(tier); },
+    set_reflection_mode: |mode| { __engine_set_reflection_mode(mode); },
 };
 "#;
 

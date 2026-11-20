@@ -208,10 +208,19 @@ engine_3d_only:
       description: Impulso de salto.
     - function: engine.set_reflection_tier(tier)
       description: |
-        Nivel global de reflejos: "off", "low", "medium", "high".
+        Tier de SSR: "off", "low", "medium", "high", "ultra".
+        Si el modo era SSR y el tier pasa a "off", el modo pasa a off.
         También en World → Reflejos y nodo de escena Set reflection tier.
     - function: engine.get_reflection_tier()
-      description: Devuelve el tier activo como string.
+      description: Devuelve el tier de SSR activo como string.
+    - function: engine.set_rt_tier(tier)
+      description: |
+        Tier de RTX: "off", "low", "medium", "high", "ultra". Aplica los parámetros
+        de RtxPreset (resolución, rayos, rebotes, denoise, TAA, roughness, distancia, BVH).
+    - function: engine.set_reflection_mode(mode)
+      description: |
+        Sistema de reflejos activo: "off", "ssr" o "rt". SSR y RTX son mutuamente
+        excluyentes: activar uno desactiva el otro. Equivale a los checks del accordion.
     - function: engine.fire_projectile(template_id, from_id, dir_x, dir_y, dir_z)
       description: |
         Dispara un clon cinemático de una plantilla `projectile` (editor y play).

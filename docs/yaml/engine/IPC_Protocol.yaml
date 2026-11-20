@@ -168,8 +168,10 @@ command_categories:
       - set_entity_texture_preview_tier
       - set_graphics_texture_tier
       - set_texture_detail_distance
-      - set_reflection_tier
-      - set_reflection_debug_view
+      - set_reflection_mode       # off | ssr | rt (mutuamente excluyentes)
+      - set_reflection_tier       # tier de SSR
+      - set_rt_tier               # tier de RTX (resolución, rayos, rebotes, denoise...)
+      - set_reflection_debug_view # final | ssr_debug | rt_debug
   resources:
     2d:
       - load_sprite / load_sound / load_font / load_background
@@ -245,7 +247,9 @@ event_categories:
   textures_3d:
     - entity_textures_ready
   reflections_3d:
-    - reflection_tier_changed
+    - reflection_mode_changed
+    - reflection_tier_changed   # SSR
+    - rt_tier_changed           # RTX
     - reflection_tier_effective
     - reflection_debug_view_changed
   metrics:

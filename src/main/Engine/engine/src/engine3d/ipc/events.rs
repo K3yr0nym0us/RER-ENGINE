@@ -543,6 +543,14 @@ pub enum EngineEvent {
     ReflectionTierChanged {
         tier: String,
     },
+    #[serde(rename = "reflection_mode_changed")]
+    ReflectionModeChanged {
+        mode: String,
+    },
+    #[serde(rename = "rt_tier_changed")]
+    RtTierChanged {
+        tier: String,
+    },
     #[serde(rename = "reflection_probes_changed")]
     ReflectionProbesChanged {
         enabled: bool,

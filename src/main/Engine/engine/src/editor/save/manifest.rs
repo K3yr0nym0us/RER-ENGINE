@@ -354,6 +354,8 @@ fn build_world(world: Option<&Value>) -> Value {
         ("graphicsTextureTier", "graphics_texture_tier"),
         ("textureDetailDistance", "texture_detail_distance_m"),
         ("reflectionTier", "reflection_tier"),
+        ("reflectionMode", "reflection_mode"),
+        ("rtTier", "rt_tier"),
         ("reflectionRaytracing", "reflection_raytracing"),
         ("reflectionProbes", "reflection_probes"),
         ("shadowTier", "shadow_tier"),

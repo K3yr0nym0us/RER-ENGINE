@@ -1,4 +1,5 @@
 use super::*;
+use crate::engine3d::config_3d::reflection_graphics::RtxPreset;
 use crate::engine3d::config_3d::world_bounds::SkyUniform;
 
 pub(super) fn cube_face_view_proj(origin: [f32; 3], face: usize) -> [[f32; 4]; 4] {
@@ -34,10 +35,37 @@ fn rt_camera_bytes_base(scene: &[u8], extent: vk::Extent2D) -> Vec<u8> {
     out
 }
 
-/// Uniform del pase RT: cámara + esfera de cielo (bloque `Camera` de los `.rgen`).
-pub(super) fn rt_camera_bytes(scene: &[u8], extent: vk::Extent2D, sky: &SkyUniform) -> Vec<u8> {
+/// Uniform del pase RT: cámara + cielo + parámetros del tier RTX (bloque `Camera`).
+///
+/// `rt_params` = (rayos por píxel, rebotes, distancia de trazado, roughness máxima).
+pub(super) fn rt_camera_bytes(
+    scene: &[u8],
+    extent: vk::Extent2D,
+    sky: &SkyUniform,
+    rtx: &RtxPreset,
+) -> Vec<u8> {
     let mut out = rt_camera_bytes_base(scene, extent);
     out.extend_from_slice(bytemuck::bytes_of(sky));
+    let params = [
+        rtx.rays_per_pixel as f32,
+        rtx.bounces as f32,
+        rtx.trace_distance,
+        rtx.max_roughness,
+    ];
+    out.extend_from_slice(bytemuck::bytes_of(&params));
+    out
+}
+
+fn rtx_uniform_params(rtx: &RtxPreset) -> [u8; 16] {
+    let params = [
+        rtx.rays_per_pixel as f32,
+        rtx.bounces as f32,
+        rtx.trace_distance,
+        rtx.max_roughness,
+    ];
+    let bytes = bytemuck::bytes_of(&params);
+    let mut out = [0u8; 16];
+    out.copy_from_slice(bytes);
     out
 }
 
@@ -70,6 +98,12 @@ impl FrameRenderer {
         if !self.gpu.hw_rt() {
             return Ok(());
         }
+        let fast_trace = input.rtx.fast_trace;
+        if self.blas_fast_trace != fast_trace {
+            // Los BLAS se reconstruyen con los flags del nuevo tier.
+            self.blas_cache.clear();
+            self.blas_fast_trace = fast_trace;
+        }
         let mut instances = Vec::with_capacity(input.rt.len());
         let mut geos = Vec::with_capacity(input.rt.len());
         let mut materials = Vec::with_capacity(input.rt.len());
@@ -88,6 +122,7 @@ impl FrameRenderer {
                         max_vertex: batch.vertex_count.saturating_sub(1),
                         primitive_count: batch.index_count / 3,
                     },
+                    fast_trace,
                 )?;
                 self.blas_cache.insert(batch.key, blas);
             }
@@ -119,7 +154,7 @@ impl FrameRenderer {
         )?;
         self.geos.write(0, &geos)?;
         self.materials.write(0, &materials)?;
-        self.tlas = Some(accel::build_tlas(&self.gpu, &instances)?);
+        self.tlas = Some(accel::build_tlas(&self.gpu, &instances, fast_trace)?);
         Ok(())
     }
 
@@ -140,7 +175,7 @@ impl FrameRenderer {
         };
         let stride = self.sbt_stride;
         let address = self.sbt_address;
-        let camera = rt_camera_bytes(input.scene, self.targets.extent, &input.sky);
+        let camera = rt_camera_bytes(input.scene, self.rt_extent(), &input.sky, &input.rtx);
         self.rt_ubo[slot].write(0, &camera)?;
         // Un set distinto por uso: ver el comentario de `DescriptorSets::rt`.
         let set = self.sets.rt[slot][raygen as usize % 2];
@@ -175,7 +210,7 @@ impl FrameRenderer {
         write_storage(device, set, 6, &self.geos)?;
         let pipeline = self.rt_pipeline;
         let layout = self.rt_layout;
-        let extent = self.targets.extent;
+        let extent = self.rt_extent();
         unsafe {
             device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::RAY_TRACING_KHR, pipeline);
             device.cmd_bind_descriptor_sets(
@@ -225,12 +260,13 @@ impl FrameRenderer {
         device: &ash::Device,
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
-        let mut uniform = rt_camera_bytes_base(input.scene, self.targets.extent);
+        let mut uniform = rt_camera_bytes_base(input.scene, self.rt_extent());
         uniform.extend_from_slice(&input.bvh_node_count.to_le_bytes());
         uniform.extend_from_slice(&input.bvh_tri_count.to_le_bytes());
         uniform.extend_from_slice(&mode.to_le_bytes());
         uniform.extend_from_slice(&input.material_count.to_le_bytes());
         uniform.extend_from_slice(bytemuck::bytes_of(&input.sky));
+        uniform.extend_from_slice(&rtx_uniform_params(&input.rtx));
         self.bvh_ubo[slot].write(0, &uniform)?;
         Self::grow_host(
             &self.gpu,
@@ -287,7 +323,7 @@ impl FrameRenderer {
         )?;
         let pipeline = self.bvh_pipeline;
         let layout = self.bvh_layout;
-        let extent = self.targets.extent;
+        let extent = self.rt_extent();
         let groups_x = extent.width.div_ceil(8).max(1);
         let groups_y = extent.height.div_ceil(8).max(1);
         unsafe {

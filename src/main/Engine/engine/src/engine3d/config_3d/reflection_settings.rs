@@ -1,13 +1,11 @@
-//! Ajustes globales de reflejos (tier UI + debug views).
+//! Ajustes globales de reflejos: modo (SSR / RT), tier de SSR y tier de RTX.
 //!
-//! El tier ya controla el render: `FrameRenderer` usa `reflections` para la cadena
-//! SSR/denoise/composite y el trazado RT, y `reflection_debug_view` está cableado (presenta el
-//! SSR/trazado en crudo). Lo que NO existe en Ash: presets de calidad por tier (pasos, distancia,
-//! radio de denoise) y variación del tamaño de cubemap por tier; todo eso era de la era wgpu y
-//! está listado como no portado en docs/yaml/rendering/Reflections_*.yaml.
+//! SSR y RTX son mutuamente excluyentes. `reflection_raytracing_enabled` se mantiene como espejo
+//! del modo para los caminos antiguos; la fuente de verdad es `reflection_mode`.
+//! Las reflection probes conservan su comportamiento anterior (volumen/radio) y no se tocan.
 
 use crate::engine3d::config_3d::reflection_graphics::{
-    DEFAULT_REFLECTION_TIER, ReflectionDebugView, ReflectionTier,
+    DEFAULT_REFLECTION_TIER, ReflectionDebugView, ReflectionMode, ReflectionTier, RtxPreset,
 };
 use crate::engine3d::engine::State;
 use crate::engine3d::ipc::{EngineEvent, send_event};
@@ -15,35 +13,48 @@ use crate::engine3d::ipc::{EngineEvent, send_event};
 impl State {
     /// Fuerza captura burst del cubemap si los reflejos están activos (p. ej. nuevas sondas).
     pub(crate) fn request_probe_capture_burst_if_reflections_active(&mut self) {
-        if self.reflection_tier != ReflectionTier::Off && self.reflection_probes_enabled {
+        if self.reflection_mode.is_active() && self.reflection_probes_enabled {
             self.probe_capture_burst_all = true;
         }
     }
 
-    pub(crate) fn set_reflection_raytracing(&mut self, enabled: bool) {
-        if self.reflection_raytracing_enabled == enabled {
-            log::info!(
-                "[reflexiones] RT sin cambios: {}",
-                if enabled { "activado" } else { "desactivado" }
-            );
+    /// Parámetros reales del preset RTX seleccionado.
+    pub(crate) fn rtx_preset(&self) -> RtxPreset {
+        RtxPreset::for_tier(self.rt_tier)
+    }
+
+    /// Cambia el sistema de reflejos activo. SSR y RT nunca están activos a la vez.
+    pub(crate) fn set_reflection_mode(&mut self, mode: ReflectionMode) {
+        if self.reflection_mode == mode {
             return;
         }
-        self.reflection_raytracing_enabled = enabled;
-        send_event(&EngineEvent::ReflectionRaytracingChanged { enabled });
-        // Hay que decir la fuente REAL, no desearla: `hw_rt` es lo que decide si los rayos salen por
-        // la cola de trazado por hardware o por el BVH en compute. El texto anterior decía "trazado
-        // por hardware" activando Y desactivando, y en una GPU sin las extensiones sonaba a éxito
-        // cuando el motor estaba usando la ruta por software.
-        let fuente = if self.vulkan.hw_rt() {
-            "núcleos RT (VK_KHR_ray_tracing_pipeline)"
-        } else {
-            "BVH por software (compute)"
-        };
+        let prev = self.reflection_mode;
+        self.reflection_mode = mode;
+        self.reflection_raytracing_enabled = mode.uses_rt();
+        if mode.is_active() && self.reflection_probes_enabled {
+            self.probe_capture_burst_all = true;
+        }
+        send_event(&EngineEvent::ReflectionModeChanged {
+            mode: mode.wire().to_string(),
+        });
         log::info!(
-            "[reflexiones] RT {}: trazado por {}",
-            if enabled { "activado" } else { "desactivado" },
-            fuente
+            "[reflexiones] modo: {} -> {} (tier SSR {}, tier RTX {})",
+            prev.wire(),
+            mode.wire(),
+            self.reflection_tier.wire(),
+            self.rt_tier.wire()
         );
+    }
+
+    /// Compatibilidad con el comando/Rhai antiguo: activa RT o lo desactiva.
+    pub(crate) fn set_reflection_raytracing(&mut self, enabled: bool) {
+        if enabled {
+            if self.reflection_mode != ReflectionMode::Rt {
+                self.set_reflection_mode(ReflectionMode::Rt);
+            }
+        } else if self.reflection_mode == ReflectionMode::Rt {
+            self.set_reflection_mode(ReflectionMode::Off);
+        }
     }
 
     pub(crate) fn set_reflection_probes(&mut self, enabled: bool) {
@@ -55,14 +66,12 @@ impl State {
             return;
         }
         self.reflection_probes_enabled = enabled;
-        if enabled && self.reflection_tier != ReflectionTier::Off {
+        if enabled && self.reflection_mode.is_active() {
             self.probe_capture_burst_all = true;
-        } else if !enabled {
-            // Sin probe_env wgpu: no hay write_probe_meta que llamar.
         }
         send_event(&EngineEvent::ReflectionProbesChanged { enabled });
         log::info!(
-            "[reflexiones] Probes {} (captura burst + IBL en el shader forward)",
+            "[reflexiones] Probes {} (comportamiento actual: captura burst + IBL por volumen)",
             if enabled { "activadas" } else { "desactivadas" }
         );
     }
@@ -107,38 +116,48 @@ impl State {
         Some(id)
     }
 
+    /// Establece el tier de SSR. Si el modo era SSR y el tier pasa a Off, el modo pasa a Off.
     pub(crate) fn set_reflection_tier(&mut self, tier: ReflectionTier) {
         let prev = self.reflection_tier;
-        if prev == tier {
-            log::info!(
-                "[reflexiones] Nivel de reflejos sin cambios: {}",
-                tier.wire()
-            );
-            return;
+        if prev != tier {
+            self.reflection_tier = tier;
+            if self.reflection_mode.is_active() && self.reflection_probes_enabled {
+                self.probe_capture_burst_all = true;
+            }
+            self.script_engine
+                .sync_reflection_tier_readback(tier.wire());
+            send_event(&EngineEvent::ReflectionTierChanged {
+                tier: tier.wire().to_string(),
+            });
+            log::info!("[reflexiones] tier SSR: {} -> {}", prev.wire(), tier.wire());
         }
-        self.reflection_tier = tier;
-        self.probe_capture_burst_all =
-            tier != ReflectionTier::Off && self.reflection_probes_enabled;
-        self.script_engine
-            .sync_reflection_tier_readback(tier.wire());
-        send_event(&EngineEvent::ReflectionTierChanged {
-            tier: tier.wire().to_string(),
-        });
-        log::info!(
-            "[reflexiones] Nivel de reflejos: {} -> {}",
-            prev.wire(),
-            tier.wire()
-        );
-        if tier != ReflectionTier::Off {
-            log::info!(
-                "[reflexiones] diagnóstico: usa set_reflection_debug_view \"ssr_debug\" para ver la \
-                 imagen SSR/trazada en crudo (\"final\" vuelve al composite)"
-            );
+        if tier.is_off() && self.reflection_mode == ReflectionMode::Ssr {
+            self.set_reflection_mode(ReflectionMode::Off);
         }
     }
 
-    /// Cambia la vista de recepción de reflejos. `SsrDebug` presenta la imagen SSR/trazada en
-    /// crudo; el renderer la elige en `resolve_present`, así que no hace falta recrear nada.
+    /// Establece el tier de RTX (resolución, rayos, rebotes, denoise, roughness...).
+    pub(crate) fn set_rt_tier(&mut self, tier: ReflectionTier) {
+        let prev = self.rt_tier;
+        if prev == tier {
+            return;
+        }
+        self.rt_tier = tier;
+        send_event(&EngineEvent::RtTierChanged {
+            tier: tier.wire().to_string(),
+        });
+        log::info!(
+            "[reflexiones] tier RTX: {} -> {} ({:?})",
+            prev.wire(),
+            tier.wire(),
+            RtxPreset::for_tier(tier)
+        );
+        if tier.is_off() && self.reflection_mode == ReflectionMode::Rt {
+            self.set_reflection_mode(ReflectionMode::Off);
+        }
+    }
+
+    /// Cambia la vista de recepción de reflejos.
     pub(crate) fn set_reflection_debug_view(&mut self, view: ReflectionDebugView) {
         let prev = self.reflection_debug_view;
         if prev == view {
@@ -154,36 +173,49 @@ impl State {
             prev.wire(),
             view.wire()
         );
-        if view != ReflectionDebugView::Final && self.reflection_tier == ReflectionTier::Off {
-            log::warn!(
-                "[reflexiones] la vista de debug no mostrará nada con el tier de reflejos en off"
-            );
+        if view != ReflectionDebugView::Final && !self.reflection_mode.is_active() {
+            log::warn!("[reflexiones] la vista de debug no mostrará nada con los reflejos en off");
         }
     }
 }
 
+/// Aplica la configuración de reflejos del snapshot del `.save`.
+///
+/// `mode`/`rt_tier` son `None` en saves antiguos: se infieren de `reflection_raytracing` y
+/// `reflection_tier` para no perder el comportamiento previo.
 pub(crate) fn apply_reflection_settings_from_world_wire(
     state: &mut State,
     tier: Option<&str>,
     raytracing: Option<bool>,
     probes: Option<bool>,
+    mode: Option<&str>,
+    rt_tier: Option<&str>,
 ) {
     let resolved = tier
         .and_then(ReflectionTier::from_wire)
         .unwrap_or(DEFAULT_REFLECTION_TIER);
-    if state.reflection_tier != resolved {
-        state.set_reflection_tier(resolved);
-    } else {
-        state
-            .script_engine
-            .sync_reflection_tier_readback(resolved.wire());
-        if resolved != ReflectionTier::Off && state.reflection_probes_enabled {
-            state.probe_capture_burst_all = true;
+    state.set_reflection_tier(resolved);
+
+    if let Some(t) = rt_tier.and_then(ReflectionTier::from_wire) {
+        state.set_rt_tier(t);
+    } else if raytracing == Some(true) && state.rt_tier.is_off() {
+        state.set_rt_tier(resolved);
+    }
+
+    let resolved_mode = mode.and_then(ReflectionMode::from_wire).unwrap_or_else(|| {
+        if raytracing == Some(true) {
+            ReflectionMode::Rt
+        } else if !resolved.is_off() {
+            ReflectionMode::Ssr
+        } else {
+            ReflectionMode::Off
         }
-    }
-    if let Some(rt) = raytracing {
-        state.set_reflection_raytracing(rt);
-    }
+    });
+    state.set_reflection_mode(resolved_mode);
+    state
+        .script_engine
+        .sync_reflection_tier_readback(resolved.wire());
+
     if let Some(p) = probes {
         state.set_reflection_probes(p);
     }

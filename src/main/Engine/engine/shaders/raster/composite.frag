@@ -20,7 +20,8 @@ void main() {
     float roughness = texture(normal_tex, su).w;
     vec3 reflection = rt.a > 0.01 ? rt.rgb : ssr.rgb;
     float confidence = rt.a > 0.01 ? rt.a : ssr.a;
-    if (roughness <= REFL_MIRROR_ROUGHNESS_MAX) {
+    // Espejos los da SSR, pero solo si el pase SSR se ejecutó (en modo RT la imagen está limpia).
+    if (roughness <= REFL_MIRROR_ROUGHNESS_MAX && ssr.a > 0.01) {
         reflection = ssr.rgb;
         confidence = ssr.a;
     }

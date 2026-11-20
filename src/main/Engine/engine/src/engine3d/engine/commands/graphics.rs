@@ -27,6 +27,28 @@ impl State {
                     log::warn!("[reflexiones] tier IPC no reconocido: {tier}");
                 }
             }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionMode { mode }) => {
+                if let Some(m) =
+                    crate::engine3d::config_3d::reflection_graphics::ReflectionMode::from_wire(
+                        &mode,
+                    )
+                {
+                    self.set_reflection_mode(m);
+                } else {
+                    log::warn!("[reflexiones] modo IPC no reconocido: {mode}");
+                }
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetRtTier { tier }) => {
+                if let Some(t) =
+                    crate::engine3d::config_3d::reflection_graphics::ReflectionTier::from_wire(
+                        &tier,
+                    )
+                {
+                    self.set_rt_tier(t);
+                } else {
+                    log::warn!("[reflexiones] tier RTX IPC no reconocido: {tier}");
+                }
+            }
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionRaytracing { enabled }) => {
                 log::info!("[reflexiones] IPC set_reflection_raytracing: {enabled}");
                 self.set_reflection_raytracing(enabled);

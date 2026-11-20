@@ -47,7 +47,11 @@ fn align_scratch(value: u64, alignment: u64) -> u64 {
 }
 
 /// Construye un BLAS de triángulos opacos y espera a que termine.
-pub fn build_blas(gpu: &SharedGpu, input: &BlasInput) -> Result<Accel, VulkanError> {
+pub fn build_blas(
+    gpu: &SharedGpu,
+    input: &BlasInput,
+    fast_trace: bool,
+) -> Result<Accel, VulkanError> {
     let accel = gpu.accel().ok_or_else(|| {
         VulkanError::new("El device no expone VK_KHR_acceleration_structure.".to_string())
     })?;
@@ -58,9 +62,14 @@ pub fn build_blas(gpu: &SharedGpu, input: &BlasInput) -> Result<Accel, VulkanErr
         .flags(vk::GeometryFlagsKHR::OPAQUE)];
     let mut geometries = geometries;
     geometries[0].geometry.triangles = triangles;
+    let build_flags = if fast_trace {
+        vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE
+    } else {
+        vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_BUILD
+    };
     let mut build = vk::AccelerationStructureBuildGeometryInfoKHR::default()
         .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
-        .flags(vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE)
+        .flags(build_flags)
         .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
         .geometries(&geometries);
     let mut sizes = vk::AccelerationStructureBuildSizesInfoKHR::default();
@@ -130,7 +139,11 @@ pub struct TlasInstance {
     pub custom_index: u32,
 }
 
-pub fn build_tlas(gpu: &SharedGpu, instances: &[TlasInstance]) -> Result<Accel, VulkanError> {
+pub fn build_tlas(
+    gpu: &SharedGpu,
+    instances: &[TlasInstance],
+    fast_trace: bool,
+) -> Result<Accel, VulkanError> {
     let accel = gpu.accel().ok_or_else(|| {
         VulkanError::new("El device no expone VK_KHR_acceleration_structure.".to_string())
     })?;
@@ -177,9 +190,14 @@ pub fn build_tlas(gpu: &SharedGpu, instances: &[TlasInstance]) -> Result<Accel, 
         .flags(vk::GeometryFlagsKHR::OPAQUE)];
     let mut geometries = geometries;
     geometries[0].geometry.instances = instances_data;
+    let build_flags = if fast_trace {
+        vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE
+    } else {
+        vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_BUILD
+    };
     let mut build = vk::AccelerationStructureBuildGeometryInfoKHR::default()
         .ty(vk::AccelerationStructureTypeKHR::TOP_LEVEL)
-        .flags(vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_BUILD)
+        .flags(build_flags)
         .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
         .geometries(&geometries);
     let mut sizes = vk::AccelerationStructureBuildSizesInfoKHR::default();

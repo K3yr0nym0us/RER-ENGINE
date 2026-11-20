@@ -1,15 +1,15 @@
 # Ray tracing (reflejes) — motor 3D
 #
 # Trazado por hardware (Ash/Vulkan RT) con fallback BVH por software en compute. Fuente adicional
-# de información cuando `raytracing_enabled`; el tier solo enciende la cadena de reflejos.
+# de información cuando `ReflectionMode::Rt`; el tier RTX controla todos sus parámetros.
 #
 # Relacionado con:
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/rendering/Reflections_SSR.yaml (SSR en pantalla y composite final)
 #   - docs/yaml/rendering/Shadows_3D.yaml (no hay shadow rays en RT)
 
-version: 4
-updated: 2026-11-09
+version: 5
+updated: 2026-11-20
 status: implemented
 validated: 2026-11-08  # RTX 3060, capa de validación sin errores de API en el camino RT
 
@@ -21,8 +21,9 @@ principle:
     trabajo lo hace `shaders/bvh/trace.comp` sobre el BVH binario de `src/bvh.rs`.
     Con trazado apagado no hay dispatch y el pipeline queda en SSR + composite.
   toggle: |
-    reflection_raytracing_enabled (editor / .save reflectionRaytracing), y solo tiene efecto con
-    tier ≠ off: `record()` ejecuta `reflection_pass` cuando `reflections && raytracing`.
+    `ReflectionMode::Rt` (editor: check RTX / .save reflectionMode = rt). SSR y RTX son mutuamente
+    excluyentes: con mode=rt NO se ejecuta el pase SSR. `reflection_raytracing_enabled` queda como
+    espejo del modo por compatibilidad. `record()` ejecuta `reflection_pass` cuando raytracing.
   extension_gate: |
     `vulkan/select.rs` pide juntas `VK_KHR_acceleration_structure`, `VK_KHR_ray_tracing_pipeline`
     y `VK_KHR_deferred_host_operations`; si falta alguna (o sus features al crear el device) se
@@ -44,9 +45,9 @@ source_of_truth:
 
 not_ported_from_wgpu:
   quality_preset: |
-    `reflections/quality_preset.rs` (rt_resolution_scale, max_bounces, shadow_rays,
-    material_quality, perfiles de denoise por tier) no tiene equivalente en Ash. El trazado actual
-    es 1 rayo/píxel, sin rebotes, sin shadow rays y a resolución de viewport completa.
+    El preset de la era wgpu fue sustituido por `RtxPreset` (ver `tier_table`). Sigue sin haber
+    shadow rays ni material_quality. Sí hay resolución, rayos, rebotes, denoise, TAA, roughness,
+    distancia y calidad de BVH por tier.
   rt_flags: |
     Los bits x/y/z/w (refracción, segundo rebote, SSIL/GI, shadow rays) desaparecieron con el
     módulo. El SSIL de la era wgpu ya era un placeholder nunca cableado (`ssil_strength = 0`).
@@ -59,8 +60,13 @@ not_ported_from_wgpu:
 
 tier_table:
   description: |
-    El tier (`off | low | medium | high | ultra`) solo decide si la cadena de reflejos corre.
-    No cambia resolución, pasos, rebotes ni denoise en el renderizador Ash.
+    `RtxPreset::for_tier` define los parámetros reales del tier RTX. Se serializan en el UBO
+    `rt_params` como (rayos, rebotes, distancia, roughness) y se aplican en HW RT y BVH software.
+  values:
+    low:    { resolution: 50%, rays: 1, bounces: 1, denoise: básico,  temporal: básico, roughness: 0.25, distance: baja,   bvh: bajo }
+    medium: { resolution: 67%, rays: 1, bounces: 1, denoise: medio,   temporal: alto,   roughness: 0.40, distance: media,  bvh: medio }
+    high:   { resolution: 85%, rays: 2, bounces: 2, denoise: alto,    temporal: alto,   roughness: 0.70, distance: alta,   bvh: alto }
+    ultra:  { resolution: 100%, rays: 4, bounces: 3, denoise: máximo, temporal: máximo, roughness: 1.00, distance: máxima, bvh: alto }
 
 pipeline:
   order_in_frame: |
@@ -84,17 +90,17 @@ denoise:
   shader: src/main/Engine/engine/shaders/raster/denoise.frag
   profile: |
     Kernel 3×3 con peso `exp(-|Δdepth| · 80) · pow(max(dot(n, n0), 0), 16) · alpha`. El radio
-    llega por push constant (`step_px`) y hoy vale 1 texel para todos los tiers.
-  gate: corre dentro de la cadena de reflejos, con o sin trazado.
+    llega por push constant (`step_px`) y sale del preset del tier. Los tiers Medio/Alto/Máximo
+    encadenan 2/3/4 pasadas con ping-pong (`denoise`/`denoise2` y sets de descriptores separados).
+  gate: corre en modo RT (y en SSR con el target RT limpio, como antes).
 
 sampling:
-  primary_ray: un rayo por píxel desde `inv_view_proj` (cámara) o desde el G-buffer (reflejo)
+  primary_ray: de 1 a 4 rayos por píxel según el tier, desde `inv_view_proj` (cámara) o G-buffer (reflejo), con 1 a 3 rebotes
   roughness_gate: |
-    Cuatro shaders comparten dos constantes GLSL: `REFL_MIRROR_ROUGHNESS_MAX = 0.04` y
-    `REFL_MAX_ROUGHNESS = 0.70`. `reflect.rgen` y el modo 1 del BVH escriben alpha 0 fuera de
-    (0.04, 0.70]; `ssr.frag` descarta roughness > 0.70 (los espejos sí se marchan);
-    `composite.frag` fuerza SSR puro en roughness ≤ 0.04. Antes cada paso tenía su umbral (0.45 /
-    0.65) y dejaba bandas sin ningún reflejo; se unificó tras la migración.
+    `REFL_MIRROR_ROUGHNESS_MAX = 0.04` sigue fijo. El límite superior ya no es constante: en
+    `reflect.rgen` y `bvh/trace.comp` lo da `rt_params.w` del tier RTX (0.25 / 0.40 / 0.70 / 1.00).
+    `ssr.frag` mantiene su 0.70 histórico (tier SSR sin cambios). `composite.frag` solo fuerza SSR
+    en espejos si el pase SSR se ejecutó (en modo RT la imagen SSR está limpia).
   mirror_bypass: |
     Los espejos (roughness ≤ 0.04) los resuelve SSR: `composite.frag` ignora el rayo ahí y
     `reflect.rgen`/`trace.comp` salen con alpha 0, así no se paga un trazado que aportaría menos
@@ -119,14 +125,19 @@ geometry:
 
 ipc:
   commands:
-    - set_reflection_raytracing: { enabled: bool }
+    - set_reflection_mode: { mode: off | ssr | rt }
+    - set_rt_tier: { tier: off | low | medium | high | ultra }
+    - set_reflection_raytracing: { enabled: bool }  # legacy
   events:
-    - reflection_raytracing_changed: { enabled: bool }
+    - reflection_mode_changed: { mode: String }
+    - rt_tier_changed: { tier: String }
+    - reflection_raytracing_changed: { enabled: bool }  # legacy
   save_fields:
-    - reflectionRaytracing (world)
+    - reflectionMode (world)
+    - rtTier (world)
+    - reflectionRaytracing (legacy, se migra)
 
 debug:
   tip_log: |
-    Para separar un problema del trazado/SSR de uno del IBL de sondas, usar
-    `set_reflection_debug_view` con la vista de debug: presenta `targets.ssr` en crudo, sin
-    composite ni TAA (ver docs/yaml/rendering/Reflections_SSR.yaml).
+    `set_reflection_debug_view` con `rt_debug` presenta `targets.reflection` en crudo (HW o BVH),
+    sin composite ni TAA. `ssr_debug` sigue mostrando el pase SSR (ver Reflections_Diagnostics.yaml).

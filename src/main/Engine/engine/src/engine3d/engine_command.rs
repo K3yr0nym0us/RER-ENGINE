@@ -191,6 +191,14 @@ pub enum EngineCommand3dOnly {
     SetReflectionTier {
         tier: String,
     },
+    /// Sistema activo: off | ssr | rt (mutuamente excluyentes).
+    SetReflectionMode {
+        mode: String,
+    },
+    /// Tier de RTX con sus parámetros reales.
+    SetRtTier {
+        tier: String,
+    },
     SetReflectionRaytracing {
         enabled: bool,
     },

@@ -18,6 +18,7 @@ use glam::Vec3;
 pub const MAX_RT_TRIANGLES: usize = 262_144;
 
 /// Triángulos por hoja. Mantiene la pila del shader (`stack[32]`) holgada.
+#[allow(dead_code)]
 const LEAF_TRIANGLES: usize = 4;
 
 /// Pieza skinned lista para el trazado por hardware: el BLAS se construye desde el buffer de
@@ -166,7 +167,12 @@ fn longest_axis(min: Vec3, max: Vec3) -> usize {
 ///
 /// Devuelve nodos y triángulos reordenados de forma que cada hoja referencia un rango
 /// contiguo `[left_or_tri_offset, left_or_tri_offset + right_or_tri_count)`.
-pub fn build_bvh(mut triangles: Vec<RtTriangle>) -> (Vec<BvhNodeGpu>, Vec<RtTriangleGpu>) {
+/// Construye la BVH con un número de triángulos por hoja distinto. Menos triángulos por hoja
+/// dan un árbol más profundo y rápido de recorrer (tiers Altos); más, uno más barato de construir.
+pub fn build_bvh_with_quality(
+    mut triangles: Vec<RtTriangle>,
+    leaf_triangles: usize,
+) -> (Vec<BvhNodeGpu>, Vec<RtTriangleGpu>) {
     if triangles.is_empty() {
         let node = BvhNodeGpu {
             flags: 1,
@@ -197,6 +203,7 @@ pub fn build_bvh(mut triangles: Vec<RtTriangle>) -> (Vec<BvhNodeGpu>, Vec<RtTria
         triangles: &[RtTriangle],
         centroids: &[Vec3],
         order: &mut [usize],
+        leaf_triangles: usize,
     ) -> u32 {
         let node_index = nodes.len() as u32;
         let (bb_min, bb_max) = bbox_of(triangles, order);
@@ -210,7 +217,7 @@ pub fn build_bvh(mut triangles: Vec<RtTriangle>) -> (Vec<BvhNodeGpu>, Vec<RtTria
             leaf: false,
         });
 
-        if order.len() <= LEAF_TRIANGLES {
+        if order.len() <= leaf_triangles.max(1) {
             let tri_start = ordered.len() as u32;
             for &ti in order.iter() {
                 ordered.push(triangles[ti]);
@@ -235,15 +242,36 @@ pub fn build_bvh(mut triangles: Vec<RtTriangle>) -> (Vec<BvhNodeGpu>, Vec<RtTria
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         let (left_order, right_order) = order.split_at_mut(mid);
-        let left = recurse(nodes, ordered, triangles, centroids, left_order);
-        let right = recurse(nodes, ordered, triangles, centroids, right_order);
+        let left = recurse(
+            nodes,
+            ordered,
+            triangles,
+            centroids,
+            left_order,
+            leaf_triangles,
+        );
+        let right = recurse(
+            nodes,
+            ordered,
+            triangles,
+            centroids,
+            right_order,
+            leaf_triangles,
+        );
 
         nodes[node_index as usize].left = left;
         nodes[node_index as usize].right = right;
         node_index
     }
 
-    let _root = recurse(&mut nodes, &mut ordered, &triangles, &centroids, &mut order);
+    let _root = recurse(
+        &mut nodes,
+        &mut ordered,
+        &triangles,
+        &centroids,
+        &mut order,
+        leaf_triangles,
+    );
 
     let gpu_nodes: Vec<BvhNodeGpu> = nodes
         .iter()
@@ -259,6 +287,24 @@ pub fn build_bvh(mut triangles: Vec<RtTriangle>) -> (Vec<BvhNodeGpu>, Vec<RtTria
 
     let gpu_tris: Vec<RtTriangleGpu> = ordered.into_iter().map(RtTriangleGpu::from).collect();
     (gpu_nodes, gpu_tris)
+}
+
+/// Calidad de hoja del BVH software derivada del tier RTX: Bajo 8, Medio 4, Alto/Máximo 2.
+pub fn bvh_leaf_for_rt_tier(
+    tier: crate::engine3d::config_3d::reflection_graphics::ReflectionTier,
+) -> usize {
+    use crate::engine3d::config_3d::reflection_graphics::ReflectionTier;
+    match tier {
+        ReflectionTier::Low => 8,
+        ReflectionTier::Medium => 4,
+        ReflectionTier::High | ReflectionTier::Ultra => 2,
+        ReflectionTier::Off => 4,
+    }
+}
+
+#[allow(dead_code)]
+pub fn build_bvh(triangles: Vec<RtTriangle>) -> (Vec<BvhNodeGpu>, Vec<RtTriangleGpu>) {
+    build_bvh_with_quality(triangles, LEAF_TRIANGLES)
 }
 
 #[cfg(test)]

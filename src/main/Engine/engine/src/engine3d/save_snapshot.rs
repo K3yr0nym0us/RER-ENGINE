@@ -70,6 +70,8 @@ impl State {
                 graphics_texture_tier: Some(self.graphics_texture_tier.wire().to_string()),
                 texture_detail_distance_m: Some(self.texture_detail_near_m),
                 reflection_tier: Some(self.reflection_tier.wire().to_string()),
+                reflection_mode: Some(self.reflection_mode.wire().to_string()),
+                rt_tier: Some(self.rt_tier.wire().to_string()),
                 reflection_raytracing: Some(self.reflection_raytracing_enabled),
                 reflection_probes: Some(self.reflection_probes_enabled),
                 shadow_tier: Some(self.shadow_tier.wire().to_string()),

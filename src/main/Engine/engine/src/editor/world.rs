@@ -194,9 +194,10 @@ impl SsaaTier {
 }
 
 /// Vistas de depuración de reflejos (mismas claves que el motor).
-pub const REFLECTION_DEBUG_VIEWS: [(&str, &str); 12] = [
+pub const REFLECTION_DEBUG_VIEWS: [(&str, &str); 13] = [
     ("final", "Final"),
     ("ssr_debug", "SSR debug"),
+    ("rt_debug", "RT debug"),
     ("ssr_miss_green", "SSR miss (verde)"),
     ("ssr_exit_reason", "SSR motivo de salida"),
     ("ssr_vector_rgb", "SSR vector RGB"),
@@ -262,6 +263,10 @@ pub struct WorldSettings {
     pub texture_detail_distance: f32,
     pub reflection_tier: ReflectionTier,
     pub reflection_tier_effective: Option<ReflectionTier>,
+    /// Sistema activo: off / ssr / rt (mutuamente excluyentes).
+    pub reflection_mode: &'static str,
+    /// Tier de RTX.
+    pub rt_tier: ReflectionTier,
     pub reflection_raytracing: bool,
     pub reflection_probes: bool,
     pub reflection_debug_view: &'static str,
@@ -318,6 +323,8 @@ impl Default for WorldSettings {
             texture_detail_distance: 10.0,
             reflection_tier: ReflectionTier::Off,
             reflection_tier_effective: None,
+            reflection_mode: "off",
+            rt_tier: ReflectionTier::Low,
             reflection_raytracing: false,
             reflection_probes: false,
             reflection_debug_view: "final",
@@ -405,6 +412,19 @@ impl WorldSettings {
         if let Some(value) = number(world, "sunCyclePhase") {
             self.sun_cycle_phase = value as f32;
         }
+        if let Some(value) = world.get("reflectionTier").and_then(Value::as_str) {
+            self.reflection_tier = ReflectionTier::parse(value);
+        }
+        if let Some(value) = world.get("reflectionMode").and_then(Value::as_str) {
+            self.reflection_mode = match value {
+                "ssr" => "ssr",
+                "rt" => "rt",
+                _ => "off",
+            };
+        }
+        if let Some(value) = world.get("rtTier").and_then(Value::as_str) {
+            self.rt_tier = ReflectionTier::parse(value);
+        }
         self.sync_faces_from_box();
     }
 
@@ -480,6 +500,16 @@ impl WorldSettings {
         }
         if let Some(value) = world.get("reflection_tier").and_then(Value::as_str) {
             self.reflection_tier = ReflectionTier::parse(value);
+        }
+        if let Some(value) = world.get("reflection_mode").and_then(Value::as_str) {
+            self.reflection_mode = match value {
+                "ssr" => "ssr",
+                "rt" => "rt",
+                _ => "off",
+            };
+        }
+        if let Some(value) = world.get("rt_tier").and_then(Value::as_str) {
+            self.rt_tier = ReflectionTier::parse(value);
         }
         if let Some(value) = boolean(world, "reflection_raytracing") {
             self.reflection_raytracing = value;
@@ -639,9 +669,29 @@ impl WorldSettings {
                     self.reflection_tier = ReflectionTier::parse(value);
                 }
             }
+            "set_reflection_mode" => {
+                if let Some(value) = command.get("mode").and_then(Value::as_str) {
+                    self.reflection_mode = match value {
+                        "ssr" => "ssr",
+                        "rt" => "rt",
+                        _ => "off",
+                    };
+                    self.reflection_raytracing = self.reflection_mode == "rt";
+                }
+            }
+            "set_rt_tier" => {
+                if let Some(value) = command.get("tier").and_then(Value::as_str) {
+                    self.rt_tier = ReflectionTier::parse(value);
+                }
+            }
             "set_reflection_raytracing" => {
                 if let Some(value) = boolean(command, "enabled") {
                     self.reflection_raytracing = value;
+                    if value {
+                        self.reflection_mode = "rt";
+                    } else if self.reflection_mode == "rt" {
+                        self.reflection_mode = "off";
+                    }
                 }
             }
             "set_reflection_probes" => {
@@ -744,9 +794,29 @@ impl WorldSettings {
                     self.reflection_tier_effective = Some(ReflectionTier::parse(value));
                 }
             }
+            "reflection_mode_changed" => {
+                if let Some(value) = event.get("mode").and_then(Value::as_str) {
+                    self.reflection_mode = match value {
+                        "ssr" => "ssr",
+                        "rt" => "rt",
+                        _ => "off",
+                    };
+                    self.reflection_raytracing = self.reflection_mode == "rt";
+                }
+            }
+            "rt_tier_changed" => {
+                if let Some(value) = event.get("tier").and_then(Value::as_str) {
+                    self.rt_tier = ReflectionTier::parse(value);
+                }
+            }
             "reflection_raytracing_changed" => {
                 if let Some(value) = boolean(event, "enabled") {
                     self.reflection_raytracing = value;
+                    if value {
+                        self.reflection_mode = "rt";
+                    } else if self.reflection_mode == "rt" {
+                        self.reflection_mode = "off";
+                    }
                 }
             }
             "reflection_probes_changed" => {

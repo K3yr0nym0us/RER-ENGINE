@@ -98,6 +98,14 @@ pub(crate) fn send_project_loaded_3d(
                     .to_string(),
             )
         }),
+        reflectionMode: view.world.reflectionMode.clone().or_else(|| {
+            Some(if view.world.reflectionRaytracing == Some(true) {
+                "rt".to_string()
+            } else {
+                "off".to_string()
+            })
+        }),
+        rtTier: view.world.rtTier.clone().or_else(|| Some("low".to_string())),
         reflectionRaytracing: view.world.reflectionRaytracing,
         reflectionProbes: view.world.reflectionProbes,
         shadowTier: view.world.shadowTier.clone().or_else(|| {
