@@ -5,6 +5,7 @@ seeds.txt
 
 # Rust
 src/main/Engine/target/
+src/main/Engine/target-ci/
 src/main/Engine/_sz.exe
 src/main/Engine/_sz.pdb
 src/main/Engine/_size_check.pdb

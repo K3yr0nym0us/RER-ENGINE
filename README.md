@@ -89,11 +89,15 @@ Desde la raíz del repositorio:
 # Instalar dependencias (primera vez)
 yarn
 
-# Desarrollo: compila el editor (debug) y abre la app
+# Desarrollo: compila el editor (debug) de forma incremental y abre la app
 yarn dev
 
 # Desarrollo con el editor en release (más rápido al renderizar)
 yarn start
+
+# Si solo cambiaste TS/React (Rust intacto), salta la compilación del motor:
+yarn dev:local
+yarn start:local
 
 # Build del editor (sin empaquetar instalador)
 yarn build
@@ -128,6 +132,36 @@ yarn rust:build:release
 ya lo construye con el conjunto de features correcto en cada invocación.
 
 Los ejecutables quedan en `src/main/Engine/target/debug/` o `target/release/`.
+
+`yarn dev` y `yarn start` pasan antes por `scripts/prune-rust-target.mjs`: mide
+`target/` (~1 s) y **no toca nada** mientras esté por debajo del tope (18 GB).
+Cargo recompila solo los crates que cambiaron: sin cambios en Rust el build
+tarda ~0,6 s; con un `.rs` modificado, ~5 s en debug. Las variantes
+`dev:local` / `start:local` omiten directamente el build de Rust (útiles cuando
+solo tocaste el frontend).
+
+Cuando `target/` supera el tope, el guardia poda primero las cachés puras
+(`doc/` e `incremental/` de cada perfil) y solo si aún excede el límite ejecuta
+un `cargo clean` completo: un rebuild lento de vez en cuando, no uno en cada
+arranque. El tope se ajusta con `RER_TARGET_MAX_GB` (default 18).
+
+Los comandos de tests/quality (`rust:test*`, `rust:check`, `rust:clippy`,
+`quality:rust`) compilan en `src/main/Engine/target-ci/`, separado de los
+binarios de dev/dist. Así las tres variantes de features y los binarios de test
+no dejan residuos en `target/`. Ese directorio se limpia con `yarn rust:clean:ci`.
+
+Si tras cambiar de toolchain aparece el error del enlazador de MSVC
+`LNK1318: Unexpected PDB error`, la caché incremental quedó incompatible: haz
+**una** limpieza del perfil afectado y vuelve a compilar. Para una
+reconstrucción total (toolchain nuevo, binario obsoleto, etc.):
+
+```bash
+yarn rust:prune         # poda cachés / limpia solo si se supera el tope
+yarn rust:clean         # todo target/
+yarn rust:clean:dev     # solo perfil debug
+yarn rust:clean:release # solo perfil release
+yarn rust:clean:ci      # artefactos de tests/quality
+```
 
 Logs del motor (opcional): `RUST_LOG=info` o `RUST_LOG=rer_engine::engine2d=debug`.
 
