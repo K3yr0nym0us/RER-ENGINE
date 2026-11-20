@@ -167,6 +167,9 @@ struct EditorWindow {
     particle_window: Option<crate::editor::particle_window::ParticleWindow>,
     /// Ventana nativa aparte para las modales migradas (borrar recurso / salida).
     modal_window: Option<ModalWindow>,
+    /// Selector de modelos: ventana aparte abierta desde propiedades de entidad,
+    /// para que pueda permanecer abierta junto al inspector (como en Electron).
+    model_picker_window: Option<ModalWindow>,
     /// `true` mientras el ghost de colocación del emisor está activo en el motor.
     particle_placement_active: bool,
 }
@@ -202,6 +205,7 @@ impl EditorWindow {
             paused: false,
             particle_window: None,
             modal_window: None,
+            model_picker_window: None,
             particle_placement_active: false,
         })
     }
@@ -552,6 +556,7 @@ impl EditorWindow {
             paused: _,
             particle_window: _,
             modal_window: _,
+            model_picker_window: _,
             particle_placement_active: _,
         } = self;
 
@@ -659,6 +664,49 @@ impl EditorWindow {
                 None
             };
             self.particle_placement_active = wants_ghost;
+        }
+    }
+
+    /// Mantiene abierta la ventana aparte del selector «Reemplazar modelo».
+    /// Se crea después del inspector (ambas `AlwaysOnTop`), de modo que queda
+    /// por encima sin ocultar la modal de propiedades, igual que el submodal
+    /// nativo que abría Electron antes de la migración a egui.
+    fn sync_model_picker_window(&mut self, event_loop: &ActiveEventLoop) {
+        let wants = self.app.entity_properties.model_picker.is_some();
+        if wants == self.model_picker_window.is_some() {
+            return;
+        }
+        if !wants {
+            self.model_picker_window = None;
+            return;
+        }
+        let locale = self.app.cli.locale;
+        let title = tr(locale, "Reemplazar modelo", "Replace model").to_string();
+        // Centrado sobre el inspector (si está abierto), igual que el submodal
+        // nativo que abría Electron desde la ventana de propiedades.
+        let parent = self
+            .modal_window
+            .as_ref()
+            .map(|modal| modal.window())
+            .unwrap_or(self.window.as_ref());
+        match ModalWindow::open(
+            event_loop,
+            self.gpu.shared_gpu(),
+            parent,
+            app_window_icon(),
+            NativeModal::ModelPicker,
+            title,
+        ) {
+            Ok(window) => self.model_picker_window = Some(window),
+            Err(error) => {
+                log::error!("[editor] ventana de selector de modelos: {error}");
+                self.app.entity_properties.model_picker = None;
+                // No se pudo abrir: restaura el inspector como en una cancelación.
+                if self.app.entity_properties.reopen_after_model_picker {
+                    self.app.entity_properties.reopen_after_model_picker = false;
+                    self.app.entity_properties.open = true;
+                }
+            }
         }
     }
 
@@ -784,6 +832,9 @@ impl EditorWindow {
             NativeModal::EntityProperties => {
                 tr(locale, "Propiedades de entidad", "Entity properties").to_string()
             }
+            NativeModal::ModelPicker => {
+                tr(locale, "Reemplazar modelo", "Replace model").to_string()
+            }
             NativeModal::InteractionTooltip => {
                 tr(locale, "Tooltip de interacción", "Interaction tooltip").to_string()
             }
@@ -895,6 +946,11 @@ impl EditorWindow {
                     }
                     NativeModal::EntityProperties => {
                         self.app.entity_properties.open = false;
+                        self.app.entity_properties.model_picker = None;
+                        self.app.entity_properties.reopen_after_model_picker = false;
+                    }
+                    NativeModal::ModelPicker => {
+                        self.app.entity_properties.model_picker = None;
                     }
                     NativeModal::InteractionTooltip => {
                         self.app.left_sidebar.tooltip_modal_open = false;
@@ -1264,6 +1320,12 @@ impl EditorApplication {
             Some(NativeModal::EntityProperties) => {
                 editor.app.entity_properties.open = false;
                 editor.app.entity_properties.confirm = None;
+                // Cerrar el inspector también cierra su selector (ventana aparte).
+                editor.app.entity_properties.model_picker = None;
+                editor.app.entity_properties.reopen_after_model_picker = false;
+            }
+            Some(NativeModal::ModelPicker) => {
+                editor.app.entity_properties.model_picker = None;
             }
             Some(NativeModal::InteractionTooltip) => {
                 editor.app.left_sidebar.tooltip_modal_open = false;
@@ -1297,6 +1359,65 @@ impl EditorApplication {
                 editor.app.visual_script.loaded = false;
             }
             None => {}
+        }
+    }
+
+    /// Eventos de la ventana del selector de modelos: la X equivale a Cancelar.
+    fn handle_model_picker_window_event(&mut self, event: WindowEvent) {
+        if matches!(event, WindowEvent::CloseRequested) {
+            if let Some(editor) = self.editor.as_mut() {
+                editor.app.entity_properties.model_picker = None;
+                editor.model_picker_window = None;
+                // Cancelar: vuelve el inspector del que se abrió el selector.
+                if editor.app.entity_properties.reopen_after_model_picker {
+                    editor.app.entity_properties.reopen_after_model_picker = false;
+                    editor.app.entity_properties.open = true;
+                }
+            }
+            return;
+        }
+
+        let Some(editor) = self.editor.as_mut() else {
+            return;
+        };
+        let Some(window) = editor.model_picker_window.as_mut() else {
+            return;
+        };
+        let response = window.on_window_event(&event);
+        let is_redraw = matches!(event, WindowEvent::RedrawRequested);
+        let is_input = matches!(
+            event,
+            WindowEvent::MouseInput { .. }
+                | WindowEvent::CursorMoved { .. }
+                | WindowEvent::MouseWheel { .. }
+                | WindowEvent::KeyboardInput { .. }
+        );
+        if (response.repaint || is_input) && !is_redraw {
+            window.request_redraw();
+        }
+        if response.consumed && !is_redraw {
+            return;
+        }
+        match event {
+            WindowEvent::Resized(size) => {
+                if let Err(error) = window.resize(size) {
+                    log::error!("[editor] ventana selector modelos: {error}");
+                }
+                window.request_redraw();
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                let size = window.inner_size();
+                if let Err(error) = window.resize(size) {
+                    log::error!("[editor] ventana selector modelos: {error}");
+                }
+                window.request_redraw();
+            }
+            WindowEvent::RedrawRequested => {
+                if let Err(error) = window.render(&mut editor.app) {
+                    log::error!("[editor] ventana selector modelos: {error}");
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1544,6 +1665,16 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             self.handle_particle_window_event(event);
             return;
         }
+        let is_model_picker = self.editor.as_ref().is_some_and(|editor| {
+            editor
+                .model_picker_window
+                .as_ref()
+                .is_some_and(|window| window.window_id() == window_id)
+        });
+        if is_model_picker {
+            self.handle_model_picker_window_event(event);
+            return;
+        }
         let is_modal = self.editor.as_ref().is_some_and(|editor| {
             editor
                 .modal_window
@@ -1672,6 +1803,7 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 }
                 editor.sync_particle_window(event_loop);
                 editor.sync_modal_window(event_loop);
+                editor.sync_model_picker_window(event_loop);
             }
             _ => {}
         }
@@ -1718,12 +1850,16 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
             if let Some(editor) = self.editor.as_mut() {
                 editor.sync_particle_window(event_loop);
                 editor.sync_modal_window(event_loop);
+                editor.sync_model_picker_window(event_loop);
                 editor.window.request_redraw();
                 if let Some(particle) = editor.particle_window.as_ref() {
                     particle.request_redraw();
                 }
                 if let Some(modal) = editor.modal_window.as_ref() {
                     modal.request_redraw();
+                }
+                if let Some(picker) = editor.model_picker_window.as_ref() {
+                    picker.request_redraw();
                 }
             }
             self.next_frame_at += frame_duration;

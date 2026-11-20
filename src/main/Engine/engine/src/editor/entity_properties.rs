@@ -41,6 +41,14 @@ pub(crate) struct ModelPicker {
     pub hint: String,
     pub choices: Vec<ModelChoice>,
     pub selected: Option<String>,
+    /// Modelos de esta categoría aún en carga: se muestran como spinner y no
+    /// se pueden elegir hasta que el motor los marque como listos.
+    pub loading: usize,
+    /// Datos para reconstruir la lista cada frame desde la biblioteca viva del
+    /// motor (que se actualiza con `model_asset_loaded`).
+    pub active_scene_id: u64,
+    pub intent: String,
+    pub current: String,
 }
 
 #[derive(Debug, Clone)]
@@ -228,8 +236,14 @@ pub(crate) struct EntityPropertiesState {
     pub is_execution_area: bool,
     pub is_from_blueprint: bool,
     pub is_projectile: bool,
-    /// Ruta del modelo actual (para excluirlo del selector de reemplazo).
+    /// Categoría 3D de la entidad (`environment`, `weapon`, `object`, …): la
+    /// modal de propiedades filtra el selector de modelos con ella.
+    pub entity_category: Option<String>,
+    /// Ruta del modelo actual (para preseleccionarlo en el selector de reemplazo).
     pub current_model_path: Option<String>,
+    /// El selector se abrió desde el inspector: al cancelar se reabre este,
+    /// al confirmar el reemplazo no.
+    pub reopen_after_model_picker: bool,
     pub linked_blueprint_name: Option<String>,
 
     pub scripts: Vec<PropScript>,
@@ -351,6 +365,11 @@ impl EntityPropertiesState {
             None
         };
         self.is_projectile = is_projectile;
+        self.entity_category = if category3d.is_empty() {
+            (!category.is_empty()).then(|| category.clone())
+        } else {
+            Some(category3d.clone())
+        };
         self.current_model_path = meta
             .get("visualModelPath")
             .and_then(Value::as_str)

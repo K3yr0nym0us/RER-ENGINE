@@ -60,8 +60,8 @@ pub struct SidebarLeftState {
     selected_model: Option<String>,
     pub(crate) active_tool: Option<&'static str>,
     pub(crate) active_ui_screen: Option<String>,
-    /// Importación de modelo pendiente: la modal nativa pide categoría (y nombre).
-    pub(crate) model_import: Option<ModelImportDraft>,
+    /// Sub-acordeón abierto dentro de Recursos → Modelos (una categoría).
+    pub(crate) open_model_category: Option<&'static str>,
     /// Globalización pendiente: la modal nativa confirma antes de enviar el comando.
     pub(crate) globalize_model: Option<GlobalizeModelDraft>,
     /// Modal nativa «Cargar desde otra escena» abierta (lista de recursos ajenos).
@@ -167,16 +167,6 @@ pub(crate) struct GlobalizeModelDraft {
     pub name: String,
 }
 
-/// Borrador de importación de modelo 3D: la modal nativa (egui) elige la
-/// categoría antes de registrar el `.rerasset` en el motor.
-pub(crate) struct ModelImportDraft {
-    pub path: String,
-    pub name: String,
-    /// `character | environment | object | weapon | projectile`
-    /// (`normalize_model_library_category` en el motor).
-    pub category: &'static str,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EntityKind {
     Character,
@@ -238,6 +228,9 @@ enum LeftAction {
     /// Activa/desactiva la pantalla HUD que se muestra en play.
     SetActiveUiScreen(Option<String>),
     ImportAsset(AssetKind),
+    /// Importa un modelo 3D directamente en la categoría elegida en el
+    /// sub-acordeón de Recursos → Modelos (sin modal intermedia).
+    ImportModelCategory(&'static str),
     /// Resources → modelos: modal «Cargar desde otra escena» (referencia por path).
     OpenLoadFromScene,
     /// Resources → modelos: convierte el modelo de la escena activa en global.
@@ -306,8 +299,8 @@ use self::resources::*;
 use self::scenes::*;
 use self::tools::*;
 pub(crate) use interaction_tooltips::{
-    DEMO_TOOLTIP_IDS, DeleteInteractionTooltipDraft, TooltipDraft, demo_tooltips,
-    is_demo_tooltip, sync_command,
+    DEMO_TOOLTIP_IDS, DeleteInteractionTooltipDraft, TooltipDraft, demo_tooltips, is_demo_tooltip,
+    sync_command,
 };
 
 pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
@@ -727,6 +720,7 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             }));
         }
         LeftAction::ImportAsset(kind) => import_asset(app, kind),
+        LeftAction::ImportModelCategory(category) => import_model_category(app, category),
         LeftAction::OpenLoadFromScene => {
             // Lista nativa de modelos de otras escenas; al elegir uno se abre la
             // confirmación de globalización (misma lógica que el botón globo).
@@ -795,24 +789,39 @@ fn import_asset(app: &mut EditorApp, kind: AssetKind) {
         .unwrap_or("recurso")
         .to_string();
 
-    // Los modelos deben quedar categorizados: la modal nativa pide la categoría
-    // antes de enviar `load_model_asset` (si no, no aparecen en los selectores
-    // filtrados por categoría, p. ej. «cambiar modelo» de un personaje).
-    if kind == AssetKind::Model {
-        app.left_sidebar.model_import = Some(ModelImportDraft {
-            path: path_text,
-            name,
-            category: "object",
-        });
-        return;
-    }
-
     app.send_engine(json!({
         "cmd": kind.load_command(),
         "path": path_text,
         "name": name,
     }));
     app.push_log(format!("[Recursos] Importando «{name}»…"), false);
+}
+
+/// Importa un modelo directamente a la categoría del sub-acordeón pulsado.
+/// No hay modal intermedia: el botón ya dice en qué categoría se va a cargar.
+fn import_model_category(app: &mut EditorApp, category: &'static str) {
+    let Some(path) = rfd::FileDialog::new()
+        .add_filter("Modelo 3D", AssetKind::Model.extensions())
+        .pick_file()
+    else {
+        return;
+    };
+    let path_text = path.to_string_lossy().to_string();
+    let name = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("modelo")
+        .to_string();
+    app.send_engine(json!({
+        "cmd": "load_model_asset",
+        "path": path_text,
+        "name": name,
+        "category": category,
+    }));
+    app.push_log(
+        format!("[Recursos] Importando «{name}» como {category}…"),
+        false,
+    );
 }
 
 /// Comando para iniciar la colocación con ghost de una entidad nueva.

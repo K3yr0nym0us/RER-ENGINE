@@ -11,12 +11,14 @@ use egui_phosphor::regular as icons;
 use serde_json::{Value, json};
 
 use crate::editor::app::EditorApp;
+use crate::editor::assets::AssetEntry;
 use crate::editor::cli::Locale;
 use crate::editor::entity_properties::{
     ConfirmAction, EntityPropertiesState, NativeNested, ProjectileCfg, PropTab,
 };
 use crate::editor::i18n::tr;
 use crate::editor::theme;
+use crate::engine3d::ipc::normalize_model_library_category;
 
 use super::scene_script_modal::{RER_THEME, rhai_syntax};
 use super::widgets;
@@ -210,6 +212,12 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
     let locale = app.cli.locale;
     let ctx = ui.ctx().clone();
     let mut commands: Vec<Value> = Vec::new();
+    // La modal debe usar la biblioteca viva del motor (`models_list` /
+    // `model_asset_loaded`), no el snapshot del manifest: `project_state.models`
+    // nunca se actualiza tras importar un modelo y guarda `category: object`.
+    // Se clona antes de tomar `&mut app.entity_properties` más abajo.
+    let models = app.assets.models.clone();
+    let active_scene_id = app.scenes.active_scene_id;
 
     let frame = egui::Frame::new()
         .fill(theme::PANEL_BG)
@@ -224,7 +232,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                 } else if state.entity.is_some() {
                     toolbar(ui, state, locale, &mut commands);
                     ui.add_space(6.0);
-                    model_actions(ui, state, &app.project_state.models, locale);
+                    model_actions(ui, state, &models, active_scene_id, locale);
                     ui.add_space(6.0);
                     physics(ui, state, locale, &mut commands);
                     ui.add_space(8.0);
@@ -253,9 +261,9 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
     // La modal externa usa esta altura para ajustarse al contenido real.
     app.entity_properties.content_height = ui.min_rect().height();
 
-    // Diálogos anidados: se pintan encima de todo el contenido.
+    // Diálogos anidados: se pintan encima de todo el contenido. El selector de
+    // modelos NO está aquí: es una ventana nativa aparte (`NativeModal::ModelPicker`).
     confirm_dialog(&ctx, app, locale, &mut commands);
-    model_picker_dialog(&ctx, app, locale, &mut commands);
     nested_dialog(&ctx, app, locale, &mut commands);
 
     for command in commands {
@@ -456,10 +464,91 @@ fn toolbar(
     });
 }
 
+/// Selector «Reemplazar modelo» a partir de la biblioteca viva del motor.
+/// Muestra solo los modelos de la categoría de la entidad (la misma
+/// normalización que el acordeón «Crear entidad») y deja el modelo actual en la
+/// lista, preseleccionado, para que se vea qué tiene asignado.
+fn model_picker_for(
+    models: &[AssetEntry],
+    active_scene_id: u64,
+    intent: &str,
+    current: &str,
+    hint: String,
+) -> crate::editor::entity_properties::ModelPicker {
+    let key = |v: &str| {
+        v.replace('\\', "/")
+            .trim_end_matches('/')
+            .to_ascii_lowercase()
+    };
+    let current_key = key(current);
+    let in_category = |m: &&crate::editor::assets::AssetEntry| {
+        m.is_visible_in_scene(active_scene_id)
+            && normalize_model_library_category(m.category.as_deref())
+                .unwrap_or_else(|| "object".to_string())
+                == match intent {
+                    "character" => "character",
+                    "environment" => "environment",
+                    "weapon" => "weapon",
+                    "projectile" => "projectile",
+                    _ => "object",
+                }
+    };
+    // Los modelos que aún se están importando NO son elegibles: el motor no
+    // tiene su malla lista y un reemplazo prematuro lo sacaría del cauce.
+    let loading = models
+        .iter()
+        .filter(|m| in_category(m))
+        .filter(|m| matches!(m.state.as_deref(), Some("importing" | "failed")))
+        .count();
+    let mut choices: Vec<crate::editor::entity_properties::ModelChoice> = models
+        .iter()
+        .filter(|m| in_category(m))
+        .map(|m| crate::editor::entity_properties::ModelChoice {
+            label: if m.name.trim().is_empty() {
+                m.path
+                    .rsplit(['/', '\\'])
+                    .next()
+                    .unwrap_or("model")
+                    .to_string()
+            } else {
+                m.name.clone()
+            },
+            path: m.path.clone(),
+            state: m.state.clone().unwrap_or_else(|| "ready".to_string()),
+        })
+        .collect();
+    choices.sort_by_key(|choice| choice.label.to_ascii_lowercase());
+
+    // Preselecciona el modelo asignado: sigue en la lista, pero ya marcado.
+    // El meta puede guardar la ruta de origen y la biblioteca el `model_id`, así
+    // que se compara también por nombre de archivo.
+    let base = |v: &str| key(v.rsplit(['/', '\\']).next().unwrap_or(v));
+    let current_base = base(current);
+    let selected = choices
+        .iter()
+        .find(|choice| {
+            key(&choice.path) == current_key
+                || base(&choice.path) == current_base
+                || key(&choice.label) == current_base
+        })
+        .map(|choice| choice.path.clone())
+        .or_else(|| choices.first().map(|choice| choice.path.clone()));
+    crate::editor::entity_properties::ModelPicker {
+        hint,
+        choices,
+        selected,
+        loading,
+        active_scene_id,
+        intent: intent.to_string(),
+        current: current.to_string(),
+    }
+}
+
 fn model_actions(
     ui: &mut egui::Ui,
     state: &mut EntityPropertiesState,
-    models: &[Value],
+    models: &[AssetEntry],
+    active_scene_id: u64,
     locale: Locale,
 ) {
     if state.is_collider || state.is_execution_area {
@@ -474,78 +563,33 @@ fn model_actions(
         if is_3d && !state.is_from_blueprint {
             let label = t(locale, "Reemplazar modelo", "Replace model");
             if outline_button(ui, icons::CUBE, &label, theme::INFO, true, None) {
+                // Cada entidad solo ofrece modelos de su propia categoría.
                 let intent = if state.is_player || state.is_character {
                     "character"
+                } else if state.is_projectile {
+                    "projectile"
                 } else if state.is_environment {
                     "environment"
                 } else {
-                    "object"
+                    state.entity_category.as_deref().unwrap_or("object")
                 };
-                let hint = if state.is_player {
-                    t(
-                        locale,
-                        "Reemplazar el modelo del jugador. El nuevo modelo debe tener animaciones de caminar, correr y salto.",
-                        "Replace the player model. The new model must have walk, run and jump animations.",
-                    )
-                } else {
-                    t(
-                        locale,
-                        "Reemplazar el modelo de la entidad. Se conservarán transform y física.",
-                        "Replace the entity model. Transform and physics are kept.",
-                    )
-                };
+                let hint = t(
+                    locale,
+                    "Selecciona el modelo con el que quieres reemplazar el actual.",
+                    "Pick the model you want to replace the current one with.",
+                );
                 let current = state.current_model_path.clone().unwrap_or_default();
-                let mut choices: Vec<crate::editor::entity_properties::ModelChoice> = models
-                    .iter()
-                    .filter(|m| m.get("available_in_scene").and_then(Value::as_bool) != Some(false))
-                    .filter(|m| {
-                        let category = m.get("category").and_then(Value::as_str).unwrap_or("object");
-                        match intent {
-                            "character" => category == "character",
-                            "environment" => category == "environment",
-                            _ => category == "object" || category.is_empty(),
-                        }
-                    })
-                    .filter(|m| {
-                        let key = |v: Option<&str>| {
-                            v.unwrap_or_default()
-                                .replace('\\', "/")
-                                .trim_end_matches('/')
-                                .to_ascii_lowercase()
-                        };
-                        let model_key = key(m.get("path").and_then(Value::as_str));
-                        let current_key = key(Some(&current));
-                        // Se excluye el modelo ya asignado (React compara path,
-                        // model_id y asset normalizados; aquí basta con path).
-                        current_key.is_empty() || model_key != current_key
-                    })
-                    .map(|m| crate::editor::entity_properties::ModelChoice {
-                        label: m
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .filter(|n| !n.is_empty())
-                            .map(str::to_string)
-                            .unwrap_or_else(|| {
-                                m.get("path")
-                                    .and_then(Value::as_str)
-                                    .and_then(|p| p.rsplit(['/', '\\']).next())
-                                    .unwrap_or("model")
-                                    .to_string()
-                            }),
-                        path: m.get("path").and_then(Value::as_str).unwrap_or_default().to_string(),
-                        state: m
-                            .get("state")
-                            .and_then(Value::as_str)
-                            .unwrap_or("ready")
-                            .to_string(),
-                    })
-                    .collect();
-                choices.sort_by_key(|choice| choice.label.to_ascii_lowercase());
-                state.model_picker = Some(crate::editor::entity_properties::ModelPicker {
+                state.model_picker = Some(model_picker_for(
+                    models,
+                    active_scene_id,
+                    intent,
+                    &current,
                     hint,
-                    choices,
-                    selected: None,
-                });
+                ));
+                // El inspector se cierra mientras el selector está abierto. Si se
+                // cancela (X de la ventana) se reabrirá; si se confirma, no.
+                state.open = false;
+                state.reopen_after_model_picker = true;
             }
         }
         if state.is_from_blueprint {
@@ -589,98 +633,136 @@ fn model_actions(
     });
 }
 
-/// Selector nativo de modelos (antes `CreateEntityFromModelModalBody`).
-fn model_picker_dialog(
-    ctx: &egui::Context,
-    app: &mut EditorApp,
-    locale: Locale,
-    commands: &mut Vec<Value>,
-) {
-    let Some(mut picker) = app.entity_properties.model_picker.take() else {
+/// Selector de modelos en su propia ventana nativa (antes submodal de Electron).
+/// Se dibuja igual que el resto de modales del sistema: `CentralPanel` con el
+/// frame y el espaciado de tema, sin un `egui::Window` anidado en el inspector.
+pub(crate) fn model_picker_window(ui: &mut egui::Ui, app: &mut EditorApp) {
+    let locale = app.cli.locale;
+    let Some(previous) = app.entity_properties.model_picker.take() else {
         return;
     };
     let mut close = false;
-    egui::Window::new(t(locale, "Reemplazar modelo", "Replace model"))
-        .id(egui::Id::new("entity_properties_model_picker"))
-        .collapsible(false)
-        .resizable(false)
-        .anchor(Align2::CENTER_CENTER, Vec2::ZERO)
-        .show(ctx, |ui| {
-            ui.set_min_size(Vec2::new(340.0, 120.0));
+    let mut commands: Vec<Value> = Vec::new();
+
+    // Reconstruye la lista cada frame desde la biblioteca viva del motor: los
+    // modelos en carga no entran en el combo y aparecen como spinner; cuando
+    // llega `model_asset_loaded` se vuelven elegibles sin reabrir la modal.
+    let models = app.assets.models.clone();
+    let mut picker = model_picker_for(
+        &models,
+        previous.active_scene_id,
+        &previous.intent,
+        &previous.current,
+        previous.hint.clone(),
+    );
+    if previous
+        .selected
+        .as_deref()
+        .is_some_and(|path| picker.choices.iter().any(|choice| choice.path == path))
+    {
+        picker.selected = previous.selected;
+    } else {
+        picker.selected = picker.choices.first().map(|choice| choice.path.clone());
+    }
+
+    egui::CentralPanel::default()
+        .frame(
+            egui::Frame::new()
+                .fill(theme::PANEL_BG)
+                .inner_margin(egui::Margin::same(12)),
+        )
+        .show(ui, |ui| {
             ui.label(muted(&picker.hint, 12.0));
-            ui.add_space(6.0);
-            if picker.choices.is_empty() {
-                ui.label(muted(
-                    &t(
-                        locale,
-                        "No hay modelos precargados. Carga modelos primero en el acordeón de recursos.",
-                        "No preloaded models. Load models first in the resources accordion.",
-                    ),
-                    12.0,
-                ));
-            } else {
-                for choice in &picker.choices {
-                    let importing = choice.state == "importing";
-                    let label = format!(
-                        "{}{}",
-                        choice.label,
-                        if importing {
-                            format!(" ({})", t(locale, "cargando…", "loading…"))
-                        } else {
-                            String::new()
-                        }
-                    );
-                    if ui
-                        .add_enabled(
-                            !importing,
-                            egui::RadioButton::new(
-                                picker.selected.as_deref() == Some(choice.path.as_str()),
-                                label,
-                            ),
-                        )
-                        .clicked()
-                    {
-                        picker.selected = Some(choice.path.clone());
-                    }
-                }
-            }
-            ui.add_space(10.0);
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if outline_button(
-                        ui,
-                        "",
-                        &t(locale, "Cancelar", "Cancel"),
-                        theme::OUTLINE_SECONDARY,
-                        true,
-                        None,
-                    ) {
-                        close = true;
-                    }
-                    let can_replace = picker
-                        .selected
-                        .as_deref()
-                        .is_some_and(|path| !path.is_empty());
-                    if outline_button(
-                        ui,
-                        "",
-                        &t(locale, "Reemplazar", "Replace"),
-                        theme::INFO,
-                        can_replace,
-                        None,
-                    ) && let Some(path) = picker.selected.clone()
-                    {
-                        let id = app.entity_properties.entity().map(|e| e.id).unwrap_or(0);
-                        commands.push(json!({
-                            "cmd": "replace_entity_model", "id": id, "path": path
-                        }));
-                        close = true;
+            ui.add_space(8.0);
+            section_label(ui, &t(locale, "Modelo", "Model"));
+            let key = |v: &str| {
+                v.replace('\\', "/")
+                    .trim_end_matches('/')
+                    .to_ascii_lowercase()
+            };
+            let base = |v: &str| key(v.rsplit(['/', '\\']).next().unwrap_or(v));
+            let current_key = key(&picker.current);
+            let current_base = base(&picker.current);
+            let is_current = |path: &str, label: &str| {
+                key(path) == current_key || base(path) == current_base || key(label) == current_base
+            };
+
+            let selected_label = picker
+                .selected
+                .as_deref()
+                .and_then(|path| picker.choices.iter().find(|c| c.path == path))
+                .map(|choice| choice.label.clone())
+                .unwrap_or_else(|| "—".to_string());
+            let mut changed: Option<String> = None;
+            egui::ComboBox::from_id_salt("replace_model_picker")
+                .width(ui.available_width())
+                .selected_text(&selected_label)
+                .show_ui(ui, |ui| {
+                    for choice in &picker.choices {
+                        let current = is_current(&choice.path, &choice.label);
+                        let loading = choice.state == "importing";
+                        let failed = choice.state == "failed";
+                        // El modelo asignado y los que aún cargan (o fallaron)
+                        // se muestran pero no se pueden elegir.
+                        let enabled = !current && !loading && !failed;
+                        ui.horizontal(|ui| {
+                            if loading {
+                                ui.add(egui::Spinner::new().size(12.0));
+                            }
+                            ui.add_enabled_ui(enabled, |ui| {
+                                let label = if current {
+                                    format!("{}  {}", icons::CHECK, choice.label)
+                                } else {
+                                    choice.label.clone()
+                                };
+                                if ui
+                                    .selectable_label(
+                                        picker.selected.as_deref() == Some(choice.path.as_str()),
+                                        label,
+                                    )
+                                    .clicked()
+                                {
+                                    changed = Some(choice.path.clone());
+                                }
+                            });
+                        });
                     }
                 });
-            });
+            if let Some(path) = changed {
+                picker.selected = Some(path);
+            }
+
+            ui.add_space(12.0);
+            // El botón siempre se renderiza: si no hay cambio válido no envía nada.
+            if widgets::modal_button(
+                ui,
+                icons::CUBE,
+                &t(
+                    locale,
+                    "Reemplazar con este modelo",
+                    "Replace with this model",
+                ),
+                widgets::ModalButtonStyle::Primary,
+                ui.available_width(),
+                true,
+            ) && let Some(path) = picker.selected.clone()
+            {
+                let id = app.entity_properties.entity().map(|e| e.id).unwrap_or(0);
+                commands.push(json!({
+                    "cmd": "replace_entity_model", "id": id, "path": path
+                }));
+                close = true;
+            }
         });
+
     if !close {
         app.entity_properties.model_picker = Some(picker);
+    } else {
+        // Confirmado: no se reabre el inspector (la X del picker sí lo hará).
+        app.entity_properties.reopen_after_model_picker = false;
+    }
+    for command in commands {
+        app.send_engine(command);
     }
 }
 
@@ -2068,4 +2150,103 @@ fn now_millis() -> u128 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model(path: &str, name: &str, category: Option<&str>, scene_id: Option<u32>) -> AssetEntry {
+        AssetEntry {
+            name: name.to_string(),
+            path: path.to_string(),
+            model_id: None,
+            asset: None,
+            category: category.map(str::to_string),
+            state: Some("ready".to_string()),
+            scene_id,
+        }
+    }
+
+    fn model_with_state(
+        path: &str,
+        name: &str,
+        category: Option<&str>,
+        state: &str,
+    ) -> AssetEntry {
+        let mut entry = model(path, name, category, None);
+        entry.state = Some(state.to_string());
+        entry
+    }
+
+    fn paths(picker: &crate::editor::entity_properties::ModelPicker) -> Vec<&str> {
+        picker.choices.iter().map(|c| c.path.as_str()).collect()
+    }
+
+    #[test]
+    fn replacing_player_model_lists_only_character_models() {
+        let models = vec![
+            model("model_hero", "Hero", Some("character"), None),
+            model("model_rock", "Rock", Some("object"), None),
+            model("model_old", "Legacy", None, None),
+        ];
+
+        let for_player = model_picker_for(&models, 1, "character", "", "hint".into());
+        assert_eq!(paths(&for_player), ["model_hero"]);
+        assert_eq!(for_player.selected.as_deref(), Some("model_hero"));
+
+        let for_object = model_picker_for(&models, 1, "object", "", "hint".into());
+        assert_eq!(paths(&for_object), ["model_old", "model_rock"]);
+    }
+
+    #[test]
+    fn current_model_stays_in_the_list_and_comes_preselected() {
+        let models = vec![
+            model("model_hero", "Hero", Some("character"), None),
+            model("model_other", "Other", Some("character"), Some(7)),
+            model("model_old_hero", "Old", Some("character"), None),
+        ];
+
+        let picker = model_picker_for(&models, 1, "character", "model_old_hero", "hint".into());
+        // El de otra escena se oculta; el asignado sí aparece y viene marcado.
+        assert_eq!(paths(&picker), ["model_hero", "model_old_hero"]);
+        assert_eq!(picker.selected.as_deref(), Some("model_old_hero"));
+    }
+
+    #[test]
+    fn weapons_and_projectiles_only_list_their_own_category() {
+        let models = vec![
+            model("model_sword", "Sword", Some("weapon"), None),
+            model("model_bullet", "Bullet", Some("projectile"), None),
+            model("model_hero", "Hero", Some("character"), None),
+        ];
+
+        let weapon = model_picker_for(&models, 1, "weapon", "", "hint".into());
+        assert_eq!(paths(&weapon), ["model_sword"]);
+        let projectile = model_picker_for(&models, 1, "projectile", "", "hint".into());
+        assert_eq!(paths(&projectile), ["model_bullet"]);
+    }
+
+    #[test]
+    fn loading_models_are_listed_with_their_state() {
+        let models = vec![
+            model("model_hero", "Hero", Some("character"), None),
+            model_with_state("model_loading", "Loading", Some("character"), "importing"),
+            model_with_state("model_failed", "Failed", Some("character"), "failed"),
+        ];
+
+        let picker = model_picker_for(&models, 1, "character", "", "hint".into());
+        // Siguen en la lista (el combo los pinta con spinner / deshabilitados).
+        assert_eq!(
+            paths(&picker),
+            ["model_failed", "model_hero", "model_loading"]
+        );
+        assert_eq!(picker.loading, 2);
+        let states: Vec<&str> = picker
+            .choices
+            .iter()
+            .map(|choice| choice.state.as_str())
+            .collect();
+        assert_eq!(states, ["failed", "ready", "importing"]);
+    }
 }

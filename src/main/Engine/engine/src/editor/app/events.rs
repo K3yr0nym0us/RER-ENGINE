@@ -241,6 +241,119 @@ impl EditorApp {
                 self.selected_entity = None;
                 self.pending_properties = None;
             }
+            // El motor enlazó un modelo skinned:refleja sus clips en el meta de
+            // la entidad para que la modal de propiedades detecte las
+            // animaciones incrustadas (p. ej. tras reemplazar el del jugador).
+            "model_clips_ready" => {
+                let Some(id) = event.get("id").and_then(Value::as_u64) else {
+                    return;
+                };
+                let Some(path) = event
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                else {
+                    return;
+                };
+                let clips = event
+                    .get("clips")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                if clips.is_empty() {
+                    return;
+                }
+
+                let key = id.to_string();
+                let prev = self.project_state.entity_meta.get(&key).cloned();
+                let path_changed = prev
+                    .as_ref()
+                    .and_then(|meta| meta.get("visualModelPath").and_then(Value::as_str))
+                    .is_none_or(|old| old != path);
+                let had_embedded = prev
+                    .as_ref()
+                    .and_then(|meta| meta.get("animations").and_then(Value::as_array))
+                    .is_some_and(|list| {
+                        list.iter().any(|a| {
+                            a.get("embedded_in_model")
+                                .and_then(Value::as_bool)
+                                .unwrap_or(false)
+                        })
+                    });
+                let prev_default = if path_changed || !had_embedded {
+                    None
+                } else {
+                    prev.as_ref()
+                        .and_then(|meta| meta.get("animations").and_then(Value::as_array))
+                        .and_then(|list| {
+                            list.iter()
+                                .find(|a| {
+                                    a.get("is_default")
+                                        .and_then(Value::as_bool)
+                                        .unwrap_or(false)
+                                })
+                        })
+                        .and_then(|a| a.get("name").and_then(Value::as_str).map(str::to_string))
+                };
+
+                let mut animations: Vec<Value> = clips
+                    .iter()
+                    .map(|clip| {
+                        let name = clip
+                            .get("name")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_string();
+                        let fps = clip
+                            .get("fps")
+                            .and_then(Value::as_f64)
+                            .unwrap_or(30.0)
+                            .max(1.0)
+                            .round() as u32;
+                        json!({
+                            "name": name,
+                            "fps": fps,
+                            "loop": true,
+                            "embedded_in_model": true,
+                            "logical_w": 1,
+                            "logical_h": 1,
+                            "frames": [],
+                            "is_default": prev_default.as_deref() == Some(name.as_str()),
+                        })
+                    })
+                    .collect();
+                if !animations
+                    .iter()
+                    .any(|a| a.get("is_default").and_then(Value::as_bool).unwrap_or(false))
+                    && let Some(first) = animations.first_mut()
+                {
+                    first["is_default"] = json!(true);
+                }
+                let default_clip = animations
+                    .iter()
+                    .find(|a| a.get("is_default").and_then(Value::as_bool).unwrap_or(false))
+                    .and_then(|a| a.get("name").and_then(Value::as_str).map(str::to_string));
+
+                let mut meta = prev.unwrap_or_else(|| {
+                    json!({
+                        "kind": "model",
+                        "path": path,
+                        "name": format!("Entity {id}"),
+                        "physicsEnabled": true,
+                        "physicsType": "static",
+                    })
+                });
+                meta["animations"] = json!(animations);
+                meta["visualModelPath"] = json!(path);
+                meta["skinnedModelBound"] = json!(true);
+                self.project_state.entity_meta.insert(key, meta);
+
+                if let Some(name) = default_clip {
+                    self.send_engine(json!({
+                        "cmd": "set_default_animation", "id": id, "name": name,
+                    }));
+                }
+            }
             "animation_finished" => {
                 self.entity_properties.playing_animation_name = None;
             }
@@ -505,5 +618,37 @@ mod tests {
         app.right_sidebar.particles.modal = None;
         app.handle_engine_event(&json!({ "event": "emitter_picked", "id": 999 }));
         assert!(app.right_sidebar.particles.modal.is_none());
+    }
+
+    #[test]
+    fn model_clips_ready_feeds_animations_into_entity_meta() {
+        let mut app = EditorApp::new(crate::editor::cli::Cli::default());
+
+        app.handle_engine_event(&json!({
+            "event": "model_clips_ready",
+            "id": 42,
+            "path": "model_animated",
+            "clips": [
+                { "name": "Walk", "duration_s": 1.0, "fps": 30.0 },
+                { "name": "Run", "duration_s": 0.8, "fps": 24.0 },
+            ],
+        }));
+
+        let meta = app
+            .project_state
+            .entity_meta
+            .get("42")
+            .expect("el evento debe crear el meta de la entidad");
+        let animations = meta["animations"].as_array().expect("clips mapeados");
+        assert_eq!(animations.len(), 2);
+        assert_eq!(animations[0]["name"], "Walk");
+        assert_eq!(animations[0]["embedded_in_model"], true);
+        assert_eq!(animations[0]["is_default"], true);
+        assert_eq!(meta["visualModelPath"], "model_animated");
+        assert_eq!(meta["skinnedModelBound"], true);
+        assert_eq!(
+            app.pending_engine.borrow().first().unwrap()["cmd"],
+            "set_default_animation"
+        );
     }
 }

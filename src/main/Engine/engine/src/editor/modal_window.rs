@@ -27,6 +27,9 @@ use super::theme;
 pub(crate) enum NativeModal {
     /// Inspector de la entidad seleccionada (antes modal Electron `sm`).
     EntityProperties,
+    /// Selector de modelos para «Reemplazar modelo», abierto desde propiedades
+    /// como ventana nativa aparte (antes submodal de Electron).
+    ModelPicker,
     RemoveAsset,
     ExitConfirm,
     DeleteScene,
@@ -60,6 +63,11 @@ const MIN_INNER_HEIGHT: f64 = 120.0;
 /// campos. El ancho real lo manda `content_width` (solo las pestañas visibles).
 const ENTITY_PROPS_WIDTH: f64 = 360.0;
 const ENTITY_PROPS_HEIGHT: f64 = 560.0;
+/// El selector de modelos es solo un combo + un botón: ventana compacta que se
+/// ajusta a su contenido (antes submodal `sm` del inspector en Electron).
+const MODEL_PICKER_WIDTH: f64 = 300.0;
+const MODEL_PICKER_HEIGHT: f64 = 150.0;
+const MODEL_PICKER_MIN_WIDTH: f64 = 260.0;
 /// La guía es contenido estático largo: ventana ancha con scroll (antes `lg`).
 const GUIDE_WIDTH: f64 = 760.0;
 const GUIDE_HEIGHT: f64 = 560.0;
@@ -124,6 +132,7 @@ impl ModalWindow {
     ) -> Result<Self, String> {
         let (width, height) = match kind {
             NativeModal::EntityProperties => (ENTITY_PROPS_WIDTH, ENTITY_PROPS_HEIGHT),
+            NativeModal::ModelPicker => (MODEL_PICKER_WIDTH, MODEL_PICKER_HEIGHT),
             NativeModal::UserGuide => (GUIDE_WIDTH, GUIDE_HEIGHT),
             NativeModal::QuickBuild => (QUICKBUILD_WIDTH, QUICKBUILD_HEIGHT),
             NativeModal::SocketConfig => (SOCKETS_WIDTH, SOCKETS_INITIAL_HEIGHT),
@@ -143,6 +152,7 @@ impl ModalWindow {
         let (min_width, min_height) = match kind {
             NativeModal::SceneVisualScript => (VISUAL_SCRIPT_MIN_WIDTH, VISUAL_SCRIPT_MIN_HEIGHT),
             NativeModal::EntityProperties => (ENTITY_PROPS_WIDTH, MIN_INNER_HEIGHT),
+            NativeModal::ModelPicker => (MODEL_PICKER_MIN_WIDTH, MIN_INNER_HEIGHT),
             _ => (320.0, MIN_INNER_HEIGHT),
         };
         let mut attributes = Window::default_attributes()
@@ -155,6 +165,11 @@ impl ModalWindow {
             // en la escena con la modal de sockets abierta).
             .with_window_level(winit::window::WindowLevel::AlwaysOnTop)
             .with_visible(false);
+        // El selector es tamaño fijo: ni redimensionable por el usuario ni
+        // reajustable por `fit_to_content`.
+        if kind == NativeModal::ModelPicker {
+            attributes = attributes.with_max_inner_size(LogicalSize::new(width, height));
+        }
         if let Some(icon) = icon {
             attributes = attributes.with_window_icon(Some(icon));
         }
@@ -261,6 +276,11 @@ impl ModalWindow {
         self.window.id()
     }
 
+    /// Ventana subyacente, para centrar sobre ella una modal hija.
+    pub(crate) fn window(&self) -> &Window {
+        &self.window
+    }
+
     pub(crate) fn request_redraw(&self) {
         self.window.request_redraw();
     }
@@ -285,6 +305,9 @@ impl ModalWindow {
         let mut full_output = self.egui_ctx.run_ui(raw_input, |ui| match kind {
             NativeModal::EntityProperties => {
                 crate::editor::ui::entity_properties_modal::show_in_window(ui, app)
+            }
+            NativeModal::ModelPicker => {
+                crate::editor::ui::entity_properties_modal::model_picker_window(ui, app)
             }
             NativeModal::RemoveAsset => {
                 crate::editor::ui::remove_asset_modal::show_in_window(ui, app)
@@ -481,8 +504,13 @@ impl ModalWindow {
             if !used.is_finite() || used.height() <= 1.0 {
                 return;
             }
+            let min_width = if self.kind == NativeModal::ModelPicker {
+                MODEL_PICKER_MIN_WIDTH
+            } else {
+                INNER_WIDTH
+            };
             (
-                f64::from(used.width()).max(INNER_WIDTH),
+                f64::from(used.width()).max(min_width),
                 f64::from(used.height()).ceil().max(MIN_INNER_HEIGHT),
             )
         };
