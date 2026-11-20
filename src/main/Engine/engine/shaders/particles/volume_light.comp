@@ -1,0 +1,66 @@
+#version 460
+// Sombras volumétricas (paso 3): por cada voxel acumula la densidad atravesada hacia
+// el sol y escribe la transmitancia T = exp(-sigma * tau) en una textura 3D.
+// El histórico se reproyecta por el desplazamiento del volumen (sigue a la cámara) y
+// se mezcla con el valor actual para estabilizar el resultado a baja resolución.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+layout(set = 0, binding = 0) uniform sampler3D density_tex;
+layout(set = 0, binding = 1) uniform sampler3D history_tex;
+layout(set = 0, binding = 2, r32f) uniform writeonly image3D light_out;
+layout(set = 0, binding = 3) uniform VolParams {
+    vec4 center;
+    vec4 half_extent;
+    vec4 resolution;
+    vec4 light_dir;
+    vec4 params;        // x = escala densidad, y = extinción, z = pasos
+    vec4 history_center;
+    vec4 history_meta;  // x = blend temporal
+} vol;
+
+void main() {
+    ivec3 cell = ivec3(gl_GlobalInvocationID.xyz);
+    vec3 res = vol.resolution.xyz;
+    if (any(greaterThanEqual(vec3(cell), res))) {
+        return;
+    }
+
+    vec3 size = 2.0 * vol.half_extent.xyz;
+    vec3 uv = (vec3(cell) + 0.5) / res;
+
+    // Longitud de paso: cubre la diagonal de la caja con el número de muestras del tier.
+    float max_half = max(vol.half_extent.x, max(vol.half_extent.y, vol.half_extent.z));
+    float dt = 2.0 * max_half / max(vol.params.z, 1.0);
+    vec3 step_uv = (normalize(vol.light_dir.xyz) * dt) / size;
+
+    float tau = 0.0;
+    vec3 sample_uv = uv;
+    for (int i = 0; i < int(vol.params.z); i++) {
+        sample_uv += step_uv;
+        if (any(lessThan(sample_uv, vec3(0.0))) || any(greaterThan(sample_uv, vec3(1.0)))) {
+            break;
+        }
+        tau += texture(density_tex, sample_uv).r * dt;
+    }
+    // La densidad integrada se acota a 3.0: el medio atenúa la luz, no la bloquea por completo.
+    tau = min(tau, 3.0);
+    float current = exp(-vol.params.y * tau);
+
+    float blend = vol.history_meta.x;
+    if (blend > 0.0) {
+        // El slot vecino construyó su imagen con otro centro de volumen: reproyectamos
+        // este punto del mundo a su rejilla antes de muestrear el histórico.
+        vec3 world = vol.center.xyz + (uv - 0.5) * size;
+        vec3 history_uv = (world - vol.history_center.xyz) / size + 0.5;
+        if (all(greaterThanEqual(history_uv, vec3(0.0))) &&
+            all(lessThanEqual(history_uv, vec3(1.0)))) {
+            float history = clamp(texture(history_tex, history_uv).r, 0.0, 1.0);
+            // Clamp vecinal simple: limita el ghosting cuando el humo se mueve deprisa.
+            history = clamp(history, current - 0.2, current + 0.2);
+            current = mix(current, history, blend);
+        }
+    }
+
+    imageStore(light_out, cell, vec4(current, 0.0, 0.0, 0.0));
+}

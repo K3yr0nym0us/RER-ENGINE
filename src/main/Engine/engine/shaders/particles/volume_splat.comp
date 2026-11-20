@@ -1,0 +1,67 @@
+#version 460
+// Sombras volumétricas (paso 1): esparce la densidad de cada partícula de humo/niebla
+// en una rejilla 3D de enteros (R32U) con atomicAdd en punto fijo 12.4.
+// Comparte el descriptor set de partículas: bindings 1/2 son los buffers ping-pong,
+// 8 el UBO del volumen y 9 la imagen 3D de densidad.
+
+layout(local_size_x = 64) in;
+
+struct Particle {
+    vec4 pos_life;
+    vec4 vel_age;
+    vec4 rot_seed;
+    vec4 color;
+};
+
+layout(set = 0, binding = 1) readonly buffer PartA { Particle part_a[]; };
+layout(set = 0, binding = 2) readonly buffer PartB { Particle part_b[]; };
+
+layout(set = 0, binding = 8) uniform VolParams {
+    vec4 center;        // xyz = centro del volumen (mundo)
+    vec4 half_extent;   // xyz = semiextensión (m)
+    vec4 resolution;    // xyz = voxels por eje
+    vec4 light_dir;     // xyz = dirección hacia el sol
+    vec4 params;        // x = escala de densidad, y = extinción, z = pasos
+    vec4 history_center;
+    vec4 history_meta;  // x = blend temporal
+} vol;
+
+// imageAtomicAdd exige lectura/escritura y formato explícito r32ui.
+layout(set = 0, binding = 9, r32ui) uniform uimage3D density_u;
+
+layout(push_constant) uniform PushSplat {
+    uvec4 misc; // x = read_is_a (1 = leer A, 0 = leer B)
+} pc;
+
+const float FIXED = 4096.0;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    Particle p = pc.misc.x == 1u ? part_a[i] : part_b[i];
+    if (p.pos_life.w <= 0.0) {
+        return;
+    }
+
+    ivec3 res = ivec3(vol.resolution.xyz);
+    vec3 uv = (p.pos_life.xyz - vol.center.xyz) / (2.0 * vol.half_extent.xyz) + 0.5;
+    ivec3 cell = ivec3(floor(uv * vec3(res)));
+    if (any(lessThan(cell, ivec3(0))) || any(greaterThanEqual(cell, res))) {
+        return;
+    }
+
+    // La columna de humo aporta más densidad cuanto más opaca y más grande es la partícula.
+    float amount = clamp(p.color.a * p.rot_seed.y, 0.0, 4.0) * vol.params.x * FIXED;
+    for (int dz = -1; dz <= 1; dz++) {
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                ivec3 q = cell + ivec3(dx, dy, dz);
+                if (any(lessThan(q, ivec3(0))) || any(greaterThanEqual(q, res))) {
+                    continue;
+                }
+                int manhattan = abs(dx) + abs(dy) + abs(dz);
+                float w = manhattan == 0 ? 1.0 : (manhattan == 1 ? 0.5 : 0.25);
+                imageAtomicAdd(density_u, q, uint(max(amount * w, 0.0)));
+            }
+        }
+    }
+}

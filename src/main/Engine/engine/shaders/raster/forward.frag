@@ -26,6 +26,21 @@ layout(set = 0, binding = 0) uniform Scene {
 } u;
 
 layout(set = 0, binding = 1) uniform sampler2DShadow shadow_map;
+
+// Sombras volumétricas: el humo/niebla se agrupa en una textura 3D de transmitancia,
+// T = exp(-sigma * integral de densidad hacia el sol), calculada en el pase volumétrico.
+// Una lectura por fragmento proyecta la sombra del medio sobre esta superficie.
+layout(set = 0, binding = 2) uniform sampler3D volume_light;
+layout(set = 0, binding = 3) uniform VolParams {
+    vec4 center;        // xyz = centro del volumen (mundo)
+    vec4 half_extent;   // xyz = semiextensión (m)
+    vec4 resolution;
+    vec4 light_dir;
+    vec4 params;        // w = intensidad de la proyección sobre superficies
+    vec4 history_center;
+    vec4 history_meta;
+} vol;
+
 layout(set = 1, binding = 0) uniform sampler2DArray albedo_tex;
 layout(set = 3, binding = 0) uniform highp samplerCubeArray probe_cube;
 layout(push_constant) uniform Push {
@@ -202,6 +217,16 @@ void main() {
     // En zona iluminada shadow=1 -> factor 1; en zona oculta shadow=0 -> 1 - darkness.
     float shadow_darkness = clamp(u.light_params.y, 0.0, 1.0);
     float shadow_factor = 1.0 - shadow_darkness * (1.0 - shadow);
+
+    // Proyección del medio sobre esta superficie: muestreamos la transmitancia en el punto
+    // del mundo. T baja donde el humo/niebla intercepta la luz solar antes de llegar al suelo.
+    if (u.light_color.w > 0.5 && vol.params.w > 0.0) {
+        vec3 vu = (v_world - vol.center.xyz) / (2.0 * vol.half_extent.xyz) + 0.5;
+        if (all(greaterThanEqual(vu, vec3(0.0))) && all(lessThanEqual(vu, vec3(1.0)))) {
+            shadow_factor *= mix(1.0, clamp(texture(volume_light, vu).r, 0.0, 1.0), vol.params.w);
+        }
+    }
+
     vec3 lit = albedo * u.light_color.rgb
         * (ambient + (1.0 - ambient) * ndotl * shadow_factor)
         * u.light_params.x;

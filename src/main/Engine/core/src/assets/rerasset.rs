@@ -516,6 +516,7 @@ impl RerassetFile {
             ));
         }
         let mut out = Vec::with_capacity(data.len() / 4);
+        #[allow(clippy::chunks_exact_to_as_chunks)]
         for chunk in data.chunks_exact(4) {
             out.push(u32::from_le_bytes(chunk.try_into().unwrap()));
         }

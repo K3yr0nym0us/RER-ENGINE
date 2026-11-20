@@ -443,6 +443,7 @@ fn add_lod_skirt(grid: &DensityGrid, out: &mut MeshBuffer) {
 
     let mut seen = HashSet::<(u32, u32)>::new();
     let mut quads: Vec<([f32; 3], [f32; 3], [f32; 3])> = Vec::new();
+    #[allow(clippy::chunks_exact_to_as_chunks)]
     for tri in out.indices.chunks_exact(3) {
         for k in 0..3 {
             let ia = tri[k];

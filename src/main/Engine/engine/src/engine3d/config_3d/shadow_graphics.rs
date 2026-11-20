@@ -49,6 +49,46 @@ impl ShadowTier {
             Self::Ultra => 8192,
         }
     }
+
+    /// Lado X/Z del volumen de sombras volumétricas (voxels). El eje Y es la mitad para
+    /// mantener voxeles cúbicos con la caja de niebla `[26, 14, 26]`. Off desactiva el pase.
+    pub fn volumetric_resolution(self) -> u32 {
+        match self {
+            Self::Off => 0,
+            Self::Low => 32,
+            Self::Medium => 48,
+            Self::High => 64,
+            Self::Ultra => 96,
+        }
+    }
+
+    /// Número de muestras hacia el sol por voxel al acumular densidad.
+    pub fn volumetric_steps(self) -> u32 {
+        match self {
+            Self::Off => 0,
+            Self::Low => 8,
+            Self::Medium => 12,
+            Self::High => 16,
+            Self::Ultra => 24,
+        }
+    }
+
+    /// Mezcla con el historial temporal (0 = solo el frame actual). Un blend menor en los tiers
+    /// altos compensa que el volumen tiene más detalle y delata antes el ghosting.
+    pub fn volumetric_blend(self) -> f32 {
+        match self {
+            Self::Off => 0.0,
+            Self::Low => 0.25,
+            Self::Medium => 0.20,
+            Self::High => 0.15,
+            Self::Ultra => 0.12,
+        }
+    }
+
+    /// `Off` apaga el pase por completo; el resto comparte el interruptor del shadow map.
+    pub fn volumetric_enabled(self) -> bool {
+        self.volumetric_resolution() > 0
+    }
 }
 
 pub const DEFAULT_SHADOW_TIER: ShadowTier = ShadowTier::Low;
@@ -97,5 +137,29 @@ mod tests {
         }
         assert_eq!(DEFAULT_SHADOW_TIER, ShadowTier::Low);
         assert_eq!(ShadowTier::Ultra.shadow_map_size(), 8192);
+    }
+
+    #[test]
+    fn volumetric_quality_follows_the_same_tiers() {
+        assert!(!ShadowTier::Off.volumetric_enabled());
+        assert_eq!(ShadowTier::Off.volumetric_resolution(), 0);
+        assert_eq!(ShadowTier::Off.volumetric_steps(), 0);
+        let enabled: Vec<ShadowTier> = ALL
+            .into_iter()
+            .filter(|tier| tier.volumetric_enabled())
+            .collect();
+        for pair in enabled.windows(2) {
+            assert!(
+                pair[0].volumetric_resolution() <= pair[1].volumetric_resolution(),
+                "resolución volumétrica decreciente"
+            );
+            assert!(
+                pair[0].volumetric_steps() <= pair[1].volumetric_steps(),
+                "pasos decrecientes"
+            );
+            assert!(pair[1].volumetric_blend() <= pair[0].volumetric_blend());
+        }
+        assert_eq!(ShadowTier::Low.volumetric_resolution(), 32);
+        assert_eq!(ShadowTier::Ultra.volumetric_resolution(), 96);
     }
 }

@@ -863,6 +863,18 @@ impl State {
             bvh_tri_count,
             particles: &particle_batches,
             particle_camera,
+            volumetric_center: [eye.x, eye.y, eye.z],
+            volumetric_light_dir: {
+                let d = self.scene_light_dir();
+                [d[0], d[1], d[2]]
+            },
+            volumetric_resolution: if self.shadow_tier.volumetric_enabled() {
+                self.shadow_tier.volumetric_resolution()
+            } else {
+                0
+            },
+            volumetric_steps: self.shadow_tier.volumetric_steps(),
+            volumetric_blend: self.shadow_tier.volumetric_blend(),
         };
 
         // `last_draw_calls` se inicializaba a 0 y nunca se actualizaba en 3D

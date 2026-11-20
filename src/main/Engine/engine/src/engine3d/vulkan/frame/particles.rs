@@ -28,6 +28,8 @@ use bytemuck::bytes_of;
 
 use crate::engine3d::particles::{EmitterParams, MIN_PARTICLES, PushBuild, PushDraw, PushSim};
 
+use super::volumetric::PushSplat;
+
 use super::*;
 
 /// Tamaño de `Particle` (GLSL: 4 × vec4).
@@ -53,6 +55,9 @@ pub(super) struct ParticlePool {
     resolve_set_layout: vk::DescriptorSetLayout,
     /// Pool de descriptores dedicado a partículas (decisión del plan).
     pool: vk::DescriptorPool,
+    /// Splat de densidad volumétrica (F7): esparce partículas en la rejilla 3D.
+    volumetric_splat_pipeline: vk::Pipeline,
+    volumetric_splat_layout: vk::PipelineLayout,
     sim_pipeline: vk::Pipeline,
     build_pipeline: vk::Pipeline,
     draw_pipeline: vk::Pipeline,
@@ -70,6 +75,10 @@ pub(super) struct ParticlePool {
     depth_sampler: vk::Sampler,
     /// Vista de `targets.depth` enlazada en binding 6; se reescribe al recrear targets.
     depth_view: vk::ImageView,
+    /// Parámetros del volumen (binding 8) y rejilla atómica de densidad (binding 9) que
+    /// el splat necesita. La textura de transmitancia se publica en el set de escena.
+    volume_ubos: [vk::Buffer; FRAMES],
+    atomic_views: [vk::ImageView; FRAMES],
     sim_layout: vk::PipelineLayout,
     build_layout: vk::PipelineLayout,
     draw_layout: vk::PipelineLayout,
@@ -115,6 +124,8 @@ impl EmitterGpu {
         set_layout: vk::DescriptorSetLayout,
         depth_view: vk::ImageView,
         depth_sampler: vk::Sampler,
+        volume_ubos: [vk::Buffer; FRAMES],
+        atomic_views: [vk::ImageView; FRAMES],
     ) -> Result<Self, VulkanError> {
         let device = gpu.device();
         let size = capacity as u64 * PARTICLE_SIZE;
@@ -185,7 +196,13 @@ impl EmitterGpu {
             seen: 0,
         };
         entry.reset_host_state()?;
-        entry.write_sets(device, depth_view, depth_sampler)?;
+        entry.write_sets(
+            device,
+            depth_view,
+            depth_sampler,
+            volume_ubos,
+            atomic_views,
+        )?;
         Ok(entry)
     }
 
@@ -208,6 +225,8 @@ impl EmitterGpu {
         device: &ash::Device,
         depth_view: vk::ImageView,
         depth_sampler: vk::Sampler,
+        volume_ubos: [vk::Buffer; FRAMES],
+        atomic_views: [vk::ImageView; FRAMES],
     ) -> Result<(), VulkanError> {
         for slot in 0..2 {
             write_uniform(device, self.sets[slot], 0, &self.params[slot])?;
@@ -224,13 +243,32 @@ impl EmitterGpu {
                 depth_sampler,
                 DEPTH_READ_ONLY,
             )?;
+            // El splat lee los parámetros del volumen y escribe en la rejilla atómica
+            // de su slot. La transmitancia se publica al forward por el set de escena.
+            let buffer_info = vk::DescriptorBufferInfo {
+                buffer: volume_ubos[slot],
+                offset: 0,
+                range: vk::WHOLE_SIZE,
+            };
+            let write = vk::WriteDescriptorSet::default()
+                .dst_set(self.sets[slot])
+                .dst_binding(8)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(std::slice::from_ref(&buffer_info));
+            unsafe { device.update_descriptor_sets(&[write], &[]) };
+            write_storage_image(device, self.sets[slot], 9, atomic_views[slot])?;
         }
         Ok(())
     }
 }
 
 impl ParticlePool {
-    pub(super) fn new(gpu: &SharedGpu, depth_view: vk::ImageView) -> Result<Self, VulkanError> {
+    pub(super) fn new(
+        gpu: &SharedGpu,
+        depth_view: vk::ImageView,
+        volume_ubos: [vk::Buffer; FRAMES],
+        atomic_views: [vk::ImageView; FRAMES],
+    ) -> Result<Self, VulkanError> {
         let device = gpu.device();
         let emitter_set_layout = set_layout(
             device,
@@ -273,6 +311,17 @@ impl ParticlePool {
                     vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                     vk::ShaderStageFlags::FRAGMENT,
                 ),
+                // Sombras volumétricas: parámetros del volumen y rejilla atómica para el splat.
+                binding(
+                    8,
+                    vk::DescriptorType::UNIFORM_BUFFER,
+                    vk::ShaderStageFlags::COMPUTE,
+                ),
+                binding(
+                    9,
+                    vk::DescriptorType::STORAGE_IMAGE,
+                    vk::ShaderStageFlags::COMPUTE,
+                ),
             ],
         )?;
         // Pool dedicado (decisión del plan): presupuesto independiente del renderer.
@@ -282,9 +331,12 @@ impl ParticlePool {
                 &vk::DescriptorPoolCreateInfo::default()
                     .max_sets(MAX_SETS + 8)
                     .pool_sizes(&[
+                        // Cada set de emisor lleva 2 UBO (params + parámetros del volumen),
+                        // 5 buffers de storage, 1 sampler (depth) y 1 storage image (rejilla
+                        // atómica). Los 6 samplers extra son del resolve WBOIT.
                         vk::DescriptorPoolSize {
                             ty: vk::DescriptorType::UNIFORM_BUFFER,
-                            descriptor_count: MAX_SETS,
+                            descriptor_count: MAX_SETS * 2,
                         },
                         vk::DescriptorPoolSize {
                             ty: vk::DescriptorType::STORAGE_BUFFER,
@@ -293,6 +345,10 @@ impl ParticlePool {
                         vk::DescriptorPoolSize {
                             ty: vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                             descriptor_count: MAX_SETS + 6,
+                        },
+                        vk::DescriptorPoolSize {
+                            ty: vk::DescriptorType::STORAGE_IMAGE,
+                            descriptor_count: MAX_SETS,
                         },
                     ]),
                 None,
@@ -344,6 +400,12 @@ impl ParticlePool {
         ];
         let resolve_layout = pipeline_layout(device, &[resolve_set_layout], 0)?;
 
+        let volumetric_splat_layout = push_layout(
+            device,
+            emitter_set_layout,
+            std::mem::size_of::<PushSplat>() as u32,
+            vk::ShaderStageFlags::COMPUTE,
+        )?;
         let sim_layout = push_layout(
             device,
             emitter_set_layout,
@@ -366,8 +428,21 @@ impl ParticlePool {
         let mut pipelines = Vec::new();
         // El resolve_layout va aquí para que el Drop lo destruya (la validación
         // lo reportó como fuga cuando solo vivía como campo suelto).
-        let layouts = vec![resolve_layout, sim_layout, build_layout, draw_layout];
+        let layouts = vec![
+            resolve_layout,
+            volumetric_splat_layout,
+            sim_layout,
+            build_layout,
+            draw_layout,
+        ];
 
+        let volumetric_splat_pipeline = compute_pipeline(
+            device,
+            spv("volume_splat"),
+            volumetric_splat_layout,
+            &mut shaders,
+            &mut pipelines,
+        )?;
         let sim_pipeline = compute_pipeline(
             device,
             spv("particle_spawn_sim"),
@@ -419,6 +494,8 @@ impl ParticlePool {
             set_layout: emitter_set_layout,
             resolve_set_layout,
             pool,
+            volumetric_splat_pipeline,
+            volumetric_splat_layout,
             sim_pipeline,
             build_pipeline,
             draw_pipeline,
@@ -429,6 +506,8 @@ impl ParticlePool {
             resolve_sets,
             depth_sampler,
             depth_view,
+            volume_ubos,
+            atomic_views,
             sim_layout,
             build_layout,
             draw_layout,
@@ -470,6 +549,8 @@ impl ParticlePool {
                 self.set_layout,
                 self.depth_view,
                 self.depth_sampler,
+                self.volume_ubos,
+                self.atomic_views,
             )?;
             self.active.insert(id, entry);
         } else if let Some(pos) = self
@@ -479,7 +560,13 @@ impl ParticlePool {
         {
             let mut entry = self.recycled.remove(pos);
             entry.reset_host_state()?;
-            entry.write_sets(self.gpu.device(), self.depth_view, self.depth_sampler)?;
+            entry.write_sets(
+                self.gpu.device(),
+                self.depth_view,
+                self.depth_sampler,
+                self.volume_ubos,
+                self.atomic_views,
+            )?;
             self.active.insert(id, entry);
         } else {
             let entry = EmitterGpu::create(
@@ -489,6 +576,8 @@ impl ParticlePool {
                 self.set_layout,
                 self.depth_view,
                 self.depth_sampler,
+                self.volume_ubos,
+                self.atomic_views,
             )?;
             self.active.insert(id, entry);
         }
@@ -527,6 +616,18 @@ impl ParticlePool {
     ) -> Result<(), VulkanError> {
         let device = self.gpu.device();
         self.depth_view = depth_view;
+        let volume_ubos = self.volume_ubos;
+        let atomic_views = self.atomic_views;
+        let entries: Vec<&EmitterGpu> = self.active.values().collect();
+        for entry in &entries {
+            entry.write_sets(
+                device,
+                depth_view,
+                self.depth_sampler,
+                volume_ubos,
+                atomic_views,
+            )?;
+        }
         let sets: Vec<vk::DescriptorSet> = self.active.values().flat_map(|e| e.sets).collect();
         for set in sets {
             write_combined(
@@ -562,6 +663,64 @@ impl ParticlePool {
                 scene_view,
                 self.depth_sampler,
                 vk::ImageLayout::GENERAL,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Pipeline/layout del splat de densidad (F7), para el pase volumétrico.
+    pub(super) fn volumetric_splat_pipeline(&self) -> vk::Pipeline {
+        self.volumetric_splat_pipeline
+    }
+
+    pub(super) fn volumetric_splat_layout(&self) -> vk::PipelineLayout {
+        self.volumetric_splat_layout
+    }
+
+    /// Emisores que proyectan sombra (humo/niebla) con su set y buffer de lectura. El sim
+    /// acaba de escribir el buffer opuesto a `read_is_a`, que es el que debe esparcir densidad.
+    pub(super) fn volumetric_casters(
+        &self,
+        batches: &[ParticleBatch],
+        slot: usize,
+    ) -> Vec<(u32, vk::DescriptorSet, u32)> {
+        batches
+            .iter()
+            .filter(|batch| {
+                batch.params.misc[0] == crate::engine3d::particles::MaterialKind::Smoke.as_u32()
+                    || batch.params.misc[0]
+                        == crate::engine3d::particles::MaterialKind::Fog.as_u32()
+            })
+            .filter_map(|batch| {
+                self.active
+                    .get(&batch.id)
+                    .map(|entry| (entry.capacity, entry.sets[slot], batch.read_is_a ^ 1))
+            })
+            .collect()
+    }
+
+    /// Reenlaza el UBO y la rejilla atómica tras reasignar el volumen por un cambio de tier.
+    pub(super) fn rewrite_volumetric_views(
+        &mut self,
+        volume: &super::volumetric::VolumetricState,
+    ) -> Result<(), VulkanError> {
+        for slot in 0..FRAMES {
+            self.volume_ubos[slot] = volume.ubo(slot).buffer;
+            self.atomic_views[slot] = volume.atomic_view(slot);
+        }
+        self.rewrite_volume_sets()
+    }
+
+    /// Reescribe bindings 8/9 en todos los emisores activos con las vistas actuales.
+    fn rewrite_volume_sets(&self) -> Result<(), VulkanError> {
+        let device = self.gpu.device();
+        for entry in self.active.values() {
+            entry.write_sets(
+                device,
+                self.depth_view,
+                self.depth_sampler,
+                self.volume_ubos,
+                self.atomic_views,
             )?;
         }
         Ok(())
@@ -1479,6 +1638,19 @@ mod budget_tests {
             "la UI debería poder crear al menos 8 emisores"
         );
         assert_eq!(MAX_SETS % 2, 0, "los sets son por par de slots");
+    }
+
+    /// El pool debe tener hueco para los bindings del volumen (F7): un UBO extra por set
+    /// y un storage image por set para la rejilla atómica del splat.
+    #[test]
+    fn descriptor_pool_covers_volumetric_bindings() {
+        let emitters = MAX_SETS / 2;
+        assert!(MAX_SETS * 2 >= emitters * 2 * 2, "UBOs insuficientes");
+        assert!(
+            MAX_SETS + 6 >= emitters * 2 + 6,
+            "samplers insuficientes"
+        );
+        assert!(MAX_SETS >= emitters * 2, "storage images insuficientes");
     }
 
     /// El kernel de sim usa workgroups de 64 hilos y `build_indirect` redondea con la

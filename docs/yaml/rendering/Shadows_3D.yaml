@@ -10,8 +10,8 @@
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 5
-updated: 2026-11-10
+version: 6
+updated: 2026-11-20
 
 principle:
   owner: motor_3d
@@ -93,6 +93,46 @@ ui:
   accordion: World → Shadows
   controls:
     - tier selector: off | low | medium | high | ultra
+    # Las sombras volumétricas NO añaden controles: comparten este mismo tier (ver más abajo).
+
+volumetric_shadows:
+  status: implementado
+  scope: |
+    El humo/niebla PROYECTA sombra: la textura 3D se consulta en el forward para atenuar la luz
+    directa sobre el suelo y los objetos. La proyección vive en el pase de superficies; ni el
+    shadow map 2D ni el aspecto de las partículas intervienen.
+  description: |
+    Volumen world-aligned que sigue a la cámara (semiextensión [26, 14, 26] m, igual que el
+    preset de niebla). Se actualiza a resolución de volumen —nunca de pantalla— en tres pasos
+    de cómputo (shaders/particles/volume_*.comp):
+      1. volume_splat.comp: atomicAdd de la densidad de cada partícula en una rejilla R32U.
+      2. volume_density.comp: R32U -> R32F muestreable.
+      3. volume_light.comp: marcha hacia el sol acumulando densidad; guarda
+         T = exp(-sigma * tau) en una textura 3D con reproyección temporal del volumen vecino.
+    Proyección sobre superficies: `forward.frag` muestrea la textura en `v_world` y multiplica
+    `shadow_factor` por `mix(1, T, params.w)` (params.w = 0.85). El suelo y los modelos reciben
+    así la sombra del medio, que el shadow map 2D no puede capturar (solo dibuja geometría opaca).
+    El modelo acota la densidad integrada a 3.0: la sombra del medio es una atenuación de la
+    luz directa, no un bloqueo total.
+  resources: |
+    `VolumetricState` (frame/volumetric.rs) posee 3 volúmenes por slot en vuelo (R32U + 2×R32F),
+    su UBO y sus propios pipelines. Cada slot lee como histórico la imagen de luz del otro slot,
+    así que los descriptores son estables y no se reescriben por frame.
+  quality_shared_with_tier:
+    # Mismo accordion; sin botones ni campos nuevos en WorldSettings / IPC / .save.
+    off:    { resolution: 0,  steps: 0,  blend: 0.00 }
+    low:    { resolution: 32, steps: 8,  blend: 0.25 }
+    medium: { resolution: 48, steps: 12, blend: 0.20 }
+    high:   { resolution: 64, steps: 16, blend: 0.15 }
+    ultra:  { resolution: 96, steps: 24, blend: 0.12 }
+    note: |
+      `ShadowTier::{volumetric_resolution, volumetric_steps, volumetric_blend}` derivan estos
+      valores. El pase comparte el interruptor del shadow map (`shadows && sun_above_horizon`):
+      con Off o de noche no se ejecuta. La resolución se recorta a `max_image_dimension`.
+  tradeoffs: |
+    El clamp vecinal del histórico y el blend bajo limitan el ghosting cuando el humo se mueve;
+    `reset_taa_history()` invalida también el volumen al cargar escena. Solo se esparce densidad
+    de emisores dentro del volumen que sigue a la cámara (emisiones lejanas no proyectan sombra).
 
 # Intento de CSM (2026-11-09): implementado, roto en pantalla y retirado. Se deja aquí porque
 # cuesta mucho reconstruir qué se descartó y qué no. Card Trello: `CASCADES / CSM (3D)`.

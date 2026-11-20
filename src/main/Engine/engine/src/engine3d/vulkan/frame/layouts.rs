@@ -66,6 +66,18 @@ pub(super) fn create_sets(
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 vk::ShaderStageFlags::FRAGMENT,
             ),
+            // Sombras volumétricas: transmitancia 3D y parámetros del volumen, para que
+            // el forward atenúe la luz directa sobre el suelo y los objetos (F7).
+            binding(
+                2,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                vk::ShaderStageFlags::FRAGMENT,
+            ),
+            binding(
+                3,
+                vk::DescriptorType::UNIFORM_BUFFER,
+                vk::ShaderStageFlags::FRAGMENT,
+            ),
         ],
     )?;
     let albedo = set_layout(

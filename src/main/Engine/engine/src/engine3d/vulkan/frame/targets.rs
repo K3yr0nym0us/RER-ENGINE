@@ -412,6 +412,17 @@ impl FrameRenderer {
                 vk::ImageLayout::GENERAL,
             )?;
         }
+        // Sombras volumétricas: el forward muestrea la textura 3D desde el set de escena.
+        let sampler = self.volumetric.sampler();
+        let light_views = [
+            self.volumetric.light_view(0),
+            self.volumetric.light_view(1),
+        ];
+        let ubos = [
+            self.volumetric.ubo(0).buffer,
+            self.volumetric.ubo(1).buffer,
+        ];
+        self.rewrite_scene_volume_descriptors(sampler, light_views, ubos)?;
         // Partículas (F3): la depth del soft particles y los samplers del resolve WBOIT
         // apuntan a imágenes recién recreadas.
         self.particle_pool.rewrite_targets(

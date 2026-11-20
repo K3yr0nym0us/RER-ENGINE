@@ -47,6 +47,19 @@ const SHADERS_3D: &[(&str, &str)] = &[
         "shaders/particles/wboit_resolve.frag",
         "particle_wboit_resolve.frag.spv",
     ),
+    // Sombras volumétricas: densidad → transmitancia de luz en un volumen 3D.
+    (
+        "shaders/particles/volume_splat.comp",
+        "volume_splat.comp.spv",
+    ),
+    (
+        "shaders/particles/volume_density.comp",
+        "volume_density.comp.spv",
+    ),
+    (
+        "shaders/particles/volume_light.comp",
+        "volume_light.comp.spv",
+    ),
 ];
 
 const SHADERS_2D: &[(&str, &str)] = &[

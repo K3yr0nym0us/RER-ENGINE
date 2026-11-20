@@ -432,6 +432,100 @@ impl SharedGpu {
         Ok(image)
     }
 
+    /// Crea una imagen 3D (volumen) con vista `TYPE_3D`, para `sampler3D`/`image3D`.
+    ///
+    /// `GpuImage.extent` sigue siendo 2D (ancho/alto); la resolución Z la conserva el llamador,
+    /// que es quien conoce el volumen y la usa en barreras y descriptores. `layer_count` de las
+    /// barreras sigue siendo 1: en una imagen 3D toda la profundidad es un único subrecurso.
+    pub fn create_image_3d(
+        &self,
+        extent: vk::Extent3D,
+        format: vk::Format,
+        usage: vk::ImageUsageFlags,
+        aspect: vk::ImageAspectFlags,
+        name: &str,
+    ) -> Result<GpuImage, VulkanError> {
+        let extent = vk::Extent3D {
+            width: extent.width.max(1),
+            height: extent.height.max(1),
+            depth: extent.depth.max(1),
+        };
+        let image = unsafe {
+            self.inner.device.create_image(
+                &vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_3D)
+                    .format(format)
+                    .extent(extent)
+                    .mip_levels(1)
+                    .array_layers(1)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .tiling(vk::ImageTiling::OPTIMAL)
+                    .usage(usage)
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                    .initial_layout(vk::ImageLayout::UNDEFINED),
+                None,
+            )
+        }
+        .map_err(|error| vk_error(&format!("crear la imagen 3D {name}"), error))?;
+        let requirements = unsafe { self.inner.device.get_image_memory_requirements(image) };
+        let mut allocator = self
+            .inner
+            .allocator
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        let allocation = allocator
+            .allocate(&AllocationCreateDesc {
+                name,
+                requirements,
+                location: MemoryLocation::GpuOnly,
+                linear: false,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+            })
+            .map_err(|error| {
+                unsafe { self.inner.device.destroy_image(image, None) };
+                VulkanError::new(format!("Sin memoria GPU para el volumen {name}: {error}"))
+            })?;
+        unsafe {
+            self.inner
+                .device
+                .bind_image_memory(image, allocation.memory(), allocation.offset())
+                .map_err(|error| vk_error(&format!("asociar memoria al volumen {name}"), error))?;
+        }
+        let view = unsafe {
+            self.inner.device.create_image_view(
+                &vk::ImageViewCreateInfo::default()
+                    .image(image)
+                    .view_type(vk::ImageViewType::TYPE_3D)
+                    .format(format)
+                    .subresource_range(vk::ImageSubresourceRange {
+                        aspect_mask: aspect,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    }),
+                None,
+            )
+        }
+        .map_err(|error| vk_error(&format!("crear la vista 3D {name}"), error))?;
+        let image = GpuImage {
+            gpu: self.clone(),
+            image,
+            allocation: Some(allocation),
+            view,
+            format,
+            extent: vk::Extent2D {
+                width: extent.width,
+                height: extent.height,
+            },
+            aspect,
+            layers: 1,
+            mips: 1,
+        };
+        self.transition_initial(&image)?;
+        Ok(image)
+    }
+
     pub(super) fn transition_initial(&self, image: &GpuImage) -> Result<(), VulkanError> {
         let image_handle = image.image;
         let aspect = image.aspect;

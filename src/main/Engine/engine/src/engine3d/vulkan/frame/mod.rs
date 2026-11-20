@@ -84,6 +84,10 @@ fn spv(name: &str) -> &'static [u8] {
         "particle_wboit_resolve.frag" => {
             include_bytes!(concat!(env!("OUT_DIR"), "/particle_wboit_resolve.frag.spv"))
         }
+        // Sombras volumétricas.
+        "volume_splat" => include_bytes!(concat!(env!("OUT_DIR"), "/volume_splat.comp.spv")),
+        "volume_density" => include_bytes!(concat!(env!("OUT_DIR"), "/volume_density.comp.spv")),
+        "volume_light" => include_bytes!(concat!(env!("OUT_DIR"), "/volume_light.comp.spv")),
         _ => &[],
     }
 }
@@ -231,6 +235,14 @@ pub struct FrameInput<'a> {
     pub particles: &'a [ParticleBatch],
     /// Cámara del pase de billboards (misma `view_proj` con jitter que el forward).
     pub particle_camera: ParticleCamera,
+    /// Centro del volumen de sombras volumétricas (sigue a la cámara, como la niebla).
+    pub volumetric_center: [f32; 3],
+    /// Dirección hacia la luz (para la marcha desde cada voxel).
+    pub volumetric_light_dir: [f32; 3],
+    /// Resolución/pasos/blend del volumen derivados del tier de sombras (0 = desactivado).
+    pub volumetric_resolution: u32,
+    pub volumetric_steps: u32,
+    pub volumetric_blend: f32,
 }
 
 pub struct FrameRenderer {
@@ -304,6 +316,9 @@ pub struct FrameRenderer {
     depth_pipelines: [vk::Pipeline; 2],
     /// Pool GPU del sistema de partículas (buffers, pipelines y descriptores dedicados).
     particle_pool: ParticlePool,
+    /// Volúmenes de densidad/transmitancia que proyectan la sombra del humo y la niebla
+    /// sobre las superficies opacas.
+    volumetric: VolumetricState,
     /// Módulos del forward, guardados para poder recrear los pipelines cuando cambia el tier.
     forward_vert: vk::ShaderModule,
     forward_frag: vk::ShaderModule,
@@ -397,11 +412,13 @@ mod reflections;
 mod rt;
 mod shadow;
 mod targets;
+mod volumetric;
 use self::commands::*;
 use self::layouts::*;
 use self::particles::ParticlePool;
 use self::pipelines::*;
 use self::targets::*;
+use self::volumetric::VolumetricState;
 
 impl FrameRenderer {
     pub fn new(gpu: &SharedGpu, albedo: &GpuImage) -> Result<Self, VulkanError> {
@@ -786,7 +803,24 @@ impl FrameRenderer {
         let depth_pipelines = [depth_only, depth_only_skinned];
         // Pool GPU de partículas: pipelines y descriptores dedicados, sin tocar el registro
         // indexado de `pipelines` del renderer (el MSAA hace pop de los últimos).
-        let mut particle_pool = ParticlePool::new(gpu, targets.depth.view)?;
+        let volume = VolumetricState::new(gpu, 32, 8, 0.0)?;
+        let volume_ubos = [volume.ubo(0).buffer, volume.ubo(1).buffer];
+        let atomic_views = [volume.atomic_view(0), volume.atomic_view(1)];
+        let mut particle_pool =
+            ParticlePool::new(gpu, targets.depth.view, volume_ubos, atomic_views)?;
+        // Publicamos la textura 3D en el set de escena (bindings 2/3): es lo que el
+        // forward consulta para proyectar la sombra del medio sobre las superficies.
+        for (slot, set) in sets.scene.iter().enumerate() {
+            write_combined(
+                device,
+                *set,
+                2,
+                volume.light_view(slot),
+                volume.sampler(),
+                vk::ImageLayout::GENERAL,
+            )?;
+            write_uniform(device, *set, 3, volume.ubo(slot))?;
+        }
         // Enlace inicial de la depth (soft particles) y de los samplers del resolve WBOIT;
         // `rewrite_target_descriptors` lo repite cuando los targets se recrean.
         particle_pool.rewrite_targets(
@@ -795,6 +829,8 @@ impl FrameRenderer {
             targets.particles_reveal.view,
             targets.depth.view,
         )?;
+        // El volumen existe desde el primer frame con resolución mínima; `record` ajusta
+        // su resolución al tier activo y reenlaza los descriptores cuando cambia.
         let _kept = (
             forward,
             forward_blend,
@@ -823,6 +859,7 @@ impl FrameRenderer {
             skinned_vert,
             depth_pipelines,
             particle_pool,
+            volumetric: volume,
             full_vert,
             sky_frag,
             layout_full: full_layout,
@@ -886,8 +923,11 @@ impl FrameRenderer {
         if (self.ssaa_scale - input.ssaa_scale).abs() > 1e-4 {
             self.ssaa_scale = input.ssaa_scale.max(1.0);
         }
-        let render_extent =
-            supersampled_extent(frame.extent, self.ssaa_scale, self.gpu.max_image_dimension());
+        let render_extent = supersampled_extent(
+            frame.extent,
+            self.ssaa_scale,
+            self.gpu.max_image_dimension(),
+        );
         if self.targets.extent != render_extent {
             self.targets.recreate(&self.gpu, render_extent)?;
             // Las imágenes nuevas nacen en su layout inicial (DEPTH → ATTACHMENT); el registro
@@ -965,6 +1005,48 @@ impl FrameRenderer {
             self.particle_pool
                 .sim(slot, input.particles, &device, cmd)?;
         }
+        // Sombras volumétricas: la calidad la fija el tier de sombras y el pase sigue el
+        // mismo interruptor que el shadow map (`shadows && sun_above_horizon`).
+        let volume_active =
+            input.volumetric_resolution > 0 && input.shadows && input.sun_above_horizon;
+        let volume_rebound = self.volumetric.ensure(
+            &self.gpu,
+            input.volumetric_resolution.max(8),
+            input.volumetric_steps,
+            input.volumetric_blend,
+        )?;
+        // Al cambiar el tier se reasignan las imágenes: reenlazamos sus descriptores antes
+        // de que el splat y el forward las usen en este mismo frame.
+        if volume_rebound {
+            self.particle_pool
+                .rewrite_volumetric_views(&self.volumetric)?;
+            let sampler = self.volumetric.sampler();
+            let light_views = [
+                self.volumetric.light_view(0),
+                self.volumetric.light_view(1),
+            ];
+            let ubos = [
+                self.volumetric.ubo(0).buffer,
+                self.volumetric.ubo(1).buffer,
+            ];
+            self.rewrite_scene_volume_descriptors(sampler, light_views, ubos)?;
+        }
+        let volume = &mut self.volumetric;
+        let casters: Vec<(u32, vk::DescriptorSet, u32)> = if volume_active {
+            self.particle_pool.volumetric_casters(input.particles, slot)
+        } else {
+            Vec::new()
+        };
+        volume.update(
+            slot,
+            input,
+            &device,
+            cmd,
+            &casters,
+            self.particle_pool.volumetric_splat_pipeline(),
+            self.particle_pool.volumetric_splat_layout(),
+            volume_active,
+        )?;
         self.trace_background(slot, input, &pipes, &device, cmd)?;
         if input.shadows && input.sun_above_horizon {
             self.shadow_pass(slot, input, &pipes, &device, cmd)?;
@@ -1007,6 +1089,7 @@ impl FrameRenderer {
     /// Invalida el historial temporal tras cargar una escena o cambiar de escena.
     pub fn reset_taa_history(&mut self) {
         self.taa_history_valid = false;
+        self.volumetric.reset();
     }
 
     /// Transita la imagen del swapchain a `PRESENT_SRC_KHR`.
@@ -1032,6 +1115,38 @@ impl FrameRenderer {
 }
 
 impl FrameRenderer {
+    /// Enlaza la textura 3D de transmitancia en el set de escena de todos los slots, para
+    /// que el forward proyecte la sombra del humo/niebla sobre superficies opacas.
+    pub(super) fn rewrite_scene_volume_descriptors(
+        &mut self,
+        sampler: vk::Sampler,
+        light_views: [vk::ImageView; FRAMES],
+        ubos: [vk::Buffer; FRAMES],
+    ) -> Result<(), VulkanError> {
+        for slot in 0..FRAMES {
+            write_combined(
+                self.gpu.device(),
+                self.sets.scene[slot],
+                2,
+                light_views[slot],
+                sampler,
+                vk::ImageLayout::GENERAL,
+            )?;
+            let info = vk::DescriptorBufferInfo {
+                buffer: ubos[slot],
+                offset: 0,
+                range: vk::WHOLE_SIZE,
+            };
+            let write = vk::WriteDescriptorSet::default()
+                .dst_set(self.sets.scene[slot])
+                .dst_binding(3)
+                .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(std::slice::from_ref(&info));
+            unsafe { self.gpu.device().update_descriptor_sets(&[write], &[]) };
+        }
+        Ok(())
+    }
+
     /// Enlaza el álbum de álbedos nuevo en TODOS los slots en vuelo.
     pub fn albedo_set_image(&self, albedo: &GpuImage) -> Result<(), VulkanError> {
         for slot in 0..FRAMES {
