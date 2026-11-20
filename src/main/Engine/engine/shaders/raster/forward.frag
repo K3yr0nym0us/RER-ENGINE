@@ -67,15 +67,16 @@ float shadow_pcf(vec3 world, vec3 n, bool terrain) {
     float depth_ref = ndc.z - (u.shadow_bias.z + u.shadow_bias.w * slope);
     float texel = u.light_params.z;
     float radius = max(u.light_params.w, 1.0);
-    // El radio ya escala con la resolución del mapa (lo decide `scene_light_params`). Con mapas
-    // grandes el radio supera 2.5 texeles y conviene abrir el kernel a 5x5: así Ultra aporta más
-    // taps además de más resolución, en lugar de dibujar solo más fino.
-    int taps = radius > 2.5 ? 2 : 1;
+    // Muestrear CENTROS de texel, no offsets fraccionarios. Con radio 0.85/1.7/2.4
+    // los taps caian entre texeles y el sampler de comparacion LINEAL interpelaba
+    // distinto en cada frame mientras el sol movia el UV -> temblor (mas rapido
+    // cuanto mas tier, porque hay mas cruces de centro por segundo).
+    int reach = radius > 2.5 ? 2 : 1;
     float sum = 0.0;
     float used = 0.0;
-    for (int y = -taps; y <= taps; y++) {
-        for (int x = -taps; x <= taps; x++) {
-            vec2 off = vec2(float(x), float(y)) * texel * radius;
+    for (int y = -reach; y <= reach; y++) {
+        for (int x = -reach; x <= reach; x++) {
+            vec2 off = vec2(float(x), float(y)) * texel;
             // textureLod (variante Level) en vez de texture(): el early-return de arriba
             // crea control flow no uniforme y texture() usaria derivados implicitos (UB).
             // Bevy hace lo mismo con textureSampleCompareLevel. El shadow map no tiene mips.
