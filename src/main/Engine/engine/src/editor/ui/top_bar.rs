@@ -16,20 +16,6 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     let text = app.text();
     let compact = ui.available_width() < 600.0;
 
-    // Atajos para depuración temporal: F8 pausa/reanuda, F9 avanza 10 frames.
-    if ui.input(|i| i.key_pressed(egui::Key::F8)) && app.status == EditorStatus::Ready {
-        app.world_paused = !app.world_paused;
-        if !app.world_paused { app.frames_to_step = 0; }
-        app.step_reset_pending = true;
-    }
-    if ui.input(|i| i.key_pressed(egui::Key::F9))
-        && app.status == EditorStatus::Ready
-        && app.world_paused
-    {
-        app.frames_to_step = app.frames_to_step.saturating_add(10);
-        app.step_reset_pending = true;
-    }
-
     ui.columns(3, |columns| {
         columns[0].with_layout(Layout::left_to_right(Align::Center), |ui| {
             ui.add_space(8.0);
@@ -78,49 +64,6 @@ fn left_group(ui: &mut egui::Ui, app: &mut EditorApp, text: &Text) {
     ) {
         app.debug_mode = !app.debug_mode;
         app.send_engine(json!({ "cmd": "set_debug_mode", "show": app.debug_mode }));
-    }
-
-    // Pausa del mundo: congela la simulación pero la UI y el render siguen vivos.
-    // Icono + tooltip para que quepan junto a Jugar/Depurar en la columna izquierda.
-    let es = app.cli.locale == crate::editor::cli::Locale::Es;
-    if labeled_button(
-        ui,
-        if app.world_paused { icons::PLAY } else { icons::PAUSE },
-        "",
-        Some(if app.world_paused {
-            if es { "Reanudar el mundo (sol, física, partículas)" } else { "Resume the world (sun, physics, particles)" }
-        } else {
-            if es { "Pausar el mundo (sol, física, partículas)" } else { "Pause the world (sun, physics, particles)" }
-        }),
-        can_use,
-        app.world_paused,
-        crate::editor::theme::DEBUG_BG,
-    ) {
-        app.world_paused = !app.world_paused;
-        if !app.world_paused {
-            app.frames_to_step = 0;
-        }
-        // Tanto al reanudar como al entrar en pausa, el próximo frame que avance
-        // debe empezar con un delta_time limpio.
-        app.step_reset_pending = true;
-    }
-
-    // Avanzar 10 frames manteniendo la pausa. Solo tiene sentido si está pausado.
-    if labeled_button(
-        ui,
-        icons::ARROWS_CLOCKWISE,
-        "",
-        Some(if es {
-            "×10: avanza 10 frames con el mundo pausado (mantiene la pausa)"
-        } else {
-            "×10: advances 10 frames while the world stays paused"
-        }),
-        can_use && app.world_paused,
-        false,
-        crate::editor::theme::DEBUG_BG,
-    ) {
-        app.frames_to_step = app.frames_to_step.saturating_add(10);
-        app.step_reset_pending = true;
     }
 }
 
