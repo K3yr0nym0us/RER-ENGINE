@@ -23,13 +23,15 @@ pub const SHADOW_DARKNESS_MIN: f32 = 0.9;
 /// Máximo del rango de oscuridad de sombra en la UI.
 pub const SHADOW_DARKNESS_MAX: f32 = 1.0;
 /// Desplazamiento mínimo hacia la luz al comparar sombras (metros).
-pub const SHADOW_NORMAL_BIAS_MIN: f32 = 0.0;
+/// Restaurado tras a125635: con 0.0 la comparación oscilaba con cada
+/// micro-movimiento del sol (saltos rápidos con desplazamiento casi nulo).
+pub const SHADOW_NORMAL_BIAS_MIN: f32 = 0.004;
 /// Desplazamiento máximo en superficies casi paralelas a los rayos del sol.
-pub const SHADOW_NORMAL_BIAS_MAX: f32 = 0.0004;
+pub const SHADOW_NORMAL_BIAS_MAX: f32 = 0.028;
 /// Offset constante en profundidad del comparador de sombras (NDC).
-pub const SHADOW_DEPTH_BIAS_CONST: f32 = 0.0;
+pub const SHADOW_DEPTH_BIAS_CONST: f32 = 0.0008;
 /// Escala de bias por pendiente (1 - N·L).
-pub const SHADOW_DEPTH_BIAS_SLOPE: f32 = 0.00003;
+pub const SHADOW_DEPTH_BIAS_SLOPE: f32 = 0.002;
 fn shadow_ortho_extent_m(world_radius: f32) -> f32 {
     let diagonal = (world_radius * 2.0) * 3.0_f32.sqrt();
     diagonal.max(48.0) * 0.55
@@ -195,22 +197,22 @@ pub(crate) fn sun_orbit_distance_from(bounds: &WorldBounds3D) -> f32 {
 
 /// Matriz vista-proyección de la luz. Separada de [`State`] para poder comprobar
 /// que cambia con la dirección del sol sin necesidad de un `State` con Vulkan.
-fn light_view_proj_from(center: Vec3, dir: Vec3, extent: f32, map_size: u32) -> [[f32; 4]; 4] {
+fn light_view_proj_from(center: Vec3, dir: Vec3, extent: f32) -> [[f32; 4]; 4] {
     let dir = dir.normalize();
     // Umbral alto: con el ciclo inclinado 23.5° nunca se alcanza, así que el
     // cambio de "up" no provoca saltes de orientación en la sombra.
     let up = if dir.y.abs() > 0.99 { Vec3::X } else { Vec3::Y };
     let eye = center + dir * extent * 2.5;
     let view = Mat4::look_at_rh(eye, center, up);
-    let center_ls = view.transform_point3(center);
-    let texel = (2.0 * extent) / map_size.max(1) as f32;
-    let cx = (center_ls.x / texel).floor() * texel + texel * 0.5;
-    let cy = (center_ls.y / texel).floor() * texel + texel * 0.5;
+    // La cámara de luz mira a `center`, así que el centro en espacio de luz es (0,0,-dist).
+    // Sin texel snapping: era residuo del CSM retirado. Con un único mapa centrado en el
+    // mundo, hacer floor() de un center_ls ≈ 0 daba 0 o -1 según ruido de coma flotante y
+    // saltaba la ortho un texel entero (0.119 m), moviendo TODAS las sombras de golpe.
     let proj = Mat4::orthographic_rh(
-        cx - extent,
-        cx + extent,
-        cy - extent,
-        cy + extent,
+        -extent,
+        extent,
+        -extent,
+        extent,
         0.5,
         extent * 8.0,
     );
@@ -486,7 +488,6 @@ impl State {
             self.directional_light_scene_center(),
             self.directional_light_dir,
             self.light_shadow_extent_m(),
-            self.active_shadow_map_size(),
         )
     }
 
@@ -980,9 +981,9 @@ mod tests {
     #[test]
     fn light_view_proj_follows_the_sun_direction() {
         let center = Vec3::new(0.0, 10.0, 0.0);
-        let east = light_view_proj_from(center, Vec3::X, 100.0, 1024);
-        let west = light_view_proj_from(center, Vec3::NEG_X, 100.0, 1024);
-        let zenith = light_view_proj_from(center, Vec3::Y, 100.0, 1024);
+        let east = light_view_proj_from(center, Vec3::X, 100.0);
+        let west = light_view_proj_from(center, Vec3::NEG_X, 100.0);
+        let zenith = light_view_proj_from(center, Vec3::Y, 100.0);
 
         assert_ne!(
             east, west,
@@ -990,5 +991,31 @@ mod tests {
         );
         assert_ne!(east, zenith);
         assert_ne!(west, zenith);
+    }
+
+    #[test]
+    fn light_ortho_stays_centered_without_texel_snapping() {
+        // Sin el snapping del CSM retirado, el centro de la escena debe caer
+        // siempre en el origen NDC de la ortho, aunque `center_ls` tenga ruido
+        // de coma flotante ~1e-7 al variar la dirección del sol.
+        let center = Vec3::new(0.0, 50.0, 0.0);
+        let extent = 60.97;
+        for i in 0..256 {
+            let n = i as f32 * 1e-7;
+            let dir = Vec3::new(-0.05 + n, 0.998 + n * 0.1, 0.0);
+            let m = light_view_proj_from(center, dir, extent);
+            // m[col][fila]; w = 1 para una ortho.
+            let clip_x = m[0][0] * center.x + m[1][0] * center.y + m[2][0] * center.z + m[3][0];
+            let clip_y = m[0][1] * center.x + m[1][1] * center.y + m[2][1] * center.z + m[3][1];
+            let clip_w = m[0][3] * center.x + m[1][3] * center.y + m[2][3] * center.z + m[3][3];
+            assert!(
+                (clip_x / clip_w).abs() < 1e-4,
+                "la ortho se desplazó en X (residuo de texel snapping)"
+            );
+            assert!(
+                (clip_y / clip_w).abs() < 1e-4,
+                "la ortho se desplazó en Y (residuo de texel snapping)"
+            );
+        }
     }
 }

@@ -75,7 +75,10 @@ float shadow_pcf(vec3 world, vec3 n, bool terrain) {
     for (int y = -taps; y <= taps; y++) {
         for (int x = -taps; x <= taps; x++) {
             vec2 off = vec2(float(x), float(y)) * texel * radius;
-            sum += texture(shadow_map, vec3(uv + off, depth_ref));
+            // textureLod (variante Level) en vez de texture(): el early-return de arriba
+            // crea control flow no uniforme y texture() usaria derivados implicitos (UB).
+            // Bevy hace lo mismo con textureSampleCompareLevel. El shadow map no tiene mips.
+            sum += textureLod(shadow_map, vec3(uv + off, depth_ref), 0.0);
             used += 1.0;
         }
     }
