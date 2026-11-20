@@ -294,6 +294,13 @@ impl App {
         self.handle_event(None, event);
     }
 
+    /// [PAUSE] Reinicia `last_frame` para evitar un delta_time enorme al reanudar.
+    pub(crate) fn reset_frame_clock(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            state.last_frame = std::time::Instant::now();
+        }
+    }
+
     /// Avanza simulación e input de play sin renderizar (el render lo decide el editor).
     #[cfg_attr(not(feature = "editor"), allow(dead_code))]
     pub fn frame_update(&mut self) {

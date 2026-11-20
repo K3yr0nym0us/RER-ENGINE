@@ -45,6 +45,13 @@ pub struct EditorApp {
     pub cli: Cli,
     pub status: EditorStatus,
     pub preview_playing: bool,
+    /// Congela la simulación del motor (sol, física, partículas, scripts). La UI y el
+    /// render siguen activos para poder inspeccionar el frame congelado.
+    pub world_paused: bool,
+    /// Frames restantes a avanzar estando pausado (botón "step 10").
+    pub frames_to_step: u32,
+    /// Resetear el reloj del motor en el próximo frame que avance (evita dt enorme).
+    pub step_reset_pending: bool,
     pub debug_mode: bool,
     pub saving: bool,
     pub has_saved_once: bool,
@@ -154,6 +161,9 @@ impl EditorApp {
             cli,
             status: EditorStatus::Starting,
             preview_playing: false,
+            world_paused: false,
+            frames_to_step: 0,
+            step_reset_pending: false,
             debug_mode: false,
             saving: false,
             auto_save_enabled: false,

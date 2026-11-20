@@ -45,15 +45,16 @@ float shadow_pcf(vec3 world, vec3 n, bool terrain) {
     }
     vec3 ldir = normalize(u.light_dir.xyz);
     float ndotl = max(dot(normalize(n), ldir), 0.0);
-    float normal_scale = u.shadow_bias.x + u.shadow_bias.y * (1.0 - ndotl);
-    // El mapa cubre el mundo entero (~1 m/texel). El bias de los modelos (0.4 mm)
-    // no basta en el terreno: las tapas se auto-sombreaban. Unos texeles hacia
-    // el sol quitan el acné y dejan la sombra de la montaña en el suelo.
-    if (terrain) {
-        float texel_m = max(u.jitter.w, 0.05);
-        float slope_n = abs(dot(normalize(n), ldir));
-        normal_scale += texel_m * (2.0 + 3.0 * (1.0 - slope_n));
-    }
+    float slope_n = abs(dot(normalize(n), ldir));
+    // El bias debe escalar con el texel del shadow map, no ser metros fijos:
+    // con 1024 px sobre todo el mundo un texel son ~0.119 m, pero el bias de
+    // los modelos era 0.0004 m (~0.003 texel). Cada superficie (ndotl distinto)
+    // oscilaba al cruzar el umbral del comparador, a su propio ritmo. Escalar
+    // con u.jitter.w (metros/texel) lo hace estable y se autoajusta al tier:
+    // mas resolucion = texel menor = menos desplazamiento = salto menos visible.
+    float texel_m = max(u.jitter.w, 0.05);
+    float normal_scale = u.shadow_bias.x + u.shadow_bias.y * (1.0 - ndotl)
+        + texel_m * (1.5 + 2.0 * (1.0 - slope_n));
     vec3 biased = world + ldir * normal_scale;
     vec4 clip = u.light_view_proj * vec4(biased, 1.0);
     vec3 ndc = clip.xyz / clip.w;

@@ -42,6 +42,15 @@ impl InProcessEngine {
         }
     }
 
+    /// Reinicia el reloj del motor para que el primer frame tras una pausa no
+    /// reciba un delta_time enorme (que haría saltar el sol físicamente).
+    pub(crate) fn reset_frame_clock(&mut self) {
+        match self {
+            Self::Three(app) => app.reset_frame_clock(),
+            Self::Two(app) => app.reset_frame_clock(),
+        }
+    }
+
     pub(crate) fn handle_command(&mut self, command: &Value) {
         match self {
             Self::Three(app) => {
@@ -556,12 +565,28 @@ impl EditorWindow {
         } = self;
 
         if let Some(engine) = engine.as_mut() {
+            // Los comandos de la UI se aplican siempre, incluso pausado, para que
+            // los botones sigan respondiendo (play, debug, guardar, etc.).
             let pending: Vec<Value> = app.pending_engine.borrow_mut().drain(..).collect();
             for command in pending {
                 engine.handle_command(&command);
             }
-            engine.tick();
-            engine.frame_update();
+
+            // Pausa del mundo: se congela la simulación pero NO el render, así el
+            // viewport sigue mostrando el frame congelado y la UI sigue viva.
+            let stepping = app.frames_to_step > 0;
+            let advance = !app.world_paused || stepping;
+            if advance {
+                if app.step_reset_pending {
+                    engine.reset_frame_clock();
+                    app.step_reset_pending = false;
+                }
+                if app.world_paused && stepping {
+                    app.frames_to_step -= 1;
+                }
+                engine.tick();
+                engine.frame_update();
+            }
             // Métricas en caliente: se leen del motor cada frame, no del evento
             // `debug_metrics` (1 Hz). CPU sigue viniendo de ese evento porque
             // muestrearlo con sysinfo en cada frame es demasiado costoso.
