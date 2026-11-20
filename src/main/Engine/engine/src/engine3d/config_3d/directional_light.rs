@@ -197,11 +197,13 @@ pub(crate) fn sun_orbit_distance_from(bounds: &WorldBounds3D) -> f32 {
 
 /// Matriz vista-proyección de la luz. Separada de [`State`] para poder comprobar
 /// que cambia con la dirección del sol sin necesidad de un `State` con Vulkan.
-fn light_view_proj_from(center: Vec3, dir: Vec3, extent: f32) -> [[f32; 4]; 4] {
+///
+/// `up` debe ser la normal del plano de órbita del sol (constante para un cardinal),
+/// nunca un valor que cambie con `dir.y`: el antiguo umbral `|dir.y| > 0.99`
+/// conmutaba entre X e Y y giraba la base de la luz 180°, reflejando el shadow map
+/// cada vez que el sol cruzaba el cenit.
+fn light_view_proj_from(center: Vec3, dir: Vec3, extent: f32, up: Vec3) -> [[f32; 4]; 4] {
     let dir = dir.normalize();
-    // Umbral alto: con el ciclo inclinado 23.5° nunca se alcanza, así que el
-    // cambio de "up" no provoca saltes de orientación en la sombra.
-    let up = if dir.y.abs() > 0.99 { Vec3::X } else { Vec3::Y };
     let eye = center + dir * extent * 2.5;
     let view = Mat4::look_at_rh(eye, center, up);
     // La cámara de luz mira a `center`, así que el centro en espacio de luz es (0,0,-dist).
@@ -484,10 +486,17 @@ impl State {
 
     /// Proyección ortográfica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
+        // Normal del plano de órbita: estable para todo el ciclo (Este/Oeste → Z,
+        // Norte/Sur → X). Nunca se conmuta según dir.y, que reflejaba la sombra.
+        let up = match self.sun_rise_cardinal {
+            SunRiseCardinal::East | SunRiseCardinal::West => Vec3::Z,
+            SunRiseCardinal::North | SunRiseCardinal::South => Vec3::X,
+        };
         light_view_proj_from(
             self.directional_light_scene_center(),
             self.directional_light_dir,
             self.light_shadow_extent_m(),
+            up,
         )
     }
 
@@ -981,9 +990,9 @@ mod tests {
     #[test]
     fn light_view_proj_follows_the_sun_direction() {
         let center = Vec3::new(0.0, 10.0, 0.0);
-        let east = light_view_proj_from(center, Vec3::X, 100.0);
-        let west = light_view_proj_from(center, Vec3::NEG_X, 100.0);
-        let zenith = light_view_proj_from(center, Vec3::Y, 100.0);
+        let east = light_view_proj_from(center, Vec3::X, 100.0, Vec3::Z);
+        let west = light_view_proj_from(center, Vec3::NEG_X, 100.0, Vec3::Z);
+        let zenith = light_view_proj_from(center, Vec3::Y, 100.0, Vec3::Z);
 
         assert_ne!(
             east, west,
@@ -991,6 +1000,32 @@ mod tests {
         );
         assert_ne!(east, zenith);
         assert_ne!(west, zenith);
+    }
+
+    #[test]
+    fn light_basis_does_not_flip_across_zenith_threshold() {
+        // El antiguo `up = if |dir.y| > 0.99 { X } else { Y }` giraba la base
+        // 180° al cruzar 0.99, reflejando el shadow map. Con up fijo (normal de
+        // la órbita) la proyección de un punto debe variar suave en todo el barrido.
+        let center = Vec3::new(0.0, 50.0, 0.0);
+        let extent = 60.97;
+        let p = Vec3::new(5.0, 1.0, 5.0);
+        let mut prev: Option<f32> = None;
+        for i in 0..200 {
+            let a = i as f32 / 199.0;
+            let dy = 0.98 + a * 0.019; // 0.98 → 0.999, cruzando el viejo umbral 0.99
+            let dx = -(1.0 - dy * dy).sqrt();
+            let dir = Vec3::new(dx, dy, 0.0);
+            let m = light_view_proj_from(center, dir, extent, Vec3::Z);
+            let clip_x = m[0][0] * p.x + m[1][0] * p.y + m[2][0] * p.z + m[3][0];
+            if let Some(prev_x) = prev {
+                assert!(
+                    (clip_x - prev_x).abs() < 0.01,
+                    "la base de la luz giró de golpe en dir.y={dy}"
+                );
+            }
+            prev = Some(clip_x);
+        }
     }
 
     #[test]
@@ -1003,7 +1038,7 @@ mod tests {
         for i in 0..256 {
             let n = i as f32 * 1e-7;
             let dir = Vec3::new(-0.05 + n, 0.998 + n * 0.1, 0.0);
-            let m = light_view_proj_from(center, dir, extent);
+            let m = light_view_proj_from(center, dir, extent, Vec3::Z);
             // m[col][fila]; w = 1 para una ortho.
             let clip_x = m[0][0] * center.x + m[1][0] * center.y + m[2][0] * center.z + m[3][0];
             let clip_y = m[0][1] * center.x + m[1][1] * center.y + m[2][1] * center.z + m[3][1];
