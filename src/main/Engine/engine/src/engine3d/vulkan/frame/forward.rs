@@ -82,6 +82,15 @@ impl FrameRenderer {
             bytes.extend(std::iter::repeat_n(0, pad));
             bytes.extend_from_slice(batch.instances);
         }
+        // Casters skinned del shadow map: bloque propio por el mismo motivo que
+        // `shadow_offsets` (sus índices no coinciden con los del forward).
+        let mut shadow_skinned_offsets = Vec::new();
+        for batch in input.shadow_skinned_batches {
+            shadow_skinned_offsets.push(align_up(bytes.len() as u32, 256) as u64);
+            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
+            bytes.extend(std::iter::repeat_n(0, pad));
+            bytes.extend_from_slice(batch.instances);
+        }
         let mut skinned_transparent_offsets = Vec::new();
         for batch in input.skinned_transparent_batches {
             skinned_transparent_offsets.push(align_up(bytes.len() as u32, 256) as u64);
@@ -118,6 +127,17 @@ impl FrameRenderer {
                 }
             }
         }
+        // Paletas de los casters skinned, detrás de las del forward. Cada base
+        // apunta a su propio bloque dentro del mismo buffer de joints.
+        let mut shadow_joint_bases = Vec::new();
+        for batch in input.shadow_skinned_batches {
+            shadow_joint_bases.push((joints.len() / 64) as u32);
+            for matrix in batch.palette {
+                for column in matrix {
+                    joints.extend_from_slice(bytemuck::cast_slice(column));
+                }
+            }
+        }
         if joints.is_empty() {
             joints.extend_from_slice(&[0, 0, 0, 0]);
         }
@@ -133,9 +153,11 @@ impl FrameRenderer {
         self.shadow_offsets = shadow_offsets;
         self.static_transparent_offsets = static_transparent_offsets;
         self.skinned_offsets = skinned_offsets;
+        self.shadow_skinned_offsets = shadow_skinned_offsets;
         self.skinned_transparent_offsets = skinned_transparent_offsets;
         self.joint_bases = joint_bases;
         self.joint_bases_transparent = joint_bases_transparent;
+        self.shadow_joint_bases = shadow_joint_bases;
         Ok(())
     }
 

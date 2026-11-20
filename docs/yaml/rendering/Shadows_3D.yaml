@@ -10,7 +10,7 @@
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 6
+version: 7
 updated: 2026-11-20
 
 principle:
@@ -38,6 +38,11 @@ principle:
     `prepare_uploads` sube las instancias de ese SUBCONJUNTO a su propio bloque y guarda
     `shadow_offsets`; usar los `static_offsets` del forward hacía que el shadow pass leyera
     matrices de otras entidades, con sombras gigantes y desalineadas del sol.
+    El conjunto de casters YA NO es solo lo que ve la cámara: el frustum se expande hacia
+    el sol (ver `camera_dependent_caster_culling`). Los lotes se construyen una sola vez
+    con el conjunto ampliado; el forward filtra por id con `filter_batches_by_entity_set`
+    y el shadow map consume el conjunto completo. Lo mismo aplica a los casters skinned,
+    con `shadow_skinned_batches` / `shadow_skinned_offsets` / `shadow_joint_bases` propios.
   rt_shadows: |
     No hay sombras por ray tracing en el renderizador Ash: los shaders de trazado
     (`shaders/rt/primary.rchit`, `shaders/bvh/trace.comp`) iluminan con N·L y un ambiente,
@@ -133,6 +138,41 @@ volumetric_shadows:
     El clamp vecinal del histórico y el blend bajo limitan el ghosting cuando el humo se mueve;
     `reset_taa_history()` invalida también el volumen al cargar escena. Solo se esparce densidad
     de emisores dentro del volumen que sigue a la cámara (emisiones lejanas no proyectan sombra).
+
+camera_dependent_caster_culling:
+  status: implementado
+  scope: |
+    Los casters del shadow map 2D se seleccionan con el frustum de la cámara AMPLIADO
+    hacia la dirección de la luz, no solo con el frustum estricto del forward. Así un
+    objeto fuera de pantalla pero «aguas arriba» del sol sigue proyectando sombra dentro
+    de la vista, en vez de perderla al salir del cuadro (`popping`).
+  algorithm: |
+    `frustum.rs::shadow_caster_aabb_half` infla el AABB de cada entidad por
+    `margin * |light_dir|` antes de llamar a `is_aabb_visible_3d` con la matriz de cámara
+    (sin jitter, la misma que ya se usa para el frustum del forward). Es un test
+    conservador y equivalente a barrer el frustum hacia el sol: el sol alto ensancha
+    sobre todo el eje Y (sombras cortas) y el sol rasante ensancha X/Z (sombras largas).
+    El margen lo deriva `directional_light.rs::shadow_caster_margin_m` del radio de los
+    bounds y del factor rasante, acotado entre `SHADOW_CASTER_MARGIN_MIN_M` (8 m) y el
+    doble del extent de la ortho; se puede desactivar o fijar a mano desde `State`.
+    Suelo, sol, fondo y entidades transparentes siguen sin proyectar (mismo filtro de
+    siempre). La lista se calcula cada frame con la cámara sin jitter, así que es estable
+    con el sol quieto: no añade temblor al shadow map ni toca bias/PCF/texel snapping.
+  no_confundir_con: |
+    `volumetric_shadows` también sigue a la cámara (su volumen se centra en el ojo), pero
+    recorta emisiones por extensión de rejilla, no selecciona casters geométricos. Son
+    subsistemas distintos y comparten solo el interruptor del `ShadowTier`.
+  config: |
+    Sin controles nuevos en UI/IPC/.save: `State.shadow_caster_culling_enabled` (default
+    `true`) y `State.shadow_caster_margin_override_m` (`None` = automático), con setters
+    en `config_3d/shadow_settings.rs`. Con `false` se recupera el comportamiento heredado.
+  tests: |
+    `frustum.rs::is_shadow_caster_visible` es el predicado que depende de la cámara: su
+    test fija escena y sol y cambia SOLO el `view_proj`, comprobando que el mismo caster
+    entra con una pose y sale con otra. También cubre el AABB expandido (eje de luz,
+    margen 0/negativo, sol rasante y caster detrás de cámara que entra al expandir).
+    `directional_light.rs` cubre el crecimiento con el ángulo rasante, el desactivado/
+    override y el tope de 2× extent.
 
 # Intento de CSM (2026-11-09): implementado, roto en pantalla y retirado. Se deja aquí porque
 # cuesta mucho reconstruir qué se descartó y qué no. Card Trello: `CASCADES / CSM (3D)`.

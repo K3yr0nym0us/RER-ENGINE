@@ -1,5 +1,7 @@
 //! Batches de instancias de escena y aplicación de materiales PBR.
 
+use std::collections::HashSet;
+
 use super::*;
 
 #[repr(C)]
@@ -83,6 +85,40 @@ pub(crate) fn filter_batches_by_alpha(
                 mesh_idx: b.mesh_idx,
                 texture_layer: b.texture_layer,
                 probe_layer: b.probe_layer,
+                instances,
+                entity_ids,
+            })
+        })
+        .collect()
+}
+
+/// Deja solo las entidades visibles en el pase forward.
+///
+/// Los lotes se construyen con el conjunto ampliado de casters (frustum de cámara
+/// más margen hacia el sol); el forward necesita el subconjunto estricto. El
+/// shadow map, en cambio, consume los lotes completos.
+pub(crate) fn filter_batches_by_entity_set(
+    batches: &[SceneInstanceBatch],
+    visible: &HashSet<crate::engine3d::ecs::EntityId>,
+) -> Vec<SceneInstanceBatch> {
+    batches
+        .iter()
+        .filter_map(|batch| {
+            let mut instances = Vec::new();
+            let mut entity_ids = Vec::new();
+            for (inst, eid) in batch.instances.iter().zip(batch.entity_ids.iter()) {
+                if visible.contains(eid) {
+                    instances.push(*inst);
+                    entity_ids.push(*eid);
+                }
+            }
+            if instances.is_empty() {
+                return None;
+            }
+            Some(SceneInstanceBatch {
+                mesh_idx: batch.mesh_idx,
+                texture_layer: batch.texture_layer,
+                probe_layer: batch.probe_layer,
                 instances,
                 entity_ids,
             })
@@ -175,7 +211,7 @@ pub(crate) fn build_scene_instance_batches(
     batches
 }
 
-fn entity_skips_shadow_cast(
+pub(crate) fn entity_skips_shadow_cast(
     state: &super::State,
     entity_id: crate::engine3d::ecs::EntityId,
 ) -> bool {
@@ -222,4 +258,38 @@ pub(crate) fn filter_shadow_cast_batches(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use glam::Mat4;
+
+    fn batch(ids: &[u32]) -> SceneInstanceBatch {
+        let inst = crate::engine3d::mesh::InstanceData::new(Mat4::IDENTITY, 0.0, 0);
+        SceneInstanceBatch {
+            mesh_idx: 0,
+            texture_layer: 0,
+            probe_layer: -1,
+            instances: ids.iter().map(|_| inst).collect(),
+            entity_ids: ids.to_vec(),
+        }
+    }
+
+    #[test]
+    fn forward_batches_keep_only_strictly_visible_entities() {
+        let batches = vec![batch(&[1, 2, 3])];
+        let forward = filter_batches_by_entity_set(&batches, &HashSet::from([2]));
+        assert_eq!(forward.len(), 1);
+        assert_eq!(forward[0].entity_ids, vec![2]);
+        assert_eq!(forward[0].instances.len(), 1);
+        // El lote completo sigue intacto para el shadow map.
+        assert_eq!(batches[0].entity_ids, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn forward_batches_drop_empty_results() {
+        let batches = vec![batch(&[7])];
+        assert!(filter_batches_by_entity_set(&batches, &HashSet::new()).is_empty());
+    }
 }

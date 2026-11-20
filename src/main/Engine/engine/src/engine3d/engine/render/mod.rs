@@ -4,6 +4,7 @@
 //! `crate::engine3d::vulkan::FrameRenderer` y presenta con el swapchain de Ash.
 //! El motor 2D sigue en wgpu y no toca este archivo.
 
+use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -23,6 +24,13 @@ use super::{SceneUniforms, State};
 /// Peso del IBL de sondas. Antes se reutilizaba `shadow_darkness` para esto; ahora
 /// `light_params.y` queda exclusivamente para la oscuridad de sombra.
 const PROBE_IBL_WEIGHT: f32 = 0.22;
+
+/// Entidad seleccionada para el frame y flag de visibilidad estricta en el forward.
+/// Las que no son estrictas entran solo en el conjunto de casters del shadow map.
+type StagedEntity = (
+    (crate::engine3d::ecs::EntityId, usize, usize, Mat4, i32),
+    bool,
+);
 
 /// Secuencia de Halton para el jitter subpíxel de TAA.
 fn halton(index: u32, base: u32) -> f32 {
@@ -244,8 +252,13 @@ impl State {
                 .view_proj;
             Mat4::from_cols_array_2d(&raw)
         };
+        // Un caster fuera de pantalla puede proyectar sombra dentro de la vista si
+        // está aguas arriba del sol. Ampliamos su AABB por la dirección de luz y
+        // conservamos esas entidades solo para el shadow map (ver `forward_ids`).
+        let caster_margin = self.shadow_caster_margin_m();
+        let light_dir = self.directional_light_dir;
 
-        let mut entities: Vec<(crate::engine3d::ecs::EntityId, usize, usize, Mat4, i32)> = self
+        let staged: Vec<StagedEntity> = self
             .world
             .query2::<crate::engine3d::ecs::MeshComponent, crate::engine3d::ecs::Transform>()
             .filter_map(|(id, mc, t)| {
@@ -268,7 +281,16 @@ impl State {
                 {
                     return None;
                 }
-                if !is_ground && !is_aabb_visible_3d(&frustum_vp, mesh_center, mesh_half) {
+                let strict = is_ground || is_aabb_visible_3d(&frustum_vp, mesh_center, mesh_half);
+                let caster = is_ground
+                    || is_shadow_caster_visible(
+                        &frustum_vp,
+                        mesh_center,
+                        mesh_half,
+                        light_dir,
+                        caster_margin,
+                    );
+                if !strict && !caster {
                     return None;
                 }
                 // LOD por distancia: solo entidades con variantes registradas
@@ -286,13 +308,26 @@ impl State {
                         mesh_idx = lod_idx;
                     }
                 }
-                Some((id, mesh_idx, mc.tex_idx, t.to_matrix(), 0))
+                Some(((id, mesh_idx, mc.tex_idx, t.to_matrix(), 0), strict))
             })
             .collect();
+
+        let mut entities = Vec::with_capacity(staged.len());
+        let mut forward_ids: HashSet<crate::engine3d::ecs::EntityId> =
+            HashSet::with_capacity(staged.len());
+        for (entry, strict) in staged {
+            if strict {
+                forward_ids.insert(entry.0);
+            }
+            entities.push(entry);
+        }
         entities.sort_by_key(|a| a.4);
 
+        // Los lotes se construyen una sola vez con el conjunto ampliado. El forward
+        // filtra por `forward_ids`; el shadow map consume el conjunto completo.
         let batches = build_scene_instance_batches(self, &entities, &probe_fields);
-        let opaque_batches = filter_batches_by_alpha(&batches, false);
+        let forward_batches = filter_batches_by_entity_set(&batches, &forward_ids);
+        let opaque_batches = filter_batches_by_alpha(&forward_batches, false);
 
         // ── Probes: ranuras estables + burst/round-robin de captura ──
         let probe_captures: Vec<crate::engine3d::vulkan::ProbeCapture> = if probes_active {
@@ -361,7 +396,8 @@ impl State {
         }
 
         let mut static_batches: Vec<MeshBatch> = Vec::new();
-        let shadow_scene_batches = filter_shadow_cast_batches(self, &opaque_batches);
+        let caster_opaque_batches = filter_batches_by_alpha(&batches, false);
+        let shadow_scene_batches = filter_shadow_cast_batches(self, &caster_opaque_batches);
         let mut shadow_static_batches: Vec<MeshBatch> = Vec::new();
         for b in &shadow_scene_batches {
             let Some(mesh) = self.meshes.get(b.mesh_idx) else {
@@ -389,7 +425,7 @@ impl State {
                 instance_count: b.instances.len() as u32,
             });
         }
-        let transparent_batches = filter_batches_by_alpha(&batches, true);
+        let transparent_batches = filter_batches_by_alpha(&forward_batches, true);
         let mut static_transparent_batches: Vec<MeshBatch> = Vec::new();
         for b in &transparent_batches {
             let Some(mesh) = self.meshes.get(b.mesh_idx) else {
@@ -419,8 +455,12 @@ impl State {
         }
 
         // ── Instancias skinned (modelos animados por joints) ──
+        // Igual que en estáticos: el forward usa el frustum estricto y el shadow
+        // map el frustum ampliado hacia el sol, con su propio bloque de instancias.
         let mut skinned_arena: Vec<u8> = Vec::new();
         let mut skinned_specs: Vec<(usize, usize, usize, bool)> = Vec::new();
+        let mut shadow_skinned_arena: Vec<u8> = Vec::new();
+        let mut shadow_skinned_specs: Vec<(usize, usize, usize)> = Vec::new();
         for (&id, binding) in &self.model_animation_bindings {
             let Some(transform) = self.world.get::<crate::engine3d::ecs::Transform>(id) else {
                 continue;
@@ -444,9 +484,19 @@ impl State {
             {
                 continue;
             }
-            if !is_ground && !is_aabb_visible_3d(&frustum_vp, mesh_center, mesh_half) {
+            let strict = is_ground || is_aabb_visible_3d(&frustum_vp, mesh_center, mesh_half);
+            let caster = is_ground
+                || is_shadow_caster_visible(
+                    &frustum_vp,
+                    mesh_center,
+                    mesh_half,
+                    light_dir,
+                    caster_margin,
+                );
+            if !strict && !caster {
                 continue;
             }
+            let casts_shadow = caster && !entity_skips_shadow_cast(self, id);
             let is_selected =
                 self.selected_entity == Some(id) || self.selected_entities.contains(&id);
             let is_hovered = self.hovered_entity == Some(id);
@@ -465,9 +515,16 @@ impl State {
                 let skinned = crate::engine3d::mesh::SkinnedInstanceData::from_instance(&inst);
                 let transparent = inst.flag_pad[1] < 0.98;
                 let bytes = bytemuck::bytes_of(&skinned);
-                let offset = skinned_arena.len();
-                skinned_arena.extend_from_slice(bytes);
-                skinned_specs.push((gpu_idx, offset, bytes.len(), transparent));
+                if strict {
+                    let offset = skinned_arena.len();
+                    skinned_arena.extend_from_slice(bytes);
+                    skinned_specs.push((gpu_idx, offset, bytes.len(), transparent));
+                }
+                if casts_shadow && !transparent {
+                    let offset = shadow_skinned_arena.len();
+                    shadow_skinned_arena.extend_from_slice(bytes);
+                    shadow_skinned_specs.push((gpu_idx, offset, bytes.len()));
+                }
             }
         }
         let mut skinned_batches: Vec<SkinnedBatch> = Vec::new();
@@ -489,6 +546,20 @@ impl State {
             } else {
                 skinned_batches.push(batch);
             }
+        }
+        let mut shadow_skinned_batches: Vec<SkinnedBatch> = Vec::new();
+        for (gpu_idx, offset, len) in &shadow_skinned_specs {
+            let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
+                continue;
+            };
+            shadow_skinned_batches.push(SkinnedBatch {
+                vertex: &entry.mesh.vertex_buffer,
+                index: &entry.mesh.index_buffer,
+                index_count: entry.mesh.index_count,
+                instances: &shadow_skinned_arena[*offset..*offset + *len],
+                instance_count: 1,
+                palette: &entry.joint_palette,
+            });
         }
 
         // ── Overlays gizmo (paridad con `grid_pipeline`/`gizmo_pipeline` de wgpu) ──
@@ -845,6 +916,7 @@ impl State {
             shadow_static_batches: &shadow_static_batches,
             static_transparent_batches: &static_transparent_batches,
             skinned_batches: &skinned_batches,
+            shadow_skinned_batches: &shadow_skinned_batches,
             skinned_transparent_batches: &skinned_transparent_batches,
             gizmos: &gizmos,
             hud_vertex,
@@ -917,6 +989,7 @@ fn count_frame_draws(input: &crate::engine3d::vulkan::FrameInput<'_>) -> u32 {
     }
     if input.shadows && input.sun_above_horizon {
         calls += input.shadow_static_batches.len() as u32;
+        calls += input.shadow_skinned_batches.len() as u32;
     }
     calls
 }

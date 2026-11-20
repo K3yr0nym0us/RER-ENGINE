@@ -92,8 +92,11 @@ impl FrameRenderer {
                 &[],
             );
         }
-        for (index, batch) in input.skinned_batches.iter().enumerate() {
-            let push = push_bytes(self.joint_bases.get(index).copied().unwrap_or(0), 0.0);
+        for (index, batch) in input.shadow_skinned_batches.iter().enumerate() {
+            let push = push_bytes(
+                self.shadow_joint_bases.get(index).copied().unwrap_or(0),
+                0.0,
+            );
             unsafe {
                 device.cmd_push_constants(
                     cmd,
@@ -103,7 +106,7 @@ impl FrameRenderer {
                     &push,
                 );
             }
-            let offset = self.skinned_offsets.get(index).copied().unwrap_or(0);
+            let offset = self.shadow_skinned_offsets.get(index).copied().unwrap_or(0);
             draw_one(
                 device,
                 cmd,

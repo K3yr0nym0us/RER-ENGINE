@@ -32,6 +32,8 @@ pub const SHADOW_NORMAL_BIAS_MAX: f32 = 0.028;
 pub const SHADOW_DEPTH_BIAS_CONST: f32 = 0.0008;
 /// Escala de bias por pendiente (1 - N·L).
 pub const SHADOW_DEPTH_BIAS_SLOPE: f32 = 0.002;
+/// Margen mínimo (m) para buscar casters fuera del frustum de la cámara.
+pub const SHADOW_CASTER_MARGIN_MIN_M: f32 = 8.0;
 fn shadow_ortho_extent_m(world_radius: f32) -> f32 {
     let diagonal = (world_radius * 2.0) * 3.0_f32.sqrt();
     diagonal.max(48.0) * 0.55
@@ -47,6 +49,26 @@ fn shadow_world_texel_from(extent_m: f32, map_size: u32) -> f32 {
 fn shadow_grazing_scale(dir_y: f32) -> f32 {
     let grazing = 1.0 - dir_y.clamp(0.0, 1.0);
     1.0 + 0.35 * grazing * grazing
+}
+
+/// Distancia «aguas arriba del sol» que se añade al AABB de cada caster durante
+/// el culling. Crece con el ángulo rasante: con el sol bajo las sombras se
+/// alargan y objetos lejos de la vista pueden proyectar dentro de ella.
+fn shadow_caster_margin_from(
+    world_radius: f32,
+    dir_y: f32,
+    override_m: Option<f32>,
+    enabled: bool,
+) -> f32 {
+    if !enabled {
+        return 0.0;
+    }
+    if let Some(margin) = override_m {
+        return margin.max(0.0);
+    }
+    let grazing = shadow_grazing_scale(dir_y);
+    let extent = shadow_ortho_extent_m(world_radius) * grazing;
+    (world_radius * grazing).clamp(SHADOW_CASTER_MARGIN_MIN_M, extent * 2.0)
 }
 
 /// Margen sobre el suelo (m) para considerar que el sol proyecta sombras.
@@ -505,6 +527,18 @@ impl State {
         shadow_world_texel_from(self.light_shadow_extent_m(), self.active_shadow_map_size())
     }
 
+    /// Margen de culling de casters: objetos fuera del frustum de la cámara a
+    /// esta distancia «aguas arriba» del sol pueden proyectar sombra en la vista.
+    /// `0` desactiva la expansión (modo heredado).
+    pub(crate) fn shadow_caster_margin_m(&self) -> f32 {
+        shadow_caster_margin_from(
+            self.world_bounds_3d.radius(),
+            self.directional_light_dir.y,
+            self.shadow_caster_margin_override_m,
+            self.shadow_caster_culling_enabled,
+        )
+    }
+
     /// Proyección ortográfica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
         // Normal del plano de órbita: estable para todo el ciclo (Este/Oeste → Z,
@@ -819,11 +853,11 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_LIGHT_COLOR, SUN_CYCLE_SECONDS_PER_UNIT, SunRiseCardinal, day_factor,
-        light_view_proj_from, shadow_grazing_scale, shadow_ortho_extent_m,
-        shadow_world_texel_from, sun_color_for_sun_height, sun_cycle_direction,
-        sun_local_direction, sun_orbit_distance_from, sun_phase_from_direction,
-        sun_world_y,
+        DEFAULT_LIGHT_COLOR, SHADOW_CASTER_MARGIN_MIN_M, SUN_CYCLE_SECONDS_PER_UNIT,
+        SunRiseCardinal, day_factor, light_view_proj_from, shadow_caster_margin_from,
+        shadow_grazing_scale, shadow_ortho_extent_m, shadow_world_texel_from,
+        sun_color_for_sun_height, sun_cycle_direction, sun_local_direction,
+        sun_orbit_distance_from, sun_phase_from_direction, sun_world_y,
     };
     use crate::engine3d::config_3d::world_bounds::WorldBounds3D;
     use glam::Vec3;
@@ -833,6 +867,35 @@ mod tests {
         let radius = 50.0;
         let expected = (radius * 2.0 * 3.0_f32.sqrt()).max(48.0) * 0.55;
         assert!((shadow_ortho_extent_m(radius) - expected).abs() < 1e-5);
+    }
+
+    #[test]
+    fn caster_margin_grows_with_grazing_sun() {
+        let high = shadow_caster_margin_from(32.0, 1.0, None, true);
+        let low = shadow_caster_margin_from(32.0, 0.05, None, true);
+        assert!(low > high, "rasante {low} debe ser mayor que cenit {high}");
+        assert!(high >= SHADOW_CASTER_MARGIN_MIN_M);
+    }
+
+    #[test]
+    fn caster_margin_can_be_disabled_or_overridden() {
+        assert_eq!(shadow_caster_margin_from(32.0, 0.05, None, false), 0.0);
+        assert_eq!(
+            shadow_caster_margin_from(32.0, 0.05, Some(17.0), true),
+            17.0
+        );
+        assert_eq!(shadow_caster_margin_from(32.0, 0.05, Some(-4.0), true), 0.0);
+    }
+
+    #[test]
+    fn caster_margin_never_exceeds_twice_the_shadow_extent() {
+        let extent = shadow_ortho_extent_m(900.0) * shadow_grazing_scale(0.0);
+        let margin = shadow_caster_margin_from(900.0, 0.0, None, true);
+        assert!(
+            margin <= extent * 2.0 + 1e-4,
+            "{margin} vs {}",
+            extent * 2.0
+        );
     }
 
     #[test]

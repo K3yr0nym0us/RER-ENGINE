@@ -36,6 +36,11 @@ pub struct State {
     pub(crate) shadow_tier: crate::engine3d::config_3d::shadow_graphics::ShadowTier,
     /// Resolución actual del shadow map (px por lado); se recrea al cambiar de tier.
     pub(crate) shadow_map_size: u32,
+    /// Culling de casters dependiente de la cámara: amplía el frustum hacia el sol
+    /// para que objetos fuera de pantalla sigan proyectando sombra dentro de la vista.
+    pub(crate) shadow_caster_culling_enabled: bool,
+    /// Margen explicitado para el culling de casters; `None` lo deriva de los bounds y el sol.
+    pub(crate) shadow_caster_margin_override_m: Option<f32>,
     /// Nivel MSAA del pase forward (Low = Off).
     pub(crate) msaa_tier: crate::engine3d::config_3d::msaa_graphics::MsaaTier,
     /// `sample_count` efectivo tras clamp al soporte del dispositivo.

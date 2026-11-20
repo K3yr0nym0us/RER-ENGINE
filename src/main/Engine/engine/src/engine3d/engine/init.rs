@@ -359,6 +359,8 @@ impl State {
 
             shadow_tier,
             shadow_map_size,
+            shadow_caster_culling_enabled: true,
+            shadow_caster_margin_override_m: None,
             msaa_tier,
             msaa_sample_count,
             ssaa_tier,

@@ -212,6 +212,10 @@ pub struct FrameInput<'a> {
     pub static_batches: &'a [MeshBatch<'a>],
     /// Sin terreno ni suelo checker: evitan auto-sombra a escala de mundo.
     pub shadow_static_batches: &'a [MeshBatch<'a>],
+    /// Casters skinned seleccionados con el frustum ampliado hacia el sol. Tienen
+    /// su propio bloque de instancias/paletas: reutilizar los del forward leyera
+    /// matrices de otras entidades, igual que pasó con `shadow_static_batches`.
+    pub shadow_skinned_batches: &'a [SkinnedBatch<'a>],
     /// Batches con alpha < 0.98 para el pase blend.
     pub static_transparent_batches: &'a [MeshBatch<'a>],
     pub skinned_batches: &'a [SkinnedBatch<'a>],
@@ -294,6 +298,9 @@ pub struct FrameRenderer {
     shadow_offsets: Vec<u64>,
     static_transparent_offsets: Vec<u64>,
     skinned_offsets: Vec<u64>,
+    /// Offsets y bases de paleta de los casters skinned del shadow map.
+    shadow_skinned_offsets: Vec<u64>,
+    shadow_joint_bases: Vec<u32>,
     skinned_transparent_offsets: Vec<u64>,
     joint_bases: Vec<u32>,
     joint_bases_transparent: Vec<u32>,
@@ -901,6 +908,8 @@ impl FrameRenderer {
             shadow_offsets: Vec::new(),
             static_transparent_offsets: Vec::new(),
             skinned_offsets: Vec::new(),
+            shadow_skinned_offsets: Vec::new(),
+            shadow_joint_bases: Vec::new(),
             skinned_transparent_offsets: Vec::new(),
             joint_bases: Vec::new(),
             joint_bases_transparent: Vec::new(),

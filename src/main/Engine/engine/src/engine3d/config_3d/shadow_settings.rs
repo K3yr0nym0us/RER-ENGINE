@@ -27,6 +27,36 @@ impl State {
     }
 }
 
+// Superficie de configuración del subsistema. Igual que los ajustes volumétricos,
+// el tier de sombras es el único interruptor expuesto en UI/IPC/.save por ahora.
+#[allow(dead_code)]
+impl State {
+    /// Activa/desactiva el culling de casters dependiente de la cámara. Con `false`
+    /// se recupera el comportamiento heredado: solo proyecta sombra lo que ve la cámara.
+    pub(crate) fn set_shadow_caster_culling(&mut self, enabled: bool) {
+        if self.shadow_caster_culling_enabled == enabled {
+            return;
+        }
+        self.shadow_caster_culling_enabled = enabled;
+        log::info!(
+            "[sombras] Culling de casters por cámara: {}",
+            if enabled { "activado" } else { "desactivado" }
+        );
+    }
+
+    /// Fija un margen manual (metros) o vuelve al calculado desde bounds y dirección del sol.
+    pub(crate) fn set_shadow_caster_margin(&mut self, margin_m: Option<f32>) {
+        self.shadow_caster_margin_override_m = margin_m.map(|m| m.max(0.0));
+        log::info!(
+            "[sombras] Margen de casters: {}",
+            match self.shadow_caster_margin_override_m {
+                Some(m) => format!("{m:.1} m (manual)"),
+                None => "automático".to_string(),
+            }
+        );
+    }
+}
+
 pub(crate) fn apply_shadow_settings_from_world_wire(state: &mut State, tier: Option<&str>) {
     let resolved = tier
         .and_then(ShadowTier::from_wire)
