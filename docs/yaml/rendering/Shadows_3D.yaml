@@ -144,3 +144,25 @@ csm_attempt:
     Con una sola cascada el motor funcionaba; con dos, la primera era correcta y las siguientes
     fallaban sistemáticamente. Eso deja acotado el problema al reparto matriz↔capa (cómo llega la
     matriz a cada pase y qué capa se lee), no a la matemática de cascadas.
+
+# Debug del ciclo día/noche (2026-11-19). Bitácora completa: SHADOW_DEBUG_LOG.yaml (raíz).
+day_night_shadow_debug:
+  status: sin-resolver
+  resumen: >
+    Se perdieron varias horas intentando eliminar el temblor/retroceso de las sombras al mover el sol:
+    se restauró el bias (a125635 lo había reducido 10-70x), se retiró el texel snapping del CSM, se
+    cambió texture() por textureLod(), se fijó el up vector por cardinal, se escaló el bias por texel,
+    se alinearon los taps del PCF, se descartaron sondas, feedback del editor y errores de UBO, y se
+    instrumentó el UBO y el shadow map vía readback. Todo medido: con el sol quieto el UBO y el mapa
+    son byte-idénticos, así que no hay bug de render/sync.
+  error_actual: >
+    El único cambio que ayudó fue el texel snapping con round() (commit ef5a5a5): eliminó el vuelco
+    y el retroceso, pero la sombra ya NO avanza de forma fluida: avanza a saltos de un texel, más
+    frecuentes cuanto más alto el tier. Con tier alto los saltos se ven como un temblor rápido; con
+    tier bajo como avances escalonados cada pocos segundos. Intentar separar captura snappeada de
+    muestreo suave empeoró el vuelco y se revirtió.
+  advertencia: >
+    Este comportamiento (saltos, sin retroceso) fue lo mejor que se consiguió tras horas de trabajo.
+    Quien intente arreglarlo que lo haga BAJO SU PROPIO RIESGO: casi todos los parches "obvios"
+    (bias, PCF, LOD, up, snapping alternativo) empeoraron el resultado o lo dejaron igual. Leer la
+    bitácora completa antes de tocar nada.
