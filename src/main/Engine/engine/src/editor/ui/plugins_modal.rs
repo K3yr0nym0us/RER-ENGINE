@@ -11,10 +11,12 @@ use serde_json::json;
 use crate::editor::app::EditorApp;
 use crate::editor::cli::Locale;
 use crate::editor::i18n::tr;
-use crate::editor::plugins::{self, CATALOG, PluginCatalogEntry};
+use crate::editor::plugins::{self, CATALOG, DownloadProgress, PluginCatalogEntry};
 use crate::editor::theme;
 
 const CARD_WIDTH: f32 = 200.0;
+const CARD_INSTALL_WIDTH: f32 = 220.0;
+const MIN_CARD_HEIGHT: f32 = 200.0;
 const ICON_SIZE: f32 = 88.0;
 const BLUE: Color32 = Color32::from_rgb(0x0d, 0x6e, 0xfd);
 const GREEN: Color32 = Color32::from_rgb(0x19, 0x87, 0x54);
@@ -93,6 +95,39 @@ fn badge(ui: &mut egui::Ui, text: &str) {
         });
 }
 
+/// Borde punteado de `.plugin-square-card--soon` (Bootstrap `border dashed`).
+/// egui no tiene trazo discontinuo en `Stroke`, así que se pinta a mano.
+fn paint_dashed_border(ui: &egui::Ui, rect: egui::Rect, color: Color32) {
+    let path = [
+        rect.left_top(),
+        rect.right_top(),
+        rect.right_bottom(),
+        rect.left_bottom(),
+        rect.left_top(),
+    ];
+    for shape in egui::Shape::dashed_line(&path, egui::Stroke::new(1.0, color), 5.0, 4.0) {
+        ui.painter().add(shape);
+    }
+}
+
+/// Espejo de `pluginInstallStatusLabel` del renderer, por fase de descarga.
+fn install_status_label(progress: Option<&DownloadProgress>, locale: Locale) -> String {
+    match progress.map(|item| item.phase.as_str()) {
+        Some("opencode") => {
+            tr(locale, "Descargando OpenCode…", "Downloading OpenCode…").to_string()
+        }
+        Some("extracting") => tr(locale, "Instalando…", "Installing…").to_string(),
+        Some("preparing") => tr(
+            locale,
+            "Preparando el espacio de trabajo…",
+            "Preparing assistant workspace…",
+        )
+        .to_string(),
+        Some("artifact") => tr(locale, "Descargando…", "Downloading…").to_string(),
+        _ => tr(locale, "Preparando la descarga…", "Preparing download…").to_string(),
+    }
+}
+
 fn load_assistant_icon(ui: &mut egui::Ui, app: &mut EditorApp) {
     if app.plugins_modal.icon.is_some() {
         return;
@@ -119,7 +154,11 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
     let enabled = app.plugins_modal.plugins.is_enabled(id);
     let installing = app.plugins_modal.busy_id.as_deref() == Some(id)
         || (app.plugins_modal.llm.status == "downloading" && id == "local-ai-assistant");
-    let card_width = if installing { 220.0 } else { CARD_WIDTH };
+    let card_width = if installing {
+        CARD_INSTALL_WIDTH
+    } else {
+        CARD_WIDTH
+    };
 
     egui::Frame::new()
         .stroke(egui::Stroke::new(1.0, theme::BORDER))
@@ -132,6 +171,9 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
         })
         .show(ui, |ui| {
             ui.set_width(card_width - 26.0);
+            // CSS: `.plugin-square-card { min-height: 200px }`. El Frame suma
+            // 8 px arriba + 12 abajo, así que el contenido necesita 180 px.
+            ui.set_min_height(MIN_CARD_HEIGHT - 20.0);
             ui.vertical_centered(|ui| {
                 if id == "world-gen" {
                     ui.label(
@@ -170,7 +212,7 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                 });
             });
 
-            ui.add_space(6.0);
+            ui.add_space(8.0);
             if installing {
                 let progress = app
                     .plugins_modal
@@ -182,17 +224,36 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                     .as_ref()
                     .is_some_and(|item| item.phase == "extracting" || item.phase == "preparing");
                 let percent = progress.as_ref().map(|p| p.overall_percent).unwrap_or(0);
-                ui.label(
-                    RichText::new(if indeterminate {
-                        "…".to_string()
-                    } else {
-                        format!("{}%", percent)
-                    })
-                    .size(11.0)
-                    .strong()
-                    .color(theme::TEXT_MUTED),
-                );
+                // React: `.plugin-install-progress` coloca la fase a la
+                // izquierda y los bytes a la derecha en la misma fila sobre la
+                // barra; el porcentaje se escribe dentro de la barra.
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(install_status_label(progress.as_ref(), locale))
+                            .size(12.0)
+                            .strong()
+                            .color(theme::TEXT),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if let Some(progress) = &progress {
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} / {}",
+                                    format_bytes(progress.bytes_received),
+                                    format_bytes(progress.bytes_total)
+                                ))
+                                .size(10.5)
+                                .color(theme::TEXT_MUTED),
+                            );
+                        }
+                    });
+                });
                 let bar = ui.available_width();
+                let bar_text = if indeterminate {
+                    "…".to_string()
+                } else {
+                    format!("{percent}%")
+                };
                 ui.add(
                     egui::ProgressBar::new(if indeterminate {
                         0.35
@@ -200,21 +261,15 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                         percent as f32 / 100.0
                     })
                     .desired_width(bar)
-                    .show_percentage()
+                    .text(
+                        RichText::new(bar_text)
+                            .size(10.4)
+                            .strong()
+                            .color(Color32::WHITE),
+                    )
                     .animate(indeterminate),
                 );
-                if let Some(progress) = progress {
-                    ui.label(
-                        RichText::new(format!(
-                            "{} / {}",
-                            format_bytes(progress.bytes_received),
-                            format_bytes(progress.bytes_total)
-                        ))
-                        .size(10.5)
-                        .color(theme::TEXT_MUTED),
-                    );
-                }
-                ui.add_space(4.0);
+                ui.add_space(8.0);
                 if styled_button(
                     ui,
                     tr(locale, "Cancel", "Cancel"),
@@ -305,23 +360,30 @@ fn plugin_title(entry: &PluginCatalogEntry, locale: Locale) -> String {
     }
 }
 
+/// Espejo de `formatDownloadBytes` del renderer: — / GB / MB / KB.
 fn format_bytes(bytes: u64) -> String {
-    if bytes >= 1024 * 1024 {
-        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
-    } else if bytes >= 1024 {
-        format!("{:.1} KB", bytes as f64 / 1024.0)
+    if bytes == 0 {
+        return "—".to_string();
+    }
+    let mb = bytes as f64 / (1024.0 * 1024.0);
+    if mb >= 1024.0 {
+        format!("{:.2} GB", mb / 1024.0)
+    } else if mb >= 1.0 {
+        format!("{:.1} MB", mb)
     } else {
-        format!("{bytes} B")
+        format!("{} KB", ((bytes as f64 / 1024.0).round() as u64).max(1))
     }
 }
 
 fn coming_soon_card(ui: &mut egui::Ui, locale: Locale, title: Option<&str>) {
-    egui::Frame::new()
-        .stroke(egui::Stroke::new(1.0, OUTLINE))
+    // React `.plugin-square-card--soon`: opacidad 0.72 y borde dashed.
+    let response = egui::Frame::new()
         .corner_radius(6)
         .inner_margin(egui::Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(CARD_WIDTH - 26.0);
+            ui.set_min_height(MIN_CARD_HEIGHT - 24.0);
+            ui.set_opacity(0.72);
             ui.vertical_centered(|ui| {
                 ui.add_space(16.0);
                 ui.label(
@@ -337,6 +399,11 @@ fn coming_soon_card(ui: &mut egui::Ui, locale: Locale, title: Option<&str>) {
                 ui.add_space(16.0);
             });
         });
+    paint_dashed_border(
+        ui,
+        response.response.rect,
+        Color32::from_rgba_unmultiplied(0x6c, 0x75, 0x7d, 184),
+    );
 }
 
 fn assistant_panel(ui: &mut egui::Ui, app: &mut EditorApp) {

@@ -4,7 +4,7 @@
 //! elementos y biomas), distribución de blueprints por modelo y acciones de
 //! generación. Los comandos `world_gen_*` los envía el propio editor.
 
-use egui::RichText;
+use egui::{Color32, RichText};
 use egui_phosphor::regular as icons;
 use serde_json::json;
 
@@ -13,10 +13,89 @@ use crate::editor::i18n::tr;
 use crate::editor::theme;
 use crate::editor::worldgen;
 
-use super::widgets;
+const DANGER_BG: Color32 = Color32::from_rgb(0x84, 0x1c, 0x24);
+const DANGER_TEXT: Color32 = Color32::from_rgb(0xff, 0xd8, 0xda);
 
-const DANGER_BG: egui::Color32 = egui::Color32::from_rgb(0x84, 0x1c, 0x24);
-const DANGER_TEXT: egui::Color32 = egui::Color32::from_rgb(0xff, 0xd8, 0xda);
+// Colores Bootstrap del `WorldGenModalBody` original (root font 14 px).
+const BTN_PRIMARY: Color32 = Color32::from_rgb(0x0d, 0x6e, 0xfd);
+const BTN_PRIMARY_HOVER: Color32 = Color32::from_rgb(0x0b, 0x5e, 0xd7);
+const BTN_SECONDARY: Color32 = Color32::from_rgb(0x6c, 0x75, 0x7d);
+const BTN_DANGER: Color32 = Color32::from_rgb(0xdc, 0x35, 0x45);
+const BTN_INFO: Color32 = Color32::from_rgb(0x0d, 0xca, 0xf0);
+
+#[derive(Clone, Copy)]
+enum Btn {
+    /// `.btn-primary` — Generar mundo.
+    Primary,
+    /// `.btn-outline-secondary` — Detener.
+    OutlineSecondary,
+    /// `.btn-outline-danger` — Limpiar.
+    OutlineDanger,
+    /// `.btn-outline-info` — Añadir modelo.
+    OutlineInfo,
+}
+
+/// Botones del modal original. Se pintan aquí para no cambiar el estilo
+/// `Primary` verde que `widgets::modal_button` usa en las demás modales egui.
+fn bootstrap_button(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    kind: Btn,
+    width: f32,
+    enabled: bool,
+) -> bool {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 30.0), sense);
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let hovered = enabled && response.hovered();
+    let alpha = if enabled { 1.0 } else { 0.5 };
+
+    let (fill, hover_fill, stroke, text) = match kind {
+        Btn::Primary => (BTN_PRIMARY, BTN_PRIMARY_HOVER, BTN_PRIMARY, Color32::WHITE),
+        Btn::OutlineSecondary => (
+            Color32::TRANSPARENT,
+            BTN_SECONDARY,
+            BTN_SECONDARY,
+            BTN_SECONDARY,
+        ),
+        Btn::OutlineDanger => (Color32::TRANSPARENT, BTN_DANGER, BTN_DANGER, BTN_DANGER),
+        Btn::OutlineInfo => (Color32::TRANSPARENT, BTN_INFO, BTN_INFO, BTN_INFO),
+    };
+    // Bootstrap: los outline se rellenan y pasan a texto blanco en hover.
+    let (fill, text) = if hovered {
+        (hover_fill, Color32::WHITE)
+    } else {
+        (fill, text)
+    };
+
+    let painter = ui.painter().with_clip_rect(rect);
+    painter.rect(
+        rect,
+        egui::CornerRadius::same(4),
+        fill.linear_multiply(alpha),
+        egui::Stroke::new(1.0, stroke.linear_multiply(alpha)),
+        egui::StrokeKind::Inside,
+    );
+    let content = if icon.is_empty() {
+        label.to_owned()
+    } else {
+        format!("{icon}  {label}")
+    };
+    painter.text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        content,
+        egui::FontId::proportional(13.0),
+        text.linear_multiply(alpha),
+    );
+
+    enabled && response.clicked()
+}
 
 fn t(locale: crate::editor::cli::Locale, es: &'static str, en: &'static str) -> String {
     tr(locale, es, en).to_string()
@@ -34,17 +113,19 @@ fn fieldset(
         .corner_radius(6)
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                if centered {
-                    ui.add_space(ui.available_width() * 0.5 - 70.0);
-                }
-                ui.label(
-                    RichText::new(legend.to_uppercase())
-                        .size(15.0)
-                        .strong()
-                        .color(theme::TEXT),
-                );
-            });
+            // React: `<legend class="fs-5 fw-semibold text-uppercase">`; con
+            // root de 14 px, `fs-5` son 17.5 px. Centrado con el ancho real
+            // del texto en vez del offset fijo que usaba la migra inicial.
+            let title = legend.to_uppercase();
+            if centered {
+                let width = ui
+                    .painter()
+                    .layout_no_wrap(title.clone(), egui::FontId::proportional(17.5), theme::TEXT)
+                    .size()
+                    .x;
+                ui.add_space(((ui.available_width() - width) * 0.5).max(0.0));
+            }
+            ui.label(RichText::new(title).size(17.5).strong().color(theme::TEXT));
             ui.add_space(2.0);
             add_contents(ui);
         });
@@ -241,7 +322,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
             ui.add_space(10.0);
             ui.label(
                 RichText::new(t(locale, "Biomes", "Biomes"))
-                    .size(15.0)
+                    .size(17.5)
                     .strong()
                     .color(theme::TEXT),
             );
@@ -286,27 +367,38 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 }
                             });
                             let share_locked = !biomes[index] || enabled_count <= 1;
-                            ui.add_enabled_ui(!share_locked, |ui| {
-                                let mut share = shares[index] as f32;
-                                ui.add(
-                                    egui::Slider::new(&mut share, 0.0..=100.0)
-                                        .step_by(1.0)
-                                        .show_value(false),
+                            // React: slider y `%` en la misma fila (`d-flex
+                            // align-items-center gap-2`, valor min-width 2.6rem).
+                            ui.horizontal(|ui| {
+                                let slider_width = (ui.available_width() - 38.0).max(20.0);
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(slider_width, 0.0),
+                                    egui::Layout::top_down(egui::Align::Min),
+                                    |ui| {
+                                        ui.add_enabled_ui(!share_locked, |ui| {
+                                            let mut share = shares[index] as f32;
+                                            ui.add(
+                                                egui::Slider::new(&mut share, 0.0..=100.0)
+                                                    .step_by(1.0)
+                                                    .show_value(false),
+                                            );
+                                            if share.round() as u32 != shares[index] {
+                                                shares = worldgen::rebalance_biome_shares(
+                                                    &shares,
+                                                    &biomes,
+                                                    index,
+                                                    share.round() as u32,
+                                                );
+                                            }
+                                        });
+                                    },
                                 );
-                                if share.round() as u32 != shares[index] {
-                                    shares = worldgen::rebalance_biome_shares(
-                                        &shares,
-                                        &biomes,
-                                        index,
-                                        share.round() as u32,
-                                    );
-                                }
+                                ui.label(
+                                    RichText::new(format!("{}%", shares[index]))
+                                        .size(11.0)
+                                        .color(theme::TEXT_MUTED),
+                                );
                             });
-                            ui.label(
-                                RichText::new(format!("{}%", shares[index]))
-                                    .size(11.0)
-                                    .color(theme::TEXT_MUTED),
-                            );
                         },
                     );
                 }
@@ -523,11 +615,11 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                             }
                         });
                     let can_add = !app.worldgen.selected_model_path.is_empty();
-                    if widgets::modal_button(
+                    if bootstrap_button(
                         ui,
                         icons::PLUS,
                         &t(locale, "Add model", "Add model"),
-                        widgets::ModalButtonStyle::Primary,
+                        Btn::OutlineInfo,
                         100.0,
                         can_add,
                     ) {
@@ -673,8 +765,12 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             t(locale, "Generate world and distribute blueprints", "Generate world and distribute blueprints")
                         };
                         let busy = app.worldgen.inputs_locked();
-                        if widgets::modal_button(ui, icons::PLAY, &label,
-                            widgets::ModalButtonStyle::Primary, 340.0, !busy)
+                        // React: `btn-primary btn-sm flex-grow-1` + Stop/Clear fijos.
+                        let side_width = 90.0;
+                        let gap = ui.spacing().item_spacing.x;
+                        let generate_width =
+                            (ui.available_width() - side_width * 2.0 - gap * 2.0).max(160.0);
+                        if bootstrap_button(ui, icons::PLAY, &label, Btn::Primary, generate_width, !busy)
                         {
                             match app.worldgen.library_path.clone() {
                                 None => app.worldgen.status = t(locale, "Install the World Generator plugin first",
@@ -697,8 +793,8 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 }
                             }
                         }
-                        if widgets::modal_button(ui, icons::STOP, &t(locale, "Stop", "Stop"),
-                            widgets::ModalButtonStyle::Secondary, 90.0, true)
+                        if bootstrap_button(ui, icons::STOP, &t(locale, "Stop", "Stop"),
+                            Btn::OutlineSecondary, side_width, true)
                         {
                             app.worldgen.finish_handled = true;
                             app.worldgen.pending_scatter = 0;
@@ -707,8 +803,8 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             app.worldgen.status = t(locale, "Generation cancelled", "Generation cancelled");
                             app.send_engine(json!({ "cmd": "world_gen_stop" }));
                         }
-                        if widgets::modal_button(ui, icons::TRASH, &t(locale, "Clear", "Clear"),
-                            widgets::ModalButtonStyle::Danger, 90.0, !busy)
+                        if bootstrap_button(ui, icons::TRASH, &t(locale, "Clear", "Clear"),
+                            Btn::OutlineDanger, side_width, !busy)
                         {
                             app.worldgen.status = t(locale, "World cleared", "World cleared");
                             app.send_engine(json!({ "cmd": "world_gen_reset" }));

@@ -91,8 +91,9 @@ const VISUAL_SCRIPT_MIN_HEIGHT: f64 = 560.0;
 /// La modal de controles era `xl` en el renderer (1140 de contenido + 48 de padding).
 const CONTROLS_WIDTH: f64 = 1188.0;
 const CONTROLS_HEIGHT: f64 = 460.0;
-/// El generador de mundo era una modal `lg` con contenido alto y scroll.
-const WORLDGEN_WIDTH: f64 = 900.0;
+/// El generador de mundo era una modal `lg` (800 de contenido + 48 de padding),
+/// igual que la de plugins.
+const WORLDGEN_WIDTH: f64 = 848.0;
 const WORLDGEN_HEIGHT: f64 = 780.0;
 /// La modal de plugins era `lg` (800 de contenido + 48 de padding).
 const PLUGINS_WIDTH: f64 = 848.0;
