@@ -52,6 +52,7 @@ resolution_by_tier:
     grosor (o flag adaptativo), roughness máxima y edge fade. El hit se refina con búsqueda
     binaria y se funde en los bordes. `thickness` es la separación MÍNIMA admitida (con
     profundidad no lineal un límite superior descartaba casi todos los impactos reales).
+    Lee `albedo.a` del G-buffer como filtro de material, el MISMO flag que usa el RT.
     `composite.frag` distingue modo SSR/RT por las alfas: en SSR usa peso alto `(1-roughness)*0.90`
     sobre la imagen filtrada; en RT usa F0 por material para no tapar el color propio.
 

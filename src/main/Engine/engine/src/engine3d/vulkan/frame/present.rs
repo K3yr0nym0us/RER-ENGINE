@@ -77,6 +77,14 @@ impl FrameRenderer {
                     clamp,
                     vk::ImageLayout::GENERAL,
                 )?;
+                write_combined(
+                    device,
+                    self.sets.ssr[slot],
+                    5,
+                    self.targets.albedo_out.view,
+                    clamp,
+                    vk::ImageLayout::GENERAL,
+                )?;
                 draw_fullscreen(
                     device,
                     cmd,

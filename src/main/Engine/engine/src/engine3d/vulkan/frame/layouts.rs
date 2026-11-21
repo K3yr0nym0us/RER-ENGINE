@@ -150,6 +150,12 @@ pub(super) fn create_sets(
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 vk::ShaderStageFlags::FRAGMENT,
             ),
+            // ssr: albedo.a = flag de material reflectivo (mismo gate que el RT).
+            binding(
+                5,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                vk::ShaderStageFlags::FRAGMENT,
+            ),
         ],
     )?;
     // TAA y denoise comparten forma (3 samplers de color en set 0), así que reutilizan el MISMO

@@ -8,6 +8,8 @@ layout(location = 0) in vec2 v_uv;
 layout(set = 0, binding = 0) uniform sampler2D depth_tex;
 layout(set = 0, binding = 1) uniform sampler2D normal_tex;
 layout(set = 0, binding = 2) uniform sampler2D color_tex;
+// albedo.a = flag de material reflectivo calculado en forward.frag (mismo gate que el RT).
+layout(set = 0, binding = 5) uniform sampler2D albedo_tex;
 layout(location = 0) out vec4 out_color;
 
 // 32 bytes. a = (march steps, binary steps, max distance, thickness)
@@ -20,6 +22,11 @@ layout(push_constant) uniform SsrParams {
 void main() {
     // Un único volteo al presentar: este pase es neutro en orientación.
     vec2 su = vec2(v_uv.x, 1.0 - v_uv.y);
+    // Mismo filtro de material que el RT: solo superficies con SurfacePbr de baja roughness.
+    if (texture(albedo_tex, su).a < 0.5) {
+        out_color = vec4(0.0);
+        return;
+    }
     float depth = texture(depth_tex, su).r;
     if (depth >= 0.9999) {
         out_color = vec4(0.0);
