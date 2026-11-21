@@ -279,6 +279,15 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
+            // binding 5: albedo.a codifica el Fresnel de transparentes para el composite.
+            write_combined(
+                device,
+                self.sets.composite[slot],
+                5,
+                self.targets.albedo_out.view,
+                clamp,
+                vk::ImageLayout::GENERAL,
+            )?;
             draw_fullscreen(
                 device,
                 cmd,

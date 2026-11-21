@@ -9,6 +9,8 @@ layout(set = 0, binding = 1) uniform sampler2D reflection_tex;
 layout(set = 0, binding = 2) uniform sampler2D ssr_tex;
 layout(set = 0, binding = 3) uniform sampler2D normal_tex;
 layout(set = 0, binding = 4) uniform sampler2D world_tex; // .w = metallic del G-buffer
+// .a = flag reflectivo; en transparentes trae el Fresnel codificado por forward.frag.
+layout(set = 0, binding = 5) uniform sampler2D albedo_tex;
 layout(location = 0) out vec4 out_color;
 
 void main() {
@@ -31,6 +33,11 @@ void main() {
     // color propio de la superficie. Así plástico/vidrio/agua conservan su textura y
     // cromo/acero siguen siendo metálicos sin parecer un espejo neutro.
     float metallic = clamp(texture(world_tex, su).w, 0.0, 1.0);
+    // albedo.a = 1 en opacos; en transparentes codifica el Fresnel en 0.55..1. Así el reflejo
+    // sigue la misma curva que la transparencia: débil de frente, fuerte en los bordes.
+    float refl_flag = texture(albedo_tex, su).a;
+    float fresnel = refl_flag >= 0.5 ? clamp((refl_flag - 0.55) / 0.45, 0.0, 1.0) : 1.0;
+    float fresnel_weight = mix(0.40, 1.0, fresnel);
     // En modo RT la imagen SSR se limpia a 0; en modo SSR se limpia la trazada. Eso permite
     // dar a cada sistema su peso: el SSR ya lleva `1 - roughness` en su confianza y necesita
     // un peso alto, mientras que el RT usa F0 fisico para no tapar el color del material.
@@ -45,5 +52,6 @@ void main() {
         strength = f0 * confidence * (1.0 - roughness * 0.35);
         final_reflection = reflection * mix(vec3(1.0), scene.rgb, metallic);
     }
+    strength *= fresnel_weight;
     out_color = vec4(mix(scene.rgb, final_reflection, clamp(strength, 0.0, 1.0)), scene.a);
 }

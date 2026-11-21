@@ -75,7 +75,7 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         roughness_min: 0.0,
         base_color: [0.92, 0.94, 0.96],
         ior: 1.5,
-        opacity: 0.38,
+        opacity: 0.20,
         albedo_kind: MatValAlbedoKind::Glass,
     },
     PbrMaterialPreset {

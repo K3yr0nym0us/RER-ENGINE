@@ -227,6 +227,7 @@ pub(super) fn graphics_with_depth_test(
         depth,
         blend,
         true,
+        !blend,
         depth_bias,
         topology,
         depth_test,
@@ -260,6 +261,7 @@ pub(super) fn graphics_blend_color_only(
         depth,
         true,
         false,
+        true,
         depth_bias,
         vk::PrimitiveTopology::TRIANGLE_LIST,
         true,
@@ -278,6 +280,7 @@ fn graphics_with_gbuffer_blend(
     depth: Option<vk::Format>,
     blend: bool,
     blend_gbuffer: bool,
+    depth_write: bool,
     depth_bias: bool,
     topology: vk::PrimitiveTopology,
     depth_test: bool,
@@ -321,7 +324,7 @@ fn graphics_with_gbuffer_blend(
         .rasterization_samples(sample_flags(vertex.samples));
     let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
         .depth_test_enable(depth.is_some() && depth_test)
-        .depth_write_enable(depth.is_some() && depth_test && !blend)
+        .depth_write_enable(depth.is_some() && depth_test && depth_write)
         .depth_compare_op(vk::CompareOp::LESS);
     let blend_attachment = vk::PipelineColorBlendAttachmentState::default()
         .color_write_mask(vk::ColorComponentFlags::RGBA)
