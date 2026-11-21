@@ -392,13 +392,12 @@ fn toolbar(
                 }
                 state.editing_name = false;
             }
-        } else if outline_button(
+        } else if icon_button(
             ui,
             icons::PENCIL,
+            theme::WARNING,
             &t(locale, "Editar", "Edit"),
-            theme::OUTLINE_SECONDARY,
             true,
-            None,
         ) {
             state.editing_name = true;
         }

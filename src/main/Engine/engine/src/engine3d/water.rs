@@ -1492,7 +1492,8 @@ impl crate::engine3d::engine::State {
         };
         // El color viene del líquido configurado. La textura se cachea por RGB
         // en el motor, así que pedirla cada frame es solo una búsqueda en mapa.
-        let rgba = liquid_rgba(self.water.color, 255);
+        // Sin boost: sumar 255 aquí suturaba los canales a blanco e ignoraba el color.
+        let rgba = liquid_rgba(self.water.color, 0);
         let tex_idx = self.ensure_plane_tool_colored_texture(rgba);
         self.water.tex_idx = Some(tex_idx);
         if let Some(entity) = self.water.entity {
@@ -1720,6 +1721,16 @@ impl crate::engine3d::engine::State {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn surface_rgba_uses_the_configured_liquid_color() {
+        let rgba = liquid_rgba(DEFAULT_LIQUID_COLOR, 0);
+        assert_eq!(rgba, [56, 140, 222, 255]);
+        let rose = liquid_rgba([0.9, 0.2, 0.4], 0);
+        assert_eq!(rose, [230, 51, 102, 255]);
+        // El boost solo aclara las gotas; con 255 la superficie siempre salía blanca.
+        assert_eq!(liquid_rgba(DEFAULT_LIQUID_COLOR, 255), [255, 255, 255, 255]);
+    }
 
     fn flat_floor(cells: &WaterSystem) -> HashMap<(i32, i32), f32> {
         cells

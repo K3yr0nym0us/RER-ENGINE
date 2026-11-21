@@ -163,8 +163,6 @@ struct EditorWindow {
     app: EditorApp,
     /// Congelado mientras Electron muestra la confirmación de salida.
     paused: bool,
-    /// Ventana OS independiente del editor de emisores (mismo device, otra superficie).
-    particle_window: Option<crate::editor::particle_window::ParticleWindow>,
     /// Ventana nativa aparte para las modales migradas (borrar recurso / salida).
     modal_window: Option<ModalWindow>,
     /// Selector de modelos: ventana aparte abierta desde propiedades de entidad,
@@ -203,7 +201,6 @@ impl EditorWindow {
             egui_state,
             app: EditorApp::new(cli),
             paused: false,
-            particle_window: None,
             modal_window: None,
             model_picker_window: None,
             particle_placement_active: false,
@@ -554,7 +551,6 @@ impl EditorWindow {
             egui_state,
             app,
             paused: _,
-            particle_window: _,
             modal_window: _,
             model_picker_window: _,
             particle_placement_active: _,
@@ -602,42 +598,9 @@ impl EditorWindow {
         Ok(())
     }
 
-    fn sync_particle_window(&mut self, event_loop: &ActiveEventLoop) {
-        let wants_window = self.app.right_sidebar.particles.modal.is_some();
-        if wants_window && self.particle_window.is_none() {
-            let particles = &self.app.right_sidebar.particles;
-            let material = particles
-                .modal
-                .as_ref()
-                .map(|draft| draft.material)
-                .unwrap_or("fire");
-            let height_hint = crate::editor::particle_window::estimated_inner_height(
-                particles.modal_is_new,
-                self.app.cli.context.is_3d(),
-                material,
-            );
-            match crate::editor::particle_window::ParticleWindow::open(
-                event_loop,
-                self.gpu.shared_gpu(),
-                self.app.cli.locale,
-                self.window.as_ref(),
-                app_window_icon(),
-                height_hint,
-            ) {
-                Ok(window) => self.particle_window = Some(window),
-                Err(error) => {
-                    log::error!("[editor] ventana de emisor: {error}");
-                    self.app.right_sidebar.particles.modal = None;
-                    self.app.push_log(
-                        format!("[Partículas] No se pudo abrir la ventana del emisor: {error}"),
-                        true,
-                    );
-                }
-            }
-        } else if !wants_window && self.particle_window.is_some() {
-            self.particle_window = None;
-        }
-
+    /// El editor de emisores es una modal egui dentro de la ventana principal;
+    /// aquí solo se sincroniza el tool de colocación del ghost en el viewport.
+    fn sync_particle_window(&mut self, _event_loop: &ActiveEventLoop) {
         // El ghost aparece SOLO después de cerrar la modal, cuando el borrador
         // confirmado espera la posición en el mundo.
         let wants_ghost = self.app.right_sidebar.particles.pending_placement.is_some();
@@ -1219,56 +1182,6 @@ impl EditorApplication {
         }
     }
 
-    fn handle_particle_window_event(&mut self, event: WindowEvent) {
-        let Some(editor) = self.editor.as_mut() else {
-            return;
-        };
-        if matches!(event, WindowEvent::CloseRequested) {
-            editor.app.right_sidebar.particles.modal = None;
-            editor.particle_window = None;
-            return;
-        }
-
-        {
-            let Some(particle) = editor.particle_window.as_mut() else {
-                return;
-            };
-            let response = particle.on_window_event(&event);
-            let is_redraw = matches!(event, WindowEvent::RedrawRequested);
-            if response.repaint && !is_redraw {
-                particle.request_redraw();
-            }
-            if response.consumed && !is_redraw {
-                return;
-            }
-
-            match event {
-                WindowEvent::Resized(size) => {
-                    if let Err(error) = particle.resize(size) {
-                        log::error!("[editor] ventana de emisor: {error}");
-                    }
-                    particle.request_redraw();
-                }
-                WindowEvent::ScaleFactorChanged { .. } => {
-                    let size = particle.inner_size();
-                    if let Err(error) = particle.resize(size) {
-                        log::error!("[editor] ventana de emisor: {error}");
-                    }
-                    particle.request_redraw();
-                }
-                WindowEvent::RedrawRequested => {
-                    if let Err(error) = particle.render(&mut editor.app) {
-                        log::error!("[editor] ventana de emisor: {error}");
-                    }
-                }
-                _ => {}
-            }
-        }
-        if editor.app.right_sidebar.particles.modal.is_none() {
-            editor.particle_window = None;
-        }
-    }
-
     /// Cierra la ventana modal externa cancelando la acción en curso.
     fn cancel_modal_window(&mut self) {
         let Some(editor) = self.editor.as_mut() else {
@@ -1655,16 +1568,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        let is_particle = self.editor.as_ref().is_some_and(|editor| {
-            editor
-                .particle_window
-                .as_ref()
-                .is_some_and(|window| window.window_id() == window_id)
-        });
-        if is_particle {
-            self.handle_particle_window_event(event);
-            return;
-        }
         let is_model_picker = self.editor.as_ref().is_some_and(|editor| {
             editor
                 .model_picker_window
@@ -1852,9 +1755,6 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
                 editor.sync_modal_window(event_loop);
                 editor.sync_model_picker_window(event_loop);
                 editor.window.request_redraw();
-                if let Some(particle) = editor.particle_window.as_ref() {
-                    particle.request_redraw();
-                }
                 if let Some(modal) = editor.modal_window.as_ref() {
                     modal.request_redraw();
                 }

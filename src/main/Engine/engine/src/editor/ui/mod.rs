@@ -27,7 +27,7 @@ mod load_from_scene_modal;
 /// Overlay de métricas sobre el viewport del motor.
 pub(crate) mod metrics_overlay;
 mod number_draft;
-/// Modal nativa del editor de emisores de partículas (F5).
+/// Modal flotante del editor de emisores de partículas (F5), dentro del viewport.
 mod particles_config_modal;
 /// Cuerpo de la ventana nativa del catálogo de plugins.
 pub(crate) mod plugins_modal;
@@ -65,9 +65,5 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     globalize_model_modal::show(&ctx, app);
     switch_scene_modal::show(&ctx, app);
     clear_scene_modal::show(&ctx, app);
-}
-
-/// Cuerpo del editor de emisores: vive en una ventana nativa winit aparte.
-pub(crate) fn show_particle_editor(ui: &mut egui::Ui, app: &mut EditorApp) {
-    particles_config_modal::show(ui, app);
+    particles_config_modal::show(&ctx, app);
 }

@@ -13,7 +13,6 @@ mod entity_properties;
 pub(crate) mod hud_editor;
 mod i18n;
 mod modal_window;
-mod particle_window;
 pub(crate) mod plugin_runtime;
 pub(crate) mod plugins;
 mod project_state;

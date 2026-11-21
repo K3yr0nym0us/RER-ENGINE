@@ -1,9 +1,10 @@
 //! Ventana nativa winit independiente para las modales migradas del renderer.
 //!
-//! Comparte el `SharedGpu` del editor (mismo device) y crea su propia superficie,
-//! igual que [`super::particle_window::ParticleWindow`]. Cada modal se dibuja en
-//! su propia ventana, fuera del viewport del motor; el contenido vive en los
-//! módulos `ui::*_modal` y esta ventana solo aporta el ciclo de vida y el render.
+//! Comparte el `SharedGpu` del editor (mismo device) y crea su propia superficie.
+//! Cada modal se dibuja en su propia ventana, fuera del viewport del motor; el
+//! contenido vive en los módulos `ui::*_modal` y esta ventana solo aporta el
+//! ciclo de vida y el render. El editor de emisores no usa esta ventana: es una
+//! modal egui dentro del viewport principal (ver `ui::particles_config_modal`).
 
 use std::sync::Arc;
 

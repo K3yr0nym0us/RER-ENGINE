@@ -1,5 +1,5 @@
-//! Cuerpo del editor de emisores de partículas (F5), pintado en una ventana
-//! nativa winit aparte (`particle_window`).
+//! Cuerpo del editor de emisores de partículas (F5), pintado como modal flotante
+//! de egui dentro de la ventana principal del editor.
 //!
 //! Dos modos:
 //! - Alta nueva (`modal_is_new`): solo elige el material; al confirmar se activa
@@ -26,16 +26,57 @@ use super::widgets;
 /// Ancho reservado a la etiqueta de cada slider; el resto es pista + valor.
 const SLIDER_LABEL_WIDTH: f32 = 124.0;
 
-/// Dibuja el formulario a pantalla completa de la ventana nativa del emisor.
-/// El Frame da el padding: la ventana nativa es full-bleed y egui no añade
-/// márgenes por su cuenta.
-pub(crate) fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
+/// Dibuja el editor como modal flotante de egui sobre la ventana principal.
+/// Los popups (material/color) viven en el mismo viewport, así que pueden
+/// desplegarse fuera del rect de la modal sin recortarse.
+pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
     if app.right_sidebar.particles.modal.is_none() {
         return;
     }
-    egui::Frame::NONE
-        .inner_margin(egui::Margin::same(12))
-        .show(ui, |ui| show_body(ui, app));
+    let locale = app.cli.locale;
+    let id = egui::Id::new("editor_particle_emitter_modal");
+    // Area propia en vez de `Modal::default_area`: ese área usa `anchor(CENTER_CENTER)`,
+    // que fija la posición. Con `pivot` + `default_pos` + `movable` la modal se puede
+    // arrastrar, empezando centrada en el viewport.
+    let area = egui::Area::new(id)
+        .kind(egui::UiKind::Modal)
+        .order(egui::Order::Foreground)
+        .interactable(true)
+        .movable(true)
+        .pivot(egui::Align2::CENTER_CENTER)
+        .default_pos(ctx.content_rect().center());
+    let modal = egui::Modal::new(id)
+        .area(area)
+        // Sin el velo negro sobre el viewport del motor; el backdrop sigue
+        // capturando clics para cerrar, pero no oscurece la escena.
+        .backdrop_color(egui::Color32::TRANSPARENT)
+        .frame(
+            egui::Frame::popup(&ctx.style_of(egui::Theme::Dark))
+                // Mismo fondo que las ventanas modales nativas (PANEL_BG / clear_color),
+                // no el SIDEBAR_BG oscuro de los paneles laterales.
+                .fill(theme::PANEL_BG)
+                .stroke(egui::Stroke::new(1.0, theme::BORDER))
+                .inner_margin(egui::Margin::same(16)),
+        )
+        .show(ctx, |ui| {
+            ui.set_width(430.0);
+            ui.label(
+                RichText::new(tr(
+                    locale,
+                    "Editor de emisor de partículas",
+                    "Particle emitter editor",
+                ))
+                .size(15.0)
+                .strong()
+                .color(theme::TEXT),
+            );
+            ui.add_space(8.0);
+            show_body(ui, app);
+        });
+    if modal.should_close() {
+        // ESC/clic fuera: el body ya conserva el draft si no hubo acción.
+        app.right_sidebar.particles.modal = None;
+    }
 }
 
 fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
@@ -251,15 +292,6 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
                 });
             }
         }
-        // Propiedades compartidas por todos los líquidos, con backend de
-        // rejilla (cubo) o GPU (emisor de agua).
-        if mask.color {
-            ui.add_space(3.0);
-            ui.horizontal(|ui| {
-                ui.label(tr(locale, "Color", "Color"));
-                ui.color_edit_button_rgb(&mut draft.color);
-            });
-        }
         if mask.viscosity {
             slider_row(
                 ui,
@@ -271,24 +303,42 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
                 0.15,
             );
         }
-        ui.add_space(10.0);
-        ui.separator();
-        ui.add_space(8.0);
+        // Propiedades compartidas por todos los líquidos, con backend de
+        // rejilla (cubo) o GPU (emisor de agua). Va al final, tras los sliders.
+        if mask.color {
+            ui.add_space(3.0);
+            ui.horizontal(|ui| {
+                ui.label(tr(locale, "Liquid color", "Liquid color"));
+                ui.color_edit_button_rgb(&mut draft.color);
+            });
+        }
     }
 
+    ui.add_space(18.0);
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let half = (ui.available_width() - ui.spacing().item_spacing.x) * 0.5;
             if !is_new {
-                // Modal de propiedades: aplicar SIN cerrar, sin cancelar.
+                // Modal de propiedades: aplicar sin cerrar, o cancelar y cerrar.
                 if widgets::modal_button(
                     ui,
                     icons::CHECK,
                     tr(locale, "Aplicar", "Apply"),
                     widgets::ModalButtonStyle::Primary,
-                    110.0,
+                    half,
                     true,
                 ) {
                     apply = true;
+                }
+                if widgets::modal_button(
+                    ui,
+                    icons::X,
+                    tr(locale, "Cancelar", "Cancel"),
+                    widgets::ModalButtonStyle::Secondary,
+                    half,
+                    true,
+                ) {
+                    cancel = true;
                 }
             } else {
                 let confirm_label = if is_3d {
@@ -306,7 +356,7 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
                     confirm_icon,
                     confirm_label,
                     widgets::ModalButtonStyle::Primary,
-                    if is_3d { 186.0 } else { 110.0 },
+                    half,
                     true,
                 ) {
                     confirm = true;
@@ -316,7 +366,7 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
                     icons::X,
                     tr(locale, "Cancelar", "Cancel"),
                     widgets::ModalButtonStyle::Secondary,
-                    100.0,
+                    half,
                     true,
                 ) {
                     cancel = true;
