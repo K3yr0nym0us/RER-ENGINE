@@ -120,14 +120,30 @@ fn fieldset(
             // del texto en vez del offset fijo que usaba la migra inicial.
             let title = legend.to_uppercase();
             if centered {
-                let width = ui
-                    .painter()
-                    .layout_no_wrap(title.clone(), egui::FontId::proportional(17.5), theme::TEXT)
-                    .size()
-                    .x;
-                ui.add_space(((ui.available_width() - width) * 0.5).max(0.0));
+                // `add_space` en un layout top_down suma espacio VERTICAL:
+                // tiene que ir dentro de una fila horizontal para centrar.
+                widgets::top_row(ui, |ui| {
+                    let width = ui
+                        .painter()
+                        .layout_no_wrap(
+                            title.clone(),
+                            egui::FontId::proportional(17.5),
+                            theme::TEXT,
+                        )
+                        .size()
+                        .x;
+                    let space = ((ui.available_width() - width) * 0.5).max(0.0);
+                    ui.add_space(space);
+                    ui.label(
+                        RichText::new(title.clone())
+                            .size(17.5)
+                            .strong()
+                            .color(theme::TEXT),
+                    );
+                });
+            } else {
+                ui.label(RichText::new(title).size(17.5).strong().color(theme::TEXT));
             }
-            ui.label(RichText::new(title).size(17.5).strong().color(theme::TEXT));
             ui.add_space(2.0);
             add_contents(ui);
         });
