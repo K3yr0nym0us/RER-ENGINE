@@ -143,7 +143,7 @@ pub(crate) fn decimate_mesh(
 
     let tri_before = indices.len() / 3;
     let mut out_indices = Vec::with_capacity(indices.len());
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let a = remap[tri[0] as usize];
         let b = remap[tri[1] as usize];
         let c = remap[tri[2] as usize];
@@ -323,7 +323,7 @@ mod tests {
         assert!(lod_vertices.len() < vertices.len() / 4);
         assert!(lod_indices.len() / 3 < tri_before / 4);
         // Índices válidos y sin triángulos degenerados.
-        for tri in lod_indices.chunks_exact(3) {
+        for tri in lod_indices.as_chunks::<3>().0 {
             assert!(tri[0] != tri[1] && tri[1] != tri[2] && tri[0] != tri[2]);
             for i in tri {
                 assert!((*i as usize) < lod_vertices.len());

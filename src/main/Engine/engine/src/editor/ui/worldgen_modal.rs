@@ -455,11 +455,11 @@ fn scatter_fields(
     ui.horizontal(|ui| {
         ui.toggle_value(
             &mut rules.random_rotation,
-            &t(locale, "Random rotation", "Random rotation"),
+            t(locale, "Random rotation", "Random rotation"),
         );
         ui.toggle_value(
             &mut rules.cluster_enabled,
-            &t(locale, "Clusters", "Clusters"),
+            t(locale, "Clusters", "Clusters"),
         );
         if rules.cluster_enabled {
             ui.label(
@@ -651,7 +651,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
 
                     ui.add_space(6.0);
                     ui.toggle_value(&mut app.worldgen.panel.replace_world,
-                        &t(locale, "Replace current world", "Replace current world"));
+                        t(locale, "Replace current world", "Replace current world"));
 
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {

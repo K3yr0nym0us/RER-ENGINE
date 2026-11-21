@@ -217,7 +217,7 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                 ui.add_space(4.0);
                 if styled_button(
                     ui,
-                    &tr(locale, "Cancel", "Cancel"),
+                    tr(locale, "Cancel", "Cancel"),
                     ButtonKind::OutlineSecondary,
                     ui.available_width(),
                     !app.plugins_modal.cancelling,
@@ -230,7 +230,7 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                     if !installed {
                         if styled_button(
                             ui,
-                            &tr(locale, "Instalar", "Install"),
+                            tr(locale, "Instalar", "Install"),
                             ButtonKind::Primary,
                             width,
                             true,
@@ -262,7 +262,7 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                             if id == "world-gen"
                                 && styled_button(
                                     ui,
-                                    &tr(locale, "Ejecutar plugin", "Run plugin"),
+                                    tr(locale, "Ejecutar plugin", "Run plugin"),
                                     ButtonKind::Success,
                                     width,
                                     true,
@@ -281,7 +281,7 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                             };
                             if styled_button(
                                 ui,
-                                &uninstall_label,
+                                uninstall_label,
                                 ButtonKind::OutlineDanger,
                                 width,
                                 true,
@@ -333,7 +333,7 @@ fn coming_soon_card(ui: &mut egui::Ui, locale: Locale, title: Option<&str>) {
                     ui.label(RichText::new(title).size(13.6).strong().color(theme::TEXT));
                 }
                 ui.add_space(4.0);
-                badge(ui, &tr(locale, "Muy pronto", "Coming soon"));
+                badge(ui, tr(locale, "Muy pronto", "Coming soon"));
                 ui.add_space(16.0);
             });
         });
@@ -445,10 +445,10 @@ fn assistant_panel(ui: &mut egui::Ui, app: &mut EditorApp) {
                             .size(12.0)
                             .color(theme::TEXT_MUTED),
                     );
-                    badge(ui, &tr(locale, "Conectado", "Connected"));
+                    badge(ui, tr(locale, "Conectado", "Connected"));
                     if styled_button(
                         ui,
-                        &tr(locale, "Desconectar", "Disconnect"),
+                        tr(locale, "Desconectar", "Disconnect"),
                         ButtonKind::OutlineSecondary,
                         110.0,
                         !app.plugins_modal.assistant_busy,
@@ -477,7 +477,7 @@ fn assistant_panel(ui: &mut egui::Ui, app: &mut EditorApp) {
                     let _ = token;
                     if styled_button(
                         ui,
-                        &tr(locale, "Conectar", "Connect"),
+                        tr(locale, "Conectar", "Connect"),
                         ButtonKind::Primary,
                         80.0,
                         !app.plugins_modal.assistant_busy
@@ -517,7 +517,7 @@ fn assistant_panel(ui: &mut egui::Ui, app: &mut EditorApp) {
                 );
                 if styled_button(
                     ui,
-                    &tr(
+                    tr(
                         locale,
                         "Conectar cuenta OpenCode",
                         "Connect OpenCode account",
@@ -589,7 +589,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 coming_soon_card(
                                     ui,
                                     locale,
-                                    Some(&tr(
+                                    Some(tr(
                                         locale,
                                         "Generación de fotogramas 2D con IA",
                                         "2D frame generation AI",

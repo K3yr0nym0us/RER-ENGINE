@@ -39,7 +39,7 @@ fn sphere_grid(radius: f32, center: Vec3, voxel: f32) -> DensityGrid {
 /// En una malla cerrada y consistente, cada arista se usa exactamente 2 veces.
 fn edge_usage(mesh: &MeshBuffer) -> HashMap<(u32, u32), usize> {
     let mut usage: HashMap<(u32, u32), usize> = HashMap::new();
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         for k in 0..3 {
             let (a, b) = (tri[k], tri[(k + 1) % 3]);
             // El índice (a,b) solo es compartido si las posiciones coinciden; en un
@@ -187,7 +187,7 @@ fn terrain_normals_and_faces_point_up_on_flat_ground() {
     for normal in &mesh.normals {
         assert!(normal[1] > 0.99, "normal del suelo hacia abajo: {normal:?}");
     }
-    for tri in mesh.indices.chunks_exact(3) {
+    for tri in mesh.indices.as_chunks::<3>().0 {
         let [a, b, c] =
             [tri[0], tri[1], tri[2]].map(|i| Vec3::from_array(mesh.positions[i as usize]));
         assert!((b - a).cross(c - a).y > 0.0, "cara del suelo mirando abajo");

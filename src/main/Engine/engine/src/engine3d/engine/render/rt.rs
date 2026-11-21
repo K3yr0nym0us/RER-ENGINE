@@ -110,7 +110,7 @@ pub(crate) fn build_rt_scene(state: &State, records: &[RtInstanceRecord]) -> RtS
         };
         let positions = &mesh.rt_positions;
         let uvs = &mesh.rt_uvs;
-        for chunk in mesh.rt_indices.chunks_exact(3) {
+        for chunk in mesh.rt_indices.as_chunks::<3>().0 {
             let (i0, i1, i2) = (chunk[0] as usize, chunk[1] as usize, chunk[2] as usize);
             if i0 >= positions.len() || i1 >= positions.len() || i2 >= positions.len() {
                 continue;

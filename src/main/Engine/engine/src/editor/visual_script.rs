@@ -719,15 +719,14 @@ pub(crate) fn load_document(
             .find(|scene| {
                 scene_id.is_some_and(|id| scene.get("id").and_then(Value::as_u64) == Some(id))
             })
-            .map(|scene| {
+            .and_then(|scene| {
                 scene_name = scene
                     .get("name")
                     .and_then(Value::as_str)
                     .unwrap_or_default()
                     .to_string();
                 scene.get("visualGraph")
-            })
-            .flatten(),
+            }),
         GraphContext::Entity => {
             entity_name = entity_id
                 .and_then(|id| app.project_state.entity_meta_for(id))
@@ -836,11 +835,10 @@ pub(crate) fn scene_entities(app: &crate::editor::app::EditorApp) -> Vec<SceneEn
                     out.push(entity_from_value(entity, app));
                 }
             }
-            if let Some(player) = scene.get("player") {
-                if !player.is_null() {
+            if let Some(player) = scene.get("player")
+                && !player.is_null() {
                     out.push(entity_from_value(player, app));
                 }
-            }
             break;
         }
     }

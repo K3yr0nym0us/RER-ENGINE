@@ -54,7 +54,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
             save = widgets::modal_button_bold(
                 ui,
                 egui_phosphor::regular::FLOPPY_DISK,
-                &tr(locale, "Guardar script", "Save script"),
+                tr(locale, "Guardar script", "Save script"),
                 widgets::ModalButtonStyle::Primary,
                 ui.available_width(),
                 !name.trim().is_empty(),

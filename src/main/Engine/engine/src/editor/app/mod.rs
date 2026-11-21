@@ -241,9 +241,11 @@ mod tests {
 
     #[test]
     fn new_3d_project_seeds_demo_tooltips_even_with_session_extract_dir() {
-        let mut cli = Cli::default();
         // Electron siempre pasa `--extract-dir` aunque no haya .save.
-        cli.extract_dir = Some("C:/does-not-exist/rer-session".to_string());
+        let cli = Cli {
+            extract_dir: Some("C:/does-not-exist/rer-session".to_string()),
+            ..Default::default()
+        };
         let app = EditorApp::new(cli);
         let ids: Vec<_> = app
             .project_state

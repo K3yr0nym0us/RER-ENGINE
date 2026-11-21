@@ -439,14 +439,13 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                                         ui,
                                         icons::LINK_BREAK,
                                         tr(locale, "Desvincular", "Unlink"),
-                                    ) {
-                                        if let Ok(id) = child_id.parse::<u64>() {
+                                    )
+                                        && let Ok(id) = child_id.parse::<u64>() {
                                             commands.push(json!({
                                                 "cmd": "detach_from_socket",
                                                 "child_id": id,
                                             }));
                                         }
-                                    }
                                 });
                             }
                         }

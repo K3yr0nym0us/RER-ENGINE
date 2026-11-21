@@ -216,11 +216,9 @@ fn install_fonts(ctx: &egui::Context) {
     if let Some(family) = fonts
         .families
         .get_mut(&egui::FontFamily::Name("rer-bold".into()))
-    {
-        if !family.iter().any(|name| name == "phosphor") {
+        && !family.iter().any(|name| name == "phosphor") {
             family.push("phosphor".to_owned());
         }
-    }
     if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
         family.insert(1, "phosphor".to_owned());
     }

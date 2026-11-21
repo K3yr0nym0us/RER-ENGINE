@@ -367,7 +367,7 @@ mod tests {
         assert_eq!(MIN_WORLD_HEIGHT_3D, 48.0);
         assert_eq!(MAX_WORLD_HEIGHT_3D, 256.0);
         // El cielo es fijo y mayor que la semidiagonal del mundo máximo (~1420 m).
-        assert!(SKY_SPHERE_RADIUS > 1500.0);
+        const { assert!(SKY_SPHERE_RADIUS > 1500.0) };
     }
 
     #[test]

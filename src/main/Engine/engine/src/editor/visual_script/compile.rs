@@ -47,7 +47,7 @@ fn next_target(doc: &GraphDocument, from: NodeId, pin: Pin) -> Option<NodeId> {
     })
 }
 
-fn indent_block(lines: &mut Vec<String>) -> Vec<String> {
+fn indent_block(lines: &[String]) -> Vec<String> {
     lines.iter().map(|line| format!("    {line}")).collect()
 }
 
@@ -145,12 +145,12 @@ fn compile_chain(
                     &mut false_body,
                     scene_ids,
                 );
-                let true_body = indent_block(&mut true_body);
+                let true_body = indent_block(&true_body);
                 lines.push(format!("if {expr} {{"));
                 lines.extend(true_body);
                 if !false_body.is_empty() {
                     lines.push("} else {".to_string());
-                    lines.extend(indent_block(&mut false_body));
+                    lines.extend(indent_block(&false_body));
                 }
                 lines.push("}".to_string());
                 current = next_target(doc, node, Pin::Exec);
@@ -166,7 +166,7 @@ fn compile_chain(
                     scene_ids,
                 );
                 lines.push(format!("for _i in 0..{count} {{"));
-                lines.extend(indent_block(&mut body));
+                lines.extend(indent_block(&body));
                 lines.push("}".to_string());
                 current = next_target(doc, node, Pin::Exec);
             }
@@ -188,7 +188,7 @@ fn compile_chain(
                 lines.push(format!("for entity_id in [{}] {{", ids.join(", ")));
                 let mut inner = vec!["let entity = #{ id: entity_id };".to_string()];
                 inner.extend(body);
-                lines.extend(indent_block(&mut inner));
+                lines.extend(indent_block(&inner));
                 lines.push("}".to_string());
                 current = next_target(doc, node, Pin::Exec);
             }
@@ -536,8 +536,10 @@ mod tests {
             egui::pos2(0.0, 0.0),
             VisualNode::new(NodeKind::SceneBegin, "event".into(), NodeData::default()),
         );
-        let mut data = NodeData::default();
-        data.message = "Hola \"mundo\"".into();
+        let data = NodeData {
+            message: "Hola \"mundo\"".into(),
+            ..Default::default()
+        };
         let log = doc.graph.insert_node(
             egui::pos2(200.0, 0.0),
             VisualNode::new(NodeKind::Log, "log".into(), data),

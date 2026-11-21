@@ -507,11 +507,11 @@ mod tests {
     use super::*;
 
     fn alpha_min(px: &[u8]) -> u8 {
-        px.chunks_exact(4).map(|c| c[3]).min().unwrap_or(0)
+        px.as_chunks::<4>().0.iter().map(|c| c[3]).min().unwrap_or(0)
     }
 
     fn bright_count(px: &[u8]) -> usize {
-        px.chunks_exact(4)
+        px.as_chunks::<4>().0.iter()
             .filter(|c| c[0] > 200 && c[1] > 200 && c[2] > 200)
             .count()
     }

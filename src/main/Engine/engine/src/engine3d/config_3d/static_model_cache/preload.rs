@@ -504,7 +504,7 @@ impl State {
 
     pub(crate) fn flush_pending_entity_model_replaces_for_path(&mut self, path: &str) {
         let key = self.model_path_key(path);
-        let pending: Vec<_> = self.pending_entity_model_replaces.drain(..).collect();
+        let pending: Vec<_> = std::mem::take(&mut self.pending_entity_model_replaces);
         let (for_path, rest): (Vec<_>, Vec<_>) = pending
             .into_iter()
             .partition(|req| self.model_path_key(&req.path) == key);
@@ -543,7 +543,7 @@ impl State {
 
     pub(crate) fn flush_pending_load_models_for_path(&mut self, path: &str) {
         let key = self.model_path_key(path);
-        let pending: Vec<_> = self.pending_load_models.drain(..).collect();
+        let pending: Vec<_> = std::mem::take(&mut self.pending_load_models);
         let (ready, still_pending): (Vec<_>, Vec<_>) = pending
             .into_iter()
             .partition(|req| normalize_model_path(&req.path) == key);

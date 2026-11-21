@@ -166,9 +166,7 @@ Con solo --save-path, el editor extrae el archivo y decide 2D/3D desde su manife
 /// `setup_empty_3d()` deja el mundo vacío esperando este comando; antes lo
 /// enviaba Electron tras `ready`, pero ahora es el editor quien lo produce.
 pub fn saved_scene_command(cli: &Cli) -> Option<serde_json::Value> {
-    if cli.save_path.is_none() {
-        return None;
-    }
+    cli.save_path.as_ref()?;
     let extract_dir = cli.extract_dir.as_deref()?;
     let scene = if cli.context.is_3d() {
         cli.context.game_style.as_str().to_string()

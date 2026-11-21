@@ -49,7 +49,7 @@ fn element_row(ui: &mut egui::Ui, app: &mut EditorApp, element: &HudElement) {
                         icons::TRASH,
                         14.0,
                         theme::DANGER,
-                        &tr(locale, "Delete element", "Delete element"),
+                        tr(locale, "Delete element", "Delete element"),
                     ) {
                         let id = element.id;
                         let kind = element.kind;
@@ -248,7 +248,7 @@ fn asset_selector(ui: &mut egui::Ui, app: &mut EditorApp, is_font: bool) {
     if widgets::modal_button(
         ui,
         icons::CHECK,
-        &tr(locale, "Add", "Add"),
+        tr(locale, "Add", "Add"),
         widgets::ModalButtonStyle::Primary,
         100.0,
         !field.is_empty(),
@@ -260,7 +260,7 @@ fn asset_selector(ui: &mut egui::Ui, app: &mut EditorApp, is_font: bool) {
     if widgets::modal_button(
         ui,
         icons::X,
-        &tr(locale, "Cancelar", "Cancel"),
+        tr(locale, "Cancelar", "Cancel"),
         widgets::ModalButtonStyle::Secondary,
         100.0,
         true,
@@ -338,7 +338,7 @@ fn nested_modal(ui: &mut egui::Ui, app: &mut EditorApp) {
                     if widgets::modal_button(
                         ui,
                         icons::CHECK,
-                        &tr(locale, "Assign", "Assign"),
+                        tr(locale, "Assign", "Assign"),
                         widgets::ModalButtonStyle::Primary,
                         100.0,
                         !field.is_empty(),
@@ -351,7 +351,7 @@ fn nested_modal(ui: &mut egui::Ui, app: &mut EditorApp) {
                     if widgets::modal_button(
                         ui,
                         icons::X,
-                        &tr(locale, "Cancelar", "Cancel"),
+                        tr(locale, "Cancelar", "Cancel"),
                         widgets::ModalButtonStyle::Secondary,
                         100.0,
                         true,
@@ -375,7 +375,7 @@ fn nested_modal(ui: &mut egui::Ui, app: &mut EditorApp) {
                     if widgets::modal_button(
                         ui,
                         icons::TRASH,
-                        &tr(locale, "Eliminar", "Delete"),
+                        tr(locale, "Eliminar", "Delete"),
                         widgets::ModalButtonStyle::Danger,
                         110.0,
                         true,
@@ -393,7 +393,7 @@ fn nested_modal(ui: &mut egui::Ui, app: &mut EditorApp) {
                     if widgets::modal_button(
                         ui,
                         icons::X,
-                        &tr(locale, "Cancelar", "Cancel"),
+                        tr(locale, "Cancelar", "Cancel"),
                         widgets::ModalButtonStyle::Secondary,
                         100.0,
                         true,
@@ -473,12 +473,12 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         );
                         if !app.hud_editor.editing_name {
                             if widgets::icon_action(ui, icons::PENCIL, 16.0, theme::INFO,
-                                &tr(locale, "Edit name", "Edit name"))
+                                tr(locale, "Edit name", "Edit name"))
                             {
                                 app.hud_editor.editing_name = true;
                             }
                         } else if widgets::icon_action(ui, icons::CHECK, 16.0, theme::SUCCESS,
-                            &tr(locale, "Save changes", "Save changes"))
+                            tr(locale, "Save changes", "Save changes"))
                         {
                             let name = app.hud_editor.name_draft.clone();
                             hud_editor::rename(app, &name);
@@ -487,19 +487,19 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                     });
                     ui.add_space(10.0);
 
-                    group(ui, app, 0, &tr(locale, "Text", "Text"),
-                        &tr(locale, "Add text", "Add text"), &empty_text,
+                    group(ui, app, 0, tr(locale, "Text", "Text"),
+                        tr(locale, "Add text", "Add text"), empty_text,
                         groups.remove(&HudElementKind::Text).unwrap_or_default(), add_text);
-                    group(ui, app, 1, &tr(locale, "Object", "Object"),
-                        &if app.hud_editor.object_draw_active {
+                    group(ui, app, 1, tr(locale, "Object", "Object"),
+                        if app.hud_editor.object_draw_active {
                             tr(locale, "Cancel drawing", "Cancel drawing")
                         } else {
                             tr(locale, "Add object", "Add object")
                         },
-                        &empty_object,
+                        empty_object,
                         groups.remove(&HudElementKind::Object).unwrap_or_default(), add_object);
-                    group(ui, app, 2, &tr(locale, "Image", "Image"),
-                        &tr(locale, "Add image", "Add image"), &empty_image,
+                    group(ui, app, 2, tr(locale, "Image", "Image"),
+                        tr(locale, "Add image", "Add image"), empty_image,
                         groups.remove(&HudElementKind::Image).unwrap_or_default(), add_image);
 
                     ui.add_space(8.0);
@@ -513,7 +513,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
 
                     ui.add_space(12.0);
                     if widgets::modal_button(ui, icons::FLOPPY_DISK,
-                        &tr(locale, "Guardar", "Save"), widgets::ModalButtonStyle::Primary, 300.0, true)
+                        tr(locale, "Guardar", "Save"), widgets::ModalButtonStyle::Primary, 300.0, true)
                     {
                         hud_editor::end_edit(app);
                     }

@@ -259,7 +259,7 @@ pub(crate) fn body(
         ),
         theme::ACCENT,
     ) {
-        actions.push(LeftAction::OpenTooltipModal(None));
+        actions.push(LeftAction::OpenTooltipModal(Box::new(None)));
     }
     ui.add_space(6.0);
 
@@ -312,9 +312,9 @@ pub(crate) fn body(
                             theme::INFO,
                             tr(locale, "Editar tooltip", "Edit tooltip"),
                         ) {
-                            actions.push(LeftAction::OpenTooltipModal(Some(
+                            actions.push(LeftAction::OpenTooltipModal(Box::new(Some(
                                 TooltipDraft::from_value(tooltip),
-                            )));
+                            ))));
                         }
                     });
                 });

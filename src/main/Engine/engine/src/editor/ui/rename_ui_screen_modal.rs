@@ -70,8 +70,8 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
         None
     };
 
-    if let Some(name) = submitted {
-        if let Some(screen) = app
+    if let Some(name) = submitted
+        && let Some(screen) = app
             .ui_screens
             .menu
             .iter_mut()
@@ -83,7 +83,6 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                 false,
             );
         }
-    }
     if confirm {
         app.left_sidebar.pending_rename_ui_screen = None;
     }

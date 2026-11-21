@@ -979,13 +979,13 @@ fn transform_tab(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
         let w = axis_width(ui, 3);
-        for axis in 0..3 {
+        for (axis, draft_value) in state.pos_draft.iter_mut().enumerate() {
             ui.allocate_ui_with_layout(
                 Vec2::new(w, 26.0),
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     axis_label(ui, axis);
-                    let mut draft = state.pos_draft[axis].clone();
+                    let mut draft = draft_value.clone();
                     if number_field(ui, &mut draft, w - 22.0).changed()
                         && let Some(value) = parse_f32(&draft)
                     {
@@ -994,7 +994,7 @@ fn transform_tab(
                             "position_axis": { "axis": axis, "value": value }
                         }));
                     }
-                    state.pos_draft[axis] = draft;
+                    *draft_value = draft;
                 },
             );
         }
@@ -1896,7 +1896,7 @@ fn nested_dialog(
                     ui.horizontal(|ui| {
                         ui.label(muted(&t(locale, "FPS", "FPS"), 12.0));
                         ui.add(egui::DragValue::new(fps).range(1..=60));
-                        ui.toggle_value(loop_, &t(locale, "Bucle", "Loop"));
+                        ui.toggle_value(loop_, t(locale, "Bucle", "Loop"));
                     });
                     ui.horizontal(|ui| {
                         ui.label(muted(&t(locale, "Columnas", "Columns"), 12.0));

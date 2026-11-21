@@ -255,7 +255,7 @@ enum LeftAction {
         active: bool,
     },
     /// Abre la modal del tooltip (None = crear, Some = editar).
-    OpenTooltipModal(Option<interaction_tooltips::TooltipDraft>),
+    OpenTooltipModal(Box<Option<interaction_tooltips::TooltipDraft>>),
     /// Borra un tooltip de interacción del proyecto.
     DeleteInteractionTooltip {
         id: String,
@@ -759,7 +759,7 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
             }
         }
         LeftAction::OpenTooltipModal(draft) => {
-            app.left_sidebar.tooltip_draft = draft.unwrap_or_default();
+            app.left_sidebar.tooltip_draft = (*draft).unwrap_or_default();
             app.left_sidebar.tooltip_modal_open = true;
         }
         LeftAction::DeleteInteractionTooltip { id, name } => {

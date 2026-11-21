@@ -340,7 +340,7 @@ fn graphics_with_gbuffer_blend(
             .blend_enable(false);
         let mut list = Vec::with_capacity(colors.len());
         list.push(blend_attachment);
-        list.extend(std::iter::repeat(gbuffer).take(colors.len().saturating_sub(1)));
+        list.extend(std::iter::repeat_n(gbuffer, colors.len().saturating_sub(1)));
         list
     };
     let blend_state = vk::PipelineColorBlendStateCreateInfo::default().attachments(&attachments);

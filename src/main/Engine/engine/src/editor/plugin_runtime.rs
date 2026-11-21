@@ -252,11 +252,7 @@ fn download(
         received += read as u64;
         if last_report.elapsed() >= Duration::from_millis(120) {
             last_report = Instant::now();
-            let percent = if total > 0 {
-                ((received * 100) / total).min(99) as u32
-            } else {
-                0
-            };
+            let percent = (received * 100).checked_div(total).unwrap_or(0).min(99) as u32;
             progress(
                 proxy,
                 plugin_id,

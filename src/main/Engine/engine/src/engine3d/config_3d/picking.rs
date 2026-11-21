@@ -239,7 +239,6 @@ impl State {
         for (id, origin) in self
             .particles
             .pickable()
-            .into_iter()
             .chain(self.water.pickable())
         {
             let Some((sx, sy)) = self.project_to_screen(GlamVec3::from(origin)) else {
@@ -287,7 +286,6 @@ impl State {
         let Some((_, origin)) = self
             .particles
             .pickable()
-            .into_iter()
             .chain(self.water.pickable())
             .find(|(pickable_id, _)| *pickable_id == id)
         else {

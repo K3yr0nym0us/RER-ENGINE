@@ -403,7 +403,7 @@ impl State {
             width: 2.0 * 44.0 / vw,
             height: 2.0 * 44.0 / vh,
         };
-        self.rebuild_hold_ring(key_box, &cfg, vw, vh);
+        self.rebuild_hold_ring(key_box, cfg, vw, vh);
         let key_bg = self.interaction_key_texture();
         super::player_ui::font::push_hud_texture_quad_instance(
             key_bg,

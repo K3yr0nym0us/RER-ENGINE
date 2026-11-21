@@ -117,7 +117,7 @@ pub(crate) fn build_skinned_trace(
             continue;
         }
         let vertices = &part.mesh.vertices;
-        for chunk in part.mesh.indices.chunks_exact(3) {
+        for chunk in part.mesh.indices.as_chunks::<3>().0 {
             let mut tri = crate::engine3d::bvh::RtTriangle {
                 v0: GlamVec3::ZERO,
                 v1: GlamVec3::ZERO,

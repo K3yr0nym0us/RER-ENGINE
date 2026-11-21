@@ -20,7 +20,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
         .inner_margin(egui::Margin::same(16))
         .show(ui, |ui| {
             let draft = &mut app.left_sidebar.tooltip_draft;
-            field(ui, &tr(locale, "Nombre", "Name"), &mut draft.name);
+            field(ui, tr(locale, "Nombre", "Name"), &mut draft.name);
 
             // Activación y uso único comparten línea, mitad para cada una.
             ui.columns(2, |columns| {
@@ -65,7 +65,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                 let top = egui::Layout::top_down(egui::Align::Min);
 
                 ui.allocate_ui_with_layout(egui::vec2(key_w, ROW_H), top, |ui| {
-                    key_field(ui, &tr(locale, "Tecla", "Key"), &mut draft.key);
+                    key_field(ui, tr(locale, "Tecla", "Key"), &mut draft.key);
                 });
 
                 ui.allocate_ui_with_layout(egui::vec2(action_w, ROW_H), top, |ui| {
@@ -133,7 +133,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 } else {
                                     icons::NETWORK
                                 },
-                                &label,
+                                label,
                                 widgets::ModalButtonStyle::Secondary,
                                 third.available_width(),
                                 true,
@@ -170,7 +170,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                                                     icons::TRASH,
                                                     18.0,
                                                     theme::DANGER,
-                                                    &tr(locale, "Quitar", "Remove"),
+                                                    tr(locale, "Quitar", "Remove"),
                                                 ) {
                                                     app.left_sidebar
                                                         .pending_remove_tooltip_script = true;
@@ -180,7 +180,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                                                     icons::PENCIL,
                                                     18.0,
                                                     theme::INFO,
-                                                    &tr(locale, "Editar", "Edit"),
+                                                    tr(locale, "Editar", "Edit"),
                                                 ) {
                                                     if is_script {
                                                         app.left_sidebar.tooltip_script_editor =
@@ -205,17 +205,17 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
             ui.columns(2, |columns| {
                 field(
                     &mut columns[0],
-                    &tr(locale, "Distancia de spawn min", "Spawn distance min"),
+                    tr(locale, "Distancia de spawn min", "Spawn distance min"),
                     &mut draft.max_distance,
                 );
                 field(
                     &mut columns[1],
-                    &tr(locale, "Distancia de spawn max", "Spawn distance max"),
+                    tr(locale, "Distancia de spawn max", "Spawn distance max"),
                     &mut draft.tooltip_distance,
                 );
             });
 
-            section_label(ui, &tr(locale, "Aura de resaltado", "Highlight aura"));
+            section_label(ui, tr(locale, "Aura de resaltado", "Highlight aura"));
             ui.columns(2, |columns| {
                 columns[0].checkbox(
                     &mut draft.highlight,
@@ -239,7 +239,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
             if widgets::modal_button_bold(
                 ui,
                 icons::FLOPPY_DISK,
-                &tr(locale, "Actualizar tooltip", "Update tooltip"),
+                tr(locale, "Actualizar tooltip", "Update tooltip"),
                 widgets::ModalButtonStyle::Primary,
                 ui.available_width(),
                 can_save,

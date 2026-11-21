@@ -883,7 +883,7 @@ impl super::super::engine::State {
             })
             .collect();
         let mut tris = Vec::with_capacity(indices.len() / 3);
-        for triangle in indices.chunks_exact(3) {
+        for triangle in indices.as_chunks::<3>().0 {
             let (i0, i1, i2) = (
                 triangle[0] as usize,
                 triangle[1] as usize,
@@ -1839,7 +1839,7 @@ fn clip_chunk_to_world_bounds(
         out_vertices.push(vertex);
         index
     };
-    for tri in indices.chunks_exact(3) {
+    for tri in indices.as_chunks::<3>().0 {
         let Some(a) = vertices.get(tri[0] as usize).copied() else {
             continue;
         };

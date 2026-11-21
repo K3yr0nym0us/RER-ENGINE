@@ -578,6 +578,6 @@ mod tests {
 
     #[test]
     fn eye_offset_is_near_top_of_body() {
-        assert!(PLAY_CHARACTER_EYE_OFFSET > PLAY_CHARACTER_BODY_HEIGHT * 0.9);
+        const { assert!(PLAY_CHARACTER_EYE_OFFSET > PLAY_CHARACTER_BODY_HEIGHT * 0.9) };
     }
 }

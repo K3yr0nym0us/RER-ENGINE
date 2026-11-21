@@ -523,7 +523,7 @@ fn variable_list(
             tooltip.push_str(&item.detail);
         }
         tooltip.push('\n');
-        tooltip.push_str(&tr(
+        tooltip.push_str(tr(
             locale,
             "Clic para copiar a portapapeles",
             "Click to copy snippet to clipboard",
