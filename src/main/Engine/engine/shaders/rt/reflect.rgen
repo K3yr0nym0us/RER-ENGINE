@@ -103,7 +103,8 @@ void main() {
 
     vec3 accumulated = vec3(0.0);
     for (int r = 0; r < rays; r++) {
-        vec3 dir = normalize(reflect(normalize(world - cam.cam_pos.xyz), n) + vec3(ray_jitter(r) * roughness, 0.0));
+        vec3 dir = normalize(reflect(normalize(world - cam.cam_pos.xyz), n)
+                             + vec3(ray_jitter(r) * roughness * 0.25, 0.0));
         vec3 origin = world + n * 0.03;
         vec3 color = vec3(0.0);
         float throughput = 1.0;

@@ -63,10 +63,11 @@ tier_table:
     `RtxPreset::for_tier` define los parámetros reales del tier RTX. Se serializan en el UBO
     `rt_params` como (rayos, rebotes, distancia, roughness) y se aplican en HW RT y BVH software.
   values:
-    low:    { resolution: 50%, rays: 1, bounces: 1, denoise: básico,  temporal: básico, roughness: 0.25, distance: baja,   bvh: bajo }
-    medium: { resolution: 67%, rays: 1, bounces: 1, denoise: medio,   temporal: alto,   roughness: 0.40, distance: media,  bvh: medio }
-    high:   { resolution: 85%, rays: 2, bounces: 2, denoise: alto,    temporal: alto,   roughness: 0.70, distance: alta,   bvh: alto }
-    ultra:  { resolution: 100%, rays: 4, bounces: 3, denoise: máximo, temporal: máximo, roughness: 1.00, distance: máxima, bvh: alto }
+    low:    { resolution: 50%, rays: 1, bounces: 1, denoise: 1×1.00, temporal: 0.35, roughness: 0.25, distance: baja,   bvh: bajo }
+    medium: { resolution: 67%, rays: 1, bounces: 1, denoise: 2×0.75, temporal: 0.60, roughness: 0.40, distance: media,  bvh: medio }
+    high:   { resolution: 85%, rays: 2, bounces: 2, denoise: 3×0.55, temporal: 0.60, roughness: 0.70, distance: alta,   bvh: alto }
+    ultra:  { resolution: 100%, rays: 4, bounces: 3, denoise: 4×0.45, temporal: 0.60, roughness: 1.00, distance: máxima, bvh: alto }
+  denoise_note: más pasadas con paso menor mantienen el radio total ~1-2 px; antes crecía a 8 px en Ultra y desenfocaba el reflejo.
 
 pipeline:
   order_in_frame: |
