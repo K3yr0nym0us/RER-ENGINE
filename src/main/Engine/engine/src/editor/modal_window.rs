@@ -255,7 +255,11 @@ impl ModalWindow {
             fitted: false,
             fit_to_content: matches!(
                 kind,
-                NativeModal::RemoveAsset
+                // Estas dos eran modales Electron `lg` que se medían al DOM:
+                // la ventana se ajustaba al alto de las tarjetas / del panel.
+                NativeModal::Plugins
+                    | NativeModal::WorldGen
+                    | NativeModal::RemoveAsset
                     | NativeModal::ExitConfirm
                     | NativeModal::DeleteScene
                     | NativeModal::CreateScene

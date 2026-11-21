@@ -13,6 +13,8 @@ use crate::editor::i18n::tr;
 use crate::editor::theme;
 use crate::editor::worldgen;
 
+use super::widgets;
+
 const DANGER_BG: Color32 = Color32::from_rgb(0x84, 0x1c, 0x24);
 const DANGER_TEXT: Color32 = Color32::from_rgb(0xff, 0xd8, 0xda);
 
@@ -186,7 +188,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
         &t(locale, "Terrain configuration", "Terrain configuration"),
         true,
         |ui| {
-            ui.horizontal(|ui| {
+            widgets::top_row(ui, |ui| {
                 let half = ui.available_width() / 2.0;
                 ui.allocate_ui_with_layout(
                     egui::vec2(half, 0.0),
@@ -202,7 +204,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                         .size(11.0)
                                         .color(theme::TEXT_MUTED),
                                 );
-                                ui.horizontal(|ui| {
+                                widgets::top_row(ui, |ui| {
                                     ui.add(
                                         egui::DragValue::new(&mut panel.seed)
                                             .range(0..=u32::MAX)
@@ -299,7 +301,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 ];
                                 let mut iter = fields.into_iter();
                                 for _row in 0..3 {
-                                    ui.horizontal(|ui| {
+                                    widgets::top_row(ui, |ui| {
                                         for _col in 0..3 {
                                             if let Some((label, value, max)) = iter.next() {
                                                 ui.allocate_ui_with_layout(
@@ -349,7 +351,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
             ];
             let mut biomes = panel.biomes;
             let mut shares = panel.biome_shares;
-            ui.horizontal(|ui| {
+            widgets::top_row(ui, |ui| {
                 let column = ui.available_width() / 5.0;
                 for index in 0..5 {
                     ui.allocate_ui_with_layout(
@@ -369,7 +371,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                             let share_locked = !biomes[index] || enabled_count <= 1;
                             // React: slider y `%` en la misma fila (`d-flex
                             // align-items-center gap-2`, valor min-width 2.6rem).
-                            ui.horizontal(|ui| {
+                            widgets::top_row(ui, |ui| {
                                 let slider_width = (ui.available_width() - 38.0).max(20.0);
                                 ui.allocate_ui_with_layout(
                                     egui::vec2(slider_width, 0.0),
@@ -427,7 +429,7 @@ fn scatter_fields(
     rules: &mut worldgen::ScatterRules,
 ) {
     // Fila 1
-    ui.horizontal(|ui| {
+    widgets::top_row(ui, |ui| {
         let col = ui.available_width() / 4.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
@@ -486,7 +488,7 @@ fn scatter_fields(
     });
     ui.add_space(6.0);
     // Fila 2
-    ui.horizontal(|ui| {
+    widgets::top_row(ui, |ui| {
         let col = ui.available_width() / 4.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
@@ -544,7 +546,7 @@ fn scatter_fields(
         );
     });
     ui.add_space(6.0);
-    ui.horizontal(|ui| {
+    widgets::top_row(ui, |ui| {
         ui.toggle_value(
             &mut rules.random_rotation,
             t(locale, "Random rotation", "Random rotation"),
@@ -586,7 +588,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                     .color(theme::TEXT_MUTED),
                 );
             } else {
-                ui.horizontal(|ui| {
+                widgets::top_row(ui, |ui| {
                     let combo_width = ui.available_width() - 110.0;
                     egui::ComboBox::from_id_salt("worldgen_model_combo")
                         .width(combo_width.max(120.0))
@@ -656,7 +658,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                         .corner_radius(4)
                         .inner_margin(egui::Margin::symmetric(8, 4))
                         .show(ui, |ui| {
-                            ui.horizontal(|ui| {
+                            widgets::top_row(ui, |ui| {
                                 if ui
                                     .button(if open {
                                         icons::CARET_UP
@@ -719,7 +721,6 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
         .show(ui, |ui| {
             egui::ScrollArea::vertical()
                 .id_salt("worldgen_scroll")
-                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if app.worldgen.library_path.is_none() {
                         egui::Frame::new()
@@ -746,7 +747,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         t(locale, "Replace current world", "Replace current world"));
 
                     ui.add_space(10.0);
-                    ui.horizontal(|ui| {
+                    widgets::top_row(ui, |ui| {
                         let label = if app.worldgen.distributing {
                             t(locale, "Distributing blueprints…", "Distributing blueprints…")
                         } else if let Some(generation) = app.worldgen.generation {

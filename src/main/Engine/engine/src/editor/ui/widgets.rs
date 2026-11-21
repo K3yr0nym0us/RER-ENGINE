@@ -5,7 +5,7 @@
 //! centrar icono + texto, como hace Bootstrap con `.btn` (egui alinea a la
 //! izquierda cuando el botón se estira).
 
-use egui::{Align2, Color32, FontId, RichText, Sense, Stroke, StrokeKind};
+use egui::{Align, Align2, Color32, FontId, RichText, Sense, Stroke, StrokeKind};
 use egui_phosphor::regular as icons;
 
 pub fn caption(ui: &mut egui::Ui, label: &str) {
@@ -641,6 +641,28 @@ fn modal_button_font(
     );
 
     enabled && response.clicked()
+}
+
+/// Fila horizontal con los hijos alineados a la parte superior.
+///
+/// `ui.horizontal()` alinea los hijos al centro del eje transversal: al meter
+/// tarjetas de distinta altura, el row crece hacia abajo y cada tarjeta queda
+/// más baja que la anterior (efecto escalera). Esta variante conserva el
+/// `initial_size` pequeño de `horizontal()` pero fuerza `Align::Min`, así el
+/// row solo ocupa la altura real de su contenido.
+pub fn top_row<R>(
+    ui: &mut egui::Ui,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    let initial = egui::vec2(
+        ui.available_size_before_wrap().x,
+        ui.spacing().interact_size.y,
+    );
+    ui.allocate_ui_with_layout(
+        initial,
+        egui::Layout::left_to_right(Align::Min),
+        add_contents,
+    )
 }
 
 /// Pestaña con aspecto de `.nav-tabs` de Bootstrap (texto + borde inferior).

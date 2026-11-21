@@ -147,13 +147,17 @@ fn load_assistant_icon(ui: &mut egui::Ui, app: &mut EditorApp) {
     }
 }
 
+fn is_installing(app: &EditorApp, id: &str) -> bool {
+    app.plugins_modal.busy_id.as_deref() == Some(id)
+        || (app.plugins_modal.llm.status == "downloading" && id == "local-ai-assistant")
+}
+
 fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntry) {
     let locale = app.cli.locale;
     let id = entry.id;
     let installed = app.plugins_modal.plugins.is_installed(id);
     let enabled = app.plugins_modal.plugins.is_enabled(id);
-    let installing = app.plugins_modal.busy_id.as_deref() == Some(id)
-        || (app.plugins_modal.llm.status == "downloading" && id == "local-ai-assistant");
+    let installing = is_installing(app, id);
     let card_width = if installing {
         CARD_INSTALL_WIDTH
     } else {
@@ -623,7 +627,6 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
         .show(ui, |ui| {
             egui::ScrollArea::vertical()
                 .id_salt("plugins_scroll")
-                .auto_shrink([false, false])
                 .show(ui, |ui| {
                     if let Some(error) = &app.plugins_modal.error {
                         alert(ui, DANGER_BG, Color32::WHITE, error);
@@ -634,23 +637,44 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         ui.add_space(8.0);
                     }
 
-                    ui.horizontal(|ui| {
-                        let total = ui.available_width();
+                    // React: `.plugins-modal-grid` = flex + space-evenly con
+                    // tarjetas de 200 px. `horizontal()` centra cada hijo en un
+                    // row que crece hacia abajo (efecto escalera); con
+                    // `horizontal_top` todas comparten la misma línea base.
+                    super::widgets::top_row(ui, |ui| {
                         let gap = 8.0;
-                        let column = (total - gap * 3.0) / 4.0;
+                        let widths: Vec<f32> = CATALOG
+                            .iter()
+                            .map(|entry| {
+                                if is_installing(app, entry.id) {
+                                    CARD_INSTALL_WIDTH
+                                } else {
+                                    CARD_WIDTH
+                                }
+                            })
+                            .chain([CARD_WIDTH, CARD_WIDTH])
+                            .collect();
+                        let row_width: f32 =
+                            widths.iter().sum::<f32>() + gap * (widths.len() - 1) as f32;
+                        let leading = (ui.available_width() - row_width) * 0.5;
+                        if leading > 0.0 {
+                            ui.add_space(leading);
+                        }
+                        let mut widths = widths.into_iter();
                         for (index, entry) in CATALOG.iter().enumerate() {
+                            if index > 0 {
+                                ui.add_space(gap);
+                            }
+                            let width = widths.next().unwrap_or(CARD_WIDTH);
                             ui.allocate_ui_with_layout(
-                                egui::vec2(column, 0.0),
+                                egui::vec2(width, 0.0),
                                 Layout::top_down(Align::Min),
                                 |ui| plugin_card(ui, app, entry),
                             );
-                            if index == 1 {
-                                ui.add_space(gap);
-                            }
                         }
                         ui.add_space(gap);
                         ui.allocate_ui_with_layout(
-                            egui::vec2(column, 0.0),
+                            egui::vec2(widths.next().unwrap_or(CARD_WIDTH), 0.0),
                             Layout::top_down(Align::Min),
                             |ui| {
                                 coming_soon_card(
@@ -666,7 +690,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         );
                         ui.add_space(gap);
                         ui.allocate_ui_with_layout(
-                            egui::vec2(column, 0.0),
+                            egui::vec2(widths.next().unwrap_or(CARD_WIDTH), 0.0),
                             Layout::top_down(Align::Min),
                             |ui| coming_soon_card(ui, locale, None),
                         );
