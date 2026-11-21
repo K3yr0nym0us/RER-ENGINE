@@ -303,20 +303,19 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                     } else {
                         ui.vertical_centered(|ui| {
                             if id != "world-gen" {
+                                // React: `.form-check.form-switch` (pastilla + label).
                                 let mut enabled_value = enabled;
-                                if ui
-                                    .toggle_value(
-                                        &mut enabled_value,
-                                        tr(locale, "Enabled", "Enabled"),
-                                    )
-                                    .changed()
-                                {
-                                    plugins::action(
-                                        app,
-                                        "set_enabled",
-                                        json!({ "plugin_id": id, "enabled": enabled_value }),
-                                    );
-                                }
+                                let label = tr(locale, "Enabled", "Enabled");
+                                super::widgets::top_row(ui, |ui| {
+                                    if super::widgets::switch_value(ui, &mut enabled_value, label) {
+                                        plugins::action(
+                                            app,
+                                            "set_enabled",
+                                            json!({ "plugin_id": id, "enabled": enabled_value }),
+                                        );
+                                    }
+                                    ui.label(RichText::new(label).size(12.0).color(theme::TEXT));
+                                });
                             }
                             if id == "world-gen"
                                 && styled_button(

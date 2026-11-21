@@ -393,13 +393,22 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                         |ui| {
                             let at_cap = !biomes[index] && enabled_count >= biome_slots;
                             ui.add_enabled_ui(!at_cap, |ui| {
-                                if ui.toggle_value(&mut biomes[index], &names[index]).changed() {
-                                    let (min, _max) = worldgen::biome_share_range(
-                                        biomes.iter().filter(|enabled| **enabled).count(),
+                                // React: `<form-check form-switch style="font-size:1.2rem">`
+                                // = switch de pastilla + etiqueta al lado, no un botón.
+                                widgets::top_row(ui, |ui| {
+                                    if widgets::switch_value(ui, &mut biomes[index], &names[index])
+                                    {
+                                        let (min, _max) = worldgen::biome_share_range(
+                                            biomes.iter().filter(|enabled| **enabled).count(),
+                                        );
+                                        let _ = min;
+                                        shares =
+                                            worldgen::toggle_biome_share(&shares, &biomes, index);
+                                    }
+                                    ui.label(
+                                        RichText::new(&names[index]).size(16.0).color(theme::TEXT),
                                     );
-                                    let _ = min;
-                                    shares = worldgen::toggle_biome_share(&shares, &biomes, index);
-                                }
+                                });
                             });
                             let share_locked = !biomes[index] || enabled_count <= 1;
                             // React: slider y `%` en la misma fila (`d-flex
