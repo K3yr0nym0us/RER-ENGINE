@@ -50,7 +50,10 @@ resolution_by_tier:
   shader_input: |
     `ssr.frag` recibe los parámetros por push constant (32 bytes): march, binary, distancia,
     grosor (o flag adaptativo), roughness máxima y edge fade. El hit se refina con búsqueda
-    binaria y se funde en los bordes de pantalla.
+    binaria y se funde en los bordes. `thickness` es la separación MÍNIMA admitida (con
+    profundidad no lineal un límite superior descartaba casi todos los impactos reales).
+    `composite.frag` distingue modo SSR/RT por las alfas: en SSR usa peso alto `(1-roughness)*0.90`
+    sobre la imagen filtrada; en RT usa F0 por material para no tapar el color propio.
 
 order_in_frame: |
   1. Forward MRT (scene / normal_rough / albedo / world / velocity) + sombra.

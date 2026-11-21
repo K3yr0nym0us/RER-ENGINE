@@ -52,11 +52,14 @@ void main() {
             break;
         }
         float hit_depth = texture(depth_tex, uv).r;
-        float diff = depth - hit_depth;
-        float thickness = pc.b.x > 0.5
-            ? mix(0.0008, thick_base, clamp(t / max_dist, 0.0, 1.0))
-            : thick_base;
-        if (diff <= 0.0 || diff >= thickness) {
+        // La profundidad es no lineal (near 0.1 / far 1000): un impacto real a 1 m ya da
+        // diff ~= 0.05. Un limite superior con `thickness` descartaba casi todos los hits.
+        // Se usa como separacion MINIMA (adaptativa) y se acepta cualquier impacto delante.
+        float min_sep = max(0.0005, thick_base * 0.25);
+        if (pc.b.x > 0.5) {
+            min_sep *= mix(1.0, 2.0, clamp(t / max_dist, 0.0, 1.0));
+        }
+        if (depth - hit_depth <= min_sep) {
             continue;
         }
 

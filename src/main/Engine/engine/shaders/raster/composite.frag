@@ -31,8 +31,19 @@ void main() {
     // color propio de la superficie. Así plástico/vidrio/agua conservan su textura y
     // cromo/acero siguen siendo metálicos sin parecer un espejo neutro.
     float metallic = clamp(texture(world_tex, su).w, 0.0, 1.0);
-    float f0 = mix(0.10, 0.95, metallic);
-    vec3 tinted = reflection * mix(vec3(1.0), scene.rgb, metallic);
-    float strength = f0 * confidence * (1.0 - roughness * 0.35);
-    out_color = vec4(mix(scene.rgb, tinted, clamp(strength, 0.0, 1.0)), scene.a);
+    // En modo RT la imagen SSR se limpia a 0; en modo SSR se limpia la trazada. Eso permite
+    // dar a cada sistema su peso: el SSR ya lleva `1 - roughness` en su confianza y necesita
+    // un peso alto, mientras que el RT usa F0 fisico para no tapar el color del material.
+    bool ssr_mode = ssr.a > 0.01 && rt.a <= 0.01;
+    float strength;
+    vec3 final_reflection;
+    if (ssr_mode) {
+        strength = (1.0 - roughness) * confidence * 0.90;
+        final_reflection = reflection;
+    } else {
+        float f0 = mix(0.10, 0.95, metallic);
+        strength = f0 * confidence * (1.0 - roughness * 0.35);
+        final_reflection = reflection * mix(vec3(1.0), scene.rgb, metallic);
+    }
+    out_color = vec4(mix(scene.rgb, final_reflection, clamp(strength, 0.0, 1.0)), scene.a);
 }

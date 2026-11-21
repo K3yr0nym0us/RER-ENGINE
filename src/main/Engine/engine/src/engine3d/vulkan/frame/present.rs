@@ -227,16 +227,21 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
+            // En SSR, binding 1 debe quedar limpio para que el composite elija la SSR filtrada
+            // del binding 2 (y sepa que está en modo SSR mirando las alfas). En RT es al revés.
+            let composite_rt = if input.ssr {
+                self.targets.reflection.view
+            } else {
+                denoised
+            };
             write_combined(
                 device,
                 self.sets.composite[slot],
                 1,
-                denoised,
+                composite_rt,
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
-            // En SSR, el composite debe ver la imagen filtrada; en RT se deja la SSR limpia
-            // para que no aporte nada en la banda de espejos.
             let composite_ssr = if input.ssr {
                 denoised
             } else {
