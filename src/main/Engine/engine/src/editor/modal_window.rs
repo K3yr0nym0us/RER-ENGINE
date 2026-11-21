@@ -521,10 +521,16 @@ impl ModalWindow {
             } else {
                 INNER_WIDTH
             };
-            (
-                f64::from(used.width()).max(min_width),
-                f64::from(used.height()).ceil().max(MIN_INNER_HEIGHT),
-            )
+            // Plugins y WorldGen conservan el ancho `lg` para el que están
+            // diseñadas sus columnas (4 tarjetas / 3×3 campos / 5 biomas);
+            // solo se ajusta la altura al contenido. Medir también el ancho
+            // puede encoger la ventana y apretar esas rejillas.
+            let width = if matches!(self.kind, NativeModal::Plugins | NativeModal::WorldGen) {
+                self.base_width
+            } else {
+                f64::from(used.width()).max(min_width)
+            };
+            (width, f64::from(used.height()).ceil().max(MIN_INNER_HEIGHT))
         };
         let max_height = (f64::from(self.parent_outer.height) / scale) * 0.9;
         let height = if max_height > MIN_INNER_HEIGHT {

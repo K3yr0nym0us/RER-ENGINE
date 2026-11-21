@@ -328,7 +328,12 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                                 )
                             {
                                 // El generador es nativo: se abre con la ruta de la DLL
-                                // que el propio editor lee del state.json.
+                                // que el propio editor lee del state.json. Sustituye
+                                // a la modal de plugins (como el `openWorldGenPluginModal`
+                                // original): si la dejamos abierta, al cerrar WorldGen
+                                // vuelve a aparecer Plugins porque `sync_modal_window`
+                                // prioriza WorldGen pero no limpia el flag anterior.
+                                app.plugins_modal.open = false;
                                 app.worldgen.library_path =
                                     crate::editor::plugin_runtime::worldgen_library_path();
                                 app.worldgen.open = true;

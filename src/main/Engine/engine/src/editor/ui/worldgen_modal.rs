@@ -302,10 +302,14 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 let mut iter = fields.into_iter();
                                 for _row in 0..3 {
                                     widgets::top_row(ui, |ui| {
+                                        // Calcular la columna una sola vez: si se
+                                        // recalcula por celda, cada columna siguiente
+                                        // sale más estrecha que la anterior.
+                                        let col = ui.available_width() / 3.0;
                                         for _col in 0..3 {
                                             if let Some((label, value, max)) = iter.next() {
                                                 ui.allocate_ui_with_layout(
-                                                    egui::vec2(ui.available_width() / 3.0, 0.0),
+                                                    egui::vec2(col, 0.0),
                                                     egui::Layout::top_down(egui::Align::Min),
                                                     |ui| uint_field(ui, label, value, 0, max),
                                                 );
