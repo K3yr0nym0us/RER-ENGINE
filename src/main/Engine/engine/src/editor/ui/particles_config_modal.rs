@@ -481,7 +481,7 @@ fn slider_row(
                     .color(theme::INFO),
             );
             ui.add_space(6.0);
-            if widgets::range_slider(
+            if widgets::range_slider_no_tooltip(
                 ui,
                 &mut value,
                 range.min,

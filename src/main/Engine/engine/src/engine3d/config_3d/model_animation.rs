@@ -282,6 +282,30 @@ impl State {
         self.emit_entity_animation_play_state(id);
     }
 
+    /// Reproduce la siguiente animación del modelo enlazado a una entidad; al
+    /// llegar a la última vuelve a la primera. Sirve para cualquier entidad con
+    /// malla skinned, no solo para la demo.
+    pub(crate) fn play_next_model_clip(&mut self, id: EntityId) {
+        let binding = match self.model_animation_bindings.get(&id) {
+            Some(b) => b.clone(),
+            None => return,
+        };
+        let asset = match self.get_model_asset_for_entity(&binding.asset_path, id) {
+            Some(a) => a,
+            None => return,
+        };
+        if asset.clips.is_empty() {
+            return;
+        }
+        let current = self.active_model_clips.get(&id).map(|a| a.clip_name.as_str());
+        let next = current
+            .and_then(|name| asset.clips.iter().position(|c| c.name == name))
+            .map(|i| (i + 1) % asset.clips.len())
+            .unwrap_or(0);
+        let name = asset.clips[next].name.clone();
+        self.play_model_clip(id, &name, false);
+    }
+
     pub(crate) fn stop_model_clip(&mut self, id: EntityId) {
         if let Some(active) = self.active_model_clips.get_mut(&id) {
             active.playing = false;

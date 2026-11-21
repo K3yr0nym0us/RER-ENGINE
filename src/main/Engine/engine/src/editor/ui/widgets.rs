@@ -89,6 +89,30 @@ pub fn range_slider(
     step: f32,
     accent: Color32,
 ) -> bool {
+    range_slider_impl(ui, value, min, max, step, accent, true)
+}
+
+/// Igual que `range_slider` pero sin el tooltip de valor al pasar el cursor.
+pub fn range_slider_no_tooltip(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    step: f32,
+    accent: Color32,
+) -> bool {
+    range_slider_impl(ui, value, min, max, step, accent, false)
+}
+
+fn range_slider_impl(
+    ui: &mut egui::Ui,
+    value: &mut f32,
+    min: f32,
+    max: f32,
+    step: f32,
+    accent: Color32,
+    tooltip: bool,
+) -> bool {
     let enabled = ui.is_enabled();
     let sense = if enabled {
         Sense::click_and_drag()
@@ -142,7 +166,9 @@ pub fn range_slider(
     let x = rect.left() + 6.0 + (rect.width() - 12.0) * t;
     painter.circle_filled(egui::pos2(x, y), 6.5, accent.linear_multiply(alpha));
 
-    let _ = response.on_hover_text(format!("{value:.2}"));
+    if tooltip {
+        let _ = response.on_hover_text(format!("{value:.2}"));
+    }
     changed
 }
 

@@ -209,7 +209,12 @@ impl State {
             // En proyectos `.save` los emisores se restauran del manifest.
             particles: crate::engine3d::particles::ParticleSystem::new(),
             water: crate::engine3d::water::WaterSystem::default(),
-            splash: crate::engine3d::water::SplashLayer::default(),
+            parkour_wall_tex_idx: None,
+            parkour_wall_layer: None,
+            parkour_cylinder_mesh_idx: None,
+            ball_tex_idx: None,
+            ball_layer: None,
+
             socket_bone_pick_entity: None,
             socket_bone_pick_hovered_joint: None,
             bone_physics_editor_entity: None,

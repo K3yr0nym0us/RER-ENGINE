@@ -169,8 +169,16 @@ pub struct State {
     pub(crate) particles: crate::engine3d::particles::ParticleSystem,
     /// Cubo de líquidos (autómata celular, independiente del GPU).
     pub(crate) water: crate::engine3d::water::WaterSystem,
-    /// B7 — gotas locales en la frontera del charco, con solver propio.
-    pub(crate) splash: crate::engine3d::water::SplashLayer,
+    /// Índice en `tex_layers` de la textura de ladrillo de los muros de parkour.
+    pub(crate) parkour_wall_tex_idx: Option<usize>,
+    /// Capa GPU de esa textura; se conserva al limpiar la demo para reutilizarla.
+    pub(crate) parkour_wall_layer: Option<crate::engine3d::texture::TextureLayer>,
+    /// Malla cilíndrica compartida de los obstáculos de la pista.
+    pub(crate) parkour_cylinder_mesh_idx: Option<usize>,
+    /// Textura de la pelota física (`FootBall_BaseColor.jpg`).
+    pub(crate) ball_tex_idx: Option<usize>,
+    pub(crate) ball_layer: Option<crate::engine3d::texture::TextureLayer>,
+
     /// Modo editor: seleccionar hueso con click para un socket.
     pub(crate) socket_bone_pick_entity: Option<EntityId>,
     pub(crate) socket_bone_pick_hovered_joint: Option<usize>,

@@ -347,59 +347,28 @@ impl State {
         send_load_progress("Insertando suelo (Ground)", None, None);
         self.ensure_ground_plane();
 
-        let (block_mesh_idx, block_tex_idx) = self.ensure_editor_box_gpu_assets();
-
-        let mut spawn_block =
-            |position: [f32; 3], scale: [f32; 3], entity_category: Option<&str>| {
-                let base_label =
-                    rer_engine_core::editor_defaults::entity_label_for_category(entity_category);
-                let label = self.next_numbered_entity_name(base_label);
-                let id = self.world.spawn(Some(&label));
-                self.world.insert(
-                    id,
-                    MeshComponent {
-                        mesh_idx: block_mesh_idx,
-                        tex_idx: block_tex_idx,
-                    },
-                );
-                if let Some(t) = self.world.get_mut::<Transform>(id) {
-                    t.position = glam::Vec3::from_array(position);
-                    t.scale = glam::Vec3::from_array(scale);
-                }
-                let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
-                self.physics
-                    .set_entity_physics(id, true, "static", position, half);
-                self.entity_colision.insert(id, true);
-                self.scenario_entities.push(id);
-                self.save_registry.register_meta(
-                    id,
-                    EntitySaveMeta {
-                        kind: "model".to_string(),
-                        path: "[EditorBox]".to_string(),
-                        visual_model_path: None,
-                        entity_category: entity_category.map(str::to_string),
-                    },
-                );
-                self.send_model_loaded_event(id, &label);
-            };
-
-        // Placeholder plantilla 3D: 3 muros (environment) + 3 cubos (object).
+        // Pista de obstáculos (parkour) rotada 90°: muro norte (z=14.4) y
+        // laterales este/oeste (x=±6.75). Falta el frontal: se quita el muro
+        // de z=5.4 para que el jugador, desde el centro mirando al norte
+        // (yaw -π/2 → +Z), vea la pista sin obstrucción.
         send_load_progress("Insertando Paredes (3)", None, None);
-        spawn_block([-6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
-        spawn_block([6.0, 2.0, 18.0], [1.2, 4.0, 18.0], Some("environment"));
-        spawn_block([0.0, 2.0, 27.0], [12.0, 4.0, 1.2], Some("environment"));
-        send_load_progress("Insertando Cubos (3)", None, None);
-        spawn_block([-2.5, 0.75, 11.0], [1.5, 1.5, 1.5], Some("object"));
-        spawn_block([2.0, 1.25, 15.0], [2.0, 2.5, 2.0], Some("object"));
-        spawn_block([0.0, 2.5, 21.0], [1.8, 5.0, 1.8], Some("object"));
+        self.spawn_parkour_wall("ParkourWall · Norte", [0.0, 2.0, 14.4], [13.5, 4.0, 1.2]);
+        self.spawn_parkour_wall("ParkourWall · Oeste", [-6.75, 2.0, 10.5], [1.2, 4.0, 9.0]);
+        self.spawn_parkour_wall("ParkourWall · Este", [6.75, 2.0, 10.5], [1.2, 4.0, 9.0]);
+        send_load_progress("Insertando Cilindros (3)", None, None);
+        self.spawn_parkour_cylinder("ParkourCylinder · 1", [3.25, 0.75, 8.0], [1.5, 1.5, 1.5]);
+        self.spawn_parkour_cylinder("ParkourCylinder · 2", [0.25, 1.25, 11.4], [2.0, 2.5, 2.0]);
+        self.spawn_parkour_cylinder("ParkourCylinder · 3", [-4.25, 2.5, 9.9], [1.8, 5.0, 1.8]);
 
-        // Límites del mundo: el wireframe es centrado en el origen (z ∈ [-depth/2, depth/2]).
-        // Radio mínimo permitido por el generador (32 m → lado 64 m): cubre los
-        // muros del placeholder, que llegan hasta z≈28.
+
+        // Límites lógicos del mundo: mínimo del motor, 30 m de lado (cara 15 m),
+        // sincronizado con el generador y con la rosa de los vientos del editor.
         self.set_world_bounds_3d_radius(crate::engine3d::MIN_WORLD_RADIUS_3D);
 
         self.camera = Camera::new();
-        let spawn_xz = (0.0_f32, 5.0_f32);
+        // Jugador y cámara en el centro del mapa, con el mismo rumbo de siempre
+        // (yaw -π/2 → +Z), mirando a la pista de obstáculos.
+        let spawn_xz = (0.0_f32, 0.0_f32);
         let ground_y = self
             .physics
             .find_ground_y_at(spawn_xz.0, spawn_xz.1, 10.0, 20.0)
@@ -787,6 +756,187 @@ impl State {
         (mesh_idx, tex_idx)
     }
 
+    /// Carpeta `assets` del motor (dev: `Engine/assets`; empaquetado: `…/assets`).
+    /// Se busca subiendo desde el ejecutable: los tests corren desde
+    /// `target/debug/deps`, así que la profundidad exacta no es fija.
+    fn resolve_engine_assets_dir() -> Option<std::path::PathBuf> {
+        let exe = std::env::current_exe().ok()?;
+        for dir in exe.ancestors().take(6) {
+            let assets = dir.join("assets");
+            if assets.join("Brick_Wall_BaseColor.jpg").is_file() {
+                return Some(assets);
+            }
+        }
+        // Los binarios de test pueden vivir fuera del árbol del workspace.
+        let manifest_assets =
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets");
+        if manifest_assets.join("Brick_Wall_BaseColor.jpg").is_file() {
+            return Some(manifest_assets);
+        }
+        None
+    }
+
+    /// Sube `Brick_Wall_BaseColor.jpg` al array de texturas y devuelve su índice.
+    pub(crate) fn ensure_brick_texture(&mut self) -> Option<usize> {
+        if let Some(idx) = self.parkour_wall_tex_idx {
+            return Some(idx);
+        }
+        // Tras «Limpiar escena» se descarta el índice, pero no la capa GPU:
+        // la reutilizamos en vez de empaquetar la misma imagen otra vez.
+        let layer = if let Some(layer) = self.parkour_wall_layer {
+            layer
+        } else {
+            let path = Self::resolve_engine_assets_dir()?.join("Brick_Wall_BaseColor.jpg");
+            let img = image::open(&path).ok()?.to_rgba8();
+            let (w, h) = img.dimensions();
+            let layer = self
+                .texture_array
+                .pack(&self.vulkan, img.as_raw(), w, h)
+                .ok()?;
+            self.parkour_wall_layer = Some(layer);
+            layer
+        };
+        let idx = self
+            .tex_layers
+            .iter()
+            .position(|&l| l == layer)
+            .unwrap_or_else(|| {
+                self.tex_layers.push(layer);
+                self.tex_layers.len() - 1
+            });
+        self.parkour_wall_tex_idx = Some(idx);
+        Some(idx)
+    }
+
+    /// Sube `FootBall_BaseColor.jpg` al array de texturas y devuelve su índice.
+    pub(crate) fn ensure_football_texture(&mut self) -> Option<usize> {
+        if let Some(idx) = self.ball_tex_idx {
+            return Some(idx);
+        }
+        let layer = if let Some(layer) = self.ball_layer {
+            layer
+        } else {
+            let path = Self::resolve_engine_assets_dir()?.join("FootBall_BaseColor.jpg");
+            let img = image::open(&path).ok()?.to_rgba8();
+            let (w, h) = img.dimensions();
+            let layer = self
+                .texture_array
+                .pack(&self.vulkan, img.as_raw(), w, h)
+                .ok()?;
+            self.ball_layer = Some(layer);
+            layer
+        };
+        let idx = self
+            .tex_layers
+            .iter()
+            .position(|&l| l == layer)
+            .unwrap_or_else(|| {
+                self.tex_layers.push(layer);
+                self.tex_layers.len() - 1
+            });
+        self.ball_tex_idx = Some(idx);
+        Some(idx)
+    }
+
+    /// Malla cilíndrica compartida de los obstáculos.
+    fn ensure_parkour_cylinder_mesh(&mut self) -> usize {
+        if let Some(idx) = self.parkour_cylinder_mesh_idx {
+            return idx;
+        }
+        let idx = self.meshes.len();
+        self.meshes
+            .push(crate::engine3d::mesh::create_cylinder(&self.vulkan, 20));
+        self.parkour_cylinder_mesh_idx = Some(idx);
+        idx
+    }
+
+    /// Cilindro de la pista de parkour: misma caja y física que una caja del editor.
+    pub(crate) fn spawn_parkour_cylinder(
+        &mut self,
+        name: &str,
+        position: [f32; 3],
+        scale: [f32; 3],
+    ) -> EntityId {
+        let label = self
+            .resolve_entity_display_name(name, rer_engine_core::editor_defaults::entity_label::BOX);
+        let mesh_idx = self.ensure_parkour_cylinder_mesh();
+        let tex_idx = self.ensure_editor_box_gpu_assets().1;
+        let id = self.world.spawn(Some(&label));
+        self.world.insert(
+            id,
+            MeshComponent {
+                mesh_idx,
+                tex_idx,
+            },
+        );
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.position = glam::Vec3::from_array(position);
+            t.scale = glam::Vec3::from_array(scale);
+        }
+        let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
+        self.physics
+            .set_entity_physics(id, true, "static", position, half);
+        self.entity_colision.insert(id, true);
+        self.scenario_entities.push(id);
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "model".to_string(),
+                path: "[ParkourCylinder]".to_string(),
+                visual_model_path: None,
+                entity_category: Some("object".to_string()),
+            },
+        );
+        self.send_model_loaded_event(id, &label);
+        self.push_remove_entity_undo(id);
+        id
+    }
+
+    /// Muro de la pista de parkour: caja del editor con textura de ladrillo.
+    pub(crate) fn spawn_parkour_wall(
+        &mut self,
+        name: &str,
+        position: [f32; 3],
+        scale: [f32; 3],
+    ) -> EntityId {
+        let label = self
+            .resolve_entity_display_name(name, rer_engine_core::editor_defaults::entity_label::BOX);
+        let (mesh_idx, _) = self.ensure_editor_box_gpu_assets();
+        let tex_idx = self.ensure_brick_texture().unwrap_or_else(|| {
+            log::warn!("[parkour] textura de ladrillo no disponible; se usa el blanco");
+            self.ensure_editor_box_gpu_assets().1
+        });
+        let id = self.world.spawn(Some(&label));
+        self.world.insert(
+            id,
+            MeshComponent {
+                mesh_idx,
+                tex_idx,
+            },
+        );
+        if let Some(t) = self.world.get_mut::<Transform>(id) {
+            t.position = glam::Vec3::from_array(position);
+            t.scale = glam::Vec3::from_array(scale);
+        }
+        let half = [scale[0] * 0.5, scale[1] * 0.5, scale[2] * 0.5];
+        self.physics
+            .set_entity_physics(id, true, "static", position, half);
+        self.entity_colision.insert(id, true);
+        self.scenario_entities.push(id);
+        self.save_registry.register_meta(
+            id,
+            EntitySaveMeta {
+                kind: "model".to_string(),
+                path: "[ParkourWall]".to_string(),
+                visual_model_path: None,
+                entity_category: Some("environment".to_string()),
+            },
+        );
+        self.send_model_loaded_event(id, &label);
+        self.push_remove_entity_undo(id);
+        id
+    }
+
     /// Cubo del editor (muros/cajas de plantilla) sin archivo `.glb`.
     pub(crate) fn spawn_editor_box(
         &mut self,
@@ -849,5 +999,25 @@ impl State {
         }
         log::info!("[load_character] creando jugador con mesh empaquetado de la demo");
         self.spawn_play_character();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn demo_textures_are_available_and_decodable() {
+        let dir = State::resolve_engine_assets_dir()
+            .unwrap_or_else(|| panic!("no se encontró la carpeta assets del motor"));
+        for name in ["Brick_Wall_BaseColor.jpg", "FootBall_BaseColor.jpg"] {
+            let path = dir.join(name);
+            let img = image::open(&path)
+                .unwrap_or_else(|error| panic!("textura ilegible {}: {error}", path.display()))
+                .to_rgba8();
+            let (w, h) = img.dimensions();
+            assert!(w > 0 && h > 0, "{name} vacía");
+            assert_eq!(img.as_raw().len(), (w * h * 4) as usize, "{name} RGBA");
+        }
     }
 }

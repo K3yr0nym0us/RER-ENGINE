@@ -4,6 +4,8 @@ use crate::engine3d::ecs::{EntityId, MeshComponent, NameComponent, NonSelectable
 use crate::engine3d::engine::State;
 
 const ENTITY_MARKERS: &[&str] = &[
+    "[ParkourCylinder]",
+    "[ParkourWall]",
     "[EditorBox]",
     "[Ground]",
     "[Player]",
@@ -26,6 +28,8 @@ const ENTITY_MARKERS: &[&str] = &[
 /// materiales (esferas `[MatVal]`, escena `[MatComparison]` y letreros de
 /// partículas) y la fila demo de interacción con sus letreros.
 pub(crate) const DEMO_ENTITY_MARKERS: &[&str] = &[
+    "[ParkourCylinder]",
+    "[ParkourWall]",
     "[EditorBox]",
     "[Ball]",
     "[ReflectionProbe]",

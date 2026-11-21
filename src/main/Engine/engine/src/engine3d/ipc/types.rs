@@ -118,7 +118,7 @@ pub struct SaveWeatherSnapshot {
 pub struct SaveParticleEmitterSnapshot {
     /// Id del emisor; la UI usa ids altos (0x6000…) para no chocar con los del motor.
     pub id: u64,
-    /// `fire | smoke | fog | rain | snow | sand | water | water_cube`.
+    /// `fire | smoke | fog | rain | snow | sand | water | liquid_cube`.
     pub material: String,
     pub position: [f32; 3],
     #[serde(default)]

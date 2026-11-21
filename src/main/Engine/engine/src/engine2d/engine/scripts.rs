@@ -335,6 +335,32 @@ impl State {
                         ));
                     }
                 }
+                ScriptCmd::PlayNextAnimation { id } => {
+                    // API genérica: cicla las animaciones (de sprites) de la entidad.
+                    let mut names: Vec<String> = self
+                        .animations
+                        .get(&id)
+                        .map(|m| m.keys().cloned().collect())
+                        .unwrap_or_default();
+                    names.sort();
+                    if !names.is_empty() {
+                        let current = self
+                            .active_animations
+                            .get(&id)
+                            .map(|a| a.animation_name.as_str());
+                        let next = current
+                            .and_then(|n| names.iter().position(|x| x == n))
+                            .map(|i| (i + 1) % names.len())
+                            .unwrap_or(0);
+                        self.handle_command(EngineCommand::Common(
+                            EngineCommandCommon::PlayAnimation {
+                                id,
+                                name: names[next].clone(),
+                                loop_: false,
+                            },
+                        ));
+                    }
+                }
                 ScriptCmd::SetDefaultAnimation { id, name } => {
                     self.handle_command(EngineCommand::Common(
                         EngineCommandCommon::SetDefaultAnimation { id, name },

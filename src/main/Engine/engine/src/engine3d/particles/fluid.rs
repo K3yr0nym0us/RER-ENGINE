@@ -92,7 +92,7 @@ pub(crate) struct FluidConfig {
     /// Velocidad máxima (m/s) — clamp anti-explosión del PostStep.
     pub max_velocity: f32,
     /// Cohesión superficial (0–1): fuerza de atracción entre partículas cercanas.
-    /// 0.35 (≈ preset `water_cube`): con menos, el charco dilata libremente —
+    /// 0.35: con menos, el charco dilata libremente —
     /// el gate solo-compresión no se opone a la expansión — y se esparce como
     /// material granular sin volver al espaciado de reposo.
     pub cohesion: f32,

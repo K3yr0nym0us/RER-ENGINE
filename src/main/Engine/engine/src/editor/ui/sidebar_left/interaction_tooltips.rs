@@ -157,8 +157,13 @@ pub(crate) fn sync_command(app: &crate::editor::app::EditorApp) -> Value {
 
 /// IDs de los tooltips sembrados con la fila demo de interacción. «Limpiar
 /// escena» los retira junto a las entidades `[InteractDemo]`.
-pub(crate) const DEMO_TOOLTIP_IDS: &[&str] =
-    &["demo_move", "demo_vanish", "demo_drop", "demo_hold"];
+pub(crate) const DEMO_TOOLTIP_IDS: &[&str] = &[
+    "demo_move",
+    "demo_vanish",
+    "demo_drop",
+    "demo_hold",
+    "demo_anim",
+];
 
 /// `true` si el tooltip pertenece a la fila demo de interacción.
 pub(crate) fn is_demo_tooltip(tooltip: &Value) -> bool {
@@ -194,6 +199,11 @@ pub(crate) fn demo_tooltips() -> Vec<Value> {
     const HOLD: &str = r#"fn on_interact(target, actor) {
     engine.toggle_demo_fire();
     engine.log("Demo · mantener completado");
+}
+"#;
+    const ANIM: &str = r#"fn on_interact(target, actor) {
+    engine.play_next_animation(target.id);
+    engine.log("Demo · siguiente animación");
 }
 "#;
 
@@ -236,6 +246,24 @@ pub(crate) fn demo_tooltips() -> Vec<Value> {
             [255, 115, 51],
             HOLD,
         ),
+        // El velociraptor usa un script Rhai con la API genérica
+        // `play_next_animation(id)`: sirve para cualquier entidad con animaciones.
+        {
+            json!({
+                "id": "demo_anim",
+                "name": "Animación del velociraptor",
+                "key": "E",
+                "trigger": "press",
+                "action": "script",
+                "action_ref_name": "demo_anim_script",
+                "action_ref_source": ANIM,
+                "max_distance": "5.0",
+                "tooltip_distance": "6.0",
+                "once": false,
+                "highlight": true,
+                "highlight_color": [76, 217, 100],
+            })
+        },
     ]
 }
 
@@ -336,5 +364,19 @@ mod tests {
         let custom = json!({ "id": "my_tooltip", "name": "Custom" });
         assert!(!is_demo_tooltip(&custom));
         assert!(!is_demo_tooltip(&json!({ "name": "sin id" })));
+    }
+
+    #[test]
+    fn raptor_tooltip_uses_script_not_fixed_animation_id() {
+        let anim = demo_tooltips()
+            .into_iter()
+            .find(|t| t.get("id").and_then(Value::as_str) == Some("demo_anim"))
+            .expect("tooltip demo_anim");
+        assert_eq!(anim.get("action").and_then(Value::as_str), Some("script"));
+        let source = anim
+            .get("action_ref_source")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        assert!(source.contains("play_next_animation(target.id)"));
     }
 }

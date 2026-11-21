@@ -89,18 +89,18 @@ impl EmitterConfig {
             radius: 0.18,
             velocity: [0.0, 2.4, 0.0],
             spread: 0.55,
-            size: 0.42,
+            size: 0.35,
             size_variation: 0.55,
-            life: 0.85,
+            life: 0.50,
             life_variation: 0.45,
-            rate: 220.0,
+            rate: 120.0,
             max_particles: 768,
             // Naranja (el kernel interpola blanco-amarillo → este → rojo oscuro).
             color_start: [1.0, 0.48, 0.08, 0.95],
             color_end: [0.28, 0.02, 0.0, 0.0],
-            gravity: 3.2, // flotabilidad +Y (se suma a vel.y)
-            drag: 1.15,
-            turbulence: 3.4,
+            gravity: 7.9, // flotabilidad +Y (se suma a vel.y)
+            drag: 0.50,
+            turbulence: 5.1,
             cohesion: 0.0,
             ground_y: 0.0,
             spin: 5.5,
@@ -171,15 +171,15 @@ impl EmitterConfig {
             radius: 0.3,
             velocity: [0.0, 1.15, 0.0],
             spread: 0.3,
-            size: 0.9,
+            size: 0.75,
             size_variation: 0.4,
-            life: 3.8,
+            life: 2.7,
             life_variation: 0.4,
-            rate: 90.0,
+            rate: 60.0,
             max_particles: 1024,
             color_start: [0.16, 0.16, 0.19, 0.55],
             color_end: [0.36, 0.36, 0.4, 0.0],
-            gravity: 1.35,
+            gravity: 1.4,
             drag: 0.55,
             turbulence: 1.2,
             cohesion: 0.0,
@@ -219,8 +219,9 @@ impl EmitterConfig {
             life_variation: 0.0,
             rate: 120.0,
             max_particles: 512,
-            color_start: [0.72, 0.78, 0.86, 0.3],
-            color_end: [0.72, 0.78, 0.86, 0.3],
+            // Blanco muy transparente: la niebla no debe espesarse ni virar a gris.
+            color_start: [0.94, 0.95, 0.97, 0.05],
+            color_end: [0.94, 0.95, 0.97, 0.05],
             gravity: 0.0,
             drag: 0.0,
             turbulence: 0.0,
@@ -238,7 +239,7 @@ impl EmitterConfig {
             splash: false,
             bounciness: 0.0,
             friction: 0.0,
-            size_end: 1.0,
+            size_end: 1.5,
             stretch: 0.0,
         }
     }
@@ -249,14 +250,18 @@ impl EmitterConfig {
         let mut config = Self::fog(1.0);
         config.follow_camera = false;
         config.volume = [0.0, 0.0, 0.0];
-        config.radius = 1.6;
-        config.size = 2.2;
-        config.size_variation = 0.35;
+        // Repartir la emisión en un disco ancho: antes todas las partículas
+        // nacían juntas y el centro se saturaba a blanco.
+        config.radius = 7.0;
+        // Columna alta de vapor blanco, en vez del disco pequeño de antes.
+        config.size = 5.0;
+        config.size_variation = 0.45;
         config.life = 10.0;
         config.life_variation = 0.25;
-        config.rate = 36.0;
-        config.max_particles = 256;
-        config.wind = [0.2, 0.12];
+        config.rate = 16.0;
+        config.max_particles = 160;
+        config.velocity = [0.18, 0.0, 0.12];
+        config.wind = [0.22, 0.14];
         config
     }
 
@@ -352,11 +357,11 @@ impl EmitterConfig {
             radius: 0.45,
             velocity: [0.8, 0.4, 0.0],
             spread: 1.6,
-            size: 0.008,
+            size: 0.010,
             size_variation: 0.35,
-            life: 2.8,
+            life: 1.5,
             life_variation: 0.25,
-            rate: 420.0,
+            rate: 160.0,
             max_particles: 2048,
             color_start: [0.82, 0.66, 0.38, 0.95],
             color_end: [0.72, 0.55, 0.3, 0.0],
@@ -461,54 +466,20 @@ impl EmitterConfig {
         }
     }
 
-    /// Preset "cubo de agua": un BLOQUE de fluido, no un emisor continuo.
-    /// Nace una vez como lattice que llena `radius` (semi-extensión), cae junto
-    /// por cohesión hacia el centro del bloque, salpica al impactar y el resto
-    /// se asienta como charco. No hace falta un cubo de cristal: el cubo ES el agua.
-    pub(crate) fn water_cube() -> Self {
-        Self {
-            material: MaterialKind::WaterCube,
-            origin: [0.0, 1.6, 0.0],
-            radius: 0.38,
-            velocity: [0.0, 0.0, 0.0],
-            spread: 0.0,
-            size: 0.09,
-            size_variation: 0.08,
-            life: 12.0,
-            life_variation: 0.05,
-            rate: 0.0,
-            max_particles: 512,
-            color_start: [0.45, 0.72, 0.95, 0.62],
-            color_end: [0.35, 0.6, 0.9, 0.55],
-            gravity: -9.8,
-            drag: 2.4,
-            turbulence: 0.0,
-            cohesion: 0.62,
-            ground_y: 0.0,
-            spin: 0.0,
-            wind: [0.0, 0.0],
-            volume: [0.0, 0.0, 0.0],
-            follow_camera: false,
-            billboard_mode: BILLBOARD_CAMERA,
-            intensity: 1.0,
-            soft: true,
-            ground_collision: true,
-            accumulate: false,
-            splash: true,
-            bounciness: 0.0,
-            friction: 0.72,
-            size_end: 1.0,
-            stretch: 0.0,
-        }
-    }
-
     // (fin de presets)
 }
 
-/// Fila demo de la plantilla 3D: x fija, un emisor cada 2 m en z (origen z=-1).
-pub(crate) const PARTICLE_DEMO_X: f32 = 10.0;
-pub(crate) const PARTICLE_DEMO_Z0: f32 = -1.0;
-pub(crate) const PARTICLE_DEMO_Z_STEP: f32 = 2.0;
+/// Fila demo de la plantilla 3D: 0.5 m dentro de la pared este (x=14.5).
+pub(crate) const PARTICLE_DEMO_X: f32 = 14.5;
+/// Cuatro emisores centrados en z=0 (el spawn del jugador), como la fila de
+/// interacción: dos a cada lado con el mismo hueco central.
+pub(crate) const PARTICLE_DEMO_Z0: f32 = -7.6;
+pub(crate) const PARTICLE_DEMO_Z_STEP: f32 = 2.4;
+/// La niebla se aparta al hueco entre el muro este de obstáculos (x≈7.35)
+/// y el borde del mapa (x=15), junto al tramo largo del muro.
+pub(crate) const FOG_DEMO_POSITION: [f32; 3] = [11.2, 0.0, 10.5];
+/// Su letrero queda en la entrada del pasillo (donde empieza el muro, z≈5.4).
+pub(crate) const FOG_DEMO_LABEL_Z: f32 = 5.4;
 /// Ids reservados de la fila demo (no chocan con la UI `0x6000…` ni con el clima).
 pub(crate) const DEMO_EMITTER_ID_BASE: u64 = 0x00D0_0000_0000_0000;
 const DEMO_ORIGIN_EPS: f32 = 0.05;
@@ -545,8 +516,14 @@ pub(crate) struct ParticleDemoSlot {
 }
 
 fn demo_origin(preset_y: f32, index: usize) -> [f32; 3] {
+    if index == 4 {
+        // Niebla apartada en el pasillo entre muro y borde del mapa.
+        return FOG_DEMO_POSITION;
+    }
+    // El resto se acerca a su letrero (que permanece anclado, ver material_validation).
+    const LABEL_GAP: f32 = 0.7;
     [
-        PARTICLE_DEMO_X,
+        PARTICLE_DEMO_X - LABEL_GAP,
         preset_y,
         PARTICLE_DEMO_Z0 + index as f32 * PARTICLE_DEMO_Z_STEP,
     ]
@@ -585,10 +562,8 @@ pub(crate) struct Emitter {
     /// viejas (el clima se reemplaza con el MISMO id): el primer frame pide al pool
     /// reiniciar contadores e indirecto, en vez de esperar a que mueran las antiguas.
     pub reset: bool,
-    /// Cubo de agua: el lattice ya se disparó (no es un emisor continuo).
+    /// Halos del sol: el único emisor de un solo disparo (nace una vez).
     burst_done: bool,
-    /// Segundos desde el burst; el origen del UBO sigue la caída del bloque.
-    fluid_t: f32,
 }
 
 impl Emitter {
@@ -601,21 +576,8 @@ impl Emitter {
             spawn_carry: 0.0,
             reset: false,
             burst_done: false,
-            fluid_t: 0.0,
         }
     }
-}
-
-/// Lado del lattice del cubo de agua (4..=8). `radius` es la semi-extensión (m).
-pub(crate) fn water_cube_lattice_n(radius: f32) -> u32 {
-    let span = radius.max(0.08) * 2.0;
-    (span / 0.11).round().clamp(4.0, 8.0) as u32
-}
-
-/// Partículas del burst: n³, cabe en el kickstart de 8 grupos (512 hilos).
-pub(crate) fn water_cube_lattice_count(radius: f32) -> u32 {
-    let n = water_cube_lattice_n(radius);
-    n * n * n
 }
 
 /// Lote que el engine le pasa al `FrameRenderer` cada frame por emisor activo.
@@ -658,7 +620,6 @@ fn config_from_saved(
         MaterialKind::Snow => EmitterConfig::snow(1.0, 1.0, 0.0),
         MaterialKind::Sand => EmitterConfig::sand(),
         MaterialKind::Water => EmitterConfig::water(),
-        MaterialKind::WaterCube => EmitterConfig::water_cube(),
         MaterialKind::Sun => EmitterConfig::sun([0.0; 3], 0.5),
     };
     config.follow_camera = false; // lo guardado usa posición fija
@@ -727,7 +688,7 @@ impl ParticleSystem {
         id
     }
 
-    /// Fuego, humo, arena, agua y niebla en x=10, separados 2 m en z (desde z=-1).
+    /// Fuego, humo, arena, agua y niebla en x=14.5, de z=-14.5 a z=6.
     pub(crate) fn seed_default_showcase(&mut self) {
         for (index, slot) in particle_demo_slots().into_iter().enumerate() {
             self.add_or_with_id(Some(demo_emitter_id(index)), slot.config);
@@ -765,7 +726,6 @@ impl ParticleSystem {
                     existing.spawn_carry = 0.0;
                     existing.reset = true;
                     existing.burst_done = false;
-                    existing.fluid_t = 0.0;
                     return id;
                 }
                 self.next_id = self.next_id.max(id + 1);
@@ -851,12 +811,11 @@ impl ParticleSystem {
             MaterialKind::Snow => EmitterConfig::snow(intensity, fall, wind_x),
             MaterialKind::Fog => EmitterConfig::fog(intensity),
             // Humo y fuego son emisores de escena (add_particle_emitter), no clima;
-            // arena/agua llegan en F4. El cubo de agua es un emisor de escena también.
+            // arena/agua llegan en F4.
             MaterialKind::Fire
             | MaterialKind::Smoke
             | MaterialKind::Sand
             | MaterialKind::Water
-            | MaterialKind::WaterCube
             | MaterialKind::Sun => {
                 return;
             }
@@ -1012,25 +971,6 @@ impl ParticleSystem {
                     let spawn = if emitter.burst_done { 0 } else { 1 };
                     emitter.burst_done = true;
                     (spawn, 0, config.origin)
-                } else if config.material == MaterialKind::WaterCube {
-                    // Un lattice de un golpe, luego 0: no es un lanzador continuo.
-                    let lattice = water_cube_lattice_count(config.radius)
-                        .min(max_particles.saturating_sub(1));
-                    if !emitter.burst_done {
-                        emitter.burst_done = true;
-                        (lattice, 0, config.origin)
-                    } else {
-                        emitter.fluid_t += dt;
-                        let t = emitter.fluid_t;
-                        let mut y = config.origin[1]
-                            + config.velocity[1] * t
-                            + 0.5 * config.gravity * t * t;
-                        let rest = config.ground_y + config.radius.max(0.05) * 0.3;
-                        if y < rest {
-                            y = rest;
-                        }
-                        (0, 0, [config.origin[0], y, config.origin[2]])
-                    }
                 } else {
                     // Emisión con acarreo fraccional: rate*dt + resto del frame anterior.
                     emitter.spawn_carry += config.rate.max(0.0) * dt;
@@ -1060,11 +1000,6 @@ impl ParticleSystem {
 
                 let spawn = spawn.min(max_particles.saturating_sub(1));
                 let next_spawn = next_spawn.min(max_particles.saturating_sub(1));
-                let lattice_n = if config.material == MaterialKind::WaterCube {
-                    water_cube_lattice_n(config.radius) as f32
-                } else {
-                    0.0
-                };
                 // Niebla (F6): la intensidad es ESPESOR, no cantidad — el alpha escala
                 // con ella y la tasa queda fija en el preset.
                 let fog_density = if config.material == MaterialKind::Fog {
@@ -1132,7 +1067,7 @@ impl ParticleSystem {
                             config.volume[0].max(0.0),
                             config.volume[1].max(0.0),
                             config.volume[2].max(0.0),
-                            lattice_n,
+                            0.0,
                         ],
                         collide: [
                             config.bounciness.max(0.0),
@@ -1191,7 +1126,6 @@ impl crate::engine3d::engine::State {
             // F4: presets granulares reales (arena/agua con suelo y salpicadura).
             MaterialKind::Sand => EmitterConfig::sand(),
             MaterialKind::Water => EmitterConfig::water(),
-            MaterialKind::WaterCube => EmitterConfig::water_cube(),
             MaterialKind::Sun => EmitterConfig::sun(position, 0.5),
         };
         config.material = material;
@@ -1325,7 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn default_showcase_is_a_row_at_x10() {
+    fn default_showcase_row_is_centered_and_fog_is_apart() {
         let slots = particle_demo_slots();
         let kinds = [
             MaterialKind::Fire,
@@ -1336,11 +1270,15 @@ mod tests {
         ];
         for (index, (slot, kind)) in slots.iter().zip(kinds).enumerate() {
             assert_eq!(slot.config.material, kind);
-            assert_eq!(slot.config.origin[0], 10.0);
-            assert_eq!(
-                slot.config.origin[2],
-                PARTICLE_DEMO_Z0 + index as f32 * PARTICLE_DEMO_Z_STEP
-            );
+            if index == 4 {
+                assert_eq!(slot.config.origin, FOG_DEMO_POSITION);
+            } else {
+                assert_eq!(slot.config.origin[0], 13.8);
+                assert_eq!(
+                    slot.config.origin[2],
+                    PARTICLE_DEMO_Z0 + index as f32 * PARTICLE_DEMO_Z_STEP
+                );
+            }
         }
         assert_eq!(slots[0].label, "FIRE");
         assert_eq!(slots[4].label, "FOG");
@@ -1358,9 +1296,9 @@ mod tests {
         let mut system = ParticleSystem::new();
         system.seed_default_showcase();
         assert_eq!(system.len(), 5);
-        assert_eq!(system.emitters[0].config.origin, [10.0, 0.35, -1.0]);
-        assert_eq!(system.emitters[1].config.origin[2], 1.0);
-        assert_eq!(system.emitters[4].config.origin[2], 7.0);
+        assert_eq!(system.emitters[0].config.origin, [13.8, 0.35, -7.6]);
+        assert!((system.emitters[1].config.origin[2] + 5.2).abs() < 1e-4);
+        assert_eq!(system.emitters[4].config.origin, FOG_DEMO_POSITION);
         assert_eq!(system.emitters[0].id, DEMO_EMITTER_ID_BASE);
         assert_eq!(system.demo_showcase_count(), 5);
     }
@@ -1530,10 +1468,10 @@ mod tests {
         let batch = system.batches(0.016, [0.0; 3]).remove(0);
         assert_eq!(batch.wboit, 1);
         assert_eq!(batch.soft, 1);
-        assert!((batch.params.phys[0] - 1.35).abs() < 0.01); // flotabilidad
+        assert!((batch.params.phys[0] - 1.4).abs() < 0.01); // flotabilidad
         assert!((batch.params.phys[1] - 0.55).abs() < 0.01); // drag
         assert!((batch.params.velocity_spread[1] - 1.15).abs() < 0.01);
-        assert!((batch.params.size_life[2] - 3.8).abs() < 0.01); // columna más alta
+        assert!((batch.params.size_life[2] - 2.7).abs() < 0.01); // columna más alta
         // El humo crece con la edad: el shader lo decide, la CPU solo trae la base.
         assert!(batch.params.size_life[0] > 0.5);
     }
@@ -1564,7 +1502,7 @@ mod tests {
         assert_eq!(batch.params.origin_radius[2], -2.0);
         assert!(batch.params.volume[0] < 0.5);
         assert!(batch.params.origin_radius[3] > 1.0);
-        assert!(batch.params.size_life[0] < 3.0);
+        assert!(batch.params.size_life[0] < 7.0);
         assert!(batch.params.size_life[2] <= 10.0);
     }
 
@@ -1581,7 +1519,7 @@ mod tests {
         assert!(batch.params.collide[1] > 0.8); // fricción alta
         assert_eq!(batch.params.misc[2], BILLBOARD_CAMERA);
         assert_eq!(batch.wboit, 0); // pase directo con alpha
-        assert!(batch.params.size_life[0] <= 0.008); // granos finos, no discos
+        assert!(batch.params.size_life[0] <= 0.01); // granos finos, no discos
         assert!(batch.params.collide[2] < 0.1); // encogen al morir
     }
 
@@ -1594,7 +1532,7 @@ mod tests {
         assert!(dust.color_start[3] < grains.color_start[3]);
         assert!(!dust.ground_collision);
         assert!(dust.size_end > 1.0);
-        assert!(grains.size <= 0.008);
+        assert!(grains.size <= 0.01);
     }
 
     #[test]
@@ -1610,44 +1548,6 @@ mod tests {
         assert!(batch.params.size_life[0] <= 0.012);
         assert!(batch.params.collide[2] <= 0.02); // no crecen al morir
         assert!(batch.params.color_start[3] <= 0.25);
-    }
-
-    #[test]
-    fn water_cube_falls_as_block_through_wboit() {
-        let mut system = ParticleSystem::new();
-        system.add(EmitterConfig::water_cube());
-        let batch = system.batches(0.016, [0.0; 3]).remove(0);
-        assert_eq!(batch.params.misc[0], MaterialKind::WaterCube.as_u32());
-        assert_eq!(batch.wboit, 1);
-        assert_eq!(batch.blend_alpha, 1);
-        assert_eq!(batch.params.misc[3], 0b101); // suelo + splat; el charco es settle
-        assert_eq!(batch.params.misc[2], BILLBOARD_CAMERA);
-        assert!(batch.params.origin_radius[3] > 0.2); // semi-extensión del cubo
-        assert!(batch.params.phys[3] > 0.2); // cohesión del bloque
-        assert!(batch.params.phys[0] < -9.0);
-        assert_eq!(batch.params.collide[3], 0.0); // sin stretch de chorro
-        let lattice = water_cube_lattice_count(batch.params.origin_radius[3]);
-        assert_eq!(batch.spawn, lattice);
-        assert_eq!(batch.next_spawn, 0);
-        assert!(lattice >= 64);
-    }
-
-    #[test]
-    fn water_cube_is_a_single_drop_not_a_launcher() {
-        let mut system = ParticleSystem::new();
-        system.add(EmitterConfig::water_cube());
-        let first = system.batches(0.016, [0.0; 3]).remove(0);
-        let second = system.batches(0.016, [0.0; 3]).remove(0);
-        let later = system.batches(0.25, [0.0; 3]).remove(0);
-        assert_eq!(second.spawn, 0);
-        assert_eq!(later.spawn, 0);
-        assert!(
-            later.params.origin_radius[1] < first.params.origin_radius[1],
-            "el centro del bloque debe caer: {} -> {}",
-            first.params.origin_radius[1],
-            later.params.origin_radius[1]
-        );
-        assert!(later.params.origin_radius[1] >= -0.01);
     }
 
     #[test]

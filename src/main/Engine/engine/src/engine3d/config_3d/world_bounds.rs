@@ -8,14 +8,14 @@ use crate::engine3d::gizmo::{GizmoBuffer, GizmoVertex};
 
 /// Extensión por defecto de cada cara desde el origen (mundo 100×100).
 pub(crate) const DEFAULT_WORLD_FACE_3D: f32 = 50.0;
-/// Cara mínima = 32 m → lado 64 m, radio 32 m.
+/// Cara mínima = 15 m → lado 30 m, radio 15 m.
 ///
-/// Coincide con `worldgen::MIN_WORLDGEN_RADIUS` (32 m) y con el `MIN_DIM`
-/// de `WorldBounds::validate` del plugin (64 m de lado). Duplicado a propósito:
+/// Coincide con `worldgen::MIN_WORLDGEN_RADIUS` (15 m) y con el `MIN_DIM`
+/// de `WorldBounds::validate` del plugin (30 m de lado). Duplicado a propósito:
 /// el plugin puede no estar instalado, así que el motor no depende de él.
 /// Si cambias este valor, actualiza también los comentarios de
 /// `worldgen/src/config.rs` y `worldgen/src/scale.rs`.
-pub(crate) const MIN_WORLD_FACE_3D: f32 = 32.0;
+pub(crate) const MIN_WORLD_FACE_3D: f32 = 15.0;
 /// Cara máxima = 1000 m → lado 2000 m, radio 1000 m.
 /// Coincide con `worldgen::MAX_WORLDGEN_RADIUS` y el `MAX_DIM` del plugin.
 pub(crate) const MAX_WORLD_FACE_3D: f32 = 1000.0;
@@ -360,9 +360,9 @@ mod tests {
         // Valores en duro del plugin worldgen (no se importa: puede no estar instalado).
         // worldgen/src/scale.rs: MIN/MAX_WORLDGEN_RADIUS, MIN/MAX_WORLDGEN_HEIGHT.
         // worldgen/src/config.rs: WorldBounds::validate -> MIN_DIM/MAX_DIM, MIN/MAX_HEIGHT.
-        assert_eq!(MIN_WORLD_FACE_3D * 2.0, 64.0);
+        assert_eq!(MIN_WORLD_FACE_3D * 2.0, 30.0);
         assert_eq!(MAX_WORLD_FACE_3D * 2.0, 2000.0);
-        assert_eq!(MIN_WORLD_RADIUS_3D, 32.0);
+        assert_eq!(MIN_WORLD_RADIUS_3D, 15.0);
         assert_eq!(MAX_WORLD_RADIUS_3D, 1000.0);
         assert_eq!(MIN_WORLD_HEIGHT_3D, 48.0);
         assert_eq!(MAX_WORLD_HEIGHT_3D, 256.0);

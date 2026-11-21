@@ -509,7 +509,14 @@ impl State {
             });
             return false;
         };
-        send_event(&EngineEvent::ParticleEmitterPlaced { x, y, z });
+        // El punto del raycast apoya sobre la superficie: su altura es el suelo
+        // que el emisor debe usar como plano de colisión (snapshot del ghost).
+        send_event(&EngineEvent::ParticleEmitterPlaced {
+            x,
+            y,
+            z,
+            ground_y: y,
+        });
         true
     }
 

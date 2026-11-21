@@ -26,6 +26,8 @@ const DEFAULT_LIGHT_INTENSITY: f32 = 1.0;
 const DEFAULT_SHADOW_DARKNESS: f32 =
     crate::engine3d::config_3d::directional_light::DEFAULT_SHADOW_DARKNESS;
 const ENTITY_MARKERS: &[&str] = &[
+    "[ParkourCylinder]",
+    "[ParkourWall]",
     "[EditorBox]",
     "[Ground]",
     "[Player]",

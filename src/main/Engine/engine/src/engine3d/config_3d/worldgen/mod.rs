@@ -1651,7 +1651,7 @@ fn chunk_grid_size(width: f32, length: f32, height: f32, voxel: f32) -> (i32, i3
 /// se escalan al tamaño visible (`visibleWidth/visibleLength`).
 const GENERATION_MARGIN_FRACTION: f32 = 1.0;
 /// Límites del rectángulo que acepta `WorldGenConfig` (`validate`).
-const GENERATION_MIN_SPAN: f32 = 64.0;
+const GENERATION_MIN_SPAN: f32 = 30.0;
 const GENERATION_MAX_SPAN: f32 = 2000.0;
 
 /// Rectángulo que entrega el plugin: el mundo visible más un margen, para que
@@ -2134,7 +2134,7 @@ mod tests {
     fn el_area_respeta_los_limites_del_generador() {
         let tiny = crate::engine3d::config_3d::WorldBounds3D::with_faces(5.0, 5.0, 5.0, 5.0, 48.0);
         let area = super::generation_area(&tiny);
-        assert!(area.width >= 64.0 && area.depth >= 64.0);
+        assert!(area.width >= 30.0 && area.depth >= 30.0);
         assert!(area.contains(&tiny));
 
         let huge = crate::engine3d::config_3d::WorldBounds3D::with_faces(

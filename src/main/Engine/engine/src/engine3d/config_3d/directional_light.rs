@@ -754,6 +754,12 @@ impl State {
         );
         let id = self.world.spawn(Some(&label));
         self.apply_sun_icon_visual(id);
+        // La pelota usa la misma esfera, pero con su propia textura de balón.
+        if let Some(tex_idx) = self.ensure_football_texture()
+            && let Some(mc) = self.world.get_mut::<crate::engine3d::ecs::MeshComponent>(id)
+        {
+            mc.tex_idx = tex_idx;
+        }
         let radius = scale.into_iter().fold(f32::INFINITY, f32::min).max(0.15) * 0.5;
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = Vec3::from_array(position);

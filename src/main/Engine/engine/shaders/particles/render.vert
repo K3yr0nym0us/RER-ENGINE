@@ -105,9 +105,11 @@ void main() {
         local = vec2(c.x * ca - c.y * sa, c.x * sa + c.y * ca);
     }
 
+    // Niebla (mat 2): billboard alto, en vez del disco que sale con altura 1.
+    float height = emitter.misc.x == 2u ? 2.4 : 1.0;
     vec3 world = p.pos_life.xyz
         + axis_r * (local.x * size * width)
-        + axis_u * (local.y * size * stretch);
+        + axis_u * (local.y * size * stretch * height);
 
     v_uv = c;
     v_spin_size = p.rot_seed.xyz;

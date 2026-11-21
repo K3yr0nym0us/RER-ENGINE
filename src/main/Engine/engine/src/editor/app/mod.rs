@@ -253,7 +253,16 @@ mod tests {
             .iter()
             .filter_map(|tooltip| tooltip.get("id").and_then(serde_json::Value::as_str))
             .collect();
-        assert_eq!(ids, ["demo_move", "demo_vanish", "demo_drop", "demo_hold"]);
+        assert_eq!(
+            ids,
+            [
+                "demo_move",
+                "demo_vanish",
+                "demo_drop",
+                "demo_hold",
+                "demo_anim"
+            ]
+        );
     }
 
     #[test]

@@ -18,7 +18,7 @@ use crate::config::{
 /// (`engine/src/engine3d/config_3d/world_bounds.rs`). El motor no depende de
 /// este crate (el plugin puede no estar instalado), así que ambos lugares
 /// mantienen el valor duplicado a propósito con esta referencia cruzada.
-pub const MIN_WORLDGEN_RADIUS: f32 = 32.0;
+pub const MIN_WORLDGEN_RADIUS: f32 = 15.0;
 /// Radio máximo del disco (diámetro 2000 m). Espejo de `MAX_WORLD_FACE_3D`.
 pub const MAX_WORLDGEN_RADIUS: f32 = 1000.0;
 /// Radio por defecto: isla compacta para iterar.
@@ -132,8 +132,11 @@ fn previous_grade_amplitude(radius: f32) -> f32 {
 /// anterior. Así el desnivel crece con el mundo en vez de ser fijo.
 #[must_use]
 pub fn land_grade_amplitude(radius: f32) -> f32 {
-    let radius = radius.max(MIN_WORLDGEN_RADIUS);
-    let t = ((radius - MIN_WORLDGEN_RADIUS) / (MAX_WORLDGEN_RADIUS - MIN_WORLDGEN_RADIUS))
+    // Referencia de la curva: se mantiene en 32 m aunque el mínimo de validación
+    // baje a 20 m, para no cambiar el terreno generado (tests golden).
+    const GRADE_CURVE_MIN_RADIUS: f32 = 32.0;
+    let radius = radius.max(GRADE_CURVE_MIN_RADIUS);
+    let t = ((radius - GRADE_CURVE_MIN_RADIUS) / (MAX_WORLDGEN_RADIUS - GRADE_CURVE_MIN_RADIUS))
         .clamp(0.0, 1.0);
     let low = current_grade_amplitude(radius);
     let high = previous_grade_amplitude(radius);
@@ -151,8 +154,8 @@ pub fn mountain_relief(config: &WorldGenConfig) -> f32 {
 /// Ajusta cotas, tamaños y biomas al rectángulo de generación. Idempotente.
 pub fn fit_config_to_world(config: &mut WorldGenConfig) {
     // Rectángulo explícito: no se fuerza cuadrado (caras N/S/E/O independientes).
-    config.bounds.width = config.bounds.width.clamp(64.0, 2000.0);
-    config.bounds.length = config.bounds.length.clamp(64.0, 2000.0);
+    config.bounds.width = config.bounds.width.clamp(30.0, 2000.0);
+    config.bounds.length = config.bounds.length.clamp(30.0, 2000.0);
     let radius = world_radius(&config.bounds).clamp(MIN_WORLDGEN_RADIUS, MAX_WORLDGEN_RADIUS);
     let area_radius =
         generation_radius(&config.bounds).clamp(MIN_WORLDGEN_RADIUS, MAX_WORLDGEN_RADIUS);

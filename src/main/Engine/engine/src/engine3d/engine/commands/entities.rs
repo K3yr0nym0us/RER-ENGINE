@@ -1019,6 +1019,9 @@ impl State {
         }
         let particles_removed = self.particles.remove_demo_showcase();
         removed += particles_removed;
+        // La textura de ladrillo solo la usa la demo: se descarta su referencia
+        // (la capa GPU se conserva para reutilizarla si se vuelve a sembrar).
+        self.parkour_wall_tex_idx = None;
         self.emit_scene_demo_count();
         log::info!(
             "[editor] elementos DEMO eliminados: {removed} (suelo, sol, jugador y cámaras conservados)"

@@ -389,7 +389,7 @@ pub enum EngineCommand3dOnly {
     },
     /// Partículas GPU-driven: alta de un emisor con preset del material + overrides.
     AddParticleEmitter {
-        /// `fire | smoke | fog | rain | snow | sand | water | water_cube`.
+        /// `fire | smoke | fog | rain | snow | sand | water`.
         #[serde(default = "default_particle_material")]
         material: String,
         #[serde(default)]
@@ -571,21 +571,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn deserialize_add_particle_emitter_water_cube() {
-        let json =
-            r#"{"cmd":"add_particle_emitter","material":"water_cube","position":[1.0,1.6,0.0]}"#;
-        let cmd: EngineCommand = serde_json::from_str(json).expect("add_particle_emitter IPC");
-        match cmd {
-            EngineCommand::Only3d(EngineCommand3dOnly::AddParticleEmitter {
-                material,
-                position,
-                ..
-            }) => {
-                assert_eq!(material, "water_cube");
-                assert_eq!(position, [1.0, 1.6, 0.0]);
-            }
-            other => panic!("expected Only3d AddParticleEmitter, got {other:?}"),
-        }
-    }
 }

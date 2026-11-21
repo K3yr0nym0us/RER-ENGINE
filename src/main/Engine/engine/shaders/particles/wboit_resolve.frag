@@ -1,9 +1,11 @@
 #version 460
 // Resolve de WBOIT (F3): compone acumulación + revealage sobre el HDR de escena.
 //
-//     final = scene · revealage + avg_color
+//     final = scene · revealage + avg_color · (1 - revealage)
 //
-// donde avg_color = accum.rgb / clamp(accum.a, 1e-5, ...). El resultado se escribe en
+// donde avg_color = accum.rgb / clamp(accum.a, 1e-5, ...). Sin el factor (1 - revealage)
+// la capa transparente se suma a intensidad completa: la niebla se veía gris/negra y
+// era imposible hacerla más transparente bajando el alpha. El resultado se escribe en
 // una imagen dedicada y `copy_color` la lleva al HDR (muestrear y escribir `scene` en
 // el mismo pase sería un feedback loop ilegal).
 
@@ -26,6 +28,6 @@ void main() {
 
     vec3 avg = acc.a > 0.0 ? acc.rgb / max(acc.a, 1e-5) : vec3(0.0);
     // El revealage es el producto Π(1 - alpha): 1.0 = sin transparencia acumulada.
-    vec3 composited = scene * reveal + avg;
+    vec3 composited = scene * reveal + avg * (1.0 - reveal);
     out_color = vec4(composited, 1.0);
 }

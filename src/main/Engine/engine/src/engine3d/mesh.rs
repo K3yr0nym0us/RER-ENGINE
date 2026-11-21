@@ -148,6 +148,74 @@ pub fn create_cube(gpu: &SharedGpu) -> Mesh {
     upload(gpu, &vertices, &indices, "cube", None)
 }
 
+/// Cilindro unitario: radio 0.5, de y=-0.5 a y=+0.5.
+/// Ocupa la misma caja que `create_cube` para conservar proporciones.
+pub fn create_cylinder(gpu: &SharedGpu, segments: u32) -> Mesh {
+    let sectors = segments.max(6);
+    let tau = std::f32::consts::TAU;
+    let r = 0.5_f32;
+    let mut vertices: Vec<Vertex> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+
+    // Pared lateral: normal radial, UV envuelto en U.
+    for i in 0..sectors {
+        let t0 = i as f32 / sectors as f32 * tau;
+        let t1 = (i + 1) as f32 / sectors as f32 * tau;
+        let base = vertices.len() as u32;
+        for (theta, u) in [
+            (t0, i as f32 / sectors as f32),
+            (t1, (i + 1) as f32 / sectors as f32),
+        ] {
+            let (sin, cos) = theta.sin_cos();
+            vertices.push(Vertex {
+                position: [r * cos, -0.5, r * sin],
+                normal: [cos, 0.0, sin],
+                uv: [u, 0.0],
+            });
+        }
+        for (theta, u) in [
+            (t0, i as f32 / sectors as f32),
+            (t1, (i + 1) as f32 / sectors as f32),
+        ] {
+            let (sin, cos) = theta.sin_cos();
+            vertices.push(Vertex {
+                position: [r * cos, 0.5, r * sin],
+                normal: [cos, 0.0, sin],
+                uv: [u, 1.0],
+            });
+        }
+        indices.extend_from_slice(&[base, base + 2, base + 3, base, base + 3, base + 1]);
+    }
+
+    // Tapas superior (+Y) e inferior (-Y).
+    for (y, normal, flip) in [(0.5_f32, 1.0_f32, false), (-0.5_f32, -1.0_f32, true)] {
+        let center = vertices.len() as u32;
+        vertices.push(Vertex {
+            position: [0.0, y, 0.0],
+            normal: [0.0, normal, 0.0],
+            uv: [0.5, 0.5],
+        });
+        for i in 0..=sectors {
+            let theta = i as f32 / sectors as f32 * tau;
+            let (sin, cos) = theta.sin_cos();
+            vertices.push(Vertex {
+                position: [r * cos, y, r * sin],
+                normal: [0.0, normal, 0.0],
+                uv: [0.5 + 0.5 * cos, 0.5 + 0.5 * sin],
+            });
+        }
+        for i in 0..sectors {
+            if flip {
+                indices.extend_from_slice(&[center, center + i + 2, center + i + 1]);
+            } else {
+                indices.extend_from_slice(&[center, center + i + 1, center + i + 2]);
+            }
+        }
+    }
+
+    upload(gpu, &vertices, &indices, "cylinder", None)
+}
+
 /// Esfera UV unitaria (radio 0.5) para el icono del sol.
 pub fn create_uv_sphere(gpu: &SharedGpu, segments: u32) -> Mesh {
     let rings = segments.max(4);

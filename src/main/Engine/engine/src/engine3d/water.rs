@@ -24,21 +24,27 @@ use crate::engine3d::ecs::{
 };
 use crate::engine3d::ipc::SaveParticleEmitterSnapshot;
 use crate::engine3d::mesh::Vertex;
-use crate::engine3d::particles::fluid::{FluidBounds, FluidConfig, FluidSolver};
 
 /// Wire del elemento del sidebar (comparte snapshot con los emisores).
 pub(crate) const LIQUID_WIRE: &str = "liquid_cube";
 /// Tamaño de celda por defecto (m).
 pub(crate) const DEFAULT_CELL_SIZE: f32 = 0.5;
 /// Convierte un color RGB lineal del líquido a bytes para la textura; `boost`
-/// aclara las gotas para que destaquen sobre la superficie.
+/// aclara los canales (lo usa la prueba de saturación).
 fn liquid_rgba(color: [f32; 3], boost: u8) -> [u8; 4] {
     let channel = |value: f32| (value * 255.0 + boost as f32).round().clamp(0.0, 255.0) as u8;
     [channel(color[0]), channel(color[1]), channel(color[2]), 255]
 }
 
+/// Albedo de la superficie: mismo tinte que el preset `water` de la demo de
+/// reflejos (`water_rgba` en `pbr_presets.rs`), aplicado al color configurable.
+fn liquid_surface_rgba(color: [f32; 3]) -> [u8; 4] {
+    liquid_rgba([color[0], color[1] + 0.02, color[2] + 0.05], 0)
+}
+
 /// Propiedades por defecto del líquido común y corriente (agua).
-pub(crate) const DEFAULT_LIQUID_COLOR: [f32; 3] = [0.22, 0.55, 0.87];
+/// Coincide con el `base_color` del preset `water` de la demo de reflejos.
+pub(crate) const DEFAULT_LIQUID_COLOR: [f32; 3] = [0.08, 0.28, 0.42];
 pub(crate) const DEFAULT_VISCOSITY: f32 = 0.15;
 pub(crate) const DEFAULT_COHESION: f32 = 0.35;
 /// Nivel máximo de una celda: 7 = altura `cs` (un cubo lleno). El agua se mide
@@ -143,7 +149,6 @@ pub(crate) struct WaterStats {
     pub cells: usize,
     pub mesh_vertices: usize,
     pub mesh_indices: usize,
-    pub splash_particles: usize,
     pub terrain_points: usize,
 }
 
@@ -217,175 +222,6 @@ impl TerrainBoundary {
 
     pub(crate) fn volumes(&self) -> &[f32] {
         &self.volumes
-    }
-}
-
-/// B7 — gotas localizadas en la frontera del charco. Son espuma visual: no
-/// prestan volumen al grid, así que la conservación de la rejilla no cambia.
-pub(crate) struct SplashLayer {
-    solver: FluidSolver,
-    lifetimes: Vec<f32>,
-    bounds_key: Option<(i32, i32, i32, i32)>,
-    mesh_idx: Option<usize>,
-    entity: Option<EntityId>,
-    tex_idx: Option<usize>,
-    spawn_carry: f32,
-}
-
-impl Default for SplashLayer {
-    fn default() -> Self {
-        Self {
-            solver: FluidSolver::new(FluidConfig::default(), FluidBounds::new([0.0; 3], [1.0; 3])),
-            lifetimes: Vec::new(),
-            bounds_key: None,
-            mesh_idx: None,
-            entity: None,
-            tex_idx: None,
-            spawn_carry: 0.0,
-        }
-    }
-}
-
-impl SplashLayer {
-    fn ensure_bounds(
-        &mut self,
-        min_ix: i32,
-        max_ix: i32,
-        min_iz: i32,
-        max_iz: i32,
-        cell_size: f32,
-        viscosity: f32,
-        cohesion: f32,
-    ) -> bool {
-        let key = (min_ix, max_ix, min_iz, max_iz);
-        self.solver.config.viscosity = viscosity.clamp(0.0, 1.0);
-        self.solver.config.cohesion = cohesion.clamp(0.0, 1.0);
-        self.solver.config.curvature = 0.05 + 0.12 * cohesion.clamp(0.0, 1.0);
-        if self.bounds_key == Some(key) {
-            return false;
-        }
-        self.bounds_key = Some(key);
-        self.lifetimes.clear();
-        self.solver.clear_particles();
-        let margin = cell_size * 2.0;
-        let min = [
-            min_ix as f32 * cell_size - margin,
-            -cell_size,
-            min_iz as f32 * cell_size - margin,
-        ];
-        let max = [
-            (max_ix as f32 + 1.0) * cell_size + margin,
-            cell_size * 8.0,
-            (max_iz as f32 + 1.0) * cell_size + margin,
-        ];
-        let config = FluidConfig {
-            smoothing_radius: (cell_size * 0.8).max(0.08),
-            particle_mass: 1.0,
-            solver_iterations: 3,
-            min_solver_iterations: 1,
-            max_density_error: 0.05,
-            viscosity: viscosity.clamp(0.0, 1.0),
-            cohesion: cohesion.clamp(0.0, 1.0),
-            curvature: 0.05 + 0.12 * cohesion.clamp(0.0, 1.0),
-            boundary_support: 1.0,
-            ..Default::default()
-        };
-        self.solver = FluidSolver::new(config, FluidBounds::new(min, max));
-        true
-    }
-
-    fn spawn(&mut self, position: [f32; 3], velocity: [f32; 3], life: f32) {
-        self.solver.spawn_particle(position, velocity);
-        self.lifetimes.push(life);
-    }
-
-    fn update(&mut self, dt: f32) {
-        if self.solver.particle_count() == 0 {
-            return;
-        }
-        self.solver.step(dt);
-        for life in &mut self.lifetimes {
-            *life -= dt;
-        }
-        let mut dead: Vec<usize> = self
-            .lifetimes
-            .iter()
-            .enumerate()
-            .filter(|(_, life)| **life <= 0.0)
-            .map(|(index, _)| index)
-            .collect();
-        dead.sort_unstable_by(|a, b| b.cmp(a));
-        for index in dead {
-            self.solver.remove_particle(index);
-            self.lifetimes.swap_remove(index);
-        }
-    }
-
-    /// Malla de gotas: un octaedro pequeño por partícula, suficiente para que
-    /// se lean como perlas de agua desde cualquier ángulo sin parecer cubos.
-    fn build_mesh(&self, radius: f32) -> (Vec<Vertex>, Vec<u32>, [f32; 3], [f32; 3]) {
-        let mut vertices = Vec::new();
-        let mut indices = Vec::new();
-        let mut min = [f32::MAX; 3];
-        let mut max = [f32::MIN; 3];
-        let offsets = [
-            [radius, 0.0, 0.0],
-            [-radius, 0.0, 0.0],
-            [0.0, radius, 0.0],
-            [0.0, -radius, 0.0],
-            [0.0, 0.0, radius],
-            [0.0, 0.0, -radius],
-        ];
-        let faces = [
-            [2, 0, 4],
-            [2, 4, 1],
-            [2, 1, 5],
-            [2, 5, 0],
-            [3, 4, 0],
-            [3, 1, 4],
-            [3, 5, 1],
-            [3, 0, 5],
-        ];
-        for &position in self.solver.positions() {
-            let base = vertices.len() as u32;
-            for offset in offsets {
-                let point = [
-                    position[0] + offset[0],
-                    position[1] + offset[1],
-                    position[2] + offset[2],
-                ];
-                let normal = Vec3::new(offset[0], offset[1], offset[2]).normalize();
-                vertices.push(Vertex {
-                    position: point,
-                    normal: [normal.x, normal.y, normal.z],
-                    uv: [0.0, 0.0],
-                });
-                for axis in 0..3 {
-                    min[axis] = min[axis].min(point[axis]);
-                    max[axis] = max[axis].max(point[axis]);
-                }
-            }
-            for face in faces {
-                indices.extend_from_slice(&[
-                    base + face[0] as u32,
-                    base + face[1] as u32,
-                    base + face[2] as u32,
-                ]);
-            }
-        }
-        if vertices.is_empty() {
-            return (
-                vec![Vertex {
-                    position: [0.0; 3],
-                    normal: [0.0, 1.0, 0.0],
-                    uv: [0.0, 0.0],
-                }],
-                vec![0, 0, 0],
-                [0.0; 3],
-                [0.0; 3],
-            );
-        }
-        (vertices, indices, min, max)
     }
 }
 
@@ -1372,8 +1208,6 @@ impl crate::engine3d::engine::State {
 
     pub(crate) fn water_clear(&mut self) {
         self.water.clear();
-        self.splash.solver.clear_particles();
-        self.splash.lifetimes.clear();
         self.water_step_once();
     }
 
@@ -1409,10 +1243,6 @@ impl crate::engine3d::engine::State {
                 self.water.tick_accum -= TICK_INTERVAL;
                 self.water_step_once();
             }
-        }
-        // Las gotas siguen cayendo y apagándose aunque ya no quede charco.
-        if self.splash.solver.particle_count() > 0 {
-            self.water_update_splashes(dt);
         }
     }
 
@@ -1457,9 +1287,7 @@ impl crate::engine3d::engine::State {
         // que la transición arranque desde donde estaba y no haya salto.
         self.water_sync_mesh(0.0);
         self.water.dirty = false;
-        self.water.stats.splash_particles = self.splash.solver.particle_count();
         self.water.stats.terrain_points = self.water.terrain.points().len();
-        self.water_spawn_splashes();
     }
 
     /// Sube la geometría resultante y la deja dibujándose como entidad estática.
@@ -1490,10 +1318,10 @@ impl crate::engine3d::engine::State {
             self.water.mesh_idx = Some(index);
             index
         };
-        // El color viene del líquido configurado. La textura se cachea por RGB
-        // en el motor, así que pedirla cada frame es solo una búsqueda en mapa.
-        // Sin boost: sumar 255 aquí suturaba los canales a blanco e ignoraba el color.
-        let rgba = liquid_rgba(self.water.color, 0);
+        // El color viene del líquido configurado con el tinte del preset `water`
+        // de la demo de reflejos. La textura se cachea por RGB en el motor, así
+        // que pedirla cada frame es solo una búsqueda en mapa.
+        let rgba = liquid_surface_rgba(self.water.color);
         let tex_idx = self.ensure_plane_tool_colored_texture(rgba);
         self.water.tex_idx = Some(tex_idx);
         if let Some(entity) = self.water.entity {
@@ -1532,170 +1360,16 @@ impl crate::engine3d::engine::State {
             self.world.insert(entity, NonSelectable);
             self.world.insert(
                 entity,
+                // Igual que el preset `water` de la demo de reflejos: espejo
+                // liso, dieléctrico 1.33 y semitransparencia de 0.48.
                 SurfacePbr {
-                    roughness: 0.12,
+                    roughness: 0.0,
                     metallic: 0.0,
                     ior: 1.33,
-                    opacity: 0.62,
+                    opacity: 0.48,
                 },
             );
             self.water.entity = Some(entity);
-        }
-    }
-
-    /// B7 — genera gotas en las celdas de la orilla y bajo las fuentes. Salen
-    /// con la inercia de la rejilla más un impulso vertical, y se reciclan al
-    /// caducar. No descuentan volumen del grid: son espuma, no agua a granel.
-    pub(crate) fn water_spawn_splashes(&mut self) {
-        if self.water.cells.is_empty() {
-            return;
-        }
-        let cs = self.water.cell_size();
-        let min_ix = self.water.cells.keys().map(|cell| cell.0).min().unwrap();
-        let max_ix = self.water.cells.keys().map(|cell| cell.0).max().unwrap();
-        let min_iz = self.water.cells.keys().map(|cell| cell.2).min().unwrap();
-        let max_iz = self.water.cells.keys().map(|cell| cell.2).max().unwrap();
-        let recreated = self.splash.ensure_bounds(
-            min_ix,
-            max_ix,
-            min_iz,
-            max_iz,
-            cs,
-            self.water.viscosity,
-            self.water.cohesion,
-        );
-        if recreated {
-            if self.water.terrain.dirty {
-                let floors = std::mem::take(&mut self.water.floor_cache);
-                self.water.terrain.rebuild(&floors, cs, cs * 0.5);
-                self.water.floor_cache = floors;
-            }
-            self.splash
-                .solver
-                .set_terrain_boundary(self.water.terrain.points(), self.water.terrain.volumes());
-        }
-
-        let mut frontier: Vec<Cell> = self
-            .water
-            .cells
-            .keys()
-            .copied()
-            .filter(|&(ix, iy, iz)| {
-                [
-                    (ix + 1, iy, iz),
-                    (ix - 1, iy, iz),
-                    (ix, iy, iz + 1),
-                    (ix, iy, iz - 1),
-                ]
-                .iter()
-                .any(|neighbor| !self.water.cells.contains_key(neighbor))
-            })
-            .collect();
-        frontier.sort_unstable();
-        if frontier.is_empty() {
-            return;
-        }
-
-        const MAX_SPLASH_PARTICLES: usize = 128;
-        self.splash.spawn_carry += 1.5;
-        let budget = self.splash.spawn_carry as usize;
-        self.splash.spawn_carry -= budget as f32;
-        for cell in frontier.into_iter().take(budget) {
-            if self.splash.solver.particle_count() >= MAX_SPLASH_PARTICLES {
-                break;
-            }
-            let level = self.water.cells[&cell];
-            let (ix, _, iz) = cell;
-            let bottom = cell_bottom(cell, cs);
-            let position = [
-                (ix as f32 + 0.5) * cs,
-                bottom + (level as f32 + 1.0) / 8.0 * cs,
-                (iz as f32 + 0.5) * cs,
-            ];
-            let flow = self.water.velocity.get(&cell).copied().unwrap_or([0.0; 2]);
-            let mut velocity = [flow[0] * cs, 0.35 + level as f32 * 0.08, flow[1] * cs];
-            if self.water.sources.iter().any(|source| source.cell == cell) {
-                velocity[1] += 1.2;
-            }
-            let life = 0.45 + ((ix * 7 + iz * 13).rem_euclid(5)) as f32 * 0.08;
-            self.splash.spawn(position, velocity, life);
-        }
-    }
-
-    /// Avance por frame de las gotas y subida de su malla.
-    pub(crate) fn water_update_splashes(&mut self, dt: f32) {
-        self.splash.update(dt);
-        self.water_sync_splash_mesh();
-    }
-
-    /// Sube la geometría de las gotas como una entidad transparente separada.
-    fn water_sync_splash_mesh(&mut self) {
-        let cs = self.water.cell_size();
-        let (vertices, indices, min, max) = self.splash.build_mesh((cs * 0.09).max(0.012));
-        let mesh = crate::engine3d::mesh::upload_dynamic(
-            &self.vulkan,
-            &vertices,
-            &indices,
-            "water-splash",
-        );
-        let mesh_idx = if let Some(index) = self.splash.mesh_idx {
-            if !self.meshes[index].update_dynamic(&vertices, &indices) {
-                self.meshes[index] = mesh;
-            }
-            index
-        } else {
-            let index = self.meshes.len();
-            self.meshes.push(mesh);
-            self.splash.mesh_idx = Some(index);
-            index
-        };
-        let rgba = liquid_rgba(self.water.color, 40);
-        let tex_idx = self.ensure_plane_tool_colored_texture(rgba);
-        self.splash.tex_idx = Some(tex_idx);
-        if let Some(entity) = self.splash.entity {
-            self.world
-                .insert(entity, MeshComponent { mesh_idx, tex_idx });
-            if let Some(aabb) = self.world.get_mut::<MeshLocalAabb>(entity) {
-                aabb.min = Vec3::from(min);
-                aabb.max = Vec3::from(max);
-            } else {
-                self.world.insert(
-                    entity,
-                    MeshLocalAabb {
-                        min: Vec3::from(min),
-                        max: Vec3::from(max),
-                    },
-                );
-            }
-        } else {
-            let entity = self.world.spawn(Some("WaterSplashes"));
-            self.world
-                .insert(entity, MeshComponent { mesh_idx, tex_idx });
-            self.world.insert(
-                entity,
-                Transform {
-                    position: Vec3::ZERO,
-                    ..Default::default()
-                },
-            );
-            self.world.insert(
-                entity,
-                MeshLocalAabb {
-                    min: Vec3::from(min),
-                    max: Vec3::from(max),
-                },
-            );
-            self.world.insert(entity, NonSelectable);
-            self.world.insert(
-                entity,
-                SurfacePbr {
-                    roughness: 0.1,
-                    metallic: 0.0,
-                    ior: 1.33,
-                    opacity: 0.72,
-                },
-            );
-            self.splash.entity = Some(entity);
         }
     }
 
@@ -1725,7 +1399,9 @@ mod tests {
     #[test]
     fn surface_rgba_uses_the_configured_liquid_color() {
         let rgba = liquid_rgba(DEFAULT_LIQUID_COLOR, 0);
-        assert_eq!(rgba, [56, 140, 222, 255]);
+        assert_eq!(rgba, [20, 71, 107, 255]);
+        // La superficie aplica además el tinte del preset `water` de la demo.
+        assert_eq!(liquid_surface_rgba(DEFAULT_LIQUID_COLOR), [20, 77, 120, 255]);
         let rose = liquid_rgba([0.9, 0.2, 0.4], 0);
         assert_eq!(rose, [230, 51, 102, 255]);
         // El boost solo aclara las gotas; con 255 la superficie siempre salía blanca.
@@ -1860,25 +1536,6 @@ mod tests {
         let stats = water.stats();
         assert!(stats.steps >= 20);
         assert_eq!(stats.cells, water.cell_count());
-    }
-
-    #[test]
-    fn splash_layer_spawns_simulates_and_recycles() {
-        let mut splash = SplashLayer::default();
-        splash.ensure_bounds(0, 4, 0, 4, 0.5, 0.15, 0.35);
-        splash.spawn([1.0, 0.5, 1.0], [0.0, 1.0, 0.0], 0.12);
-
-        let (vertices, indices, _, _) = splash.build_mesh(0.05);
-        assert_eq!(vertices.len(), 6);
-        assert_eq!(indices.len(), 24);
-
-        for _ in 0..10 {
-            splash.update(0.05);
-        }
-        assert_eq!(splash.solver.particle_count(), 0);
-        assert!(splash.lifetimes.is_empty());
-        let (vertices, _, _, _) = splash.build_mesh(0.05);
-        assert_eq!(vertices.len(), 1, "sin gotas debe haber un placeholder");
     }
 
     #[test]

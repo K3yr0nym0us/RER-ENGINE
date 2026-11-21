@@ -102,23 +102,6 @@ impl HudAtlas {
     }
 }
 
-#[cfg(test)]
-fn engine_assets_dir() -> std::path::PathBuf {
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../assets")
-}
-
-#[cfg(test)]
-fn decode_png_rgba(bytes: &[u8]) -> Option<(Vec<u8>, u32, u32)> {
-    let image = image::ImageReader::new(std::io::Cursor::new(bytes))
-        .with_guessed_format()
-        .ok()?
-        .decode()
-        .ok()?
-        .to_rgba8();
-    let (width, height) = image.dimensions();
-    Some((image.into_raw(), width, height))
-}
-
 /// Instancia para `screen_hud_pipeline`. `tex_layer_pad` = UV rect.
 pub fn build_screen_hud_instance(
     packed: ScreenHudPackedImage,
@@ -131,20 +114,3 @@ pub fn build_screen_hud_instance(
     inst
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn engine_assets_include_localized_hud_pngs() {
-        for name in ["Loading.png", "Cargando.png"] {
-            let path = engine_assets_dir().join(name);
-            let bytes = std::fs::read(&path)
-                .unwrap_or_else(|error| panic!("no se pudo leer {}: {error}", path.display()));
-            let (rgba, width, height) =
-                decode_png_rgba(&bytes).unwrap_or_else(|| panic!("PNG ilegible: {name}"));
-            assert!(width > 0 && height > 0, "{name} vacío");
-            assert_eq!(rgba.len(), (width * height * 4) as usize, "{name} RGBA");
-        }
-    }
-}

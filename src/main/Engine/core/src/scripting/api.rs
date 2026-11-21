@@ -177,6 +177,11 @@ pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
     });
 
     let c = ctx.clone();
+    engine.register_fn("__engine_play_next_animation", move |id: i64| {
+        c.push(ScriptCmd::PlayNextAnimation { id: id as u32 });
+    });
+
+    let c = ctx.clone();
     engine.register_fn(
         "__engine_set_default_animation",
         move |id: i64, name: String| {
@@ -582,6 +587,7 @@ let engine = #{
     translate: |id, dx, dy| { __engine_translate(id, dx, dy); },
     set_scale: |id, sx, sy| { __engine_set_scale(id, sx, sy); },
     play_animation: |id, name| { __engine_play_animation(id, name); },
+    play_next_animation: |id| { __engine_play_next_animation(id); },
     set_default_animation: |id, name| { __engine_set_default_animation(id, name); },
     stop_animation: |id| { __engine_stop_animation(id); },
     set_physics: |id, enabled, body_type| { __engine_set_physics(id, enabled, body_type); },

@@ -361,12 +361,15 @@ pub enum EngineEvent {
         fit_to_grid: bool,
         scale: [f32; 3],
     },
-    /// Click del ghost de emisor de partículas: posición elegida en el mundo.
+    /// Click del ghost de emisor de partículas: posición elegida en el mundo y
+    /// altura del suelo detectada por el raycast (plano de colisión del emisor).
     ParticleEmitterPlaced {
         x: f32,
         y: f32,
         #[serde(default)]
         z: f32,
+        #[serde(default)]
+        ground_y: f32,
     },
     /// El editor hizo click (sin arrastre) sobre un emisor de partículas en el
     /// viewport: la UI abre sus propiedades directamente.

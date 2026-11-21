@@ -72,6 +72,20 @@ float volute_shape(vec2 uv, float seed) {
     return envelope * mix(0.12, 1.0, wisps) * (0.45 + 0.55 * n);
 }
 
+// Neblina: bolsa alargada y suave con ruido tenue; sin los huecos oscuros de
+// las volutas de humo (el billboard ya se estira en Y en `render.vert`).
+float fog_shape(vec2 uv, float seed) {
+    float d = length(uv);
+    if (d > 1.0) {
+        return 0.0;
+    }
+    float n = fbm21(uv * 1.4 + vec2(seed * 1.3, seed * 0.7));
+    // Perfil casi plano: solo se apaga en el borde, para que no se acumule
+    // un núcleo blanco al solapar muchas partículas.
+    float envelope = smoothstep(1.0, 0.55, d);
+    return envelope * mix(0.88, 1.0, n);
+}
+
 // Grano de arena: cuadrado irregular con degradado, no un círculo geométrico.
 float grain_shape(vec2 uv, float seed) {
     float ca = cos(seed);
@@ -122,17 +136,6 @@ void main() {
         float shape = smoothstep(1.0, 0.2, dd);
         rgb = v_color.rgb * shape;
         alpha = v_color.a * shape;
-    } else if (mat == 7u) {
-        // Cubo de agua: blob redondo con borde brillante (aproximación de Fresnel —
-        // el reflejo del agua vive en el borde de la gota/charco, no en el centro).
-        float d = length(v_uv);
-        if (d > 1.0) {
-            discard;
-        }
-        float shape = smoothstep(1.0, 0.15, d);
-        float rim = smoothstep(0.5, 0.9, d) * shape;
-        rgb = v_color.rgb * (shape + rim * 0.55);
-        alpha = v_color.a * shape;
     } else if (mat == 8u) {
         // Sol: único halo con núcleo candente y caída suave; se suma al HDR.
         float d = length(v_uv);
@@ -150,8 +153,15 @@ void main() {
         }
         rgb = v_color.rgb * shape;
         alpha = v_color.a * shape;
+    } else if (mat == 2u) {
+        float shape = fog_shape(v_uv, v_spin_size.x);
+        if (shape <= 0.001) {
+            discard;
+        }
+        rgb = v_color.rgb * shape;
+        alpha = v_color.a * shape;
     } else {
-        // Nube (niebla / nieve): falloff gausiano sin núcleo.
+        // Nieve y resto: falloff gausiano sin núcleo.
         float d = length(v_uv);
         if (d > 1.0) {
             discard;

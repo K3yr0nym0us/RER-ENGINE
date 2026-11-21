@@ -73,7 +73,8 @@ pub const MATERIAL_COMPARISON_PATH: &str = "[MatComparison]";
 const MAT_COMP_QUAD_X_WIDTH: f32 = 2.0;
 const MAT_COMP_QUAD_Z_LENGTH: f32 = 3.5;
 /// Delante de las esferas (z=-5): borde trasero ≈ -6.0, sin invadir la fila de esferas.
-const MAT_COMP_QUAD_Z: f32 = -4.0;
+/// Alfombras 0.5 m más dentro que antes (esferas en z=-14.0).
+const MAT_COMP_QUAD_Z: f32 = -13.0;
 const MAT_COMP_X_POSITIONS: [f32; MAT_VAL_ROW_COUNT] = [-6.0, -3.0, 0.0, 3.0, 6.0];
 
 fn apply_mat_comp_quad_transform(t: &mut Transform, x: f32) {
@@ -195,10 +196,27 @@ fn particle_demo_label_pose(origin: [f32; 3]) -> (Vec3, Quat, Vec3) {
     const LABEL_W: f32 = 1.35;
     const LABEL_H: f32 = 0.45;
     const FRONT: f32 = 1.7;
-    // Misma lógica que MatComp (todos de frente, sin look-at): el quad XY mira +Z;
-    // −90° en Y los alinea hacia −X, el frente de la fila en z.
+    // La niebla está apartada al final del pasillo: su letrero va en la
+    // entrada (z≈5.4) y mira hacia el jugador que se acerca desde el sur (−Z),
+    // en vez de mirar hacia −X como los de la fila.
+    if origin[2] > 8.0 {
+        let position = Vec3::new(
+            origin[0],
+            LABEL_H * 0.5,
+            crate::engine3d::particles::FOG_DEMO_LABEL_Z,
+        );
+        let rotation = Quat::from_rotation_y(std::f32::consts::PI);
+        return (position, rotation, Vec3::new(LABEL_W, LABEL_H, 1.0));
+    }
+
+    // Resto de la fila: el quad XY mira +Z; −90° en Y lo alinea hacia −X.
+    // El letrero queda anclado a la pared aunque el emisor se acerque a él.
     let rotation = Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2);
-    let position = Vec3::new(origin[0] - FRONT, LABEL_H * 0.5, origin[2]);
+    let position = Vec3::new(
+        crate::engine3d::particles::PARTICLE_DEMO_X - FRONT,
+        LABEL_H * 0.5,
+        origin[2],
+    );
     (position, rotation, Vec3::new(LABEL_W, LABEL_H, 1.0))
 }
 
@@ -274,12 +292,12 @@ fn particle_demo_labels_current(
     }
     slots.iter().all(|slot| {
         let expected_name = format!("ParticleDemo · {}", slot.label);
-        let (want_pos, _, _) = particle_demo_label_pose(slot.config.origin);
+        let (want_pos, want_rot, _) = particle_demo_label_pose(slot.config.origin);
         ids.iter().any(|id| {
             state.world.name(*id) == Some(expected_name.as_str())
                 && state.world.get::<Transform>(*id).is_some_and(|transform| {
                     transform.position.distance(want_pos) < 0.05
-                        && (transform.rotation * Vec3::Z).dot(Vec3::NEG_X) > 0.95
+                        && (transform.rotation * Vec3::Z).dot(want_rot * Vec3::Z) > 0.99
                 })
         })
     })
@@ -315,13 +333,13 @@ pub fn spawn_material_comparison_scene(state: &mut State) {
 
     const SPHERE_RADIUS: f32 = 0.55;
     const SPHERE_Y: f32 = SPHERE_RADIUS + 0.05;
-    const SPHERE_Z: f32 = -5.0;
+    const SPHERE_Z: f32 = -14.0;
     const LABEL_Y: f32 = SPHERE_Y + SPHERE_RADIUS + 0.1 + LABEL_H * 0.5;
     const LABEL_W: f32 = 2.0;
     const LABEL_H: f32 = 0.45;
-    const WALL_Z: f32 = -4.0;
+    const WALL_Z: f32 = -14.0;
     const WALL_H: f32 = LABEL_Y + LABEL_H * 0.5;
-    const WALL_D: f32 = 3.5;
+    const WALL_D: f32 = 2.0;
     const WALL_T: f32 = 0.25;
 
     for i in 0..MAT_VAL_ROW_COUNT {
@@ -563,16 +581,25 @@ mod particle_demo_label_tests {
 
     #[test]
     fn standing_labels_share_front_yaw() {
-        let (a, rot_a, scale) = particle_demo_label_pose([10.0, 0.35, -1.0]);
-        let (b, rot_b, _) = particle_demo_label_pose([10.0, 0.35, 7.0]);
+        let (a, rot_a, scale) = particle_demo_label_pose([14.5, 0.35, -1.0]);
+        // El letrero no sigue al emisor aunque este se acerque (x=13.8).
+        let (b, rot_b, _) = particle_demo_label_pose([13.8, 0.35, 7.0]);
         assert_eq!(rot_a, rot_b);
         assert!((scale.y - 0.45).abs() < 1e-5);
         let forward = rot_a * Vec3::Z;
         assert!(forward.dot(Vec3::NEG_X) > 0.99);
         assert!(forward.y.abs() < 1e-5);
-        assert!((a.x - 8.3).abs() < 1e-4);
+        assert!((a.x - 12.8).abs() < 1e-4);
         assert!((b.x - a.x).abs() < 1e-5);
         assert!((a.z + 1.0).abs() < 1e-5);
         assert!((b.z - 7.0).abs() < 1e-5);
+
+        // La niebla está apartada: letrero en la entrada del pasillo, mirando
+        // hacia el sur (−Z) en vez de hacia −X como los del resto de la fila.
+        let fog = crate::engine3d::particles::FOG_DEMO_POSITION;
+        let (label, fog_rot, _) = particle_demo_label_pose(fog);
+        assert!((label.x - fog[0]).abs() < 1e-4);
+        assert!((label.z - crate::engine3d::particles::FOG_DEMO_LABEL_Z).abs() < 1e-4);
+        assert!((fog_rot * Vec3::Z).dot(Vec3::NEG_Z) > 0.99);
     }
 }

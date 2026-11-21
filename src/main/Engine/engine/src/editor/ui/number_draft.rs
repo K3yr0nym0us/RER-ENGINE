@@ -3,7 +3,7 @@
 //! El texto solo se reescribe cuando el valor externo cambia, para no borrar lo
 //! que el usuario está escribiendo.
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct NumberDraft {
     pub text: String,
     last_value: f32,

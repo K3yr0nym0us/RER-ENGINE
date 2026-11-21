@@ -84,7 +84,7 @@ impl WorldBounds {
         // MIN_WORLD_FACE_3D*2 / MAX_WORLD_FACE_3D*2 y MIN/MAX_WORLD_HEIGHT_3D.
         // El motor no importa este crate; mantener ambos valores sincronizados
         // es responsabilidad de estos comentarios cruzados.
-        const MIN_DIM: f32 = 64.0;
+        const MIN_DIM: f32 = 30.0;
         const MAX_DIM: f32 = 2000.0;
         const MIN_HEIGHT: f32 = 48.0;
         const MAX_HEIGHT: f32 = 256.0;
@@ -93,7 +93,7 @@ impl WorldBounds {
                 return Err(ConfigError::InvalidField {
                     field: format!("bounds.{name}"),
                     reason: format!(
-                        "debe estar entre {MIN_DIM} y {MAX_DIM} metros (tamaño 64–2000)"
+                        "debe estar entre {MIN_DIM} y {MAX_DIM} metros (tamaño 30–2000)"
                     ),
                 });
             }

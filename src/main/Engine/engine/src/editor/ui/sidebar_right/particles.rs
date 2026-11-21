@@ -35,7 +35,7 @@ const WEATHER_OPTIONS: [(&str, &str, &str); 4] = [
 /// Materiales con comportamiento de líquido: comparten color, viscosidad y
 /// tensión superficial aunque usen backends distintos (rejilla o GPU).
 pub(crate) fn is_liquid_material(material: &str) -> bool {
-    matches!(material, "water" | "liquid_cube" | "water_cube")
+    matches!(material, "water" | "liquid_cube")
 }
 
 pub(crate) const MATERIAL_OPTIONS: [(&str, &str, &str); 6] = [
@@ -166,6 +166,11 @@ impl EmitterRow {
         }
     }
 
+    /// Fija el plano de suelo detectado por el ghost (altura del punto de impacto).
+    pub(crate) fn set_ground_y(&mut self, ground_y: f32) {
+        self.ground_y.force(ground_y);
+    }
+
     /// Fija los campos que el kernel ignora para este material al valor del preset
     /// y deja el resto dentro de los límites seguros del slider.
     pub(crate) fn pin_inapplicable_fields(&mut self) {
@@ -186,9 +191,8 @@ impl EmitterRow {
         if !mask.cohesion {
             self.cohesion.force(preset.cohesion);
         }
-        if !mask.ground_y {
-            self.ground_y.force(preset.ground_y);
-        }
+        // `ground_y` no se restablece: ya no tiene slider, lo fija el ghost al
+        // colocar el emisor (o viene del snapshot) y debe viajar intacto al motor.
         if !mask.wind {
             self.wind[0].force(preset.wind[0]);
             self.wind[1].force(preset.wind[1]);
@@ -234,7 +238,8 @@ impl EmitterRow {
         clamp(&mut self.drag, ranges.drag);
         clamp(&mut self.turbulence, ranges.turbulence);
         clamp(&mut self.cohesion, ranges.cohesion);
-        clamp(&mut self.ground_y, ranges.ground_y);
+        // `ground_y` no tiene slider: lo fija el raycast del ghost, así que no se
+        // recorta al rango del antiguo control (el suelo puede estar fuera de ±10 m).
         clamp(&mut self.wind[0], ranges.wind);
         clamp(&mut self.wind[1], ranges.wind);
         clamp(&mut self.cell_size, ranges.cell_size);
@@ -261,7 +266,7 @@ impl EmitterRow {
             drag: parse(&self.drag, 0.5, ranges.drag),
             turbulence: parse(&self.turbulence, 0.0, ranges.turbulence),
             cohesion: parse(&self.cohesion, 0.0, ranges.cohesion),
-            ground_y: parse(&self.ground_y, 0.0, ranges.ground_y),
+            ground_y: self.ground_y.parsed().unwrap_or(0.0),
             wind: [
                 parse(&self.wind[0], 0.0, ranges.wind),
                 parse(&self.wind[1], 0.0, ranges.wind),
@@ -315,13 +320,13 @@ pub struct ParticlesUiState {
 /// del líquido (color, viscosidad y tensión superficial).
 pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
     let (position, rate, size, life, gravity, drag, turbulence, cohesion) = match material {
-        "smoke" => ([0.0, 0.3, 0.0], 90.0, 0.9, 3.8, 1.35, 0.55, 1.2, 0.0),
-        "fog" => ([0.0, 1.2, 0.0], 36.0, 2.2, 10.0, 0.0, 0.0, 0.0, 0.0),
-        "sand" => ([0.0, 2.0, 0.0], 320.0, 0.05, 4.0, -9.8, 0.6, 0.3, 0.1),
+        "smoke" => ([0.0, 0.3, 0.0], 60.0, 0.75, 2.7, 1.4, 0.55, 1.2, 0.0),
+        "fog" => ([0.0, 1.2, 0.0], 16.0, 5.0, 10.0, 0.0, 0.0, 0.0, 0.0),
+        "sand" => ([0.0, 2.0, 0.0], 160.0, 0.010, 1.5, -9.8, 0.35, 0.3, 0.0),
         "water" => ([0.0, 2.0, 0.0], 380.0, 0.06, 3.5, -9.8, 0.35, 0.2, 0.5),
         "liquid_cube" => ([0.0, 0.0, 0.0], 0.0, 0.5, 0.0, 0.0, 0.0, 0.0, 0.35),
-        // fuego
-        _ => ([0.0, 0.35, 0.0], 160.0, 0.55, 1.1, -1.9, 0.9, 2.4, 0.0),
+        // fuego — coincide con `EmitterConfig::fire_demo()` del motor.
+        _ => ([0.0, 0.35, 0.0], 120.0, 0.35, 0.50, 7.9, 0.50, 5.1, 0.0),
     };
     EmitterValues {
         position,
@@ -334,7 +339,7 @@ pub(crate) fn preset_values(material: &'static str) -> EmitterValues {
         cohesion,
         ground_y: 0.0,
         wind: if material == "fog" {
-            [0.2, 0.12]
+            [0.22, 0.14]
         } else {
             [0.0, 0.0]
         },
@@ -576,13 +581,13 @@ pub(crate) fn field_ranges(material: &str) -> EmitterRanges {
         ),
         "fog" => (
             FieldRange {
-                min: 10.0,
+                min: 4.0,
                 max: 70.0,
                 step: 2.0,
             },
             FieldRange {
                 min: 0.5,
-                max: 3.0,
+                max: 10.0,
                 step: 0.1,
             },
             FieldRange {
@@ -1235,7 +1240,7 @@ mod tests {
         assert!(!row.ground_collision);
         assert!(!row.splash);
         assert!(!row.accumulate);
-        assert_eq!(row.gravity.parsed(), Some(-1.9));
+        assert_eq!(row.gravity.parsed(), Some(7.9));
     }
 
     #[test]

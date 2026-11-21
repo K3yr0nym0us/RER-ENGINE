@@ -1394,7 +1394,7 @@ mod tests {
         emitters.push(json!({
             "id": 9000,
             "material": "fire",
-            "position": [10.0, 0.35, -1.0],
+            "position": [13.8, 0.35, -7.6],
         }));
         emitters.push(json!({
             "id": 9001,

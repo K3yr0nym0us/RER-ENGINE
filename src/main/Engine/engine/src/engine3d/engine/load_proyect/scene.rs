@@ -592,6 +592,18 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
                     apply_full_entity_restore(state, id, &pending, "[ExecutionArea]", false, false);
                 }
             }
+            _ if is_parkour_cylinder_path(&entity.model) => {
+                state.spawn_parkour_cylinder(&entity.name, entity.position, entity.scale);
+                if let Some(id) = state.scenario_entities.last().copied() {
+                    apply_full_entity_restore(state, id, &pending, "[ParkourCylinder]", true, false);
+                }
+            }
+            _ if is_parkour_wall_path(&entity.model) => {
+                state.spawn_parkour_wall(&entity.name, entity.position, entity.scale);
+                if let Some(id) = state.scenario_entities.last().copied() {
+                    apply_full_entity_restore(state, id, &pending, "[ParkourWall]", true, false);
+                }
+            }
             _ if is_editor_box_path(&entity.model) => {
                 state.spawn_editor_box(&entity.name, entity.position, entity.scale);
                 if let Some(id) = state.scenario_entities.last().copied() {

@@ -110,8 +110,8 @@ struct EmitterGpu {
 
 fn initial_indirect_bytes() -> Vec<u8> {
     // Draw: 6 vértices, 0 instancias (no-op hasta que el primer build_indirect escriba).
-    // Dispatch: 8 grupos (512 hilos) de kickstart. 1 grupo solo cubre 64 spawns; el
-    // cubo de agua nace en un lattice de hasta 8³ en el primer frame.
+    // Dispatch: 8 grupos (512 hilos) de kickstart. 1 grupo solo cubre 64 spawns,
+    // así que el primer frame tiene margen para cualquier emisor nuevo.
     let words = [6u32, 0, 0, 0, 8, 1, 1];
     words.iter().flat_map(|w| w.to_le_bytes()).collect()
 }

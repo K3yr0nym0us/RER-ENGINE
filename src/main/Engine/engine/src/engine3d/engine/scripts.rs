@@ -284,6 +284,9 @@ impl State {
                         saved.1.y = sy;
                     }
                 }
+                ScriptCmd::PlayNextAnimation { id } => {
+                    self.play_next_model_clip(id);
+                }
                 ScriptCmd::PlayAnimation { id, name } => {
                     let already_active = self
                         .active_animations

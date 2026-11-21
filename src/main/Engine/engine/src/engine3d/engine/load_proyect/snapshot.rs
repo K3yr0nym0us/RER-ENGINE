@@ -199,11 +199,11 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
     };
 
     let world = SavedWorldConfig {
-        // Lado 64 m / radio 32 m: el mínimo que acepta el generador de mundos.
-        worldWidth: 64.0,
+        // Lado 30 m / radio 15 m: el mínimo que acepta el generador de mundos.
+        worldWidth: 30.0,
         worldHeight: 56.0,
-        worldDepth: Some(64.0),
-        worldRadius: Some(32.0),
+        worldDepth: Some(30.0),
+        worldRadius: Some(15.0),
         worldCenterX: 0.0,
         worldCenterZ: 0.0,
         gridVisible: true,
@@ -256,13 +256,13 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         particles: Some(serde_json::json!({ "emitters": [] })),
     };
 
-    let ground_scale = [32.0 / 40.0, 0.02, 64.0 / 40.0];
+    let ground_scale = [15.0 / 40.0, 0.02, 15.0 / 40.0];
     let sun_position = {
         use crate::engine3d::config_3d::directional_light::{
             SunRiseCardinal, sun_position_from_bounds,
         };
         use crate::engine3d::config_3d::world_bounds::WorldBounds3D;
-        let bounds = WorldBounds3D::with_faces(32.0, 32.0, 32.0, 32.0, world.worldHeight);
+        let bounds = WorldBounds3D::with_faces(15.0, 15.0, 15.0, 15.0, world.worldHeight);
         sun_position_from_bounds(&bounds, 0.25, SunRiseCardinal::East).to_array()
     };
     let entities = vec![

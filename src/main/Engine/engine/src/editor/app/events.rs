@@ -432,10 +432,12 @@ impl EditorApp {
                 let number =
                     |key: &str| event.get(key).and_then(Value::as_f64).unwrap_or(0.0) as f32;
                 let position = [number("x"), number("y"), number("z")];
+                let ground_y = number("ground_y");
                 let Some(mut draft) = self.right_sidebar.particles.pending_placement.take() else {
                     return;
                 };
                 draft.set_position(position);
+                draft.set_ground_y(ground_y);
                 // El click del ghost CREA el elemento (comando al motor + fila
                 // del sidebar) y DESPUÉS abre su modal de propiedades, donde
                 // «Aplicar» hace upsert sin cerrar la ventana.
@@ -587,6 +589,7 @@ mod tests {
             "x": 1.0,
             "y": 0.5,
             "z": 2.0,
+            "ground_y": 1.25,
         }));
 
         assert!(app.right_sidebar.particles.pending_placement.is_none());
@@ -603,6 +606,9 @@ mod tests {
         assert_eq!(modal.position[0].parsed(), Some(1.0));
         assert_eq!(modal.position[1].parsed(), Some(0.5));
         assert_eq!(modal.position[2].parsed(), Some(2.0));
+        // El suelo lo detectó el ghost: viaja en el borrador y en el comando.
+        assert_eq!(modal.ground_y.parsed(), Some(1.25));
+        assert_eq!(app.pending_engine.borrow()[0]["ground_y"].as_f64(), Some(1.25));
         // El elemento ya existe en el motor y en la lista; la modal es solo
         // para ajustar sus propiedades con «Aplicar».
         assert_eq!(app.right_sidebar.particles.emitters.len(), 1);

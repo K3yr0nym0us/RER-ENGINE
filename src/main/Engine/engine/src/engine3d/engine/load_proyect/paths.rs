@@ -5,6 +5,14 @@ pub(crate) fn entity_path_marker(p: &str) -> Option<&'static str> {
     ENTITY_MARKERS.iter().copied().find(|m| *m == marker)
 }
 
+pub(crate) fn is_parkour_cylinder_path(p: &str) -> bool {
+    entity_path_marker(p) == Some("[ParkourCylinder]")
+}
+
+pub(crate) fn is_parkour_wall_path(p: &str) -> bool {
+    entity_path_marker(p) == Some("[ParkourWall]")
+}
+
 pub(crate) fn is_editor_box_path(p: &str) -> bool {
     entity_path_marker(p) == Some("[EditorBox]")
 }

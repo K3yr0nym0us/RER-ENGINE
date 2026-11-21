@@ -20,6 +20,10 @@ pub enum ScriptCmd {
         id: u32,
         name: String,
     },
+    /// Reproduce la siguiente animación disponible de una entidad, en ciclo.
+    PlayNextAnimation {
+        id: u32,
+    },
     SetDefaultAnimation {
         id: u32,
         name: String,
