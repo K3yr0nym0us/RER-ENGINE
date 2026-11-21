@@ -409,11 +409,21 @@ fn toolbar(
         ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
         let name_width = (ui.available_width() - 112.0).max(60.0);
         let mut name = state.name_draft.clone();
+        // El frame por defecto del TextEdit usa `PANEL_BG`, el mismo color que
+        // el fondo de la modal, así que el campo casi no se ve. Le damos un
+        // fondo y un borde propios (también cuando está deshabilitado, que es cuando
+        // se muestra el nombre en modo lectura).
+        let name_frame = egui::Frame::new()
+            .fill(theme::INPUT_BG)
+            .stroke(Stroke::new(1.0, theme::BORDER))
+            .corner_radius(4.0)
+            .inner_margin(egui::Margin::symmetric(6, 3));
         let name_resp = ui.add_enabled(
             editing,
             egui::TextEdit::singleline(&mut name)
+                .frame(name_frame)
                 .desired_width(name_width)
-                .text_color(theme::INFO),
+                .text_color(theme::TEXT),
         );
         state.name_draft = name;
         if editing && name_resp.lost_focus() {

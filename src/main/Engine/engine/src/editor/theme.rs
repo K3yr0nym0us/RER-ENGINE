@@ -13,6 +13,9 @@ pub const SIDEBAR_BG: Color32 = Color32::from_rgb(0x09, 0x0b, 0x18);
 /// Separador oscuro entre las sidebars y el viewport del motor.
 pub const SIDEBAR_DIVIDER: Color32 = Color32::from_rgb(0x0a, 0x0c, 0x16);
 pub const PANEL_BG: Color32 = Color32::from_rgb(0x1f, 0x22, 0x37);
+/// Fondo de los campos de texto: un paso más claro que `PANEL_BG` para que el
+/// input no se camufle con el fondo de la modal (egui usa `PANEL_BG` por defecto).
+pub const INPUT_BG: Color32 = Color32::from_rgb(0x2b, 0x30, 0x4f);
 pub const LOG_BG: Color32 = Color32::from_rgb(0x03, 0x05, 0x0d);
 pub const METRICS_BG: Color32 = Color32::from_rgb(0x05, 0x08, 0x17);
 pub const METRICS_BORDER: Color32 = Color32::from_rgb(0x20, 0x25, 0x45);
