@@ -144,7 +144,26 @@ impl FrameRenderer {
             // un set ya enlazado en este command buffer invalidaba el buffer completo.
             let passes = passes.min(MAX_EXTRA_DENOISE_PASSES as u32 + 1) as usize;
             let mut denoised = self.targets.denoise.view;
+            let mut denoised_image = self.targets.denoise.image;
             for pass in 1..passes {
+                // La pasada anterior escribió esta imagen como attachment; hay que hacer
+                // visible esa escritura antes de muestrearla. Sin barrera aparecen bloques
+                // negros intermitentes al encadenar 3-4 pasadas (High/Ultra).
+                crate::engine3d::vulkan::gpu::cmd_image_barrier(
+                    device,
+                    cmd,
+                    denoised_image,
+                    vk::ImageAspectFlags::COLOR,
+                    1,
+                    1,
+                    vk::ImageLayout::GENERAL,
+                    vk::ImageLayout::GENERAL,
+                    vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
+                        | vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::PipelineStageFlags::FRAGMENT_SHADER,
+                    vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::SHADER_WRITE,
+                    vk::AccessFlags::SHADER_READ,
+                );
                 let set = self.sets.denoise_extra[slot][pass - 1];
                 write_combined(device, set, 0, denoised, clamp, vk::ImageLayout::GENERAL)?;
                 write_combined(
@@ -168,6 +187,11 @@ impl FrameRenderer {
                 } else {
                     self.targets.denoise.view
                 };
+                denoised_image = if pass % 2 == 1 {
+                    self.targets.denoise2.image
+                } else {
+                    self.targets.denoise.image
+                };
                 draw_fullscreen(
                     device,
                     cmd,
@@ -179,6 +203,22 @@ impl FrameRenderer {
                     &step,
                 );
             }
+            // El composite lee el resultado final del denoise: misma barrera que entre pasadas.
+            crate::engine3d::vulkan::gpu::cmd_image_barrier(
+                device,
+                cmd,
+                denoised_image,
+                vk::ImageAspectFlags::COLOR,
+                1,
+                1,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::GENERAL,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
+                    | vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::SHADER_WRITE,
+                vk::AccessFlags::SHADER_READ,
+            );
             write_combined(
                 device,
                 self.sets.composite[slot],
