@@ -19,6 +19,8 @@ const DANGER_BG: Color32 = Color32::from_rgb(0x84, 0x1c, 0x24);
 const DANGER_TEXT: Color32 = Color32::from_rgb(0xff, 0xd8, 0xda);
 /// `h-100`: los dos fieldsets de la fila comparten la altura del más alto.
 const FIELDSET_PAIR_MIN_HEIGHT: f32 = 244.0;
+/// Altura mínima del panel de blueprints para que acompañe al de terreno.
+const SIDE_PANEL_MIN_HEIGHT: f32 = 400.0;
 
 // Colores Bootstrap del `WorldGenModalBody` original (root font 14 px).
 const BTN_PRIMARY: Color32 = Color32::from_rgb(0x0d, 0x6e, 0xfd);
@@ -161,7 +163,7 @@ fn fieldset(
 
 fn uint_field(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, max: u32) {
     ui.vertical(|ui| {
-        ui.label(RichText::new(label).size(11.0).color(theme::TEXT_MUTED));
+        ui.label(RichText::new(label).size(12.0).color(theme::TEXT_MUTED));
         ui.add(
             egui::DragValue::new(value)
                 .range(min..=max)
@@ -173,7 +175,7 @@ fn uint_field(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, max: u3
 
 fn float_field(ui: &mut egui::Ui, label: &str, value: &mut f32, min: f32, max: f32, step: f32) {
     ui.vertical(|ui| {
-        ui.label(RichText::new(label).size(11.0).color(theme::TEXT_MUTED));
+        ui.label(RichText::new(label).size(12.0).color(theme::TEXT_MUTED));
         ui.add(
             egui::DragValue::new(value)
                 .range(min..=max)
@@ -194,7 +196,7 @@ fn slider(
 ) {
     ui.label(
         RichText::new(format!("{label}: {value:.2}{suffix}"))
-            .size(11.0)
+            .size(12.0)
             .color(theme::TEXT_MUTED),
     );
     ui.add(
@@ -618,7 +620,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
         ui,
         &t(locale, "Distribute blueprints", "Distribute blueprints"),
         false,
-        0.0,
+        SIDE_PANEL_MIN_HEIGHT,
         |ui| {
             if app.assets.models.is_empty() {
                 ui.label(
@@ -758,6 +760,11 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
     }
     let locale = app.cli.locale;
 
+    // Controles más grandes: `DragValue` y `Slider` toman su altura de
+    // `interact_size.y`, y el grosor del rail de `slider_rail_height`.
+    ui.spacing_mut().interact_size.y = 26.0;
+    ui.spacing_mut().slider_rail_height = 6.0;
+
     egui::Frame::new()
         .fill(theme::PANEL_BG)
         .inner_margin(egui::Margin::same(12))
@@ -777,8 +784,23 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         ui.add_space(8.0);
                     }
 
-                    terrain_configuration(ui, app);
-                    distribute_blueprints(ui, app);
+                    // Los dos paneles van en la misma fila, como en el diseño
+                    // original: terreno a la izquierda, blueprints a la derecha.
+                    widgets::top_row(ui, |ui| {
+                        let gap = ui.spacing().item_spacing.x;
+                        let total = ui.available_width() - gap;
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(total * 0.58, 0.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| terrain_configuration(ui, app),
+                        );
+                        ui.add_space(gap);
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(total * 0.42, 0.0),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| distribute_blueprints(ui, app),
+                        );
+                    });
 
                     if !app.worldgen.status.is_empty() {
                         ui.add_space(8.0);
