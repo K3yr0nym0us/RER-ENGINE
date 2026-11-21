@@ -144,7 +144,7 @@ persistence:
 
 ui:
   accordion: World → Reflejos (fila SSR + fila RTX con checks radio, probes, debug view)
-  tier_rows: Low | Medium | High | Ultra (sin botón Off; el switch manda el on/off)
+  tier_rows: Low | Medium | High | Ultra (sin botón Off; el switch manda el on/off). El switch activa siempre en Low; pulsar un botón de tier activa en ese tier concreto. Solo se resalta la fila del sistema activo; la otra recuerda su tier pero no muestra botón marcado.
 
 diagnostics:
   audit_report: docs/yaml/rendering/Reflections_Diagnostics.yaml

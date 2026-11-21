@@ -68,10 +68,6 @@ impl ReflectionTier {
             _ => Self::Off,
         }
     }
-
-    pub fn is_off(self) -> bool {
-        self == Self::Off
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
