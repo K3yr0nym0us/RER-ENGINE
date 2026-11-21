@@ -11,7 +11,7 @@ use crate::engine3d::config_3d::model_asset::{
     self, AnimChannel, AnimKeyframe, AnimProperty, AnimationClip, GltfFile, MAX_JOINTS, ModelAsset,
     compute_gltf_joint_worlds, gltf_bind_globals_from_ibm,
 };
-use crate::engine3d::ecs::EntityId;
+use crate::engine3d::ecs::{EntityId, Transform};
 use crate::engine3d::engine::State;
 use crate::engine3d::ipc::ModelClipInfoEvent;
 use crate::engine3d::ipc::{EngineEvent, send_event};
@@ -250,6 +250,7 @@ impl State {
         self.model_animation_bindings.remove(&id);
         self.active_model_clips.remove(&id);
         self.model_clip_defaults.remove(&id);
+        self.root_motion_by_clip.remove(&id);
     }
 
     pub(crate) fn play_model_clip(&mut self, id: EntityId, name: &str, loop_: bool) {
@@ -444,6 +445,54 @@ impl State {
             }
         }
     }
+
+    /// Delta del hueso raíz del clip activo del jugador, ya en espacio de mundo.
+    ///
+    /// Se calcula entre `time_s` (instante renderizado el frame anterior) y
+    /// `time_s + dt` (instante que renderizará este frame), así que el render y
+    /// el controlador consumen exactamente el mismo tramo de la animación.
+    pub(crate) fn root_motion_delta_for_player(&self, dt: f32) -> Option<(Vec3, Quat)> {
+        if dt <= 0.0 {
+            return None;
+        }
+        let id = self.play_character_entity?;
+        let active = self.active_model_clips.get(&id)?;
+        if !active.playing || active.finished {
+            return None;
+        }
+        if !self
+            .root_motion_by_clip
+            .get(&id)
+            .and_then(|by_name| by_name.get(&active.clip_name))
+            .copied()
+            .unwrap_or(false)
+        {
+            return None;
+        }
+        let binding = self.model_animation_bindings.get(&id)?;
+        let asset = self.get_model_asset_for_entity(&binding.asset_path, id)?;
+        let clip = asset.clips.iter().find(|c| c.name == active.clip_name)?;
+
+        let from = active.time_s.min(clip.duration_s);
+        let mut to = from + dt;
+        if to > clip.duration_s {
+            if active.loop_ {
+                // El último keyframe vuelve al primero: no hay salto real. Evitar
+                // un delta negativo enorme en el frame de costura del bucle.
+                return None;
+            }
+            to = clip.duration_s;
+        }
+        let (local_delta, local_rot) = root_motion_delta(&asset, clip, from, to)?;
+
+        let t = self.world.get::<Transform>(id)?;
+        let scaled = Vec3::new(
+            local_delta.x * t.scale.x,
+            local_delta.y * t.scale.y,
+            local_delta.z * t.scale.z,
+        );
+        Some((t.rotation * scaled, (t.rotation * local_rot).normalize()))
+    }
 }
 
 pub(crate) fn asset_joint_globals_with_clip(
@@ -619,4 +668,174 @@ fn find_keyframe_pair(
     }
     let last = keys.len() - 1;
     Some((&keys[last], &keys[last], 0.0))
+}
+
+/// Joint que gobierna el desplazamiento del clip: el más alto en la jerarquía
+/// que tenga canales de traslación/rotación. En exportaciones de Blender suele
+/// ser `Hips` (hijo de `Armature`), no el nodo raíz sin padre.
+fn root_joint_index(asset: &ModelAsset, clip: &AnimationClip) -> Option<usize> {
+    let depth = |mut ji: usize| -> usize {
+        let mut d = 0;
+        while let Some(parent) = asset.joint_parents.get(ji).copied().flatten() {
+            if parent == ji {
+                break;
+            }
+            ji = parent;
+            d += 1;
+        }
+        d
+    };
+
+    let mut best: Option<(usize, usize, usize)> = None;
+    for ji in 0..asset.joint_parents.len().min(MAX_JOINTS) {
+        let has_motion = clip.channels.iter().any(|ch| {
+            ch.joint_index == ji
+                && matches!(ch.property, AnimProperty::Translation | AnimProperty::Rotation)
+        });
+        if !has_motion {
+            continue;
+        }
+        let name = asset.joint_names.get(ji).map(String::as_str).unwrap_or("");
+        let lower = name.to_ascii_lowercase();
+        let preference = if lower.contains("root") {
+            0
+        } else if lower.contains("hips") {
+            1
+        } else {
+            2
+        };
+        let score = (depth(ji), preference, ji);
+        if best.is_none_or(|b| score < b) {
+            best = Some(score);
+        }
+    }
+    best.map(|(_, _, ji)| ji)
+}
+
+/// Matriz del joint raíz en el espacio normalizado del modelo (mismo `norm`
+/// que usa el skinning), para que el delta sea comparable con el render.
+fn root_joint_matrix(
+    asset: &ModelAsset,
+    clip: &AnimationClip,
+    ji: usize,
+    time_s: f32,
+) -> Option<Mat4> {
+    let joint_count = asset.joint_parents.len().min(MAX_JOINTS);
+    let mut locals = asset.bind_local[..joint_count].to_vec();
+    apply_clip_to_locals(clip, time_s, &mut locals);
+    let globals = asset_joint_globals_with_locals(asset, &locals);
+    let global = *globals.get(ji)?;
+    let norm = asset.mesh_normalize;
+    Some(norm * global * norm.inverse())
+}
+
+/// Delta de posición y rotación del hueso raíz entre dos instantes del clip.
+pub(crate) fn root_motion_delta(
+    asset: &ModelAsset,
+    clip: &AnimationClip,
+    from_t: f32,
+    to_t: f32,
+) -> Option<(Vec3, Quat)> {
+    let ji = root_joint_index(asset, clip)?;
+    let before = root_joint_matrix(asset, clip, ji, from_t)?;
+    let after = root_joint_matrix(asset, clip, ji, to_t)?;
+    let delta = after * before.inverse();
+    let (_, rotation, translation) = delta.to_scale_rotation_translation();
+    Some((translation, rotation))
+}
+
+#[cfg(test)]
+mod root_motion_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn test_asset() -> ModelAsset {
+        ModelAsset {
+            path: String::new(),
+            joint_parents: vec![None],
+            inverse_bind: vec![Mat4::IDENTITY.to_cols_array_2d()],
+            bind_local: vec![Mat4::IDENTITY],
+            joint_prefix_world: vec![Mat4::IDENTITY],
+            joint_names: vec!["root".to_string()],
+            parts: Vec::new(),
+            clips: Vec::new(),
+            mesh_normalize: Mat4::IDENTITY,
+            facing_forward_xz: glam::Vec2::X,
+            joint_gltf_nodes: Vec::new(),
+            gltf_scene_parents: HashMap::new(),
+            gltf_bind_node_local: HashMap::new(),
+            bind_pose_from_ibm: false,
+        }
+    }
+
+    fn translation_clip() -> AnimationClip {
+        AnimationClip {
+            name: "walk".to_string(),
+            duration_s: 1.0,
+            fps: 30.0,
+            channels: vec![AnimChannel {
+                joint_index: 0,
+                property: AnimProperty::Translation,
+                keyframes: vec![
+                    AnimKeyframe {
+                        time: 0.0,
+                        translation: Some([0.0, 0.0, 0.0]),
+                        rotation: None,
+                        scale: None,
+                    },
+                    AnimKeyframe {
+                        time: 1.0,
+                        translation: Some([2.0, 0.0, 0.0]),
+                        rotation: None,
+                        scale: None,
+                    },
+                ],
+            }],
+        }
+    }
+
+    #[test]
+    fn root_motion_devuelve_desplazamiento_interpolado() {
+        let asset = test_asset();
+        let clip = translation_clip();
+        let (delta, rotation) = root_motion_delta(&asset, &clip, 0.0, 0.5).unwrap();
+        assert!((delta.x - 1.0).abs() < 1e-5, "delta = {delta:?}");
+        assert!(delta.y.abs() < 1e-5 && delta.z.abs() < 1e-5);
+        assert!((rotation.w - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn root_motion_sin_canal_de_traslacion_es_neutro() {
+        let asset = test_asset();
+        let clip = AnimationClip {
+            channels: Vec::new(),
+            ..translation_clip()
+        };
+        assert!(root_motion_delta(&asset, &clip, 0.0, 0.5).is_none());
+    }
+
+    #[test]
+    fn root_joint_ignora_joints_sin_canales_y_prefiere_root_en_empate() {
+        let mut asset = test_asset();
+        asset.joint_parents = vec![None, None, None];
+        asset.inverse_bind = vec![Mat4::IDENTITY.to_cols_array_2d(); 3];
+        asset.bind_local = vec![Mat4::IDENTITY; 3];
+        asset.joint_prefix_world = vec![Mat4::IDENTITY; 3];
+        asset.joint_names = vec!["Hips".into(), "root".into(), "otro".into()];
+        let mut clip = translation_clip();
+        clip.channels[0].joint_index = 1;
+        assert_eq!(root_joint_index(&asset, &clip), Some(1));
+
+        clip.channels.push(AnimChannel {
+            joint_index: 0,
+            property: AnimProperty::Rotation,
+            keyframes: vec![AnimKeyframe {
+                time: 0.0,
+                translation: None,
+                rotation: Some([0.0, 0.0, 0.0, 1.0]),
+                scale: None,
+            }],
+        });
+        assert_eq!(root_joint_index(&asset, &clip), Some(1));
+    }
 }

@@ -292,6 +292,32 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
     confirm_dialog(&ctx, app, locale, &mut commands);
     nested_dialog(&ctx, app, locale, &mut commands);
 
+    // El checkbox de root motion vive en `entityMeta[id].animations[]`; el motor
+    // recibe el comando, y el editor actualiza la fuente de verdad del `.save`.
+    for command in &commands {
+        if command.get("cmd").and_then(Value::as_str) != Some("set_animation_root_motion") {
+            continue;
+        }
+        let Some(id) = command.get("id").and_then(Value::as_u64) else {
+            continue;
+        };
+        let Some(name) = command.get("name").and_then(Value::as_str) else {
+            continue;
+        };
+        let enabled = command
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if let Some(meta) = app.project_state.entity_meta.get_mut(&id.to_string())
+            && let Some(animations) = meta.get_mut("animations").and_then(Value::as_array_mut)
+            && let Some(anim) = animations
+                .iter_mut()
+                .find(|a| a.get("name").and_then(Value::as_str) == Some(name))
+        {
+            anim["root_motion"] = json!(enabled);
+        }
+    }
+
     for command in commands {
         app.send_engine(command);
     }
@@ -1408,6 +1434,32 @@ fn animations_tab(
                     }
                 });
             });
+            if is_3d && anim.embedded_in_model {
+                let mut root_motion = anim.root_motion;
+                if ui
+                    .checkbox(
+                        &mut root_motion,
+                        t(
+                            locale,
+                            "Esta animación controla el movimiento",
+                            "This animation controls movement",
+                        ),
+                    )
+                    .clicked()
+                {
+                    if let Some(entity) = state.entity.as_mut()
+                        && let Some(a) = entity.animations.get_mut(index)
+                    {
+                        a.root_motion = root_motion;
+                    }
+                    commands.push(json!({
+                        "cmd": "set_animation_root_motion",
+                        "id": id,
+                        "name": anim.name.clone(),
+                        "enabled": root_motion,
+                    }));
+                }
+            }
         });
         ui.add_space(4.0);
     }

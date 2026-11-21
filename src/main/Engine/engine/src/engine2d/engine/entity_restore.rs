@@ -67,6 +67,7 @@ impl State {
                     logical_h: None,
                     scripts: anim.scripts.clone(),
                     is_cancelable: anim.is_cancelable,
+                    root_motion: anim.root_motion,
                 }));
             }
             if let Some(default) = anims.iter().find(|a| a.is_default) {

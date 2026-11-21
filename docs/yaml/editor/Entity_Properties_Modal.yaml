@@ -8,8 +8,8 @@
 #   - docs/yaml/editor/Entity_Textures.yaml
 #   - docs/yaml/editor/Editor_Native_Shell.yaml
 
-version: 2
-updated: 2026-11-18
+version: 3
+updated: 2026-11-21
 
 principle: |
   La modal es una ventana winit nativa independiente (NativeModal::EntityProperties).
@@ -41,14 +41,18 @@ state_EntityPropertiesState:
     - isScenario / isCharacter / isEnvironment / isPlayer
     - isEditorCamera / isCollider / isExecutionArea / isProjectile
   drafts: nombre, posición/rotación/escala en texto, projectile, dureza
+  animations: nombre, loop, embedded_in_model, frame_count, root_motion
   dialogs: confirmación, selector de modelo y submodales nativos
 
 tabs:
   - transform
+  - particles        # solo para entidades emisor (pestaña condicional)
+  - physics
   - animations
   - scripting
   - bones
   - projectile
+  - interaction
 
 nested_modals:
   scriptEditor: editor Rhai nativo (CodeEditor) → load_script + entity_meta.scripts
@@ -59,13 +63,14 @@ nested_modals:
 commands:
   - set_entity_name
   - set_entity_transform
-  - set_physics / set_animation / load_script
+  - set_physics / set_animation / set_animation_root_motion / load_script
   - set_projectile_config / set_entity_hardness
   - remove_entity / convert_to_blueprint
 
 persistence:
   entity_meta: fuente de verdad en Rust; el manifest la inyecta al guardar
   scripts: se escriben en entity_meta[id].scripts y se envían con load_script
+  root_motion: entity_meta[id].animations[n].root_motion (checkbox solo en clips 3D embebidos)
 
 do_not:
   - Reintroducir EntityPropertiesModalBody o entityPropertiesAction

@@ -6,6 +6,7 @@ use crate::engine3d::config_3d::character_anchor::{
     PLAY_CHARACTER_GROUND_PROBE, PLAY_CHARACTER_JUMP_SPEED, PLAY_CHARACTER_KEYBOARD_SPEED,
     PLAY_CHARACTER_SPRINT_MULTIPLIER,
 };
+use crate::engine3d::ecs::Transform;
 use crate::engine3d::engine::State;
 
 impl State {
@@ -103,6 +104,16 @@ impl State {
         let old_feet = feet;
         let mut velocity = self.play_controller_velocity;
 
+        // Root motion: el hueso raíz del clip activo mueve y gira al jugador.
+        // Se aplica ANTES del shape cast para no atravesar geometría.
+        let root_motion = self.root_motion_delta_for_player(dt);
+        if let Some((_, root_rotation)) = root_motion
+            && let Some(player_id) = self.play_character_entity
+            && let Some(t) = self.world.get_mut::<Transform>(player_id)
+        {
+            t.rotation = (t.rotation * root_rotation).normalize();
+        }
+
         let jump_held_now =
             self.play_controller_jump_request_active || pressed_inputs.contains("SPACE");
         let jump_just_pressed = jump_held_now && !self.play_controller_jump_request_prev;
@@ -146,6 +157,12 @@ impl State {
         }
         velocity.x = wish.x;
         velocity.z = wish.z;
+
+        if let Some((delta, _)) = root_motion {
+            velocity.x += delta.x / dt;
+            velocity.y += delta.y / dt;
+            velocity.z += delta.z / dt;
+        }
 
         let (new_feet, slide_on_floor) = self.physics.move_character_capsule_at_feet(
             feet,

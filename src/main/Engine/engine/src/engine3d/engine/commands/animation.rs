@@ -15,6 +15,7 @@ impl State {
                 logical_h,
                 scripts,
                 is_cancelable,
+                root_motion,
                 ..
             }) => {
                 let fallback_logical_w = logical_w.unwrap_or(64).max(1);
@@ -114,12 +115,26 @@ impl State {
                 self.default_animation_by_entity
                     .entry(id)
                     .or_insert(name.clone());
+                self.root_motion_by_clip
+                    .entry(id)
+                    .or_default()
+                    .insert(name.clone(), root_motion);
                 send_event(&EngineEvent::AnimationLogicalResolved {
                     id,
                     name: name.clone(),
                     logical_w: resolved_logical_w,
                     logical_h: resolved_logical_h,
                 });
+            }
+            EngineCommand::Only3d(EngineCommand3dOnly::SetAnimationRootMotion {
+                id,
+                name,
+                enabled,
+            }) => {
+                self.root_motion_by_clip
+                    .entry(id)
+                    .or_default()
+                    .insert(name, enabled);
             }
             EngineCommand::Common(EngineCommandCommon::RemoveAnimation { id, name }) => {
                 log::info!("[IPC] RemoveAnimation: entity_id={}, name='{}'", id, name);
@@ -131,6 +146,13 @@ impl State {
                     self.restore_animation_frame(id);
                     self.script_engine.detach_animation_scripts(id);
                     send_event(&EngineEvent::AnimationFinished { entity_id: id });
+                }
+
+                if let Some(by_name) = self.root_motion_by_clip.get_mut(&id) {
+                    by_name.remove(&name);
+                    if by_name.is_empty() {
+                        self.root_motion_by_clip.remove(&id);
+                    }
                 }
 
                 if let Some(entity_anims) = self.animations.get_mut(&id) {

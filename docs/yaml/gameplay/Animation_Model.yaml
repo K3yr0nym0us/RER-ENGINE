@@ -11,8 +11,8 @@
 #   - docs/yaml/engine/IPC_Protocol.yaml
 #   - docs/yaml/persistence/Save_Proyect_Model.yaml    (frames[], audio_path)
 
-version: 1
-updated: 2026-06-10
+version: 2
+updated: 2026-11-21
 
 principle:
   storage: |
@@ -93,6 +93,7 @@ gltf_clips:
     fps: from clip
     loop: boolean
     embedded_in_model: true
+    root_motion: boolean       # false por defecto; el clip mueve al jugador
     frames: []                 # Vacío; el motor no usa frames sprite
   playback: play_model_clip → update_skinned_animations cada frame
   default: set_default_model_clip / set_default_animation (mismo IPC)
@@ -106,9 +107,15 @@ gltf_clips:
 commands:
   set_animation:
     description: Registrar o actualizar definición (sprite o metadatos)
+    params_extra: { root_motion: boolean }   # default false
     side_effects:
       - Pre-decode audio PCM si audio_path presente
       - Attach/detach scripts de animación al reproducir
+      - Registra el flag de root motion por entidad/clip
+  set_animation_root_motion:
+    description: Alterna el root motion de un clip embebido desde el inspector (3D)
+    params: { id, name, enabled }
+    side_effects: Actualiza root_motion_by_clip en el motor y entityMeta[id].animations[] en el editor
   remove_animation:
     params: { id, name }
   set_default_animation:
@@ -148,6 +155,10 @@ ui:
   preview:
     2d: play_animation o play_animation_frame en viewport
     3d_embedded: play_animation (clip name); toggle stop si ya reproduce
+  root_motion_checkbox:
+    label_es: «Esta animación controla el movimiento»
+    visible_solo_si: is_3d && embedded_in_model
+    persistencia: entityMeta[id].animations[n].root_motion
   pivot_edit:
     ipc: set_pivot_edit_mode / cancel_pivot_edit_mode
     event: pivot_selected
@@ -172,6 +183,12 @@ runtime_3d:
   tick: update_skinned_animations (dt, loop, joint matrices)
   gpu: skinned_gpu_meshes + joint_buffer por pieza del asset
   stop: AnimationFinished event
+  root_motion: |
+    Con el flag activo, root_motion_delta_for_player muestrea el hueso raíz entre
+    time_s y time_s+dt y devuelve traslación+rotación en espacio de mundo.
+    apply_play_controller_keyboard (play_controller.rs) las suma a la velocity
+    ANTES de move_character_capsule_at_feet, así que paredes y suelo se respetan.
+    El frame de costura de un clip en bucle no aplica delta.
 
 # ---------------------------------------------------------------------------
 # Persistencia en .save
@@ -182,6 +199,7 @@ persistence:
     animations[]:
       - Campos sprite completos (frames, logical_w/h, audio_path, scripts, …)
       - embedded_in_model: true para clips GLTF (sin frames)
+      - root_motion: true solo en los clips marcados por el usuario (default false)
   blueprint:
     reference: docs/yaml/gameplay/Blueprints_Model_3D.yaml
     animations: heredadas por instancias; set_animation en carga
@@ -194,19 +212,21 @@ rhai:
     - engine.set_default_animation(id, name)
     - engine.stop_animation(id)
   3d_note: |
-    play_animation invoca clip GLTF si la entidad tiene binding; el jugador FP
-    usa animación visual del modelo pero movimiento vía play_controller (cápsula).
-  planned_root_motion:
-    status: pendiente
+    play_animation invoca clip GLTF si la entidad tiene binding. Con root_motion
+    desactivado el jugador se mueve solo por play_controller (cápsula + WASD);
+    con el flag activo el hueso raíz también mueve y gira al jugador.
+  root_motion:
+    status: implementado
     ui_label_es: "Esta animación controla el movimiento"
+    flag: root_motion (boolean por clip, default false)
     description: |
-      Flag opcional por clip embebido: al reproducir, extraer delta de posición
-      (y opcionalmente rotación) del hueso raíz del GLTF y aplicarlo al Transform
-      de la entidad en el motor. Complementa WASD/cápsula; no sustituye state machine.
+      Al reproducir un clip marcado, se muestrea el delta de traslación y rotación
+      del hueso raíz del GLTF y se aplica al jugador antes del shape cast, por lo
+      que respeta colisiones y suelo. Se suma al slide WASD en vez de sustituirlo.
     use_cases:
+      - Caminar/correr: el personaje avanza según la animación
       - Ataques con paso adelante (dash, golpe con lunge)
       - Animaciones de escalada o empuje autorizadas en Blender
-      - NPCs con locomoción 100 % driven por clip
   animation_scripts: |
     Scripts en anim.scripts se adjuntan al reproducir y se desadjuntan al parar.
 
@@ -216,7 +236,7 @@ key_files:
   motor_3d_anim: src/main/Engine/engine/src/engine3d/config_3d/model_animation.rs
   motor_3d_asset: src/main/Engine/engine/src/engine3d/config_3d/model_asset.rs
   ipc: engine/src/{engine2d,engine3d}/ipc.rs (SetAnimation, PlayAnimation, …)
-  ui: src/renderer/src/pages/EngineView/components/sidebar/PropertiesAccordion/AnimationsPanel.tsx
+  ui: src/main/Engine/engine/src/editor/ui/entity_properties_modal.rs (animations_tab, inspector nativo)
   sync: src/renderer/src/context/useContextEngine/hooks/createEngineActions.ts
   event_handler: src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
   restore_cmd: src/renderer/src/context/useContextEngine/hooks/applyPendingRestoreToEngine.ts

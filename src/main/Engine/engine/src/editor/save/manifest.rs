@@ -477,6 +477,7 @@ fn merge_animation_editor_meta(
             "grid_size",
             "cell_offset_x",
             "cell_offset_y",
+            "root_motion",
         ] {
             if let Some(value) = from_meta.get(key) {
                 target.insert(key.to_string(), value.clone());
@@ -1122,6 +1123,31 @@ mod tests {
         assert_eq!(entity["scripts"][0]["name"], json!("a"));
         assert_eq!(entity["animations"][0]["loop"], json!(true));
         assert!(entity["animations"][0].get("loop_").is_none());
+    }
+
+    #[test]
+    fn manifest_keeps_root_motion_from_editor_meta() {
+        let mut project = state();
+        project
+            .entity_meta
+            .get_mut("7")
+            .expect("meta de la entidad 7")
+            .as_object_mut()
+            .expect("meta es objeto")
+            .insert(
+                "animations".into(),
+                json!([{ "name": "idle", "root_motion": true }]),
+            );
+        let manifest = build_manifest(&ManifestInput {
+            engine_scene: &engine_scene(),
+            state: &project,
+            project_type: "3D",
+            game_style: "third-person",
+        });
+        assert_eq!(
+            manifest["scenes"][0]["entities"][0]["animations"][0]["root_motion"],
+            json!(true)
+        );
     }
 
     #[test]

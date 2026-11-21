@@ -23,7 +23,7 @@ common: # FORMATO COMUN DE LAS ENTIDADES
   rotation: [number, number, number, number] # Quaternion xyzw (mesh)
   scale: [number, number, number] # Tamaño de la entidad
   physics_type: dynamic | static | kinematic | undefined # Tipo de físicas (si es undefined se asume que no tiene)
-  animations: optional # Animaciones de la entidad (incluidas en el modelo 3D)
+  animations: optional # Animaciones de la entidad (incluidas en el modelo 3D); cada clip admite `root_motion: boolean` (ver Animation_Model.yaml)
   scripts: optional # Scripts de la entidad (Rhai)
   blueprint_id: optional string # Si tiene significa que es una instancia de una blueprint existente
   controls: optional # WASD / gamepad → Rhai en preview; (Solo para Player)

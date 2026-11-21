@@ -157,6 +157,9 @@ pub enum EngineCommandCommon {
         scripts: Vec<AnimScriptData>,
         #[serde(default)]
         is_cancelable: bool,
+        /// El clip mueve al personaje según el hueso raíz (root motion).
+        #[serde(default)]
+        root_motion: bool,
     },
     RemoveAnimation {
         id: u32,

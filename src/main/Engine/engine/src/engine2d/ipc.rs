@@ -221,6 +221,9 @@ pub struct SaveAnimationSnapshot {
     pub scripts: Vec<SaveScriptSnapshot>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_cancelable: Option<bool>,
+    /// Paridad de esquema con el snapshot 3D (root motion solo se usa en 3D).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_motion: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Clone)]

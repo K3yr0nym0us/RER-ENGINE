@@ -68,6 +68,8 @@ pub(crate) struct PropAnimation {
     pub loop_: bool,
     pub embedded_in_model: bool,
     pub frame_count: usize,
+    /// El clip mueve al personaje según el hueso raíz (root motion).
+    pub root_motion: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -526,6 +528,10 @@ fn animations_from(meta: &Value) -> Vec<PropAnimation> {
                         .and_then(Value::as_array)
                         .map(|f| f.len())
                         .unwrap_or(0),
+                    root_motion: a
+                        .get("root_motion")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                 })
                 .collect()
         })

@@ -234,6 +234,7 @@ pub(crate) fn apply_entity_animations(
             logical_h: Some(anim.logical_h),
             scripts: anim_scripts,
             is_cancelable: anim.is_cancelable.unwrap_or(true),
+            root_motion: anim.root_motion.unwrap_or(false),
         }));
         if anim.is_default.unwrap_or(false) {
             state.handle_command(EngineCommand::Common(
@@ -281,6 +282,20 @@ pub(crate) fn apply_full_entity_restore(
         .filter(|p| !p.is_empty() && !models_refer_to_same_asset(state, p, model_path))
     {
         state.replace_entity_model(id, visual);
+    }
+
+    // `replace_entity_model` reenlaza el skin y limpia el mapa de root motion.
+    // Re-registramos los flags después, sin reintroducir animaciones sprite.
+    if let Some(animations) = pending.animations.as_deref() {
+        for anim in animations.iter().filter(|a| a.root_motion.unwrap_or(false)) {
+            state.handle_command(EngineCommand::Only3d(
+                EngineCommand3dOnly::SetAnimationRootMotion {
+                    id,
+                    name: anim.name.clone(),
+                    enabled: true,
+                },
+            ));
+        }
     }
 
     state.entity_colision.insert(id, pending.colision);

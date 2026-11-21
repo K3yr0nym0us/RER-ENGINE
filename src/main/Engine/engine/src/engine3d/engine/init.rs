@@ -413,6 +413,7 @@ impl State {
             model_animation_bindings: std::collections::HashMap::new(),
             active_model_clips: std::collections::HashMap::new(),
             model_clip_defaults: std::collections::HashMap::new(),
+            root_motion_by_clip: std::collections::HashMap::new(),
             skinned_gpu_meshes: Vec::new(),
             mount_save_on_empty_world: false,
             restoring_save_manifest: false,

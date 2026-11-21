@@ -80,6 +80,9 @@ pub struct EntityRestoreAnimation {
     pub is_cancelable: bool,
     #[serde(default)]
     pub is_default: bool,
+    /// El clip mueve al personaje según el hueso raíz (root motion).
+    #[serde(default)]
+    pub root_motion: bool,
 }
 
 #[derive(Debug, Deserialize, Clone)]

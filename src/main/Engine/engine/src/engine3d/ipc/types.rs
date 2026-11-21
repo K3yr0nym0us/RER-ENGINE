@@ -228,6 +228,9 @@ pub struct SaveAnimationSnapshot {
     /// Clip embebido en modelo 3D (sin frames PNG).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedded_in_model: Option<bool>,
+    /// El clip mueve al personaje según el hueso raíz (root motion).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_motion: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Clone)]

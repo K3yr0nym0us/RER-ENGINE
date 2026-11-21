@@ -328,6 +328,27 @@ impl EditorApp {
                         })
                         .and_then(|a| a.get("name").and_then(Value::as_str).map(str::to_string))
                 };
+                // Igual que el default: el flag de root motion es configuración
+                // del editor y sobrevive al re-bind del modelo por nombre de clip.
+                let prev_root_motion: Vec<(String, bool)> = if path_changed || !had_embedded {
+                    Vec::new()
+                } else {
+                    prev.as_ref()
+                        .and_then(|meta| meta.get("animations").and_then(Value::as_array))
+                        .map(|list| {
+                            list.iter()
+                                .filter_map(|a| {
+                                    let name = a.get("name")?.as_str()?.to_string();
+                                    let enabled = a
+                                        .get("root_motion")
+                                        .and_then(Value::as_bool)
+                                        .unwrap_or(false);
+                                    Some((name, enabled))
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default()
+                };
 
                 let mut animations: Vec<Value> = clips
                     .iter()
@@ -352,6 +373,11 @@ impl EditorApp {
                             "logical_h": 1,
                             "frames": [],
                             "is_default": prev_default.as_deref() == Some(name.as_str()),
+                            "root_motion": prev_root_motion
+                                .iter()
+                                .find(|(prev_name, _)| prev_name == &name)
+                                .map(|(_, enabled)| *enabled)
+                                .unwrap_or(false),
                         })
                     })
                     .collect();
@@ -384,6 +410,19 @@ impl EditorApp {
                 if let Some(name) = default_clip {
                     self.send_engine(json!({
                         "cmd": "set_default_animation", "id": id, "name": name,
+                    }));
+                }
+                // El motor limpia el mapa al reenlazar el modelo: reenviamos los
+                // flags que sobrevivieron por nombre.
+                for (name, enabled) in prev_root_motion
+                    .into_iter()
+                    .filter(|(_, enabled)| *enabled)
+                {
+                    self.send_engine(json!({
+                        "cmd": "set_animation_root_motion",
+                        "id": id,
+                        "name": name,
+                        "enabled": enabled,
                     }));
                 }
             }

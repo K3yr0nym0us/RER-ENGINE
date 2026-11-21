@@ -113,6 +113,12 @@ pub(crate) fn build_entity_3d_snapshot(
                     scripts: vec![],
                     is_cancelable: None,
                     embedded_in_model: Some(true),
+                    root_motion: state
+                        .root_motion_by_clip
+                        .get(&id)
+                        .and_then(|by_name| by_name.get(&c.name))
+                        .copied()
+                        .filter(|&enabled| enabled),
                 })
                 .collect();
         }

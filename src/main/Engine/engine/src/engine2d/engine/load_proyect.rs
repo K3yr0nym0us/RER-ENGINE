@@ -186,6 +186,8 @@ struct SavedAnimation {
     cell_offset_y: Option<u32>,
     #[serde(default)]
     embedded_in_model: Option<bool>,
+    #[serde(default)]
+    root_motion: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]
@@ -679,6 +681,7 @@ fn map_restore_animations(
                     .unwrap_or_default(),
                 is_cancelable: anim.is_cancelable.unwrap_or(true),
                 is_default: anim.is_default.unwrap_or(false),
+                root_motion: anim.root_motion.unwrap_or(false),
             })
             .collect()
     })

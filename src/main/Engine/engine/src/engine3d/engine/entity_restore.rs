@@ -63,6 +63,7 @@ pub(crate) fn apply_entity_animations_snapshots(
             logical_h: Some(anim.logical_h),
             scripts: anim_scripts,
             is_cancelable: anim.is_cancelable.unwrap_or(true),
+            root_motion: anim.root_motion.unwrap_or(false),
         }));
         if anim.is_default.unwrap_or(false) {
             state.handle_command(EngineCommand::Common(

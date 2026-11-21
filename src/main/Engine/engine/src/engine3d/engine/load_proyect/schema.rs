@@ -291,6 +291,8 @@ pub(crate) struct SavedAnimation {
     pub(crate) scripts: Option<Vec<SavedScript>>,
     #[serde(default)]
     pub(crate) is_cancelable: Option<bool>,
+    #[serde(default)]
+    pub(crate) root_motion: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize)]

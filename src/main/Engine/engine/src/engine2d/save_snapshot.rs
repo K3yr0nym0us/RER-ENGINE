@@ -394,6 +394,7 @@ impl State {
                 })
                 .collect(),
             is_cancelable: if anim.is_cancelable { Some(true) } else { None },
+            root_motion: None,
         }
     }
 }

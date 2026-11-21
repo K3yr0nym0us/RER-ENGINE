@@ -415,6 +415,12 @@ impl State {
                 .collect(),
             is_cancelable: if anim.is_cancelable { Some(true) } else { None },
             embedded_in_model: None,
+            root_motion: self
+                .root_motion_by_clip
+                .get(&entity_id)
+                .and_then(|by_name| by_name.get(name))
+                .copied()
+                .filter(|&enabled| enabled),
         }
     }
 }

@@ -505,6 +505,8 @@ pub struct State {
     pub(crate) model_animation_bindings: std::collections::HashMap<u32, ModelAnimationBinding>,
     pub(crate) active_model_clips: std::collections::HashMap<u32, ActiveModelClip>,
     pub(crate) model_clip_defaults: std::collections::HashMap<u32, String>,
+    /// Root motion activado por clip (`entidad -> nombre del clip -> enabled`).
+    pub(crate) root_motion_by_clip: std::collections::HashMap<u32, std::collections::HashMap<String, bool>>,
     pub(crate) skinned_gpu_meshes: Vec<GpuSkinnedMeshEntry>,
 }
 

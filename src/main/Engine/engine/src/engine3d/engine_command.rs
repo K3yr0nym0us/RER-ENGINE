@@ -273,6 +273,12 @@ pub enum EngineCommand3dOnly {
     MergeEntities {
         ids: Vec<u32>,
     },
+    /// Activa/desactiva el root motion de un clip embebido (checkbox del inspector).
+    SetAnimationRootMotion {
+        id: u32,
+        name: String,
+        enabled: bool,
+    },
     ListEntityBones {
         entity_id: u32,
     },
