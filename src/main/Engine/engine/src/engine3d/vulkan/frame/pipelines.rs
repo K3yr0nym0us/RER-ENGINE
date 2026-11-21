@@ -217,6 +217,72 @@ pub(super) fn graphics_with_depth_test(
     depth_test: bool,
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
+    graphics_with_gbuffer_blend(
+        device,
+        layout,
+        vert,
+        frag,
+        vertex,
+        colors,
+        depth,
+        blend,
+        true,
+        depth_bias,
+        topology,
+        depth_test,
+        keep,
+    )
+}
+
+/// Como `graphics` pero solo mezcla alfa en el attachment 0 (la escena). Los attachments del
+/// G-buffer (normal/roughness, albedo, world) se escriben tal cual: si se mezclaran con SRC_ALPHA,
+/// la roughness de agua/cristal (0.0) se convertiría en la del fondo y el gate por tier la
+/// descartaría en Low/Medium.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn graphics_blend_color_only(
+    device: &ash::Device,
+    layout: vk::PipelineLayout,
+    vert: vk::ShaderModule,
+    frag: Option<vk::ShaderModule>,
+    vertex: &VertexSpec,
+    colors: &[vk::Format],
+    depth: Option<vk::Format>,
+    depth_bias: bool,
+    keep: &mut Vec<vk::Pipeline>,
+) -> Result<vk::Pipeline, VulkanError> {
+    graphics_with_gbuffer_blend(
+        device,
+        layout,
+        vert,
+        frag,
+        vertex,
+        colors,
+        depth,
+        true,
+        false,
+        depth_bias,
+        vk::PrimitiveTopology::TRIANGLE_LIST,
+        true,
+        keep,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn graphics_with_gbuffer_blend(
+    device: &ash::Device,
+    layout: vk::PipelineLayout,
+    vert: vk::ShaderModule,
+    frag: Option<vk::ShaderModule>,
+    vertex: &VertexSpec,
+    colors: &[vk::Format],
+    depth: Option<vk::Format>,
+    blend: bool,
+    blend_gbuffer: bool,
+    depth_bias: bool,
+    topology: vk::PrimitiveTopology,
+    depth_test: bool,
+    keep: &mut Vec<vk::Pipeline>,
+) -> Result<vk::Pipeline, VulkanError> {
     let name = c"main";
     let mut stages = vec![
         vk::PipelineShaderStageCreateInfo::default()
@@ -266,7 +332,17 @@ pub(super) fn graphics_with_depth_test(
         .src_alpha_blend_factor(vk::BlendFactor::ONE)
         .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
         .alpha_blend_op(vk::BlendOp::ADD);
-    let attachments = vec![blend_attachment; colors.len()];
+    let attachments = if blend_gbuffer {
+        vec![blend_attachment; colors.len()]
+    } else {
+        let gbuffer = vk::PipelineColorBlendAttachmentState::default()
+            .color_write_mask(vk::ColorComponentFlags::RGBA)
+            .blend_enable(false);
+        let mut list = Vec::with_capacity(colors.len());
+        list.push(blend_attachment);
+        list.extend(std::iter::repeat(gbuffer).take(colors.len().saturating_sub(1)));
+        list
+    };
     let blend_state = vk::PipelineColorBlendStateCreateInfo::default().attachments(&attachments);
     let dynamics = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
     let dynamic = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamics);

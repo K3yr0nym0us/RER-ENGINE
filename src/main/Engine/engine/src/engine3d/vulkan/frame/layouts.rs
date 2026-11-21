@@ -144,6 +144,12 @@ pub(super) fn create_sets(
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 vk::ShaderStageFlags::FRAGMENT,
             ),
+            // composite: world.w = metallic, para dar F0 por material.
+            binding(
+                4,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                vk::ShaderStageFlags::FRAGMENT,
+            ),
         ],
     )?;
     // TAA y denoise comparten forma (3 samplers de color en set 0), así que reutilizan el MISMO
@@ -182,6 +188,8 @@ pub(super) fn create_sets(
             binding(4, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, rt_stages),
             binding(5, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, rt_stages),
             binding(6, vk::DescriptorType::STORAGE_BUFFER, rt_stages),
+            // Alpha del G-buffer: flag de material reflectivo calculado en forward.frag.
+            binding(7, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, rt_stages),
         ],
     )?;
     let bvh = set_layout(
@@ -219,6 +227,11 @@ pub(super) fn create_sets(
             ),
             binding(
                 6,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                vk::ShaderStageFlags::COMPUTE,
+            ),
+            binding(
+                7,
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 vk::ShaderStageFlags::COMPUTE,
             ),
@@ -308,9 +321,17 @@ pub(super) fn create_sets(
             alloc_set(device, pool, denoise)?,
             alloc_set(device, pool, denoise)?,
         ],
-        denoise_pingpong: [
-            alloc_set(device, pool, denoise)?,
-            alloc_set(device, pool, denoise)?,
+        denoise_extra: [
+            [
+                alloc_set(device, pool, denoise)?,
+                alloc_set(device, pool, denoise)?,
+                alloc_set(device, pool, denoise)?,
+            ],
+            [
+                alloc_set(device, pool, denoise)?,
+                alloc_set(device, pool, denoise)?,
+                alloc_set(device, pool, denoise)?,
+            ],
         ],
         composite: [
             alloc_set(device, pool, full)?,

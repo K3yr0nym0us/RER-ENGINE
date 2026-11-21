@@ -46,7 +46,8 @@ pub enum ReflectionTier {
 }
 
 impl ReflectionTier {
-    pub const ALL: [Self; 5] = [Self::Off, Self::Low, Self::Medium, Self::High, Self::Ultra];
+    /// Tiers de la fila de botones: el on/off lo manda el switch, no un botón Off.
+    pub const SELECTABLE: [Self; 4] = [Self::Low, Self::Medium, Self::High, Self::Ultra];
 
     pub fn as_str(self) -> &'static str {
         match self {

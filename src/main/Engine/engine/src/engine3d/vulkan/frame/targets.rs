@@ -409,6 +409,30 @@ impl Targets {
         )?;
         Ok(())
     }
+
+    /// Reasigna solo el target SSR cuando cambia la resolución del tier SSR.
+    pub(super) fn resize_ssr(
+        &mut self,
+        gpu: &SharedGpu,
+        extent: vk::Extent2D,
+    ) -> Result<(), VulkanError> {
+        if self.ssr.extent == extent {
+            return Ok(());
+        }
+        let usage = vk::ImageUsageFlags::COLOR_ATTACHMENT
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::STORAGE
+            | vk::ImageUsageFlags::TRANSFER_SRC
+            | vk::ImageUsageFlags::TRANSFER_DST;
+        self.ssr = gpu.create_image(
+            extent,
+            COLOR,
+            usage,
+            vk::ImageAspectFlags::COLOR,
+            "ssr",
+        )?;
+        Ok(())
+    }
 }
 
 impl FrameRenderer {

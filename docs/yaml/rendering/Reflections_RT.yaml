@@ -96,16 +96,22 @@ denoise:
 
 sampling:
   primary_ray: de 1 a 4 rayos por píxel según el tier, desde `inv_view_proj` (cámara) o G-buffer (reflejo), con 1 a 3 rebotes
+  bounce_energy: solo el rayo primario toma el cielo como fallback; los rebotes que fallan no suman luz y cada rebote aporta como máximo 0.35 del anterior (antes se acumulaba cielo en cada miss y High/Ultra se sobreiluminaban)
+  recursion: los rebotes de geometría solo se habilitan en superficies con roughness > 0.30. En espejos (roughness <= 0.30) se fuerza 1 rebote: un segundo rebote reflejado en el suelo volvía a tocar la esfera y producía el reflejo duplicado/recursivo de High/Ultra. La calidad de esos tiers la dan los rayos extra (2/4), la resolución, el denoise y el TAA.
+  material_gate: |
+    `forward.frag` escribe en `out_albedo.a` un flag de material reflectivo = `SurfacePbr` con
+    roughness <= 0.35, excluyendo el terreno. Entran chrome, acero, plástico, vidrio y agua;
+    el suelo demo tiene roughness 0.50 y NO refleja en ningún tier (antes aparecía en High/Ultra
+    porque el umbral del tier llegaba a 0.70/1.00). `reflect.rgen` y `trace.comp` leen el flag
+    (binding 7). El pase transparente escribe el G-buffer SIN mezcla alfa (solo el color de
+    escena se mezcla) para que la roughness de agua/cristal no se corrompa con la del fondo.
   roughness_gate: |
-    `REFL_MIRROR_ROUGHNESS_MAX = 0.04` sigue fijo. El límite superior ya no es constante: en
-    `reflect.rgen` y `bvh/trace.comp` lo da `rt_params.w` del tier RTX (0.25 / 0.40 / 0.70 / 1.00).
-    `ssr.frag` mantiene su 0.70 histórico (tier SSR sin cambios). `composite.frag` solo fuerza SSR
-    en espejos si el pase SSR se ejecutó (en modo RT la imagen SSR está limpia).
+    El límite superior lo da `rt_params.w` del tier RTX (0.25 / 0.40 / 0.70 / 1.00). Es un
+    límite, no un selector: solo se aplica a superficies que ya pasaron el `material_gate`.
   mirror_bypass: |
-    Los espejos (roughness ≤ 0.04) los resuelve SSR: `composite.frag` ignora el rayo ahí y
-    `reflect.rgen`/`trace.comp` salen con alpha 0, así no se paga un trazado que aportaría menos
-    que el marchado de pantalla. Es el mismo ruleteo que la era wgpu, ahora con las constantes
-    compartidas en lugar de duplicadas por shader.
+    Eliminado: en modo RT no se ejecuta SSR, así que los espejos (roughness ≤ 0.04) también los
+    traza el rayo. Antes se saltaban esperando que SSR los resolviera y, al separar los sistemas,
+    se quedaban sin reflejo. `composite.frag` solo fuerza SSR en espejos si el pase SSR corrió.
   miss: |
     `primary.rmiss` devuelve el color de cielo (0.72, 0.86, 0.98), el mismo del viewport y del
     fallback procedural del IBL.

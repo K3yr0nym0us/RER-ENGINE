@@ -30,7 +30,7 @@ principle:
   pipeline_layers:
     A_forward_ibl: shaders/raster/forward.frag — samplerCubeArray por instancia (ver docs/yaml/rendering/Reflections_Probes.yaml)
     B_ssr_rt: shaders/raster/ssr.frag + shaders/rt/* + shaders/bvh/trace.comp — detalle on-screen
-    C_composite: shaders/raster/composite.frag — mezcla scene + reflejo con peso (1 - roughness) × confianza
+    C_composite: composite.frag — F0 por material (metallic del G-buffer): dieléctricos ~0.10, metales ~0.95 teñidos del color propio; la roughness solo modula
     capture: capture_probe en vulkan/frame/mod.rs — alimenta A; no es recepción en pantalla
 
 subsystems:
@@ -53,7 +53,8 @@ graphics_tiers:
 
 quality_preset:
   status: |
-    El tier SSR mantiene su comportamiento histórico (enciende/apaga la cadena). El tier RTX sí
+    El tier SSR también tiene preset real (`SsrPreset`: resolución, marcha, búsqueda binaria,
+    distancia, grosor, roughness, denoise, TAA y edge fade). El tier RTX sí
     tiene preset real en `config_3d/reflection_graphics.rs::RtxPreset`, aplicado en:
     - `Targets::resize_rt` (resolución 50/67/85/100%)
     - `rt/reflect.rgen` y `bvh/trace.comp` (rayos/píxel, rebotes, distancia, roughness)
@@ -143,6 +144,7 @@ persistence:
 
 ui:
   accordion: World → Reflejos (fila SSR + fila RTX con checks radio, probes, debug view)
+  tier_rows: Low | Medium | High | Ultra (sin botón Off; el switch manda el on/off)
 
 diagnostics:
   audit_report: docs/yaml/rendering/Reflections_Diagnostics.yaml

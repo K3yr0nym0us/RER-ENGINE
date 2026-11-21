@@ -6,6 +6,7 @@
 
 use crate::engine3d::config_3d::reflection_graphics::{
     DEFAULT_REFLECTION_TIER, ReflectionDebugView, ReflectionMode, ReflectionTier, RtxPreset,
+    SsrPreset,
 };
 use crate::engine3d::engine::State;
 use crate::engine3d::ipc::{EngineEvent, send_event};
@@ -23,12 +24,31 @@ impl State {
         RtxPreset::for_tier(self.rt_tier)
     }
 
+    /// Parámetros reales del preset SSR seleccionado.
+    pub(crate) fn ssr_preset(&self) -> SsrPreset {
+        SsrPreset::for_tier(self.reflection_tier)
+    }
+
     /// Cambia el sistema de reflejos activo. SSR y RT nunca están activos a la vez.
     pub(crate) fn set_reflection_mode(&mut self, mode: ReflectionMode) {
         if self.reflection_mode == mode {
             return;
         }
         let prev = self.reflection_mode;
+        // La UI ya no tiene botón Off: al activar un sistema con tier Off se promueve a Low
+        // para que siempre haya un tier seleccionado (también por IPC/Rhai/saves antiguos).
+        if mode == ReflectionMode::Ssr && self.reflection_tier.is_off() {
+            self.reflection_tier = ReflectionTier::Low;
+            let wire = self.reflection_tier.wire().to_string();
+            self.script_engine.sync_reflection_tier_readback(&wire);
+            send_event(&EngineEvent::ReflectionTierChanged { tier: wire });
+        }
+        if mode == ReflectionMode::Rt && self.rt_tier.is_off() {
+            self.rt_tier = ReflectionTier::Low;
+            send_event(&EngineEvent::RtTierChanged {
+                tier: self.rt_tier.wire().to_string(),
+            });
+        }
         self.reflection_mode = mode;
         self.reflection_raytracing_enabled = mode.uses_rt();
         if mode.is_active() && self.reflection_probes_enabled {

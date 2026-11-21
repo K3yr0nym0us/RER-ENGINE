@@ -175,11 +175,23 @@ impl FrameRenderer {
         };
         let stride = self.sbt_stride;
         let address = self.sbt_address;
-        let camera = rt_camera_bytes(input.scene, self.rt_extent(), &input.sky, &input.rtx);
-        self.rt_ubo[slot].write(0, &camera)?;
+        let camera = rt_camera_bytes(
+            input.scene,
+            self.rt_pass_extent(raygen != 0),
+            &input.sky,
+            &input.rtx,
+        );
+        // Fondo y reflejos deben usar UBOs distintos: si compartieran buffer, el último
+        // write (resolución del tier RTX) ganaría también para el pase de fondo.
+        let ubo = if raygen == 0 {
+            &mut self.rt_ubo_bg[slot]
+        } else {
+            &mut self.rt_ubo[slot]
+        };
+        ubo.write(0, &camera)?;
         // Un set distinto por uso: ver el comentario de `DescriptorSets::rt`.
         let set = self.sets.rt[slot][raygen as usize % 2];
-        write_uniform(device, set, 0, &self.rt_ubo[slot])?;
+        write_uniform(device, set, 0, ubo)?;
         write_storage_image(device, set, 1, target)?;
         write_acceleration(device, set, 2, tlas_handle)?;
         write_storage(device, set, 3, &self.materials)?;
@@ -208,9 +220,17 @@ impl FrameRenderer {
             vk::ImageLayout::GENERAL,
         )?;
         write_storage(device, set, 6, &self.geos)?;
+        write_combined(
+            device,
+            set,
+            7,
+            self.targets.albedo_out.view,
+            self.samplers[2],
+            vk::ImageLayout::GENERAL,
+        )?;
         let pipeline = self.rt_pipeline;
         let layout = self.rt_layout;
-        let extent = self.rt_extent();
+        let extent = self.rt_pass_extent(raygen != 0);
         unsafe {
             device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::RAY_TRACING_KHR, pipeline);
             device.cmd_bind_descriptor_sets(
@@ -260,14 +280,19 @@ impl FrameRenderer {
         device: &ash::Device,
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
-        let mut uniform = rt_camera_bytes_base(input.scene, self.rt_extent());
+        let mut uniform = rt_camera_bytes_base(input.scene, self.rt_pass_extent(mode != 0));
         uniform.extend_from_slice(&input.bvh_node_count.to_le_bytes());
         uniform.extend_from_slice(&input.bvh_tri_count.to_le_bytes());
         uniform.extend_from_slice(&mode.to_le_bytes());
         uniform.extend_from_slice(&input.material_count.to_le_bytes());
         uniform.extend_from_slice(bytemuck::bytes_of(&input.sky));
         uniform.extend_from_slice(&rtx_uniform_params(&input.rtx));
-        self.bvh_ubo[slot].write(0, &uniform)?;
+        let ubo = if mode == 0 {
+            &mut self.bvh_ubo_bg[slot]
+        } else {
+            &mut self.bvh_ubo[slot]
+        };
+        ubo.write(0, &uniform)?;
         Self::grow_host(
             &self.gpu,
             &mut self.nodes,
@@ -291,7 +316,7 @@ impl FrameRenderer {
         self.materials.write(0, input.materials)?;
         // Un set distinto por uso (fondo vs reflejos): ver el comentario de `DescriptorSets::bvh`.
         let set = self.sets.bvh[slot][mode as usize % 2];
-        write_uniform(device, set, 0, &self.bvh_ubo[slot])?;
+        write_uniform(device, set, 0, ubo)?;
         write_storage(device, set, 1, &self.nodes)?;
         write_storage(device, set, 2, &self.tris)?;
         write_storage(device, set, 3, &self.materials)?;
@@ -321,9 +346,17 @@ impl FrameRenderer {
             self.samplers[2],
             vk::ImageLayout::GENERAL,
         )?;
+        write_combined(
+            device,
+            set,
+            7,
+            self.targets.albedo_out.view,
+            self.samplers[2],
+            vk::ImageLayout::GENERAL,
+        )?;
         let pipeline = self.bvh_pipeline;
         let layout = self.bvh_layout;
-        let extent = self.rt_extent();
+        let extent = self.rt_pass_extent(mode != 0);
         let groups_x = extent.width.div_ceil(8).max(1);
         let groups_y = extent.height.div_ceil(8).max(1);
         unsafe {

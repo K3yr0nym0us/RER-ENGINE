@@ -274,7 +274,11 @@ void main() {
     }
     out_color = vec4(lit, alpha);
     out_normal_rough = vec4(n * 0.5 + 0.5, roughness);
-    out_albedo = vec4(albedo, 1.0);
+    // w = flag de material reflectivo: SurfacePbr con roughness baja. `v_flag.w` es la
+    // roughness (>= 0) o -1 si no hay PBR. El suelo tiene SurfacePbr de 0.50 y NO debe
+    // reflejar; las esferas de material (chrome/acero/plástico/vidrio/agua) van de 0.0 a 0.2.
+    float reflective = (v_flag.w >= 0.0 && v_flag.w <= 0.35 && !terrain) ? 1.0 : 0.0;
+    out_albedo = vec4(albedo, reflective);
     out_world = vec4(v_world, metallic);
     vec2 curr = v_curr.xy / v_curr.w;
     vec2 prev = v_prev.xy / v_prev.w;

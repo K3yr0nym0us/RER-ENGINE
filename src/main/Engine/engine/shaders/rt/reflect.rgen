@@ -32,6 +32,8 @@ layout(set = 0, binding = 1, rgba8) uniform image2D image_out;
 layout(set = 0, binding = 2) uniform accelerationStructureEXT tlas;
 layout(set = 0, binding = 4) uniform sampler2D depth_tex;
 layout(set = 0, binding = 5) uniform sampler2D normal_tex;
+// .a = flag de material reflectivo calculado en forward.frag (metales / IOR).
+layout(set = 0, binding = 7) uniform sampler2D albedo_tex;
 
 vec3 sky_color(vec3 origin, vec3 dir) {
     float radius = max(cam.sky_center_radius.w, 0.001);
@@ -75,9 +77,16 @@ void main() {
         imageStore(image_out, pix, vec4(0.0));
         return;
     }
+    // Solo materiales reflectivos por su PBR (metales / IOR). Los cubos y suelos
+    // sin SurfacePbr tienen el flag a 0 y no reciben RT en ningún tier.
+    if (texture(albedo_tex, uv).a < 0.5) {
+        imageStore(image_out, pix, vec4(0.0));
+        return;
+    }
     vec3 normal = texture(normal_tex, uv).xyz * 2.0 - 1.0;
     float roughness = texture(normal_tex, uv).w;
-    if (roughness <= REFL_MIRROR_ROUGHNESS_MAX || roughness > cam.rt_params.w) {
+    // En modo RT los espejos también los resuelve el rayo: en RT no se ejecuta SSR.
+    if (roughness > cam.rt_params.w) {
         imageStore(image_out, pix, vec4(0.0));
         return;
     }
@@ -87,7 +96,9 @@ void main() {
     vec3 n = normalize(normal);
 
     int rays = clamp(int(cam.rt_params.x), 1, MAX_RAYS);
-    int bounces = clamp(int(cam.rt_params.y), 1, MAX_BOUNCES);
+    // Rebotes reales solo en superficies rugosas: en espejos (roughness baja) un segundo
+    // rebote toca el suelo y vuelve a la esfera, produciendo el reflejo duplicado/recursivo.
+    int bounces = roughness > 0.30 ? clamp(int(cam.rt_params.y), 1, MAX_BOUNCES) : 1;
     float t_max = max(cam.rt_params.z, 1.0);
 
     vec3 accumulated = vec3(0.0);
@@ -97,7 +108,10 @@ void main() {
         vec3 color = vec3(0.0);
         float throughput = 1.0;
         for (int b = 0; b < bounces; b++) {
-            payload.color = vec4(sky_color(origin, dir), 0.0);
+            // Solo el rayo primario toma el cielo como color de fallback. Los rebotes que
+            // fallan no añaden luz: antes cada miss sumaba cielo otra vez (1 + 0.5 + 0.25)
+            // y High/Ultra se veían sobreiluminados.
+            payload.color = b == 0 ? vec4(sky_color(origin, dir), 0.0) : vec4(0.0);
             payload.hit = vec4(0.0);
             traceRayEXT(tlas, gl_RayFlagsOpaqueEXT, 0xffu, 0u, 0u, 0u,
                         origin, 0.02, dir, t_max, 0);
@@ -111,7 +125,7 @@ void main() {
             }
             origin = origin + dir * payload.hit.w + hit_n * 0.02;
             dir = reflect(dir, hit_n);
-            throughput *= 0.5;
+            throughput *= 0.35;
         }
         accumulated += color;
     }

@@ -151,10 +151,98 @@ impl RtxPreset {
                 bounces: 3,
                 denoise_passes: 4,
                 denoise_step: 2.0,
-                temporal_blend: 0.85,
+                temporal_blend: 0.70,
                 max_roughness: 1.0,
                 trace_distance: 500.0,
                 fast_trace: true,
+            },
+            ReflectionTier::Off => Self::for_tier(ReflectionTier::Low),
+        }
+    }
+}
+
+/// Parámetros reales detrás de cada tier SSR.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SsrPreset {
+    /// Fracción del extent del frame usada por el target SSR.
+    pub resolution_scale: f32,
+    /// Pasos de la marcha screen-space.
+    pub march_steps: u32,
+    /// Pasos de búsqueda binaria tras el impacto.
+    pub binary_search_steps: u32,
+    /// Radio máximo de marcha en UV de pantalla.
+    pub max_distance: f32,
+    /// Tolerancia de profundidad (grosor). 0 = adaptativo.
+    pub thickness: f32,
+    /// Usar grosor adaptativo con la distancia recorrida.
+    pub adaptive_thickness: bool,
+    /// Roughness máxima que todavía recibe SSR.
+    pub roughness_support: f32,
+    /// Número de pasadas de denoise.
+    pub denoise_passes: u32,
+    /// Paso en píxeles del denoise.
+    pub denoise_step: f32,
+    /// Mezcla temporal de la cadena de reflejos (0 = sin acumulación).
+    pub temporal_blend: f32,
+    /// Ancho del fundido en los bordes de pantalla (UV).
+    pub edge_fade: f32,
+}
+
+impl SsrPreset {
+    /// Preset asociado a un tier. `Off` devuelve el de `Low` para que el valor siempre sea válido.
+    pub const fn for_tier(tier: ReflectionTier) -> Self {
+        match tier {
+            ReflectionTier::Low => Self {
+                resolution_scale: 0.50,
+                march_steps: 16,
+                binary_search_steps: 2,
+                max_distance: 0.16,
+                thickness: 0.0008,
+                adaptive_thickness: false,
+                roughness_support: 0.20,
+                denoise_passes: 1,
+                denoise_step: 1.0,
+                temporal_blend: 0.0,
+                edge_fade: 0.01,
+            },
+            ReflectionTier::Medium => Self {
+                resolution_scale: 0.67,
+                march_steps: 32,
+                binary_search_steps: 4,
+                max_distance: 0.35,
+                thickness: 0.002,
+                adaptive_thickness: false,
+                roughness_support: 0.40,
+                denoise_passes: 2,
+                denoise_step: 1.5,
+                temporal_blend: 0.50,
+                edge_fade: 0.04,
+            },
+            ReflectionTier::High => Self {
+                resolution_scale: 0.85,
+                march_steps: 64,
+                binary_search_steps: 6,
+                max_distance: 0.60,
+                thickness: 0.006,
+                adaptive_thickness: false,
+                roughness_support: 0.70,
+                denoise_passes: 3,
+                denoise_step: 2.0,
+                temporal_blend: 0.70,
+                edge_fade: 0.10,
+            },
+            ReflectionTier::Ultra => Self {
+                resolution_scale: 1.0,
+                march_steps: 128,
+                binary_search_steps: 8,
+                max_distance: 1.0,
+                thickness: 0.006,
+                adaptive_thickness: true,
+                roughness_support: 1.0,
+                denoise_passes: 4,
+                denoise_step: 2.5,
+                temporal_blend: 0.85,
+                edge_fade: 0.20,
             },
             ReflectionTier::Off => Self::for_tier(ReflectionTier::Low),
         }
@@ -202,6 +290,19 @@ mod tests {
         assert!((ultra.resolution_scale - 1.0).abs() < 1e-6);
         assert_eq!((ultra.rays_per_pixel, ultra.bounces), (4, 3));
         assert!((ultra.max_roughness - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ssr_tiers_have_the_documented_values() {
+        let low = SsrPreset::for_tier(ReflectionTier::Low);
+        assert_eq!((low.march_steps, low.binary_search_steps), (16, 2));
+        assert!((low.resolution_scale - 0.5).abs() < 1e-6);
+        assert!((low.roughness_support - 0.2).abs() < 1e-6);
+        assert_eq!(low.temporal_blend, 0.0);
+        let ultra = SsrPreset::for_tier(ReflectionTier::Ultra);
+        assert_eq!((ultra.march_steps, ultra.binary_search_steps), (128, 8));
+        assert!(ultra.adaptive_thickness);
+        assert_eq!(ultra.denoise_passes, 4);
     }
 
     #[test]

@@ -8,7 +8,7 @@
 #   - docs/yaml/rendering/Reflections_Probes.yaml (fallback cubemap en miss SSR)
 #   - docs/yaml/rendering/TAA_3D.yaml (G-buffer, depth prepass)
 
-version: 6
+version: 7
 updated: 2026-11-20
 status: implemented
 
@@ -19,10 +19,9 @@ principle:
     (depth D32 en layout READ_ONLY, normal+roughness, world pos) + la escena ya iluminada como
     color del hit. En miss, composite decide SSR o el trazado (RT/BVH) según confianza.
   tier_philosophy: |
-    El tier SSR sigue encendiendo/apagando su cadena, pero ahora el sistema lo elige
-    `ReflectionMode`: con `mode = ssr` corre SSR; con `mode = rt` NO corre el pase SSR.
-    Los pasos de la marcha y la resolución del buffer SSR siguen fijos (era wgpu, no portados).
-    Los parámetros por tier viven ahora en el preset RTX (ver Reflections_RT.yaml).
+    El sistema lo elige `ReflectionMode`: con `mode = ssr` corre SSR; con `mode = rt` NO corre
+    el pase SSR. `SsrPreset::for_tier` da parámetros reales por tier (ver `preset_by_tier`).
+    El switch controla el on/off; la fila de botones solo ofrece Low..Ultra.
   opt_in: |
     `REFL_MIRROR_ROUGHNESS_MAX = 0.04` sigue fijo en `ssr.frag`/`composite.frag`/`reflect.rgen`/
     `trace.comp`. `REFL_MAX_ROUGHNESS = 0.70` sigue en `ssr.frag`; en el trazado lo sustituye
@@ -41,19 +40,17 @@ source_of_truth:
 
 resolution_by_tier:
   description: |
-    Sin escala por tier en Ash: SSR, denoise y composite trabajan a resolución de viewport
-    (`targets.extent`). El `screen_fraction` por tier de la era wgpu no se portó.
-  table:
-    - tier: off
-      ssr_active: false
-    - tier: low
-      ssr_active: true
-    - tier: medium
-      ssr_active: true
-    - tier: high
-      ssr_active: true
-    - tier: ultra
-      ssr_active: true
+    `targets.ssr` se reasigna al cambiar el tier (el G-buffer sigue a `targets.extent`).
+    Denoise y composite siguen a resolución de viewport y muestrean el target SSR por UV.
+  preset_by_tier:
+    low:    { resolution: 50%, march: 16,  binary: 2, distance: baja,   thickness: bajo,      roughness: 0.20, denoise: básico, temporal: no, edge: básico }
+    medium: { resolution: 67%, march: 32,  binary: 4, distance: media,  thickness: medio,     roughness: 0.40, denoise: medio,  temporal: sí, edge: medio }
+    high:   { resolution: 85%, march: 64,  binary: 6, distance: alta,   thickness: alto,      roughness: 0.70, denoise: alto,   temporal: sí, edge: alto }
+    ultra:  { resolution: 100%, march: 128, binary: 8, distance: máxima, thickness: adaptativo, roughness: 1.00, denoise: máximo, temporal: sí, edge: avanzado }
+  shader_input: |
+    `ssr.frag` recibe los parámetros por push constant (32 bytes): march, binary, distancia,
+    grosor (o flag adaptativo), roughness máxima y edge fade. El hit se refina con búsqueda
+    binaria y se funde en los bordes de pantalla.
 
 order_in_frame: |
   1. Forward MRT (scene / normal_rough / albedo / world / velocity) + sombra.
@@ -61,7 +58,7 @@ order_in_frame: |
      con barreras normal/depth → trazado y trazado → denoise. `targets.ssr` se limpia a 0.
   3. Si `mode = ssr`: `ssr.frag` → `targets.ssr`; `reflection` se limpia a 0 para que
      composite caiga en SSR.
-  4. `denoise.frag` → `targets.denoise` (kernel 3×3; en RT, N pasadas del preset con ping-pong).
+  4. `denoise.frag` → `targets.denoise` (kernel 3×3; filtra la imagen del sistema activo (SSR lee `targets.ssr`, RT lee `targets.reflection`) con N pasadas ping-pong de su preset).
   5. `composite.frag` mezcla scene + reflejo (peso `(1 - roughness) × confianza`) → `history[slot]`.
   6. TAA de escena (opcional) y present.
 

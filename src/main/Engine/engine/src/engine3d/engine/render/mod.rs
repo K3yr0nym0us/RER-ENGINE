@@ -915,6 +915,7 @@ impl State {
             ssr,
             raytracing,
             rtx: self.rtx_preset(),
+            ssr_preset: self.ssr_preset(),
             probe_captures: &probe_captures,
             static_batches: &static_batches,
             shadow_static_batches: &shadow_static_batches,

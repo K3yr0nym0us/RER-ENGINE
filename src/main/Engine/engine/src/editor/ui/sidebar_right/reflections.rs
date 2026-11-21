@@ -141,6 +141,14 @@ fn reflection_section(
             &mut enabled,
             crate::editor::i18n::tr(locale, "Activar", "Enable"),
         ) {
+            // Si el tier era Off (no tiene botón), se le da un valor válido al activar.
+            if enabled && tier.is_off() {
+                if mode == "rt" {
+                    actions.push(WorldAction::SetRtTier(ReflectionTier::Low));
+                } else {
+                    actions.push(WorldAction::SetReflectionTier(ReflectionTier::Low));
+                }
+            }
             actions.push(WorldAction::SetReflectionMode(if enabled {
                 mode
             } else {
@@ -149,22 +157,23 @@ fn reflection_section(
         }
     });
 
+    // El switch controla el on/off: la fila solo ofrece Low/Medium/High/Ultra.
     if let Some(index) = tier_choice(
         ui,
         locale,
-        &ReflectionTier::ALL,
+        &ReflectionTier::SELECTABLE,
         tier,
         ReflectionTier::as_str,
         hint,
     ) {
-        let chosen = ReflectionTier::ALL[index];
+        let chosen = ReflectionTier::SELECTABLE[index];
         if mode == "rt" {
             actions.push(WorldAction::SetRtTier(chosen));
         } else {
             actions.push(WorldAction::SetReflectionTier(chosen));
         }
-        // Elegir un tier distinto de Off también activa el sistema correspondiente.
-        if !chosen.is_off() && !active {
+        // Elegir un tier también activa el sistema si el switch estaba apagado.
+        if !active {
             actions.push(WorldAction::SetReflectionMode(mode));
         }
     }

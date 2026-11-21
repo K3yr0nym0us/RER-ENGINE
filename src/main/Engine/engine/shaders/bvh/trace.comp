@@ -78,6 +78,7 @@ layout(set = 0, binding = 3) readonly buffer Mats { Material mats[]; };
 layout(set = 0, binding = 4, rgba8) uniform image2D image_out;
 layout(set = 0, binding = 5) uniform sampler2D depth_tex;
 layout(set = 0, binding = 6) uniform sampler2D normal_tex;
+layout(set = 0, binding = 7) uniform sampler2D albedo_tex;
 
 bool ray_aabb(vec3 origin, vec3 inv_dir, vec3 bmin, vec3 bmax, float t_max) {
     vec3 t0 = (bmin - origin) * inv_dir;
@@ -186,7 +187,6 @@ void main() {
     vec3 dir;
     float confidence = 1.0;
     int rays = clamp(int(u.rt_params.x), 1, MAX_RAYS);
-    int bounces = clamp(int(u.rt_params.y), 1, MAX_BOUNCES);
     float t_max = max(u.rt_params.z, 1.0);
 
     if (u.counts.z == 0u) {
@@ -211,8 +211,13 @@ void main() {
         imageStore(image_out, pix, vec4(0.0));
         return;
     }
+    if (texture(albedo_tex, uv).a < 0.5) {
+        imageStore(image_out, pix, vec4(0.0));
+        return;
+    }
     vec4 nr = texture(normal_tex, uv);
-    if (nr.w <= REFL_MIRROR_ROUGHNESS_MAX || nr.w > u.rt_params.w) {
+    // Los espejos también los traza el rayo: en modo RT no corre el pase SSR.
+    if (nr.w > u.rt_params.w) {
         imageStore(image_out, pix, vec4(0.0));
         return;
     }
@@ -222,6 +227,8 @@ void main() {
     vec3 n = normalize(nr.xyz * 2.0 - 1.0);
     dir = reflect(normalize(world - origin), n);
     confidence = 1.0 - min(nr.w, u.rt_params.w);
+    // Igual que en HW: sin rebotes en superficies lisas para evitar reflejos recursivos.
+    int bounces = nr.w > 0.30 ? clamp(int(u.rt_params.y), 1, MAX_BOUNCES) : 1;
 
     vec3 accumulated = vec3(0.0);
     for (int r = 0; r < rays; r++) {
@@ -234,7 +241,10 @@ void main() {
             uint slot;
             float t_hit;
             if (!trace_bvh(ray_origin, ray_dir, hit_n, slot, t_hit, t_max)) {
-                color += sky_color(ray_origin, ray_dir) * throughput;
+                // Solo el primario aporta cielo: los misses de rebote no suman luz.
+                if (b == 0) {
+                    color += sky_color(ray_origin, ray_dir) * throughput;
+                }
                 break;
             }
             color += shade_hit(hit_n, ray_dir, slot) * throughput;
@@ -243,7 +253,7 @@ void main() {
             }
             ray_origin = ray_origin + ray_dir * t_hit + hit_n * 0.02;
             ray_dir = reflect(ray_dir, hit_n);
-            throughput *= 0.5;
+            throughput *= 0.35;
         }
         accumulated += color;
     }

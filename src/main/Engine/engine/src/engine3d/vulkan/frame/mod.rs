@@ -15,6 +15,8 @@ use super::select::align_up;
 use crate::engine3d::vulkan::gpu::{FrameTarget, GpuBuffer, GpuImage, SharedGpu};
 
 const FRAMES: usize = 2;
+/// Máximo de pasadas extra de denoise (tier Ultra = 4 pasadas en total → 3 extra).
+const MAX_EXTRA_DENOISE_PASSES: usize = 3;
 const COLOR: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const WORLD: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
 const VELOCITY: vk::Format = vk::Format::R16G16_SFLOAT;
@@ -209,6 +211,8 @@ pub struct FrameInput<'a> {
     pub raytracing: bool,
     /// Parámetros reales del tier RTX (resolución, rayos, rebotes, denoise...).
     pub rtx: crate::engine3d::config_3d::reflection_graphics::RtxPreset,
+    /// Parámetros reales del tier SSR (marcha, búsqueda binaria, denoise...).
+    pub ssr_preset: crate::engine3d::config_3d::reflection_graphics::SsrPreset,
     /// Sondas a capturar este frame, cada una con su ranura del cubemap array.
     pub probe_captures: &'a [ProbeCapture],
     /// Vista de debug: en vez del resultado final se presenta la imagen SSR en crudo.
@@ -270,8 +274,14 @@ pub struct FrameRenderer {
     sets: DescriptorSets,
     scene_ubo: [GpuBuffer; FRAMES],
     gizmo_ubo: [GpuBuffer; FRAMES],
+    /// UBO del pase de reflejos (resolución reducida según el tier RTX).
     rt_ubo: [GpuBuffer; FRAMES],
+    /// UBO del pase de fondo (resolución completa). No puede compartir buffer con `rt_ubo`:
+    /// ambos sets apuntan al mismo buffer y el último write ganaría para los dos dispatches.
+    rt_ubo_bg: [GpuBuffer; FRAMES],
     bvh_ubo: [GpuBuffer; FRAMES],
+    /// UBO del fondo en el fallback BVH (misma razón que `rt_ubo_bg`).
+    bvh_ubo_bg: [GpuBuffer; FRAMES],
     instances: [GpuBuffer; FRAMES],
     joints: [GpuBuffer; FRAMES],
     materials: GpuBuffer,
@@ -300,6 +310,8 @@ pub struct FrameRenderer {
     last_reflection_mode: u8,
     /// Escala de resolución del target de reflejos RT (del tier RTX).
     rt_scale: f32,
+    /// Escala de resolución del target SSR (del tier SSR).
+    ssr_scale: f32,
     /// Calidad de BVH con la que se construyó la caché de BLAS.
     blas_fast_trace: bool,
     static_offsets: Vec<u64>,
@@ -367,8 +379,9 @@ struct DescriptorSets {
     taa: [vk::DescriptorSet; FRAMES],
     ssr: [vk::DescriptorSet; FRAMES],
     denoise: [vk::DescriptorSet; FRAMES],
-    /// Sets adicionales para las pasadas extra de denoise del tier RTX (ping-pong).
-    denoise_pingpong: [vk::DescriptorSet; FRAMES],
+    /// Un set DISTINTO por pasada extra de denoise: actualizar un set ya enlazado en el mismo
+    /// command buffer invalida todo el buffer (VUID sin UPDATE_AFTER_BIND).
+    denoise_extra: [[vk::DescriptorSet; MAX_EXTRA_DENOISE_PASSES]; FRAMES],
     composite: [vk::DescriptorSet; FRAMES],
     present: [vk::DescriptorSet; FRAMES],
     /// Fondo trazado para el quad del cielo del pase MSAA (misma layout que `full`).
@@ -486,9 +499,17 @@ impl FrameRenderer {
             host_buffer(gpu, 256, "rt-ubo-0")?,
             host_buffer(gpu, 256, "rt-ubo-1")?,
         ];
+        let rt_ubo_bg = [
+            host_buffer(gpu, 256, "rt-ubo-bg-0")?,
+            host_buffer(gpu, 256, "rt-ubo-bg-1")?,
+        ];
         let bvh_ubo = [
             host_buffer(gpu, 256, "bvh-ubo-0")?,
             host_buffer(gpu, 256, "bvh-ubo-1")?,
+        ];
+        let bvh_ubo_bg = [
+            host_buffer(gpu, 256, "bvh-ubo-bg-0")?,
+            host_buffer(gpu, 256, "bvh-ubo-bg-1")?,
         ];
         let instances = [
             host_buffer(gpu, 4096, "inst-0")?,
@@ -552,7 +573,9 @@ impl FrameRenderer {
         )?;
         let gizmo_layout = pipeline_layout(device, &[set_layouts.gizmo], 0)?;
         let hud_layout = pipeline_layout(device, &[set_layouts.hud], 0)?;
-        let full_layout = pipeline_layout(device, &[set_layouts.full], 0)?;
+        // `full` lo comparten SSR (push de 32 bytes con los parámetros del preset), composite
+        // y present; un rango de push sin usar por estos últimos es inocuo.
+        let full_layout = pipeline_layout(device, &[set_layouts.full], 32)?;
         let taa_layout = pipeline_layout(device, &[set_layouts.taa], 8)?;
         let denoise_layout = pipeline_layout(device, &[set_layouts.denoise], 4)?;
         layouts.extend([
@@ -582,7 +605,7 @@ impl FrameRenderer {
             false,
             &mut pipelines,
         )?;
-        let forward_blend = graphics(
+        let forward_blend = graphics_blend_color_only(
             device,
             forward_layout,
             vert,
@@ -590,7 +613,6 @@ impl FrameRenderer {
             &static_vertex(),
             &MRT,
             Some(DEPTH),
-            true,
             false,
             &mut pipelines,
         )?;
@@ -606,7 +628,7 @@ impl FrameRenderer {
             false,
             &mut pipelines,
         )?;
-        let skinned_blend = graphics(
+        let skinned_blend = graphics_blend_color_only(
             device,
             skinned_layout,
             skinned_vert,
@@ -614,7 +636,6 @@ impl FrameRenderer {
             &skinned_vertex(),
             &MRT,
             Some(DEPTH),
-            true,
             false,
             &mut pipelines,
         )?;
@@ -894,7 +915,9 @@ impl FrameRenderer {
             scene_ubo,
             gizmo_ubo,
             rt_ubo,
+            rt_ubo_bg,
             bvh_ubo,
+            bvh_ubo_bg,
             instances,
             joints,
             materials,
@@ -917,6 +940,7 @@ impl FrameRenderer {
             taa_history_valid: false,
             last_reflection_mode: 0,
             rt_scale: 1.0,
+            ssr_scale: 1.0,
             blas_fast_trace: false,
             static_offsets: Vec::new(),
             shadow_offsets: Vec::new(),
@@ -933,6 +957,26 @@ impl FrameRenderer {
             depth_layout: DEPTH_ATTACHMENT,
             shadow_size: crate::engine3d::engine::SHADOW_MAP_SIZE,
         })
+    }
+
+    /// El fondo (raygen/mode 0) SIEMPRE se traza al extent completo: el preset RTX solo
+    /// reduce el pase de reflejos (mode 1). Reducir el fondo partía el cielo por la mitad.
+    pub(super) fn rt_pass_extent(&self, use_rt_scale: bool) -> vk::Extent2D {
+        if use_rt_scale {
+            self.rt_extent()
+        } else {
+            self.targets.extent
+        }
+    }
+
+    /// Extent del target SSR según la resolución del tier SSR.
+    pub(super) fn ssr_extent(&self) -> vk::Extent2D {
+        let base = self.targets.extent;
+        let scale = self.ssr_scale.clamp(0.1, 1.0);
+        vk::Extent2D {
+            width: ((base.width as f32) * scale).round().max(1.0) as u32,
+            height: ((base.height as f32) * scale).round().max(1.0) as u32,
+        }
     }
 
     /// Extent del target de reflejos RT según la resolución del tier RTX.
@@ -983,6 +1027,15 @@ impl FrameRenderer {
             // Tras un recreate de targets el reflection vuelve al extent base.
             let extent = self.rt_extent();
             self.targets.resize_rt(&self.gpu, extent)?;
+        }
+        // Resolución SSR: se reasigna solo su target, sin tocar el G-buffer ni el de RT.
+        if (self.ssr_scale - input.ssr_preset.resolution_scale).abs() > 1e-4 {
+            self.ssr_scale = input.ssr_preset.resolution_scale.clamp(0.1, 1.0);
+            let extent = self.ssr_extent();
+            self.targets.resize_ssr(&self.gpu, extent)?;
+        } else if self.targets.ssr.extent != self.ssr_extent() {
+            let extent = self.ssr_extent();
+            self.targets.resize_ssr(&self.gpu, extent)?;
         }
         // El tier de sombras exige otro resolución: se reasigna SOLO el shadow map. Es seguro
         // porque `begin_frame` espera a la GPU (`RER_VK_SYNC_FRAMES`) antes de grabar, así la

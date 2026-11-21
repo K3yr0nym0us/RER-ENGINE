@@ -35,10 +35,22 @@ impl FrameRenderer {
                 device,
                 cmd,
                 self.targets.ssr.image,
-                extent,
+                self.ssr_extent(),
                 [0.0, 0.0, 0.0, 0.0],
             );
         }
+        // Parámetros del preset SSR (32 bytes, ver ssr.frag).
+        let ssr_params = [
+            input.ssr_preset.march_steps as f32,
+            input.ssr_preset.binary_search_steps as f32,
+            input.ssr_preset.max_distance,
+            input.ssr_preset.thickness,
+            if input.ssr_preset.adaptive_thickness { 1.0 } else { 0.0 },
+            input.ssr_preset.roughness_support,
+            input.ssr_preset.edge_fade,
+            0.0f32,
+        ];
+        let ssr_push = bytemuck::bytes_of(&ssr_params).to_vec();
         let source = if input.reflections {
             if input.ssr {
                 write_combined(
@@ -72,15 +84,21 @@ impl FrameRenderer {
                     self.layouts[6],
                     self.sets.ssr[slot],
                     self.targets.ssr.view,
-                    extent,
-                    &[],
+                    self.ssr_extent(),
+                    &ssr_push,
                 );
             }
+            // En SSR se filtra la imagen SSR; en RT se filtra la imagen trazada.
+            let denoise_source = if input.ssr {
+                self.targets.ssr.view
+            } else {
+                self.targets.reflection.view
+            };
             write_combined(
                 device,
                 self.sets.denoise[slot],
                 0,
-                self.targets.reflection.view,
+                denoise_source,
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -100,16 +118,16 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
-            // El preset RTX solo afecta al denoise cuando se traza; en SSR se mantiene la pasada única.
+            // Cada sistema usa su propio perfil de denoise (nunca se mezclan).
             let passes = if input.raytracing {
                 input.rtx.denoise_passes.max(1)
             } else {
-                1
+                input.ssr_preset.denoise_passes.max(1)
             };
             let step = if input.raytracing {
                 input.rtx.denoise_step.max(0.25)
             } else {
-                1.0
+                input.ssr_preset.denoise_step.max(0.25)
             }
             .to_le_bytes();
             draw_fullscreen(
@@ -122,11 +140,12 @@ impl FrameRenderer {
                 extent,
                 &step,
             );
-            // Pasadas extra del tier RTX (ping-pong). Se usan sets distintos para que las
-            // escrituras de descriptores no alteren las pasadas ya grabadas en el command buffer.
+            // Pasadas extra del tier RTX (ping-pong). CADA pasada usa su propio set: actualizar
+            // un set ya enlazado en este command buffer invalidaba el buffer completo.
+            let passes = passes.min(MAX_EXTRA_DENOISE_PASSES as u32 + 1) as usize;
             let mut denoised = self.targets.denoise.view;
             for pass in 1..passes {
-                let set = self.sets.denoise_pingpong[slot];
+                let set = self.sets.denoise_extra[slot][pass - 1];
                 write_combined(device, set, 0, denoised, clamp, vk::ImageLayout::GENERAL)?;
                 write_combined(
                     device,
@@ -176,11 +195,18 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
+            // En SSR, el composite debe ver la imagen filtrada; en RT se deja la SSR limpia
+            // para que no aporte nada en la banda de espejos.
+            let composite_ssr = if input.ssr {
+                denoised
+            } else {
+                self.targets.ssr.view
+            };
             write_combined(
                 device,
                 self.sets.composite[slot],
                 2,
-                self.targets.ssr.view,
+                composite_ssr,
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -189,6 +215,14 @@ impl FrameRenderer {
                 self.sets.composite[slot],
                 3,
                 self.targets.normal.view,
+                clamp,
+                vk::ImageLayout::GENERAL,
+            )?;
+            write_combined(
+                device,
+                self.sets.composite[slot],
+                4,
+                self.targets.world.view,
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -246,6 +280,8 @@ impl FrameRenderer {
             let mut push = [0u8; 8];
             let desired_blend = if input.raytracing {
                 input.rtx.temporal_blend
+            } else if input.reflections {
+                input.ssr_preset.temporal_blend
             } else {
                 input.taa_blend
             };

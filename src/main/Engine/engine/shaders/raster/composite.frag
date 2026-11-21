@@ -8,6 +8,7 @@ layout(set = 0, binding = 0) uniform sampler2D scene_tex;
 layout(set = 0, binding = 1) uniform sampler2D reflection_tex;
 layout(set = 0, binding = 2) uniform sampler2D ssr_tex;
 layout(set = 0, binding = 3) uniform sampler2D normal_tex;
+layout(set = 0, binding = 4) uniform sampler2D world_tex; // .w = metallic del G-buffer
 layout(location = 0) out vec4 out_color;
 
 void main() {
@@ -25,6 +26,13 @@ void main() {
         reflection = ssr.rgb;
         confidence = ssr.a;
     }
-    float strength = (1.0 - roughness) * confidence;
-    out_color = vec4(mix(scene.rgb, reflection, clamp(strength, 0.0, 1.0)), scene.a);
+    // F0 físico: dieléctricos reflejan poco en incidencia normal (~0.04, aquí 0.10 para
+    // que se vea el reflejo sin tapar el color); metales reflejan mucho pero con el
+    // color propio de la superficie. Así plástico/vidrio/agua conservan su textura y
+    // cromo/acero siguen siendo metálicos sin parecer un espejo neutro.
+    float metallic = clamp(texture(world_tex, su).w, 0.0, 1.0);
+    float f0 = mix(0.10, 0.95, metallic);
+    vec3 tinted = reflection * mix(vec3(1.0), scene.rgb, metallic);
+    float strength = f0 * confidence * (1.0 - roughness * 0.35);
+    out_color = vec4(mix(scene.rgb, tinted, clamp(strength, 0.0, 1.0)), scene.a);
 }
