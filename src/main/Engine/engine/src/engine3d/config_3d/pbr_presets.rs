@@ -40,7 +40,7 @@ pub const MATERIAL_VALIDATION_ROWS: [PbrMaterialPreset; MAT_VAL_ROW_COUNT] = [
         label_tag: "CHROME",
         metallic: 1.0,
         roughness_min: 0.0,
-        base_color: [0.08, 0.08, 0.09],
+        base_color: [0.90, 0.91, 0.92],
         ior: 0.0,
         opacity: 1.0,
         albedo_kind: MatValAlbedoKind::Solid,
