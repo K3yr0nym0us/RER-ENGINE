@@ -1,7 +1,5 @@
 //! Demo PBR material comparison (1 sphere per preset row + labels + floor quads).
 
-use std::path::{Path, PathBuf};
-
 use glam::{Quat, Vec3};
 
 use crate::engine3d::ecs::{
@@ -21,55 +19,6 @@ pub const MAT_VAL_LABEL_PATH: &str = "[MatValLabel]";
 pub const PARTICLE_DEMO_LABEL_PATH: &str = "[ParticleDemoLabel]";
 
 const TEX_SIZE: u32 = 32;
-
-/// Albedo de demo por preset: (archivo relativo a `Engine/assets`, escala de brillo).
-/// `None` → textura procedural. La escala ajusta la foto al albedo previsto para el preset.
-fn mat_val_albedo_image_for_preset(preset: &PbrMaterialPreset) -> Option<(&'static str, f32)> {
-    match preset.id {
-        "glossy_plastic" => Some(("demo/Plastic_BaseColor.jpg", 1.0)),
-        // El JPG es plata claro (~0.87); se baja a ~0.54 para diferenciarlo del cromo (0.90).
-        "brushed_steel" => Some(("demo/Steel_BaseColor.jpg", 0.62)),
-        _ => None,
-    }
-}
-
-/// Resuelve un asset de demo en dev (`Engine/assets`) o empaquetado (`resources/engine/assets`).
-fn resolve_mat_val_image(relative: &str) -> Option<PathBuf> {
-    let mut candidates = vec![
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../assets")
-            .join(relative),
-    ];
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(parent) = exe.parent()
-    {
-        candidates.push(
-            parent
-                .join("resources/engine/assets")
-                .join(relative),
-        );
-        if let Some(dev) = parent.parent().and_then(|p| p.parent()) {
-            candidates.push(dev.join("assets").join(relative));
-        }
-    }
-    candidates.into_iter().find(|p| p.is_file())
-}
-
-/// Decodifica PNG/JPEG a RGBA nativo; `TextureArray::pack` ya lo reduce a 1024² + mips.
-fn decode_mat_val_image(path: &Path) -> Option<(Vec<u8>, u32, u32)> {
-    let bytes = std::fs::read(path).ok()?;
-    let img = image::ImageReader::new(std::io::Cursor::new(bytes))
-        .with_guessed_format()
-        .ok()?
-        .decode()
-        .ok()?
-        .to_rgba8();
-    let (w, h) = img.dimensions();
-    if w == 0 || h == 0 {
-        return None;
-    }
-    Some((img.into_raw(), w, h))
-}
 
 fn mat_val_sphere_ids(state: &State) -> Vec<EntityId> {
     state
@@ -554,36 +503,12 @@ impl State {
         if let Some(&idx) = self.mat_val_texture_cache.get(&key) {
             return idx;
         }
-        let (rgba, w, h) = mat_val_albedo_image_for_preset(preset)
-            .and_then(|(relative, brightness)| {
-                resolve_mat_val_image(relative).map(|path| (path, brightness))
-            })
-            .and_then(|(path, brightness)| match decode_mat_val_image(&path) {
-                Some((mut rgba, w, h)) => {
-                    for px in rgba.chunks_exact_mut(4) {
-                        for c in px.iter_mut().take(3) {
-                            *c = (*c as f32 * brightness).round().clamp(0.0, 255.0) as u8;
-                        }
-                    }
-                    log::info!(
-                        "[MatVal] albedo '{}' desde {} (brillo {})",
-                        preset.id,
-                        path.display(),
-                        brightness
-                    );
-                    Some((rgba, w, h))
-                }
-                None => {
-                    log::warn!("[MatVal] no se pudo decodificar {}", path.display());
-                    None
-                }
-            })
-            .unwrap_or_else(|| {
-                (build_preset_albedo_rgba(preset, TEX_SIZE), TEX_SIZE, TEX_SIZE)
-            });
-
+        let rgba = build_preset_albedo_rgba(preset, TEX_SIZE);
         let tex_idx = self.tex_layers.len();
-        let layer = self.texture_array.pack(&self.vulkan, &rgba, w, h).unwrap();
+        let layer = self
+            .texture_array
+            .pack(&self.vulkan, &rgba, TEX_SIZE, TEX_SIZE)
+            .unwrap();
         self.tex_layers.push(layer);
         self.mat_val_texture_cache.insert(key, tex_idx);
         tex_idx

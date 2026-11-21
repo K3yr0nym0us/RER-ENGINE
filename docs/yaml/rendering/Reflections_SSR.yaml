@@ -43,10 +43,11 @@ resolution_by_tier:
     `targets.ssr` se reasigna al cambiar el tier (el G-buffer sigue a `targets.extent`).
     Denoise y composite siguen a resolución de viewport y muestrean el target SSR por UV.
   preset_by_tier:
-    low:    { resolution: 50%, march: 16,  binary: 2, distance: baja,   thickness: bajo,      roughness: 0.20, denoise: básico, temporal: no, edge: básico }
-    medium: { resolution: 67%, march: 32,  binary: 4, distance: media,  thickness: medio,     roughness: 0.40, denoise: medio,  temporal: sí, edge: medio }
-    high:   { resolution: 85%, march: 64,  binary: 6, distance: alta,   thickness: alto,      roughness: 0.70, denoise: alto,   temporal: sí, edge: alto }
-    ultra:  { resolution: 100%, march: 128, binary: 8, distance: máxima, thickness: adaptativo, roughness: 1.00, denoise: máximo, temporal: sí, edge: avanzado }
+    low:    { resolution: 50%, march: 16,  binary: 2, distance: 0.35, thickness: bajo,      roughness: 0.20, denoise: 1×1.00, temporal: 0.00, edge: 0.04 }
+    medium: { resolution: 67%, march: 32,  binary: 4, distance: 0.35, thickness: medio,     roughness: 0.40, denoise: 2×0.75, temporal: 0.50, edge: 0.04 }
+    high:   { resolution: 85%, march: 64,  binary: 6, distance: 0.35, thickness: alto,      roughness: 0.70, denoise: 3×0.55, temporal: 0.55, edge: 0.04 }
+    ultra:  { resolution: 100%, march: 128, binary: 8, distance: 0.35, thickness: adaptativo, roughness: 1.00, denoise: 4×0.45, temporal: 0.60, edge: 0.04 }
+  distance_note: distance y edge fade son constantes en todos los tiers: el tier solo cambia calidad (más pasos de marcha, más refinamiento, más resolución, mejor denoise), nunca el alcance ni la posición del reflejo.
   shader_input: |
     `ssr.frag` recibe los parámetros por push constant (32 bytes): march, binary, distancia,
     grosor (o flag adaptativo), roughness máxima y edge fade. El hit se refina con búsqueda

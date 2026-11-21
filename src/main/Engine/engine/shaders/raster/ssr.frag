@@ -86,7 +86,12 @@ void main() {
             }
         }
         vec2 hit_uv = su + dir * hi;
-        color = texture(color_tex, hit_uv).rgb;
+        vec4 hit_albedo = texture(albedo_tex, hit_uv);
+        vec3 scene_col = texture(color_tex, hit_uv).rgb;
+        // Los transparentes llegan a `scene` diluidos con el fondo (alpha bajo), así que su
+        // reflejo sería casi invisible. En su lugar usamos su albedo del G-buffer, sin mezclar.
+        // albedo.a == 1 en opacos; en transparentes codifica el Fresnel en 0.55..1.
+        color = hit_albedo.a < 0.999 ? mix(scene_col, hit_albedo.rgb, 0.85) : scene_col;
         vec2 edge = min(hit_uv, vec2(1.0) - hit_uv);
         float fade = smoothstep(0.0, max(pc.b.z, 0.001), min(edge.x, edge.y));
         confidence = (1.0 - nr.w) * fade;
