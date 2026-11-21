@@ -17,6 +17,8 @@ use super::widgets;
 
 const DANGER_BG: Color32 = Color32::from_rgb(0x84, 0x1c, 0x24);
 const DANGER_TEXT: Color32 = Color32::from_rgb(0xff, 0xd8, 0xda);
+/// `h-100`: los dos fieldsets de la fila comparten la altura del más alto.
+const FIELDSET_PAIR_MIN_HEIGHT: f32 = 244.0;
 
 // Colores Bootstrap del `WorldGenModalBody` original (root font 14 px).
 const BTN_PRIMARY: Color32 = Color32::from_rgb(0x0d, 0x6e, 0xfd);
@@ -108,6 +110,7 @@ fn fieldset(
     ui: &mut egui::Ui,
     legend: &str,
     centered: bool,
+    min_height: f32,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     egui::Frame::new()
@@ -115,6 +118,13 @@ fn fieldset(
         .corner_radius(6)
         .inner_margin(egui::Margin::same(8))
         .show(ui, |ui| {
+            // React: `<fieldset class="col-6 h-100">` es block-level: ocupa
+            // todo el ancho que le toca. egui encoge el Frame a su contenido
+            // salvo que se fuerce el ancho del ui interior.
+            ui.set_width(ui.available_width());
+            if min_height > 0.0 {
+                ui.set_min_height(min_height);
+            }
             // React: `<legend class="fs-5 fw-semibold text-uppercase">`; con
             // root de 14 px, `fs-5` son 17.5 px. Centrado con el ancho real
             // del texto en vez del offset fijo que usaba la migra inicial.
@@ -203,6 +213,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
         ui,
         &t(locale, "Terrain configuration", "Terrain configuration"),
         true,
+        0.0,
         |ui| {
             widgets::top_row(ui, |ui| {
                 let half = ui.available_width() / 2.0;
@@ -214,6 +225,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                             ui,
                             &t(locale, "Size settings", "Size settings"),
                             false,
+                            FIELDSET_PAIR_MIN_HEIGHT,
                             |ui| {
                                 ui.label(
                                     RichText::new(t(locale, "Seed", "Seed"))
@@ -279,6 +291,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                             ui,
                             &t(locale, "Terrain elements", "Terrain elements"),
                             false,
+                            FIELDSET_PAIR_MIN_HEIGHT,
                             |ui| {
                                 let fields: [(&str, &mut u32, u32); 9] = [
                                     (
@@ -596,6 +609,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
         ui,
         &t(locale, "Distribute blueprints", "Distribute blueprints"),
         false,
+        0.0,
         |ui| {
             if app.assets.models.is_empty() {
                 ui.label(
