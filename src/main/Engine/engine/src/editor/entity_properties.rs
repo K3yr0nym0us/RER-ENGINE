@@ -6,11 +6,15 @@
 
 use serde_json::Value;
 
+use crate::editor::ui::sidebar_right::particles::EmitterRow;
+
 /// Pestaña activa del inspector ( mismo orden que `PropertiesTab` en React ).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum PropTab {
     #[default]
     Transform,
+    Particles,
+    Physics,
     Animations,
     Scripting,
     Bones,
@@ -217,6 +221,10 @@ pub(crate) struct EntityPropertiesState {
     signature: String,
 
     pub entity: Option<PropEntity>,
+    /// Emisor de partículas editado en la pestaña condicional (`Some` = visible).
+    pub particle_draft: Option<EmitterRow>,
+    /// `true` tras pulsar Aplicar: sincroniza la fila del sidebar con el draft.
+    pub particle_applied: bool,
     pub multi_ids: Vec<u64>,
     pub multi_already_merged: bool,
 
@@ -431,7 +439,11 @@ impl EntityPropertiesState {
             self.copied_until = None;
             self.confirm = None;
             self.model_picker = None;
-            self.active_tab = PropTab::Transform;
+            self.active_tab = if self.particle_draft.is_some() {
+                PropTab::Particles
+            } else {
+                PropTab::Transform
+            };
             self.hardness_draft = self.entity_hardness.to_string();
             let interaction = self.interactable.clone().unwrap_or_default();
             // El motor es la fuente de verdad: las entidades demo tienen el

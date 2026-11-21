@@ -219,6 +219,9 @@ impl EditorApp {
             }
             "entity_selected" => {
                 self.selected_entity = SelectedEntity::from_event(event);
+                if self.selected_entity.is_some() {
+                    self.entity_properties.particle_draft = None;
+                }
                 if let Some(entity) = self.selected_entity.as_ref()
                     && self.pending_properties == Some(entity.id)
                 {
@@ -457,8 +460,8 @@ impl EditorApp {
                 );
             }
             "emitter_picked" => {
-                // Click sobre un emisor en el viewport: abrir sus propiedades
-                // directamente (sin buscarlo en la lista del sidebar).
+                // Click sobre un emisor en el viewport: abrir el inspector de
+                // propiedades de siempre con su pestaña exclusiva de partículas.
                 let Some(id) = event.get("id").and_then(Value::as_u64) else {
                     return;
                 };
@@ -472,9 +475,18 @@ impl EditorApp {
                 else {
                     return;
                 };
-                self.right_sidebar.particles.modal = Some(row);
-                self.right_sidebar.particles.modal_is_new = false;
-                self.right_sidebar.particles.modal_configure = false;
+                let props = &mut self.entity_properties;
+                props.name_draft = format!("Particle {id}");
+                props.entity = None;
+                props.multi_ids.clear();
+                props.is_from_blueprint = false;
+                props.is_collider = false;
+                props.is_execution_area = false;
+                props.is_player = false;
+                props.is_projectile = false;
+                props.particle_draft = Some(row);
+                props.active_tab = crate::editor::entity_properties::PropTab::Particles;
+                props.open = true;
                 self.push_log(
                     "[Partículas] Propiedades del emisor abiertas".to_string(),
                     false,
@@ -635,19 +647,21 @@ mod tests {
         app.right_sidebar.particles.emitters.push(row.clone());
 
         app.handle_engine_event(&json!({ "event": "emitter_picked", "id": 42 }));
-        let modal = app
-            .right_sidebar
-            .particles
-            .modal
+        let draft = app
+            .entity_properties
+            .particle_draft
             .as_ref()
-            .expect("la modal debe abrirse con el emisor picado");
-        assert_eq!(modal.id, 42);
-        assert!(!app.right_sidebar.particles.modal_is_new);
-        assert!(!app.right_sidebar.particles.modal_configure);
+            .expect("el inspector debe abrirse con el emisor picado");
+        assert_eq!(draft.id, 42);
+        assert!(app.entity_properties.open);
+        assert_eq!(
+            app.entity_properties.active_tab,
+            crate::editor::entity_properties::PropTab::Particles
+        );
 
-        app.right_sidebar.particles.modal = None;
+        app.entity_properties.particle_draft = None;
         app.handle_engine_event(&json!({ "event": "emitter_picked", "id": 999 }));
-        assert!(app.right_sidebar.particles.modal.is_none());
+        assert!(app.entity_properties.particle_draft.is_none());
     }
 
     #[test]

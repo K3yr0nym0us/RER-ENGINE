@@ -75,7 +75,7 @@ pub(crate) struct EmitterValues {
 /// Fila de un emisor de escena y borrador de la modal (una sola estructura: la modal
 /// edita un clon y al confirmar reemplaza la fila). Los `NumberDraft` son la fuente
 /// única del texto; el valor se lee con `values()` al confirmar.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct EmitterRow {
     pub(crate) id: u64,
     pub(crate) material: &'static str,
@@ -512,6 +512,49 @@ pub(crate) struct EmitterRanges {
     pub viscosity: FieldRange,
 }
 
+/// Construye el comando de alta/upsert para una fila de emisor.
+/// Compartido por la modal de emisores y por la pestaña de partículas del inspector.
+pub(crate) fn emitter_command_for(row: &EmitterRow) -> serde_json::Value {
+    let mut row = row.clone();
+    row.pin_inapplicable_fields();
+    let values = row.values();
+    if row.material == "liquid_cube" {
+        return json!({
+            "cmd": "add_water_source",
+            "id": row.id,
+            "position": values.position,
+            "cell_size": values.cell_size,
+            "color": values.color,
+            "viscosity": values.viscosity,
+            "cohesion": values.cohesion,
+        });
+    }
+    let liquid = is_liquid_material(row.material);
+    let mut command = json!({
+        "cmd": "add_particle_emitter",
+        "id": row.id,
+        "material": row.material,
+        "position": values.position,
+        "rate": values.rate,
+        "size": values.size,
+        "life": values.life,
+        "gravity": values.gravity,
+        // En líquidos el shader interpreta `drag` como viscosidad.
+        "drag": if liquid { values.viscosity } else { values.drag },
+        "turbulence": values.turbulence,
+        "cohesion": values.cohesion,
+        "ground_y": values.ground_y,
+        "wind": values.wind,
+        "ground_collision": values.ground_collision,
+        "accumulate": values.accumulate,
+        "splash": values.splash,
+    });
+    if liquid {
+        command["color"] = json!(values.color);
+    }
+    command
+}
+
 pub(crate) fn field_ranges(material: &str) -> EmitterRanges {
     let (rate, size, life) = match material {
         "smoke" => (
@@ -796,44 +839,7 @@ impl ParticlesUiState {
     /// Comando de alta para la fila: emisores GPU o fuente de líquido
     /// (upsert por id en ambos casos).
     pub(crate) fn emitter_command(&self, row: &EmitterRow) -> serde_json::Value {
-        let mut row = row.clone();
-        row.pin_inapplicable_fields();
-        let values = row.values();
-        if row.material == "liquid_cube" {
-            return json!({
-                "cmd": "add_water_source",
-                "id": row.id,
-                "position": values.position,
-                "cell_size": values.cell_size,
-                "color": values.color,
-                "viscosity": values.viscosity,
-                "cohesion": values.cohesion,
-            });
-        }
-        let liquid = is_liquid_material(row.material);
-        let mut command = json!({
-            "cmd": "add_particle_emitter",
-            "id": row.id,
-            "material": row.material,
-            "position": values.position,
-            "rate": values.rate,
-            "size": values.size,
-            "life": values.life,
-            "gravity": values.gravity,
-            // En líquidos el shader interpreta `drag` como viscosidad.
-            "drag": if liquid { values.viscosity } else { values.drag },
-            "turbulence": values.turbulence,
-            "cohesion": values.cohesion,
-            "ground_y": values.ground_y,
-            "wind": values.wind,
-            "ground_collision": values.ground_collision,
-            "accumulate": values.accumulate,
-            "splash": values.splash,
-        });
-        if liquid {
-            command["color"] = json!(values.color);
-        }
-        command
+        emitter_command_for(row)
     }
 
     /// Quita la fila demo del sidebar al «Limpiar escena».

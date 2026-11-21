@@ -18,8 +18,11 @@ use crate::editor::entity_properties::{
 };
 use crate::editor::i18n::tr;
 use crate::editor::theme;
+use crate::editor::ui::number_draft::format_number;
+use crate::editor::ui::sidebar_right::particles::emitter_command_for;
 use crate::engine3d::ipc::normalize_model_library_category;
 
+use super::particles_config_modal::particle_properties_fields;
 use super::scene_script_modal::{RER_THEME, rhai_syntax};
 use super::widgets;
 
@@ -177,6 +180,31 @@ fn number_field(ui: &mut egui::Ui, draft: &mut String, width: f32) -> egui::Resp
     ui.add_sized([width, 26.0], egui::TextEdit::singleline(draft))
 }
 
+/// Campo numérico de transformación con botones `−`/`+` a la derecha, uno al
+/// lado del otro y de la misma altura que el input. El paso es 0.1 para valores
+/// decimales y 1 para enteros.
+fn transform_number_field(ui: &mut egui::Ui, draft: &mut String, width: f32) -> egui::Response {
+    const BUTTON_W: f32 = 15.0;
+    const HEIGHT: f32 = 26.0;
+    let text_width = (width - 2.0 * BUTTON_W).max(24.0);
+    let mut response = ui.add_sized([text_width, HEIGHT], egui::TextEdit::singleline(draft));
+    let value = draft.trim().parse::<f32>().ok().unwrap_or(0.0);
+    let step = if value.fract().abs() > 1e-4 { 0.1 } else { 1.0 };
+    let mut delta = 0.0;
+    ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
+    if ui.add_sized([BUTTON_W, HEIGHT], egui::Button::new("−")).clicked() {
+        delta = -step;
+    }
+    if ui.add_sized([BUTTON_W, HEIGHT], egui::Button::new("+")).clicked() {
+        delta = step;
+    }
+    if delta != 0.0 {
+        *draft = format_number(value + delta);
+        response.mark_changed();
+    }
+    response
+}
+
 /// Reparte el ancho disponible en `count` celdas iguales para los campos de
 /// transformación. Se calcula una sola vez: `ui.available_width()` se reduce en
 /// cada iteración dentro de un `horizontal`, lo que daba inputs de tamaños
@@ -229,12 +257,10 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                 let state = &mut app.entity_properties;
                 if state.multi_ids.len() > 1 {
                     multi_selection(ui, state, locale, &mut commands);
-                } else if state.entity.is_some() {
+                } else if state.entity.is_some() || state.particle_draft.is_some() {
                     toolbar(ui, state, locale, &mut commands);
                     ui.add_space(6.0);
                     model_actions(ui, state, &models, active_scene_id, locale);
-                    ui.add_space(6.0);
-                    physics(ui, state, locale, &mut commands);
                     ui.add_space(8.0);
                     tabs(
                         ui,
@@ -268,6 +294,23 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
 
     for command in commands {
         app.send_engine(command);
+    }
+
+    // Tras «Aplicar» en la pestaña de partículas, la fila del sidebar (fuente de
+    // los snapshots y del próximo click derecho) refleja los valores editados.
+    if app.entity_properties.particle_applied {
+        app.entity_properties.particle_applied = false;
+        if let Some(draft) = app.entity_properties.particle_draft.clone() {
+            if let Some(row) = app
+                .right_sidebar
+                .particles
+                .emitters
+                .iter_mut()
+                .find(|row| row.id == draft.id)
+            {
+                *row = draft;
+            }
+        }
     }
 }
 
@@ -355,7 +398,12 @@ fn toolbar(
     locale: Locale,
     commands: &mut Vec<Value>,
 ) {
-    let id = state.entity.as_ref().map(|e| e.id).unwrap_or(0);
+    let id = state
+        .entity
+        .as_ref()
+        .map(|e| e.id)
+        .or_else(|| state.particle_draft.as_ref().map(|d| d.id))
+        .unwrap_or(0);
     let editing = state.editing_name;
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
@@ -560,13 +608,16 @@ fn model_actions(
     }
     let is_3d = state.is_3d;
     let id = state.entity.as_ref().map(|e| e.id).unwrap_or(0);
+    // Un emisor de partículas no usa modelo: solo se muestra «Convertir a
+    // Blueprint» y ocupa todo el ancho. En entidades normales, 50% cada uno.
+    let show_replace = is_3d && !state.is_from_blueprint && state.particle_draft.is_none();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
-        // Los botones se ajustan a su texto + icono (width=None), no a la mitad
-        // fija de la ventana: así la modal no se ensancha por ellos.
-        if is_3d && !state.is_from_blueprint {
+        let half = (ui.available_width() - ui.spacing().item_spacing.x) * 0.5;
+        let action_width = if show_replace { half } else { ui.available_width() };
+        if show_replace {
             let label = t(locale, "Reemplazar modelo", "Replace model");
-            if outline_button(ui, icons::CUBE, &label, theme::INFO, true, None) {
+            if outline_button(ui, icons::CUBE, &label, theme::INFO, true, Some(half)) {
                 // Cada entidad solo ofrece modelos de su propia categoría.
                 let intent = if state.is_player || state.is_character {
                     "character"
@@ -606,12 +657,12 @@ fn model_actions(
                 &label,
                 theme::OUTLINE_SECONDARY,
                 false,
-                None,
+                Some(action_width),
             );
             ui.label(RichText::new("").size(1.0)).on_hover_text(tooltip);
         } else {
             let label = t(locale, "Convertir a Blueprint", "Convert to Blueprint");
-            if outline_button(ui, icons::SQUARE, &label, theme::ACCENT, true, None) {
+            if outline_button(ui, icons::SQUARE, &label, theme::ACCENT, true, Some(action_width)) {
                 state.confirm = Some(crate::editor::entity_properties::ConfirmDialog {
                     title: t(locale, "Convertir a Blueprint", "Convert to Blueprint"),
                     message: format!(
@@ -894,22 +945,31 @@ fn tabs(
         .is_some_and(|e| e.animations.iter().any(|a| a.embedded_in_model));
     let is_multi = state.multi_ids.len() > 1;
 
-    let mut tabs = vec![PropTab::Transform];
-    if !state.is_collider && !state.is_execution_area && (!is_3d || has_embedded) {
-        tabs.push(PropTab::Animations);
-    }
-    if !state.is_collider {
-        tabs.push(PropTab::Scripting);
-    }
-    if is_3d && state.can_have_bone_physics {
-        tabs.push(PropTab::Bones);
-    }
-    if state.is_projectile && !is_multi {
-        tabs.push(PropTab::Projectile);
-    }
-    if is_3d && !state.is_collider && !is_multi {
-        tabs.push(PropTab::Interaction);
-    }
+    let tabs = if state.particle_draft.is_some() {
+        // Un emisor solo ofrece transform, sus props y programación.
+        vec![PropTab::Transform, PropTab::Particles, PropTab::Scripting]
+    } else {
+        let mut list = vec![PropTab::Transform];
+        if !state.is_collider && !state.is_execution_area {
+            list.push(PropTab::Physics);
+        }
+        if !state.is_collider && !state.is_execution_area && (!is_3d || has_embedded) {
+            list.push(PropTab::Animations);
+        }
+        if !state.is_collider {
+            list.push(PropTab::Scripting);
+        }
+        if is_3d && state.can_have_bone_physics {
+            list.push(PropTab::Bones);
+        }
+        if state.is_projectile && !is_multi {
+            list.push(PropTab::Projectile);
+        }
+        if is_3d && !state.is_collider && !is_multi {
+            list.push(PropTab::Interaction);
+        }
+        list
+    };
     if !tabs.contains(&state.active_tab) {
         state.active_tab = tabs.first().copied().unwrap_or(PropTab::Transform);
     }
@@ -918,6 +978,8 @@ fn tabs(
         .iter()
         .map(|tab| match tab {
             PropTab::Transform => t(locale, "Transformaciones", "Transformations"),
+            PropTab::Particles => t(locale, "Partículas", "Particles"),
+            PropTab::Physics => t(locale, "Física", "Physics"),
             PropTab::Animations => t(locale, "Animaciones", "Animations"),
             PropTab::Scripting => t(locale, "Programar entidad", "Program entity"),
             PropTab::Bones => t(locale, "Huesos", "Bones"),
@@ -954,6 +1016,8 @@ fn tabs(
 
     match state.active_tab {
         PropTab::Transform => transform_tab(ui, state, locale, commands),
+        PropTab::Particles => particles_tab(ui, state, locale, commands),
+        PropTab::Physics => physics(ui, state, locale, commands),
         PropTab::Animations => animations_tab(ui, state, locale, commands, is_3d),
         PropTab::Scripting => scripting_tab(ui, state, locale, commands),
         PropTab::Bones => bones_tab(ui, state, locale, commands),
@@ -962,13 +1026,60 @@ fn tabs(
     }
 }
 
+/// Pestaña condicional del inspector cuando el seleccionado es un emisor de
+/// partículas. Reutiliza los mismos campos por material que la modal de emisores.
+fn particles_tab(
+    ui: &mut egui::Ui,
+    state: &mut EntityPropertiesState,
+    locale: Locale,
+    commands: &mut Vec<Value>,
+) {
+    let Some(mut draft) = state.particle_draft.clone() else {
+        return;
+    };
+    let material = crate::editor::ui::sidebar_right::particles::MATERIAL_OPTIONS
+        .iter()
+        .find(|(wire, _, _)| *wire == draft.material)
+        .map(|option| tr(locale, option.1, option.2))
+        .unwrap_or_else(|| draft.material);
+    section_label(ui, &material);
+    ui.add_space(6.0);
+    particle_properties_fields(ui, locale, &mut draft);
+
+    ui.add_space(18.0);
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if widgets::modal_button(
+                ui,
+                icons::CHECK,
+                &t(locale, "Aplicar", "Apply"),
+                widgets::ModalButtonStyle::Primary,
+                ui.available_width(),
+                true,
+            ) {
+                commands.push(emitter_command_for(&draft));
+                state.particle_applied = true;
+                state.particle_draft = Some(draft);
+            } else {
+                state.particle_draft = Some(draft);
+            }
+        });
+    });
+}
+
 fn transform_tab(
     ui: &mut egui::Ui,
     state: &mut EntityPropertiesState,
     locale: Locale,
     commands: &mut Vec<Value>,
 ) {
-    let id = state.entity.as_ref().map(|e| e.id).unwrap_or(0);
+    let id = state
+        .entity
+        .as_ref()
+        .map(|e| e.id)
+        .or_else(|| state.particle_draft.as_ref().map(|d| d.id))
+        .unwrap_or(0);
+    let is_particle = state.particle_draft.is_some();
     let is_editor_camera = state.is_editor_camera && state.is_3d;
     let is_2d = !state.is_3d;
     let is_play_character =
@@ -978,29 +1089,60 @@ fn transform_tab(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(4.0, 4.0);
         let w = axis_width(ui, 3);
-        for (axis, draft_value) in state.pos_draft.iter_mut().enumerate() {
-            ui.allocate_ui_with_layout(
-                Vec2::new(w, 26.0),
-                egui::Layout::left_to_right(egui::Align::Center),
-                |ui| {
-                    axis_label(ui, axis);
-                    let mut draft = draft_value.clone();
-                    if number_field(ui, &mut draft, w - 22.0).changed()
-                        && let Some(value) = parse_f32(&draft)
-                    {
-                        commands.push(json!({
-                            "cmd": "set_transform", "id": id,
-                            "position_axis": { "axis": axis, "value": value }
-                        }));
-                    }
-                    *draft_value = draft;
-                },
-            );
+        if is_particle {
+            // La posición del emisor vive en su propia fila: al editarla se
+            // reenvía el comando de upsert del emisor con la nueva posición.
+            let mut row = state.particle_draft.clone().expect("is_particle");
+            let mut changed = false;
+            for axis in 0..3 {
+                ui.allocate_ui_with_layout(
+                    Vec2::new(w, 26.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        axis_label(ui, axis);
+                        let mut text = row.position[axis].text.clone();
+                        if transform_number_field(ui, &mut text, w - 22.0).changed()
+                            && let Some(value) = parse_f32(&text)
+                        {
+                            row.position[axis].force(value);
+                            changed = true;
+                        } else {
+                            row.position[axis].text = text;
+                        }
+                    },
+                );
+            }
+            if changed {
+                commands.push(emitter_command_for(&row));
+                state.particle_applied = true;
+            }
+            state.particle_draft = Some(row);
+        } else {
+            for (axis, draft_value) in state.pos_draft.iter_mut().enumerate() {
+                ui.allocate_ui_with_layout(
+                    Vec2::new(w, 26.0),
+                    egui::Layout::left_to_right(egui::Align::Center),
+                    |ui| {
+                        axis_label(ui, axis);
+                        let mut draft = draft_value.clone();
+                        if transform_number_field(ui, &mut draft, w - 22.0).changed()
+                            && let Some(value) = parse_f32(&draft)
+                        {
+                            commands.push(json!({
+                                "cmd": "set_transform", "id": id,
+                                "position_axis": { "axis": axis, "value": value }
+                            }));
+                        }
+                        *draft_value = draft;
+                    },
+                );
+            }
         }
     });
     ui.add_space(8.0);
 
-    if !is_editor_camera {
+    // Los emisores no tienen rotación: se omite por completo en partículas.
+    if !is_editor_camera && !is_particle {
         if is_2d {
             section_label(
                 ui,
@@ -1013,11 +1155,13 @@ fn transform_tab(
                     ui.allocate_ui_with_layout(Vec2::new(w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         axis_label(ui, axis);
                         let mut draft = state.rot_draft[axis].clone();
-                        if number_field(ui, &mut draft, w - 22.0).changed() {
+                        if transform_number_field(ui, &mut draft, w - 22.0).changed() {
                             let mut drafts = state.rot_draft.clone();
                             drafts[axis] = draft.clone();
                             let values: Option<Vec<f32>> = drafts.iter().map(|v| parse_f32(v)).collect();
-                            if let Some(values) = values {
+                            if let Some(values) = values
+                                && !is_particle
+                            {
                                 commands.push(json!({ "cmd": "set_transform", "id": id, "rotation": values }));
                             }
                         }
@@ -1034,25 +1178,27 @@ fn transform_tab(
                     ui.allocate_ui_with_layout(Vec2::new(w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                         axis_label(ui, axis);
                         let mut draft = state.rot_draft[axis].clone();
-                        if number_field(ui, &mut draft, w - 22.0).changed()
+                        if transform_number_field(ui, &mut draft, w - 22.0).changed()
                             && let Some(value) = parse_f32(&draft)
                         {
                             let rounded = value.round();
                             let base = state.rot_focus_deg[axis];
                             let delta = shortest_delta(base, rounded);
                             if delta.abs() > 1e-6 {
-                                if is_play_character {
-                                    commands.push(json!({
-                                        "cmd": "set_transform", "id": id,
-                                        "body_rotation_only": true,
-                                        "rotation_euler_delta": { "axis": axis, "degrees": delta }
-                                    }));
-                                } else {
-                                    let mut degrees = state.rot_focus_deg;
-                                    degrees[axis] = rounded;
-                                    commands.push(json!({
-                                        "cmd": "set_transform", "id": id, "rotation_euler_degrees": degrees
-                                    }));
+                                if !is_particle {
+                                    if is_play_character {
+                                        commands.push(json!({
+                                            "cmd": "set_transform", "id": id,
+                                            "body_rotation_only": true,
+                                            "rotation_euler_delta": { "axis": axis, "degrees": delta }
+                                        }));
+                                    } else {
+                                        let mut degrees = state.rot_focus_deg;
+                                        degrees[axis] = rounded;
+                                        commands.push(json!({
+                                            "cmd": "set_transform", "id": id, "rotation_euler_degrees": degrees
+                                        }));
+                                    }
                                 }
                                 state.rot_focus_deg[axis] = rounded;
                             }
@@ -1092,10 +1238,21 @@ fn transform_tab(
                 ui.allocate_ui_with_layout(Vec2::new(w, 26.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     axis_label(ui, axis);
                     let mut draft = state.scl_draft[axis].clone();
-                    if number_field(ui, &mut draft, w - 22.0).changed()
+                    if transform_number_field(ui, &mut draft, w - 22.0).changed()
                         && let Some(value) = parse_f32(&draft)
                     {
-                        if state.lock_proportions {
+                        if is_particle {
+                            // El emisor no tiene transform: su «escala» es el tamaño
+                            // de sus partículas. Uniforme en los tres ejes.
+                            for axis_draft in state.scl_draft.iter_mut() {
+                                *axis_draft = format_number(value);
+                            }
+                            if let Some(row) = state.particle_draft.as_mut() {
+                                row.size.force(value);
+                                commands.push(emitter_command_for(row));
+                                state.particle_applied = true;
+                            }
+                        } else if state.lock_proportions {
                             let prev = state
                                 .scl_draft
                                 .iter()

@@ -79,6 +79,182 @@ pub(crate) fn show(ctx: &egui::Context, app: &mut EditorApp) {
     }
 }
 
+/// Campos editables de un emisor, filtrados por el material (`field_mask`).
+/// Compartido por la modal de emisores y por la pestaña de partículas del
+/// inspector de entidades: cada tipo muestra solo sus sliders.
+pub(crate) fn particle_properties_fields(
+    ui: &mut egui::Ui,
+    locale: Locale,
+    draft: &mut EmitterRow,
+) {
+    draft.pin_inapplicable_fields();
+    let mask = field_mask(draft.material);
+    let ranges = field_ranges(draft.material);
+    // Los campos que el material no usa NO se renderizan: así la UI solo enseña lo que aplica.
+    if mask.cell_size {
+        // Cubo de líquidos: el backend de rejilla solo añade el tamaño de celda;
+        // el resto de propiedades líquidas se comparten abajo.
+        slider_row(
+            ui,
+            locale,
+            "Tamaño de celda (m)",
+            "Cell size (m)",
+            &mut draft.cell_size,
+            ranges.cell_size,
+            0.5,
+        );
+    } else {
+        if mask.rate {
+            slider_row(
+                ui,
+                locale,
+                "Emisión (part/s)",
+                "Emission (part/s)",
+                &mut draft.rate,
+                ranges.rate,
+                100.0,
+            );
+        }
+        slider_row(
+            ui,
+            locale,
+            "Tamaño (m)",
+            "Size (m)",
+            &mut draft.size,
+            ranges.size,
+            0.3,
+        );
+        slider_row(
+            ui,
+            locale,
+            "Vida (s)",
+            "Life (s)",
+            &mut draft.life,
+            ranges.life,
+            3.0,
+        );
+        if mask.gravity {
+            slider_row(
+                ui,
+                locale,
+                "Gravedad (m/s²)",
+                "Gravity (m/s²)",
+                &mut draft.gravity,
+                ranges.gravity,
+                -9.8,
+            );
+        }
+        if mask.drag {
+            slider_row(
+                ui,
+                locale,
+                "Arrastre",
+                "Drag",
+                &mut draft.drag,
+                ranges.drag,
+                0.5,
+            );
+        }
+        if mask.turbulence {
+            slider_row(
+                ui,
+                locale,
+                "Turbulencia",
+                "Turbulence",
+                &mut draft.turbulence,
+                ranges.turbulence,
+                0.0,
+            );
+        }
+        if mask.cohesion && mask.color {
+            // Líquidos GPU: el mismo parámetro se presenta como tensión
+            // superficial (el shader lo usa como cohesión de flujo).
+            slider_row(
+                ui,
+                locale,
+                "Tensión superficial",
+                "Surface tension",
+                &mut draft.cohesion,
+                ranges.cohesion,
+                0.15,
+            );
+        } else if mask.cohesion {
+            slider_row(
+                ui,
+                locale,
+                "Cohesión",
+                "Cohesion",
+                &mut draft.cohesion,
+                ranges.cohesion,
+                0.0,
+            );
+        }
+        // `ground_y` no se edita aquí: lo fija el raycast del ghost al colocar
+        // el emisor y se envía al motor como plano de colisión/reciclado.
+        if mask.wind {
+            slider_row(
+                ui,
+                locale,
+                "Viento X (m/s)",
+                "Wind X (m/s)",
+                &mut draft.wind[0],
+                ranges.wind,
+                0.0,
+            );
+            slider_row(
+                ui,
+                locale,
+                "Viento Z (m/s)",
+                "Wind Z (m/s)",
+                &mut draft.wind[1],
+                ranges.wind,
+                0.0,
+            );
+        }
+
+        if mask.ground_collision || mask.accumulate || mask.splash {
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                if mask.ground_collision {
+                    checkbox_tr(
+                        ui,
+                        locale,
+                        "Colisión suelo",
+                        "Ground collision",
+                        &mut draft.ground_collision,
+                    );
+                }
+                if mask.accumulate {
+                    checkbox_tr(ui, locale, "Acumular", "Accumulate", &mut draft.accumulate);
+                }
+                if mask.splash {
+                    checkbox_tr(ui, locale, "Salpicar", "Splash", &mut draft.splash);
+                }
+            });
+        }
+    }
+    if mask.viscosity {
+        slider_row(
+            ui,
+            locale,
+            "Viscosidad",
+            "Viscosity",
+            &mut draft.viscosity,
+            ranges.viscosity,
+            0.15,
+        );
+    }
+    // Propiedades compartidas por todos los líquidos, con backend de rejilla
+    // (cubo) o GPU (emisor de agua). Va al final, tras los sliders.
+    if mask.color {
+        ui.add_space(3.0);
+        ui.horizontal(|ui| {
+            ui.label(tr(locale, "Liquid color", "Liquid color"));
+            ui.color_edit_button_rgb(&mut draft.color);
+        });
+    }
+}
+
 fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
     let Some(mut draft) = app.right_sidebar.particles.modal.clone() else {
         return;
@@ -136,182 +312,7 @@ fn show_body(ui: &mut egui::Ui, app: &mut EditorApp) {
     ui.add_space(6.0);
 
     if !select_only {
-        draft.pin_inapplicable_fields();
-        let mask = field_mask(draft.material);
-        let ranges = field_ranges(draft.material);
-        // Los campos que el material no usa NO se renderizan (antes se
-        // mostraban bloqueados): así la modal solo enseña lo que aplica.
-        if mask.cell_size {
-            // Cubo de líquidos: el backend de rejilla solo añade el tamaño de
-            // celda; el resto de propiedades líquidas se comparten abajo.
-            slider_row(
-                ui,
-                locale,
-                "Tamaño de celda (m)",
-                "Cell size (m)",
-                &mut draft.cell_size,
-                ranges.cell_size,
-                0.5,
-            );
-        } else {
-            if mask.rate {
-                slider_row(
-                    ui,
-                    locale,
-                    "Emisión (part/s)",
-                    "Emission (part/s)",
-                    &mut draft.rate,
-                    ranges.rate,
-                    100.0,
-                );
-            }
-            slider_row(
-                ui,
-                locale,
-                "Tamaño (m)",
-                "Size (m)",
-                &mut draft.size,
-                ranges.size,
-                0.3,
-            );
-            slider_row(
-                ui,
-                locale,
-                "Vida (s)",
-                "Life (s)",
-                &mut draft.life,
-                ranges.life,
-                3.0,
-            );
-            if mask.gravity {
-                slider_row(
-                    ui,
-                    locale,
-                    "Gravedad (m/s²)",
-                    "Gravity (m/s²)",
-                    &mut draft.gravity,
-                    ranges.gravity,
-                    -9.8,
-                );
-            }
-            if mask.drag {
-                slider_row(
-                    ui,
-                    locale,
-                    "Arrastre",
-                    "Drag",
-                    &mut draft.drag,
-                    ranges.drag,
-                    0.5,
-                );
-            }
-            if mask.turbulence {
-                slider_row(
-                    ui,
-                    locale,
-                    "Turbulencia",
-                    "Turbulence",
-                    &mut draft.turbulence,
-                    ranges.turbulence,
-                    0.0,
-                );
-            }
-            if mask.cohesion && mask.color {
-                // Líquidos GPU: el mismo parámetro se presenta como tensión
-                // superficial (el shader lo usa como cohesión de flujo).
-                slider_row(
-                    ui,
-                    locale,
-                    "Tensión superficial",
-                    "Surface tension",
-                    &mut draft.cohesion,
-                    ranges.cohesion,
-                    0.15,
-                );
-            } else if mask.cohesion {
-                slider_row(
-                    ui,
-                    locale,
-                    "Cohesión",
-                    "Cohesion",
-                    &mut draft.cohesion,
-                    ranges.cohesion,
-                    0.0,
-                );
-            }
-            if mask.ground_y {
-                slider_row(
-                    ui,
-                    locale,
-                    "Suelo (m)",
-                    "Ground (m)",
-                    &mut draft.ground_y,
-                    ranges.ground_y,
-                    0.0,
-                );
-            }
-            if mask.wind {
-                slider_row(
-                    ui,
-                    locale,
-                    "Viento X (m/s)",
-                    "Wind X (m/s)",
-                    &mut draft.wind[0],
-                    ranges.wind,
-                    0.0,
-                );
-                slider_row(
-                    ui,
-                    locale,
-                    "Viento Z (m/s)",
-                    "Wind Z (m/s)",
-                    &mut draft.wind[1],
-                    ranges.wind,
-                    0.0,
-                );
-            }
-
-            if mask.ground_collision || mask.accumulate || mask.splash {
-                ui.add_space(4.0);
-                ui.horizontal_wrapped(|ui| {
-                    if mask.ground_collision {
-                        checkbox_tr(
-                            ui,
-                            locale,
-                            "Colisión suelo",
-                            "Ground collision",
-                            &mut draft.ground_collision,
-                        );
-                    }
-                    if mask.accumulate {
-                        checkbox_tr(ui, locale, "Acumular", "Accumulate", &mut draft.accumulate);
-                    }
-                    if mask.splash {
-                        checkbox_tr(ui, locale, "Salpicar", "Splash", &mut draft.splash);
-                    }
-                });
-            }
-        }
-        if mask.viscosity {
-            slider_row(
-                ui,
-                locale,
-                "Viscosidad",
-                "Viscosity",
-                &mut draft.viscosity,
-                ranges.viscosity,
-                0.15,
-            );
-        }
-        // Propiedades compartidas por todos los líquidos, con backend de
-        // rejilla (cubo) o GPU (emisor de agua). Va al final, tras los sliders.
-        if mask.color {
-            ui.add_space(3.0);
-            ui.horizontal(|ui| {
-                ui.label(tr(locale, "Liquid color", "Liquid color"));
-                ui.color_edit_button_rgb(&mut draft.color);
-            });
-        }
+        particle_properties_fields(ui, locale, &mut draft);
     }
 
     ui.add_space(18.0);
