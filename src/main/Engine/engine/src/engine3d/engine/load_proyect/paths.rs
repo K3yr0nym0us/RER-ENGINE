@@ -86,9 +86,8 @@ pub(crate) fn entity_model_cache_lookup(
 
 pub(crate) fn entity_library_category(category: &str) -> Option<String> {
     match category {
-        "environment" | "object" | "character" | "weapon" | "projectile" => {
-            Some(category.to_string())
-        }
+        "environment" | "object" | "character" | "weapon" | "projectile" | "animal"
+        | "creature" => Some(category.to_string()),
         _ => None,
     }
 }

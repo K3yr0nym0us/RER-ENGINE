@@ -125,7 +125,8 @@ sidebar_native:
       quedan ocultos hasta globalizarlos desde «Cargar desde otra escena».
     category_filter: |
       En proyectos 3D, cada acordeón de «Crear entidad» (Personajes, Escenario,
-      Objetos, Armas, Proyectiles) lista únicamente los modelos de su categoría.
+      Objetos, Armas, Proyectiles, Animales, Criaturas) lista únicamente los
+      modelos de su categoría.
       `entity_section` filtra `AssetEntry::category` con
       `normalize_model_library_category`; los modelos sin categoría (importes
       anteriores a la modal nativa) se tratan como `object`. En 2D los sprites
@@ -262,7 +263,7 @@ sidebar_native:
         `ModelImportDraft` en `SidebarLeftState::model_import`; la modal pide
         nombre + categoría y solo entonces envía `load_model_asset` con
         `category`.
-      categories: [character, environment, object, weapon, projectile]
+      categories: [character, environment, object, weapon, projectile, animal, creature]
       note: |
         Sin categoría el motor registra el modelo con `category: None` y no
         aparece en selectores filtrados (p. ej. «cambiar modelo» de un

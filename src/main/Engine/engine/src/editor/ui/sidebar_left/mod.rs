@@ -174,6 +174,8 @@ enum EntityKind {
     Object,
     Weapon,
     Projectile,
+    Animal,
+    Creature,
 }
 
 impl EntityKind {
@@ -184,6 +186,8 @@ impl EntityKind {
             Self::Object => "ent_objects",
             Self::Weapon => "ent_weapons",
             Self::Projectile => "ent_projectiles",
+            Self::Animal => "ent_animals",
+            Self::Creature => "ent_creatures",
         }
     }
 }
@@ -835,6 +839,8 @@ fn begin_entity_placement_command(kind: EntityKind, asset: String) -> serde_json
         EntityKind::Object => ("model", "object"),
         EntityKind::Weapon => ("model", "weapon"),
         EntityKind::Projectile => ("projectile", "projectile"),
+        EntityKind::Animal => ("model", "animal"),
+        EntityKind::Creature => ("model", "creature"),
     };
     json!({
         "cmd": "set_active_tool",
@@ -872,7 +878,11 @@ fn create_entity(app: &mut EditorApp, kind: EntityKind, asset: String) {
     }
     let command = match kind {
         EntityKind::Character => "load_character",
-        EntityKind::Environment | EntityKind::Object | EntityKind::Weapon => "load_scenario",
+        EntityKind::Environment
+        | EntityKind::Object
+        | EntityKind::Weapon
+        | EntityKind::Animal
+        | EntityKind::Creature => "load_scenario",
         EntityKind::Projectile => "load_projectile",
     };
     app.send_engine(json!({ "cmd": command, "path": asset }));
@@ -1002,6 +1012,8 @@ mod tests {
             (EntityKind::Object, "model", "object"),
             (EntityKind::Weapon, "model", "weapon"),
             (EntityKind::Projectile, "projectile", "projectile"),
+            (EntityKind::Animal, "model", "animal"),
+            (EntityKind::Creature, "model", "creature"),
         ];
         for (kind, spawn_kind, category) in cases {
             let cmd = begin_entity_placement_command(kind, "asset".into());

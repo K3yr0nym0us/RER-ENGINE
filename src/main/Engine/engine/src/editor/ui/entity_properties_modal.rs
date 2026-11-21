@@ -574,6 +574,8 @@ fn model_picker_for(
                     "environment" => "environment",
                     "weapon" => "weapon",
                     "projectile" => "projectile",
+                    "animal" => "animal",
+                    "creature" => "creature",
                     _ => "object",
                 }
     };
@@ -2449,6 +2451,20 @@ mod tests {
         assert_eq!(paths(&weapon), ["model_sword"]);
         let projectile = model_picker_for(&models, 1, "projectile", "");
         assert_eq!(paths(&projectile), ["model_bullet"]);
+    }
+
+    #[test]
+    fn animals_and_creatures_only_list_their_own_category() {
+        let models = vec![
+            model("model_wolf", "Wolf", Some("animal"), None),
+            model("model_dragon", "Dragon", Some("creature"), None),
+            model("model_hero", "Hero", Some("character"), None),
+        ];
+
+        let animal = model_picker_for(&models, 1, "animal", "");
+        assert_eq!(paths(&animal), ["model_wolf"]);
+        let creature = model_picker_for(&models, 1, "creature", "");
+        assert_eq!(paths(&creature), ["model_dragon"]);
     }
 
     #[test]

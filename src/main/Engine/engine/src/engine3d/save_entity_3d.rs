@@ -26,13 +26,16 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
             rer_engine_core::editor_defaults::infer_entity_category_from_numbered_name(&name)
         && matches!(
             from_name,
-            "environment" | "character" | "weapon" | "projectile"
+            "environment" | "character" | "weapon" | "projectile" | "animal" | "creature"
         )
     {
         return from_name.to_string();
     }
     if let Some(cat) = meta.entity_category.as_deref() {
-        if matches!(cat, "environment" | "character" | "weapon" | "projectile") {
+        if matches!(
+            cat,
+            "environment" | "character" | "weapon" | "projectile" | "animal" | "creature"
+        ) {
             return cat.to_string();
         }
         // `object` en meta puede ser genérico; el prefijo del nombre manda si es Environment_* / Object_*.
@@ -44,7 +47,7 @@ pub(crate) fn entity_category_for(state: &State, id: u32, meta: &EntitySaveMeta)
                     )
                 && matches!(
                     from_name,
-                    "environment" | "character" | "weapon" | "projectile"
+                    "environment" | "character" | "weapon" | "projectile" | "animal" | "creature"
                 )
             {
                 return from_name.to_string();

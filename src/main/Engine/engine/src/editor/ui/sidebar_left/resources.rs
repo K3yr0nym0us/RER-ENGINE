@@ -2,7 +2,7 @@ use super::*;
 
 /// Categorías de la biblioteca de modelos. Cada una es un sub-acordeón dentro
 /// de Recursos → Modelos con su propio botón de importación directa.
-const MODEL_CATEGORIES: [(&str, &str, &str, &str, &str); 5] = [
+const MODEL_CATEGORIES: [(&str, &str, &str, &str, &str); 7] = [
     (
         "character",
         "res_models_character",
@@ -37,6 +37,20 @@ const MODEL_CATEGORIES: [(&str, &str, &str, &str, &str); 5] = [
         icons::CIRCLE,
         "Proyectiles",
         "Projectiles",
+    ),
+    (
+        "animal",
+        "res_models_animal",
+        icons::PAW_PRINT,
+        "Animales",
+        "Animals",
+    ),
+    (
+        "creature",
+        "res_models_creature",
+        icons::ALIEN,
+        "Criaturas",
+        "Creatures",
     ),
 ];
 

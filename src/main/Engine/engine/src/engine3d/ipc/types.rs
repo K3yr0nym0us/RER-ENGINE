@@ -652,7 +652,8 @@ pub struct ModelInfo {
 pub fn normalize_model_library_category(raw: Option<&str>) -> Option<String> {
     let s = raw?.trim();
     match s {
-        "character" | "environment" | "object" | "weapon" | "projectile" => Some(s.to_string()),
+        "character" | "environment" | "object" | "weapon" | "projectile" | "animal"
+        | "creature" => Some(s.to_string()),
         _ => None,
     }
 }
@@ -745,7 +746,8 @@ pub fn enrich_blueprint_placement_meta(
 pub fn normalize_placement_entity_category(raw: Option<&str>) -> Option<String> {
     let s = raw?.trim();
     match s {
-        "environment" | "object" | "character" | "weapon" | "projectile" => Some(s.to_string()),
+        "environment" | "object" | "character" | "weapon" | "projectile" | "animal"
+        | "creature" => Some(s.to_string()),
         "player" => Some("character".to_string()),
         "sun" => Some("sun".to_string()),
         "ground" => Some("ground".to_string()),

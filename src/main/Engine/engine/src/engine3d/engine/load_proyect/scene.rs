@@ -640,7 +640,8 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
                 );
                 apply_full_entity_restore(state, id, &pending, "[Ball]", true, false);
             }
-            "environment" | "object" | "character" | "weapon" | "projectile"
+            "environment" | "object" | "character" | "weapon" | "projectile" | "animal"
+            | "creature"
                 if is_3d_model_file_entity(entity) =>
             {
                 let model_key = match entity_model_cache_lookup(state, entity) {

@@ -72,7 +72,12 @@ pub(crate) fn is_play_character_visual_model_path(path: &str) -> bool {
 pub(crate) fn entity_category_uses_mesh_collision(category: Option<&str>) -> bool {
     matches!(
         category,
-        Some("environment") | Some("object") | Some("weapon") | Some("projectile")
+        Some("environment")
+            | Some("object")
+            | Some("weapon")
+            | Some("projectile")
+            | Some("animal")
+            | Some("creature")
     )
 }
 

@@ -17,6 +17,8 @@ pub mod entity_label {
     pub const REFLECTION_PROBE: &str = "RefProbe";
     pub const WEAPON: &str = "Weapon";
     pub const PROJECTILE: &str = "Projectile";
+    pub const ANIMAL: &str = "Animal";
+    pub const CREATURE: &str = "Creature";
 }
 
 /// Player UI por defecto en plantillas 3D (cámara play character).
@@ -82,6 +84,8 @@ pub fn infer_entity_category_from_numbered_name(name: &str) -> Option<&'static s
         "Character" => Some("character"),
         "Weapon" => Some("weapon"),
         "Projectile" => Some("projectile"),
+        "Animal" => Some("animal"),
+        "Creature" => Some("creature"),
         "Player" => Some("player"),
         "Sun" => Some("sun"),
         "Ground" => Some("ground"),
@@ -98,6 +102,8 @@ pub fn entity_label_for_category(entity_category: Option<&str>) -> &'static str 
         Some("object") => entity_label::OBJECT,
         Some("weapon") => entity_label::WEAPON,
         Some("projectile") => entity_label::PROJECTILE,
+        Some("animal") => entity_label::ANIMAL,
+        Some("creature") => entity_label::CREATURE,
         Some("sun") => entity_label::SUN,
         Some("ground") => entity_label::GROUND,
         _ => entity_label::OBJECT,
@@ -159,6 +165,14 @@ mod tests {
         assert_eq!(
             infer_entity_category_from_numbered_name("Object_02"),
             Some("object")
+        );
+        assert_eq!(
+            infer_entity_category_from_numbered_name("Animal_03"),
+            Some("animal")
+        );
+        assert_eq!(
+            infer_entity_category_from_numbered_name("Creature_04"),
+            Some("creature")
         );
     }
 

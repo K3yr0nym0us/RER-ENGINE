@@ -10,6 +10,8 @@ fn category_for_entity_kind(kind: EntityKind) -> &'static str {
         EntityKind::Object => "object",
         EntityKind::Weapon => "weapon",
         EntityKind::Projectile => "projectile",
+        EntityKind::Animal => "animal",
+        EntityKind::Creature => "creature",
     }
 }
 
@@ -60,6 +62,18 @@ pub(super) fn entities_body(
             icons::SHIELD,
             crate::editor::i18n::tr(locale, "Armas", "Weapons"),
             crate::editor::theme::DANGER,
+        ));
+        kinds.push((
+            EntityKind::Animal,
+            icons::PAW_PRINT,
+            crate::editor::i18n::tr(locale, "Animales", "Animals"),
+            crate::editor::theme::SUCCESS,
+        ));
+        kinds.push((
+            EntityKind::Creature,
+            icons::ALIEN,
+            crate::editor::i18n::tr(locale, "Criaturas", "Creatures"),
+            crate::editor::theme::WARNING,
         ));
     }
     kinds.push((
@@ -196,6 +210,16 @@ pub(super) fn create_label(
                 "Crear proyectil desde modelo",
                 "Create projectile from model",
             ),
+            EntityKind::Animal => crate::editor::i18n::tr(
+                locale,
+                "Crear animal desde modelo",
+                "Create animal from model",
+            ),
+            EntityKind::Creature => crate::editor::i18n::tr(
+                locale,
+                "Crear criatura desde modelo",
+                "Create creature from model",
+            ),
         }
     } else {
         match kind {
@@ -209,6 +233,10 @@ pub(super) fn create_label(
             EntityKind::Weapon => crate::editor::i18n::tr(locale, "Crear arma", "Create weapon"),
             EntityKind::Projectile => {
                 crate::editor::i18n::tr(locale, "Añadir proyectil", "Add projectile")
+            }
+            EntityKind::Animal => crate::editor::i18n::tr(locale, "Crear animal", "Create animal"),
+            EntityKind::Creature => {
+                crate::editor::i18n::tr(locale, "Crear criatura", "Create creature")
             }
         }
     }
@@ -252,12 +280,14 @@ mod tests {
         }
     }
 
-    const CATEGORIES: [EntityKind; 5] = [
+    const CATEGORIES: [EntityKind; 7] = [
         EntityKind::Character,
         EntityKind::Environment,
         EntityKind::Object,
         EntityKind::Weapon,
         EntityKind::Projectile,
+        EntityKind::Animal,
+        EntityKind::Creature,
     ];
 
     #[test]
@@ -288,6 +318,8 @@ mod tests {
                 EntityKind::Environment,
                 EntityKind::Weapon,
                 EntityKind::Projectile,
+                EntityKind::Animal,
+                EntityKind::Creature,
             ] {
                 assert!(!asset_matches_entity_kind(&model(category), kind));
             }
@@ -304,6 +336,8 @@ mod tests {
             EntityKind::Object,
             EntityKind::Weapon,
             EntityKind::Projectile,
+            EntityKind::Animal,
+            EntityKind::Creature,
         ] {
             assert!(!asset_matches_entity_kind(&player, kind));
         }
