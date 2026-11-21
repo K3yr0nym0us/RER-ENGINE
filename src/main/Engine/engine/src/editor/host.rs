@@ -673,6 +673,127 @@ impl EditorWindow {
         }
     }
 
+    /// Título de una modal, calculado desde el app para poder refrescarlo
+    /// también cuando cambia el idioma con la ventana ya abierta.
+    fn modal_title(kind: NativeModal, app: &EditorApp) -> String {
+        let locale = app.cli.locale;
+        match kind {
+            NativeModal::RemoveAsset => tr(locale, "Eliminar recurso", "Delete asset").to_string(),
+            NativeModal::ExitConfirm => {
+                tr(locale, "Salir de RER-ENGINE", "Exit RER-ENGINE").to_string()
+            }
+            NativeModal::DeleteScene => {
+                let draft = app
+                    .left_sidebar
+                    .pending_delete_scene
+                    .as_ref()
+                    .map(|draft| (draft.name.as_str(), draft.blocked));
+                match draft {
+                    Some((name, true)) => format!(
+                        "{} {name}",
+                        tr(locale, "No se puede eliminar", "Cannot delete")
+                    ),
+                    Some((name, false)) => {
+                        format!("{} {name}", tr(locale, "Eliminar", "Delete"))
+                    }
+                    None => tr(locale, "Eliminar escena", "Delete scene").to_string(),
+                }
+            }
+            NativeModal::CreateScene => {
+                tr(locale, "Crear nueva escena", "Create new scene").to_string()
+            }
+            NativeModal::DeleteUiScreen => {
+                tr(locale, "Confirmar eliminacion", "Confirm deletion").to_string()
+            }
+            NativeModal::CreateUiScreen => {
+                tr(locale, "Nueva pantalla UI", "New UI screen").to_string()
+            }
+            NativeModal::RenameUiScreen => {
+                tr(locale, "Renombrar menú UI", "Rename UI menu").to_string()
+            }
+            NativeModal::ControlBindings => {
+                if app.control_bindings.mode
+                    == crate::editor::control_bindings::ControlDeviceMode::Gamepad
+                {
+                    tr(locale, "Controles: Mandos", "Controls: Gamepads").to_string()
+                } else {
+                    tr(
+                        locale,
+                        "Controles: Teclado + Mouse",
+                        "Controls: Keyboard + Mouse",
+                    )
+                    .to_string()
+                }
+            }
+            NativeModal::WorldGen => {
+                tr(locale, "Generador de mundo", "World Generator").to_string()
+            }
+            NativeModal::Plugins => tr(locale, "Plugins", "Plugins").to_string(),
+            NativeModal::HudEditor => {
+                let name = app.hud_editor.name_draft.clone();
+                format!("{}: {name}", tr(locale, "Editar HUD", "Edit HUD"))
+            }
+            NativeModal::UserGuide => tr(locale, "Guia de usuario", "User guide").to_string(),
+            NativeModal::QuickBuild => tr(locale, "Construcción", "Construction").to_string(),
+            NativeModal::EntityProperties => {
+                tr(locale, "Propiedades de entidad", "Entity properties").to_string()
+            }
+            NativeModal::ModelPicker => {
+                tr(locale, "Reemplazar modelo", "Replace model").to_string()
+            }
+            NativeModal::InteractionTooltip => {
+                tr(locale, "Tooltip de interacción", "Interaction tooltip").to_string()
+            }
+            NativeModal::DeleteInteractionTooltip => {
+                let name = app
+                    .left_sidebar
+                    .pending_delete_interaction_tooltip
+                    .as_ref()
+                    .map(|draft| draft.name.as_str())
+                    .unwrap_or("");
+                format!(
+                    "{}: {name}",
+                    tr(locale, "Eliminar tooltip", "Delete tooltip")
+                )
+            }
+            NativeModal::TooltipScriptEditor => {
+                tr(locale, "Editar script del tooltip", "Edit tooltip script").to_string()
+            }
+            NativeModal::RemoveTooltipScript => {
+                tr(locale, "Quitar script", "Remove script").to_string()
+            }
+            NativeModal::SocketConfig => {
+                tr(locale, "Configuración de sockets", "Socket configuration").to_string()
+            }
+            NativeModal::SceneScript => {
+                let scene_id = app
+                    .left_sidebar
+                    .scene_script_open
+                    .unwrap_or(app.scenes.active_scene_id);
+                format!(
+                    "{}: {}",
+                    tr(locale, "Script de escena", "Scene script"),
+                    app.scenes.name_for(scene_id)
+                )
+            }
+            NativeModal::SceneVisualScript => {
+                if app.visual_script.context == crate::editor::visual_script::GraphContext::Entity {
+                    format!(
+                        "{}: {}",
+                        tr(locale, "Lógica de entidad", "Entity logic"),
+                        app.visual_script.entity_name
+                    )
+                } else {
+                    format!(
+                        "{}: {}",
+                        tr(locale, "Lógica de escena", "Scene logic"),
+                        app.visual_script.scene_name
+                    )
+                }
+            }
+        }
+    }
+
     /// Abre/cierra la ventana modal externa según el estado pedido por las modales.
     fn sync_modal_window(&mut self, event_loop: &ActiveEventLoop) {
         let wanted = if self.app.exit_confirm_open {
@@ -726,142 +847,33 @@ impl EditorWindow {
             None
         };
         if wanted == self.modal_window.as_ref().map(ModalWindow::kind) {
+            // El idioma puede cambiar desde el sidebar con la modal abierta:
+            // refresca el título (se calculó al crear la ventana) y repinta.
+            if let (Some(kind), Some(modal)) = (wanted, self.modal_window.as_mut()) {
+                if modal.locale() != self.app.cli.locale {
+                    let title = Self::modal_title(kind, &self.app);
+                    modal.set_locale(self.app.cli.locale, title);
+                }
+            }
             return;
         }
         self.modal_window = None;
         let Some(kind) = wanted else {
             return;
         };
-        let locale = self.app.cli.locale;
-        let title = match kind {
-            NativeModal::RemoveAsset => tr(locale, "Eliminar recurso", "Delete asset").to_string(),
-            NativeModal::ExitConfirm => {
-                tr(locale, "Salir de RER-ENGINE", "Exit RER-ENGINE").to_string()
-            }
-            NativeModal::DeleteScene => {
-                let draft = self
-                    .app
-                    .left_sidebar
-                    .pending_delete_scene
-                    .as_ref()
-                    .map(|draft| (draft.name.as_str(), draft.blocked));
-                match draft {
-                    Some((name, true)) => format!(
-                        "{} {name}",
-                        tr(locale, "No se puede eliminar", "Cannot delete")
-                    ),
-                    Some((name, false)) => {
-                        format!("{} {name}", tr(locale, "Eliminar", "Delete"))
-                    }
-                    None => tr(locale, "Eliminar escena", "Delete scene").to_string(),
-                }
-            }
-            NativeModal::CreateScene => {
-                tr(locale, "Crear nueva escena", "Create new scene").to_string()
-            }
-            NativeModal::DeleteUiScreen => {
-                tr(locale, "Confirmar eliminacion", "Confirm deletion").to_string()
-            }
-            NativeModal::CreateUiScreen => {
-                tr(locale, "Nueva pantalla UI", "New UI screen").to_string()
-            }
-            NativeModal::RenameUiScreen => {
-                tr(locale, "Renombrar menú UI", "Rename UI menu").to_string()
-            }
-            NativeModal::ControlBindings => {
-                if self.app.control_bindings.mode
-                    == crate::editor::control_bindings::ControlDeviceMode::Gamepad
-                {
-                    tr(locale, "Controles: Mandos", "Controls: Gamepads").to_string()
-                } else {
-                    tr(
-                        locale,
-                        "Controles: Teclado + Mouse",
-                        "Controls: Keyboard + Mouse",
-                    )
-                    .to_string()
-                }
-            }
-            NativeModal::WorldGen => {
-                tr(locale, "Generador de mundo", "World Generator").to_string()
-            }
-            NativeModal::Plugins => tr(locale, "Plugins", "Plugins").to_string(),
-            NativeModal::HudEditor => {
-                let name = self.app.hud_editor.name_draft.clone();
-                format!("{}: {name}", tr(locale, "Editar HUD", "Edit HUD"))
-            }
-            NativeModal::UserGuide => tr(locale, "Guia de usuario", "User guide").to_string(),
-            NativeModal::QuickBuild => tr(locale, "Construcción", "Construction").to_string(),
-            NativeModal::EntityProperties => {
-                tr(locale, "Propiedades de entidad", "Entity properties").to_string()
-            }
-            NativeModal::ModelPicker => {
-                tr(locale, "Reemplazar modelo", "Replace model").to_string()
-            }
-            NativeModal::InteractionTooltip => {
-                tr(locale, "Tooltip de interacción", "Interaction tooltip").to_string()
-            }
-            NativeModal::DeleteInteractionTooltip => {
-                let name = self
-                    .app
-                    .left_sidebar
-                    .pending_delete_interaction_tooltip
-                    .as_ref()
-                    .map(|draft| draft.name.as_str())
-                    .unwrap_or("");
-                format!(
-                    "{}: {name}",
-                    tr(locale, "Eliminar tooltip", "Delete tooltip")
-                )
-            }
-            NativeModal::TooltipScriptEditor => {
-                tr(locale, "Editar script del tooltip", "Edit tooltip script").to_string()
-            }
-            NativeModal::RemoveTooltipScript => {
-                tr(locale, "Quitar script", "Remove script").to_string()
-            }
-            NativeModal::SocketConfig => {
-                tr(locale, "Configuración de sockets", "Socket configuration").to_string()
-            }
-            NativeModal::SceneScript => {
-                let scene_id = self
-                    .app
-                    .left_sidebar
-                    .scene_script_open
-                    .unwrap_or(self.app.scenes.active_scene_id);
-                format!(
-                    "{}: {}",
-                    tr(locale, "Script de escena", "Scene script"),
-                    self.app.scenes.name_for(scene_id)
-                )
-            }
-            NativeModal::SceneVisualScript => {
-                if self.app.visual_script.context
-                    == crate::editor::visual_script::GraphContext::Entity
-                {
-                    format!(
-                        "{}: {}",
-                        tr(locale, "Lógica de entidad", "Entity logic"),
-                        self.app.visual_script.entity_name
-                    )
-                } else {
-                    format!(
-                        "{}: {}",
-                        tr(locale, "Lógica de escena", "Scene logic"),
-                        self.app.visual_script.scene_name
-                    )
-                }
-            }
-        };
+        let title = Self::modal_title(kind, &self.app);
         match ModalWindow::open(
             event_loop,
             self.gpu.shared_gpu(),
             self.window.as_ref(),
             app_window_icon(),
             kind,
-            title,
+            title.clone(),
         ) {
-            Ok(window) => self.modal_window = Some(window),
+            Ok(mut window) => {
+                window.set_locale(self.app.cli.locale, title);
+                self.modal_window = Some(window);
+            }
             Err(error) => {
                 log::error!("[editor] ventana modal: {error}");
                 // Evita reintentar indefinidamente: la acción se cancela.

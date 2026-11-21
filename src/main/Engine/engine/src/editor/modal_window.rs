@@ -21,6 +21,7 @@ use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowButtons, WindowId};
 
 use super::app::EditorApp;
+use super::cli::Locale;
 use super::theme;
 
 /// Modal mostrada en la ventana externa.
@@ -93,7 +94,7 @@ const CONTROLS_WIDTH: f64 = 1188.0;
 const CONTROLS_HEIGHT: f64 = 460.0;
 /// El generador de mundo necesita más ancho que `lg`: terreno y reparto de
 /// blueprints van uno al lado del otro (antes `xl` medía 1140 + 48 de padding).
-const WORLDGEN_WIDTH: f64 = 1188.0;
+const WORLDGEN_WIDTH: f64 = 1080.0;
 const WORLDGEN_HEIGHT: f64 = 780.0;
 /// La modal de plugins era `lg` (800 de contenido + 48 de padding).
 const PLUGINS_WIDTH: f64 = 848.0;
@@ -123,6 +124,8 @@ pub(crate) struct ModalWindow {
     /// Ancho base elegido al abrir (se mantiene al reajustar la altura).
     base_width: f64,
     kind: NativeModal,
+    /// Idioma con el que se calculó el título; se refresca si cambia en el editor.
+    locale: Locale,
 }
 
 impl ModalWindow {
@@ -277,11 +280,23 @@ impl ModalWindow {
             ),
             base_width: width,
             kind,
+            locale: Locale::En,
         })
     }
 
     pub(crate) fn kind(&self) -> NativeModal {
         self.kind
+    }
+
+    pub(crate) fn locale(&self) -> Locale {
+        self.locale
+    }
+
+    /// Actualiza el título y fuerza un repintado cuando cambia el idioma.
+    pub(crate) fn set_locale(&mut self, locale: Locale, title: String) {
+        self.locale = locale;
+        self.window.set_title(&title);
+        self.egui_ctx.request_repaint();
     }
 
     pub(crate) fn window_id(&self) -> WindowId {
