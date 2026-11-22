@@ -161,10 +161,15 @@ fn fieldset(
         });
 }
 
+/// Ancho común de todos los campos numéricos del panel de terreno.
+const NUM_FIELD_WIDTH: f32 = 56.0;
+
 fn uint_field(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, max: u32) {
     ui.vertical(|ui| {
+        ui.add_space(6.0);
         ui.label(RichText::new(label).size(12.0).color(theme::TEXT_MUTED));
-        ui.add(
+        ui.add_sized(
+            egui::vec2(NUM_FIELD_WIDTH, 24.0),
             egui::DragValue::new(value)
                 .range(min..=max)
                 .speed(1.0)
@@ -175,8 +180,10 @@ fn uint_field(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, max: u3
 
 fn float_field(ui: &mut egui::Ui, label: &str, value: &mut f32, min: f32, max: f32, step: f32) {
     ui.vertical(|ui| {
+        ui.add_space(6.0);
         ui.label(RichText::new(label).size(12.0).color(theme::TEXT_MUTED));
-        ui.add(
+        ui.add_sized(
+            egui::vec2(NUM_FIELD_WIDTH, 24.0),
             egui::DragValue::new(value)
                 .range(min..=max)
                 .speed(step)
@@ -194,6 +201,7 @@ fn slider(
     step: f32,
     suffix: &str,
 ) {
+    ui.add_space(10.0);
     ui.label(
         RichText::new(format!("{label}: {value:.2}{suffix}"))
             .size(12.0)
@@ -235,7 +243,8 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                         .color(theme::TEXT_MUTED),
                                 );
                                 widgets::top_row(ui, |ui| {
-                                    ui.add(
+                                    ui.add_sized(
+                                        egui::vec2(112.0, 24.0),
                                         egui::DragValue::new(&mut panel.seed)
                                             .range(0..=u32::MAX)
                                             .speed(1.0),
