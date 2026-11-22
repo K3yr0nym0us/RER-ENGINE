@@ -13,7 +13,7 @@ use crate::editor::i18n::tr;
 use crate::editor::theme;
 use crate::editor::worldgen;
 
-use super::widgets;
+use super::{accordion, widgets};
 
 const DANGER_BG: Color32 = Color32::from_rgb(0x84, 0x1c, 0x24);
 const DANGER_TEXT: Color32 = Color32::from_rgb(0xff, 0xd8, 0xda);
@@ -511,7 +511,9 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
 
             // React: `<div class="form-check mt-2">` dentro del bloque de
             // biomas, separado por una línea horizontal.
+            ui.add_space(8.0);
             ui.separator();
+            ui.add_space(8.0);
             ui.checkbox(
                 &mut panel.replace_world,
                 t(locale, "Replace current world", "Replace current world"),
@@ -644,13 +646,18 @@ fn scatter_fields(
     });
     ui.add_space(6.0);
     widgets::top_row(ui, |ui| {
-        ui.toggle_value(
-            &mut rules.random_rotation,
-            t(locale, "Random rotation", "Random rotation"),
+        widgets::switch_value(ui, &mut rules.random_rotation, "");
+        ui.label(
+            RichText::new(t(locale, "Random rotation", "Random rotation"))
+                .size(12.0)
+                .color(theme::TEXT),
         );
-        ui.toggle_value(
-            &mut rules.cluster_enabled,
-            t(locale, "Clusters", "Clusters"),
+        ui.add_space(8.0);
+        widgets::switch_value(ui, &mut rules.cluster_enabled, "");
+        ui.label(
+            RichText::new(t(locale, "Clusters", "Clusters"))
+                .size(12.0)
+                .color(theme::TEXT),
         );
         if rules.cluster_enabled {
             ui.label(
@@ -751,46 +758,49 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                         .map(|model| model.name.clone())
                         .unwrap_or_else(|| entry.model_path.clone());
                     let mut remove = false;
-                    egui::Frame::new()
-                        .stroke(egui::Stroke::new(1.0, theme::BORDER))
-                        .corner_radius(4)
-                        .inner_margin(egui::Margin::symmetric(8, 4))
-                        .show(ui, |ui| {
-                            widgets::top_row(ui, |ui| {
+                    // El mismo acordeón que usan las sidebars del editor.
+                    let response = accordion::item(
+                        ui,
+                        egui::Id::new(("worldgen_scatter", entry.id.clone())),
+                        1,
+                        open,
+                        |ui, openness| {
+                            let mut header_response = None;
+                            ui.horizontal(|ui| {
+                                let header_width = (ui.available_width() - 30.0).max(80.0);
+                                header_response = Some(
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(header_width, 32.0),
+                                        egui::Layout::top_down(egui::Align::Min),
+                                        |ui| {
+                                            accordion::header(
+                                                ui,
+                                                icons::CUBE,
+                                                &name,
+                                                open,
+                                                openness,
+                                                1,
+                                            )
+                                        },
+                                    )
+                                    .inner,
+                                );
                                 if ui
-                                    .button(if open {
-                                        icons::CARET_UP
-                                    } else {
-                                        icons::CARET_DOWN
-                                    })
+                                    .button(icons::TRASH)
+                                    .on_hover_text(t(locale, "Remove model", "Remove model"))
                                     .clicked()
                                 {
-                                    app.worldgen.open_scatter_id =
-                                        if open { None } else { Some(entry.id.clone()) };
+                                    remove = true;
                                 }
-                                ui.label(RichText::new(&name).size(12.0).color(theme::TEXT));
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
-                                        if ui
-                                            .button(icons::TRASH)
-                                            .on_hover_text(t(
-                                                locale,
-                                                "Remove model",
-                                                "Remove model",
-                                            ))
-                                            .clicked()
-                                        {
-                                            remove = true;
-                                        }
-                                    },
-                                );
                             });
-                            if open {
-                                ui.add_space(4.0);
-                                scatter_fields(ui, locale, &mut entry.rules);
-                            }
-                        });
+                            header_response.expect("accordion header response")
+                        },
+                        |ui| scatter_fields(ui, locale, &mut entry.rules),
+                    );
+                    if response.clicked() {
+                        app.worldgen.open_scatter_id =
+                            if open { None } else { Some(entry.id.clone()) };
+                    }
                     if remove {
                         removed = true;
                     } else {
