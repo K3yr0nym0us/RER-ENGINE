@@ -862,6 +862,13 @@ impl EditorWindow {
             return;
         };
         let title = Self::modal_title(kind, &self.app);
+        // Cada ventana modal tiene su propio `egui::Context` y su renderer. El
+        // icono del asistente es un `TextureHandle` vinculado al contexto anterior:
+        // reutilizarlo aquí hace que `cmd_draw` falle con `BadTexture` y la
+        // ventana se quede en blanco. Se recarga en el primer frame de la nueva.
+        if kind == NativeModal::Plugins {
+            self.app.plugins_modal.icon = None;
+        }
         match ModalWindow::open(
             event_loop,
             self.gpu.shared_gpu(),
