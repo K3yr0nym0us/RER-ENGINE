@@ -478,6 +478,14 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                 .size(11.0)
                 .color(theme::TEXT_MUTED),
             );
+
+            // React: `<div class="form-check mt-2">` dentro del bloque de
+            // biomas, separado por una línea horizontal.
+            ui.separator();
+            ui.checkbox(
+                &mut panel.replace_world,
+                t(locale, "Replace current world", "Replace current world"),
+            );
         },
     );
 }
@@ -821,10 +829,6 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         ui.add_space(8.0);
                         ui.label(RichText::new(&app.worldgen.status).size(11.0).color(theme::TEXT_MUTED));
                     }
-
-                    ui.add_space(6.0);
-                    ui.toggle_value(&mut app.worldgen.panel.replace_world,
-                        t(locale, "Replace current world", "Replace current world"));
 
                     ui.add_space(10.0);
                     widgets::top_row(ui, |ui| {
