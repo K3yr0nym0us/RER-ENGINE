@@ -426,13 +426,18 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                     egui::Layout::top_down(egui::Align::Min),
                                     |ui| {
                                         ui.add_enabled_ui(!share_locked, |ui| {
+                                            // El mismo range que usan las sidebars:
+                                            // pista gris y tirador azul de Bootstrap.
                                             let mut share = shares[index] as f32;
-                                            ui.add(
-                                                egui::Slider::new(&mut share, 0.0..=100.0)
-                                                    .step_by(1.0)
-                                                    .show_value(false),
-                                            );
-                                            if share.round() as u32 != shares[index] {
+                                            if widgets::range_slider(
+                                                ui,
+                                                &mut share,
+                                                0.0,
+                                                100.0,
+                                                1.0,
+                                                theme::CONTROL_BLUE,
+                                            ) && share.round() as u32 != shares[index]
+                                            {
                                                 shares = worldgen::rebalance_biome_shares(
                                                     &shares,
                                                     &biomes,
@@ -794,13 +799,13 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         let gap = ui.spacing().item_spacing.x;
                         let total = ui.available_width() - gap;
                         ui.allocate_ui_with_layout(
-                            egui::vec2(total * 0.66, 0.0),
+                            egui::vec2(total * 0.694, 0.0),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| terrain_configuration(ui, app),
                         );
                         ui.add_space(gap);
                         ui.allocate_ui_with_layout(
-                            egui::vec2(total * 0.34, 0.0),
+                            egui::vec2(total * 0.306, 0.0),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| distribute_blueprints(ui, app),
                         );
