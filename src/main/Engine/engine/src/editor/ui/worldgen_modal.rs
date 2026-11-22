@@ -41,6 +41,31 @@ enum Btn {
     OutlineInfo,
 }
 
+/// Spinner circular tipo Bootstrap (`spinner-border-sm`), animado con el
+/// tiempo de la app. Se usa en lugar del icono de play mientras se genera.
+fn draw_spinner(ui: &egui::Ui, center: egui::Pos2, radius: f32, color: Color32) {
+    // Sin repeticiones el spinner se quedaría quieto: pedimos repintado.
+    ui.ctx().request_repaint();
+    let time = ui.ctx().input(|input| input.time) as f32;
+    let angle = time * 5.0;
+    let painter = ui.painter();
+    painter.circle(
+        center,
+        radius,
+        Color32::TRANSPARENT,
+        egui::Stroke::new(2.0, color.linear_multiply(0.3)),
+    );
+    let sweep = std::f32::consts::FRAC_PI_2 * 1.4;
+    let steps = 14;
+    let points: Vec<egui::Pos2> = (0..=steps)
+        .map(|index| {
+            let a = angle + sweep * (index as f32 / steps as f32);
+            center + egui::vec2(a.cos() * radius, a.sin() * radius)
+        })
+        .collect();
+    painter.line(points, egui::Stroke::new(2.0, color));
+}
+
 /// Botones del modal original. Se pintan aquí para no cambiar el estilo
 /// `Primary` verde que `widgets::modal_button` usa en las demás modales egui.
 fn bootstrap_button(
@@ -50,6 +75,7 @@ fn bootstrap_button(
     kind: Btn,
     width: f32,
     enabled: bool,
+    spinner: bool,
 ) -> bool {
     let sense = if enabled {
         egui::Sense::click()
@@ -87,18 +113,48 @@ fn bootstrap_button(
         egui::Stroke::new(1.0, stroke.linear_multiply(alpha)),
         egui::StrokeKind::Inside,
     );
-    let content = if icon.is_empty() {
-        label.to_owned()
+    let font = egui::FontId::proportional(13.0);
+    let text_color = text.linear_multiply(alpha);
+    if spinner {
+        // Igual que el React: `spinner-border spinner-border-sm me-1` antes
+        // del texto mientras se escanean columnas / se generan chunks.
+        let radius = 6.5;
+        let gap = 6.0;
+        let text_width = painter
+            .layout_no_wrap(label.to_owned(), font.clone(), text_color)
+            .size()
+            .x;
+        let start_x = rect.center().x - (radius * 2.0 + gap + text_width) * 0.5;
+        draw_spinner(
+            ui,
+            egui::pos2(start_x + radius, rect.center().y),
+            radius,
+            text_color,
+        );
+        painter.text(
+            egui::pos2(
+                start_x + radius * 2.0 + gap + text_width * 0.5,
+                rect.center().y,
+            ),
+            egui::Align2::CENTER_CENTER,
+            label,
+            font,
+            text_color,
+        );
     } else {
-        format!("{icon}  {label}")
-    };
-    painter.text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        content,
-        egui::FontId::proportional(13.0),
-        text.linear_multiply(alpha),
-    );
+        let content = if icon.is_empty() {
+            label.to_owned()
+        } else {
+            format!("{icon}  {label}")
+        };
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            content,
+            font,
+            text_color,
+        );
+    }
 
     enabled && response.clicked()
 }
@@ -750,6 +806,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                         Btn::OutlineInfo,
                         100.0,
                         can_add,
+                        false,
                     ) {
                         let path = app.worldgen.selected_model_path.clone();
                         let id = format!("wg_{}", app.worldgen.scatter_entries.len() + 1);
@@ -918,7 +975,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         let gap = ui.spacing().item_spacing.x;
                         let generate_width =
                             (ui.available_width() - side_width * 2.0 - gap * 2.0 - 12.0).max(160.0);
-                        if bootstrap_button(ui, icons::PLAY, &label, Btn::Primary, generate_width, !busy)
+                        if bootstrap_button(ui, icons::PLAY, &label, Btn::Primary, generate_width, !busy, busy)
                         {
                             match app.worldgen.library_path.clone() {
                                 None => app.worldgen.status = t(locale, "Install the World Generator plugin first",
@@ -942,7 +999,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             }
                         }
                         if bootstrap_button(ui, icons::STOP, &t(locale, "Stop", "Stop"),
-                            Btn::OutlineSecondary, side_width, busy)
+                            Btn::OutlineSecondary, side_width, busy, false)
                         {
                             app.worldgen.finish_handled = true;
                             app.worldgen.pending_scatter = 0;
@@ -953,7 +1010,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         }
                         if bootstrap_button(ui, icons::TRASH, &t(locale, "Clear", "Clear"),
                             Btn::OutlineDanger, side_width,
-                            app.worldgen.world_generated && !busy)
+                            app.worldgen.world_generated && !busy, false)
                         {
                             app.worldgen.world_generated = false;
                             app.worldgen.status = t(locale, "World cleared", "World cleared");
