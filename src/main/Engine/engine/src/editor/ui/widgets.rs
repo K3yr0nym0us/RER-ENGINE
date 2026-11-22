@@ -292,7 +292,11 @@ pub fn switch_value(ui: &mut egui::Ui, value: &mut bool, hint: &str) -> bool {
         Color32::WHITE.linear_multiply(alpha),
     );
 
-    let _ = response.on_hover_text(hint);
+    // Sin tooltip para los controles habilitados: solo se usa para explicar
+    // por qué un control deshabilitado no se puede pulsar.
+    if !hint.is_empty() {
+        let _ = response.on_hover_text(hint);
+    }
     changed
 }
 

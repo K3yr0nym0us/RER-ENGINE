@@ -404,12 +404,22 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             let at_cap = !biomes[index] && enabled_count >= biome_slots;
+                            // Solo los controles deshabilitados llevan tooltip,
+                            // explicando el motivo.
+                            let switch_hint = if at_cap {
+                                t(
+                                    locale,
+                                    "Límite de biomas alcanzado para este tamaño de mundo",
+                                    "Biome limit reached for this world size",
+                                )
+                            } else {
+                                String::new()
+                            };
                             ui.add_enabled_ui(!at_cap, |ui| {
                                 // React: `<form-check form-switch style="font-size:1.2rem">`
                                 // = switch de pastilla + etiqueta al lado, no un botón.
                                 widgets::top_row(ui, |ui| {
-                                    if widgets::switch_value(ui, &mut biomes[index], &names[index])
-                                    {
+                                    if widgets::switch_value(ui, &mut biomes[index], &switch_hint) {
                                         let (min, _max) = worldgen::biome_share_range(
                                             biomes.iter().filter(|enabled| **enabled).count(),
                                         );
@@ -423,9 +433,26 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 });
                             });
                             let share_locked = !biomes[index] || enabled_count <= 1;
+                            let slider_hint = if share_locked {
+                                if !biomes[index] {
+                                    t(
+                                        locale,
+                                        "Activa el bioma para ajustar su reparto",
+                                        "Enable the biome to adjust its share",
+                                    )
+                                } else {
+                                    t(
+                                        locale,
+                                        "Con un solo bioma activo el reparto es fijo",
+                                        "With only one biome enabled the share is fixed",
+                                    )
+                                }
+                            } else {
+                                String::new()
+                            };
                             // React: slider y `%` en la misma fila (`d-flex
                             // align-items-center gap-2`, valor min-width 2.6rem).
-                            widgets::top_row(ui, |ui| {
+                            let share_row = widgets::top_row(ui, |ui| {
                                 let slider_width = (ui.available_width() - 38.0).max(20.0);
                                 ui.allocate_ui_with_layout(
                                     egui::vec2(slider_width, 0.0),
@@ -435,7 +462,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                             // El mismo range que usan las sidebars:
                                             // pista gris y tirador azul de Bootstrap.
                                             let mut share = shares[index] as f32;
-                                            if widgets::range_slider(
+                                            if widgets::range_slider_no_tooltip(
                                                 ui,
                                                 &mut share,
                                                 0.0,
@@ -460,6 +487,9 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                         .color(theme::TEXT_MUTED),
                                 );
                             });
+                            if !slider_hint.is_empty() {
+                                let _ = share_row.response.on_hover_text(slider_hint);
+                            }
                         },
                     );
                 }
@@ -879,7 +909,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             }
                         }
                         if bootstrap_button(ui, icons::STOP, &t(locale, "Stop", "Stop"),
-                            Btn::OutlineSecondary, side_width, true)
+                            Btn::OutlineSecondary, side_width, busy)
                         {
                             app.worldgen.finish_handled = true;
                             app.worldgen.pending_scatter = 0;
@@ -889,8 +919,10 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             app.send_engine(json!({ "cmd": "world_gen_stop" }));
                         }
                         if bootstrap_button(ui, icons::TRASH, &t(locale, "Clear", "Clear"),
-                            Btn::OutlineDanger, side_width, !busy)
+                            Btn::OutlineDanger, side_width,
+                            app.worldgen.world_generated && !busy)
                         {
+                            app.worldgen.world_generated = false;
                             app.worldgen.status = t(locale, "World cleared", "World cleared");
                             app.send_engine(json!({ "cmd": "world_gen_reset" }));
                         }

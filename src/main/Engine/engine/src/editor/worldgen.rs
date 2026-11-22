@@ -331,10 +331,10 @@ impl Default for PanelState {
             size: SIZE_DEFAULT,
             voxel_size: 1.0,
             mountains: 4,
-            hills: 4,
+            hills: 2,
             valleys: 3,
             plains: 2,
-            cliffs: 0,
+            cliffs: 2,
             lakes: 2,
             rivers: 2,
             caves: 3,
@@ -480,6 +480,8 @@ pub struct Generation {
 #[derive(Debug, Clone, Default)]
 pub struct WorldGenState {
     pub open: bool,
+    /// `true` mientras exista un mundo generado (habilita el botón Clear).
+    pub world_generated: bool,
     pub panel: PanelState,
     pub scatter_entries: Vec<ScatterEntry>,
     pub open_scatter_id: Option<String>,
@@ -516,6 +518,7 @@ impl WorldGenState {
                 });
                 if phase == GenerationPhase::Mesh && total > 0 && completed >= total {
                     self.generation = None;
+                    self.world_generated = true;
                     if !self.finish_handled {
                         self.finish_handled = true;
                         self.start_distribution();
@@ -535,6 +538,7 @@ impl WorldGenState {
             }
             "world_gen_completed" => {
                 self.generation = None;
+                self.world_generated = true;
                 if !self.finish_handled {
                     self.finish_handled = true;
                     self.start_distribution();
@@ -543,6 +547,7 @@ impl WorldGenState {
             "world_gen_status" => {
                 if event.get("state").and_then(Value::as_str) == Some("complete") {
                     self.generation = None;
+                    self.world_generated = true;
                     if !self.finish_handled {
                         self.finish_handled = true;
                         self.start_distribution();
