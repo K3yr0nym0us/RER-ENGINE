@@ -527,9 +527,9 @@ fn scatter_fields(
     locale: crate::editor::cli::Locale,
     rules: &mut worldgen::ScatterRules,
 ) {
-    // Fila 1
+    // Máximo 3 campos por fila, todos con la misma anchura de columna.
     widgets::top_row(ui, |ui| {
-        let col = ui.available_width() / 4.0;
+        let col = ui.available_width() / 3.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
             egui::Layout::top_down(egui::Align::Min),
@@ -570,6 +570,10 @@ fn scatter_fields(
                 )
             },
         );
+    });
+    ui.add_space(6.0);
+    widgets::top_row(ui, |ui| {
+        let col = ui.available_width() / 3.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
             egui::Layout::top_down(egui::Align::Min),
@@ -584,11 +588,6 @@ fn scatter_fields(
                 )
             },
         );
-    });
-    ui.add_space(6.0);
-    // Fila 2
-    widgets::top_row(ui, |ui| {
-        let col = ui.available_width() / 4.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
             egui::Layout::top_down(egui::Align::Min),
@@ -617,6 +616,10 @@ fn scatter_fields(
                 )
             },
         );
+    });
+    ui.add_space(6.0);
+    widgets::top_row(ui, |ui| {
+        let col = ui.available_width() / 3.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
             egui::Layout::top_down(egui::Align::Min),
@@ -659,7 +662,10 @@ fn scatter_fields(
                 .size(12.0)
                 .color(theme::TEXT),
         );
-        if rules.cluster_enabled {
+    });
+    if rules.cluster_enabled {
+        ui.add_space(6.0);
+        widgets::top_row(ui, |ui| {
             ui.label(
                 RichText::new(t(locale, "Cluster size", "Cluster size"))
                     .size(11.0)
@@ -670,8 +676,8 @@ fn scatter_fields(
                     .range(2..=1000)
                     .speed(1.0),
             );
-        }
-    });
+        });
+    }
 }
 
 fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
@@ -785,11 +791,13 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                                     )
                                     .inner,
                                 );
-                                if ui
-                                    .button(icons::TRASH)
-                                    .on_hover_text(t(locale, "Remove model", "Remove model"))
-                                    .clicked()
-                                {
+                                if widgets::icon_action(
+                                    ui,
+                                    icons::TRASH,
+                                    20.0,
+                                    theme::DANGER,
+                                    &t(locale, "Remove model", "Remove model"),
+                                ) {
                                     remove = true;
                                 }
                             });
