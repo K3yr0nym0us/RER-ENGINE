@@ -19,8 +19,8 @@ const DANGER_BG: Color32 = Color32::from_rgb(0x84, 0x1c, 0x24);
 const DANGER_TEXT: Color32 = Color32::from_rgb(0xff, 0xd8, 0xda);
 /// `h-100`: los dos fieldsets de la fila comparten la altura del más alto.
 const FIELDSET_PAIR_MIN_HEIGHT: f32 = 244.0;
-/// Altura mínima del panel de blueprints para que acompañe al de terreno.
-const SIDE_PANEL_MIN_HEIGHT: f32 = 400.0;
+/// Los dos paneles de la fila (terreno / blueprints) comparten altura.
+const SIDE_PANEL_MIN_HEIGHT: f32 = 520.0;
 
 // Colores Bootstrap del `WorldGenModalBody` original (root font 14 px).
 const BTN_PRIMARY: Color32 = Color32::from_rgb(0x0d, 0x6e, 0xfd);
@@ -215,10 +215,13 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
         ui,
         &t(locale, "Terrain configuration", "Terrain configuration"),
         true,
-        0.0,
+        SIDE_PANEL_MIN_HEIGHT,
         |ui| {
             widgets::top_row(ui, |ui| {
-                let half = ui.available_width() / 2.0;
+                // `col-6` cada uno: 50 % del ancho del panel, con el gap
+                // descontado para que no quede hueco a la derecha.
+                let gap = ui.spacing().item_spacing.x;
+                let half = (ui.available_width() - gap) / 2.0;
                 ui.allocate_ui_with_layout(
                     egui::vec2(half, 0.0),
                     egui::Layout::top_down(egui::Align::Min),
@@ -285,6 +288,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                         );
                     },
                 );
+                ui.add_space(gap);
                 ui.allocate_ui_with_layout(
                     egui::vec2(half, 0.0),
                     egui::Layout::top_down(egui::Align::Min),
@@ -790,13 +794,13 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         let gap = ui.spacing().item_spacing.x;
                         let total = ui.available_width() - gap;
                         ui.allocate_ui_with_layout(
-                            egui::vec2(total * 0.58, 0.0),
+                            egui::vec2(total * 0.66, 0.0),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| terrain_configuration(ui, app),
                         );
                         ui.add_space(gap);
                         ui.allocate_ui_with_layout(
-                            egui::vec2(total * 0.42, 0.0),
+                            egui::vec2(total * 0.34, 0.0),
                             egui::Layout::top_down(egui::Align::Min),
                             |ui| distribute_blueprints(ui, app),
                         );
