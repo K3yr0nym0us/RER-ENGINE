@@ -352,10 +352,12 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 let mut iter = fields.into_iter();
                                 for _row in 0..3 {
                                     widgets::top_row(ui, |ui| {
-                                        // Calcular la columna una sola vez: si se
-                                        // recalcula por celda, cada columna siguiente
-                                        // sale más estrecha que la anterior.
-                                        let col = ui.available_width() / 3.0;
+                                        // Calcular la columna una sola vez y
+                                        // descontar el espaciado entre columnas:
+                                        // si no, 3 columnas ocupan más que el
+                                        // ancho disponible y se corta el lado.
+                                        let gap = ui.spacing().item_spacing.x;
+                                        let col = (ui.available_width() - gap * 2.0) / 3.0;
                                         for _col in 0..3 {
                                             if let Some((label, value, max)) = iter.next() {
                                                 ui.allocate_ui_with_layout(
@@ -406,7 +408,8 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
             let mut biomes = panel.biomes;
             let mut shares = panel.biome_shares;
             widgets::top_row(ui, |ui| {
-                let column = ui.available_width() / 5.0;
+                let gap = ui.spacing().item_spacing.x;
+                let column = (ui.available_width() - gap * 4.0) / 5.0;
                 for index in 0..5 {
                     ui.allocate_ui_with_layout(
                         egui::vec2(column, 0.0),
@@ -538,7 +541,8 @@ fn scatter_fields(
 ) {
     // Máximo 3 campos por fila, todos con la misma anchura de columna.
     widgets::top_row(ui, |ui| {
-        let col = ui.available_width() / 3.0;
+        let gap = ui.spacing().item_spacing.x;
+        let col = (ui.available_width() - gap * 2.0) / 3.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
             egui::Layout::top_down(egui::Align::Min),
@@ -582,7 +586,8 @@ fn scatter_fields(
     });
     ui.add_space(6.0);
     widgets::top_row(ui, |ui| {
-        let col = ui.available_width() / 3.0;
+        let gap = ui.spacing().item_spacing.x;
+        let col = (ui.available_width() - gap * 2.0) / 3.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
             egui::Layout::top_down(egui::Align::Min),
@@ -628,7 +633,8 @@ fn scatter_fields(
     });
     ui.add_space(6.0);
     widgets::top_row(ui, |ui| {
-        let col = ui.available_width() / 3.0;
+        let gap = ui.spacing().item_spacing.x;
+        let col = (ui.available_width() - gap * 2.0) / 3.0;
         ui.allocate_ui_with_layout(
             egui::vec2(col, 0.0),
             egui::Layout::top_down(egui::Align::Min),

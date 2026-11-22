@@ -152,6 +152,12 @@ impl ModalWindow {
             NativeModal::TooltipScriptEditor => (TOOLTIP_SCRIPT_WIDTH, TOOLTIP_SCRIPT_HEIGHT),
             _ => (INNER_WIDTH, 320.0),
         };
+        // Windows ignora `request_inner_size` en ventanas no redimensionables,
+        // así que el ancho inicial es el definitivo: se limita al 90 % del
+        // editor para que la modal nunca se corte en el costado de la pantalla.
+        let scale = beside.scale_factor() as f64;
+        let max_initial_width = (f64::from(beside.outer_size().width) / scale) * 0.9;
+        let width = width.min(max_initial_width).max(320.0);
         // Propiedades también debe poder crecer: con `resizable=false` Windows
         // ignora `request_inner_size` y la ventana se queda en el ancho inicial.
         let resizable =
