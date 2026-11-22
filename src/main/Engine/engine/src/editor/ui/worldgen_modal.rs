@@ -268,12 +268,29 @@ fn fieldset(
 const FIELD_LABEL_HEIGHT: f32 = 30.0;
 
 fn uint_field(ui: &mut egui::Ui, label: &str, value: &mut u32, min: u32, max: u32) {
+    uint_field_with_icon(ui, "", label, value, min, max);
+}
+
+/// Igual que `uint_field`, pero con un icono Phosphor delante del label.
+fn uint_field_with_icon(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    value: &mut u32,
+    min: u32,
+    max: u32,
+) {
     ui.vertical(|ui| {
         ui.add_space(6.0);
         let width = ui.available_width();
+        let text = if icon.is_empty() {
+            label.to_owned()
+        } else {
+            format!("{icon}  {label}")
+        };
         ui.add_sized(
             egui::vec2(width, FIELD_LABEL_HEIGHT),
-            egui::Label::new(RichText::new(label).size(12.0).color(theme::TEXT_MUTED)).wrap(),
+            egui::Label::new(RichText::new(text).size(12.0).color(theme::TEXT_MUTED)).wrap(),
         );
         ui.add_sized(
             egui::vec2(width, 24.0),
@@ -416,36 +433,57 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                             false,
                             FIELDSET_PAIR_MIN_HEIGHT,
                             |ui| {
-                                let fields: [(&str, &mut u32, u32); 9] = [
+                                let fields: [(&str, &str, &mut u32, u32); 9] = [
                                     (
+                                        icons::MOUNTAINS,
                                         &t(locale, "Mountains", "Mountains"),
                                         &mut panel.mountains,
                                         caps.mountains,
                                     ),
-                                    (&t(locale, "Hills", "Hills"), &mut panel.hills, caps.hills),
                                     (
+                                        icons::TREE_EVERGREEN,
+                                        &t(locale, "Hills", "Hills"),
+                                        &mut panel.hills,
+                                        caps.hills,
+                                    ),
+                                    (
+                                        icons::CHART_LINE_DOWN,
                                         &t(locale, "Valleys", "Valleys"),
                                         &mut panel.valleys,
                                         caps.valleys,
                                     ),
                                     (
+                                        icons::SUN_HORIZON,
                                         &t(locale, "Plains", "Plains"),
                                         &mut panel.plains,
                                         caps.plains,
                                     ),
                                     (
+                                        icons::BARRICADE,
                                         &t(locale, "Cliffs", "Cliffs"),
                                         &mut panel.cliffs,
                                         caps.cliffs,
                                     ),
-                                    (&t(locale, "Lakes", "Lakes"), &mut panel.lakes, caps.lakes),
                                     (
+                                        icons::DROP_SIMPLE,
+                                        &t(locale, "Lakes", "Lakes"),
+                                        &mut panel.lakes,
+                                        caps.lakes,
+                                    ),
+                                    (
+                                        icons::WAVES,
                                         &t(locale, "Rivers", "Rivers"),
                                         &mut panel.rivers,
                                         caps.rivers,
                                     ),
-                                    (&t(locale, "Caves", "Caves"), &mut panel.caves, caps.caves),
                                     (
+                                        icons::FALLOUT_SHELTER,
+                                        &t(locale, "Caves", "Caves"),
+                                        &mut panel.caves,
+                                        caps.caves,
+                                    ),
+                                    (
+                                        icons::CLOUD_RAIN,
                                         &t(locale, "Waterfalls", "Waterfalls"),
                                         &mut panel.waterfalls,
                                         caps.waterfalls,
@@ -461,11 +499,15 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                         let gap = ui.spacing().item_spacing.x;
                                         let col = (ui.available_width() - gap * 2.0) / 3.0;
                                         for _col in 0..3 {
-                                            if let Some((label, value, max)) = iter.next() {
+                                            if let Some((icon, label, value, max)) = iter.next() {
                                                 ui.allocate_ui_with_layout(
                                                     egui::vec2(col, 0.0),
                                                     egui::Layout::top_down(egui::Align::Min),
-                                                    |ui| uint_field(ui, label, value, 0, max),
+                                                    |ui| {
+                                                        uint_field_with_icon(
+                                                            ui, icon, label, value, 0, max,
+                                                        )
+                                                    },
                                                 );
                                             }
                                         }
