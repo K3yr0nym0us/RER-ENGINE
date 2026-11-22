@@ -159,6 +159,52 @@ fn bootstrap_button(
     enabled && response.clicked()
 }
 
+/// Barra de progreso con porcentaje y contador para las dos fases de la
+/// generación: escaneo de columnas y creación de chunks. El motor emite
+/// `world_gen_progress` en ambas, así que siempre hay algo que mostrar.
+fn generation_progress(
+    ui: &mut egui::Ui,
+    locale: crate::editor::cli::Locale,
+    generation: worldgen::Generation,
+) {
+    let (label, done, total) = match generation.phase {
+        worldgen::GenerationPhase::Scan => (
+            t(locale, "Scanning columns…", "Scanning columns…"),
+            generation.completed,
+            generation.total,
+        ),
+        worldgen::GenerationPhase::Mesh => (
+            t(locale, "Generating world…", "Generating world…"),
+            generation.completed,
+            generation.total,
+        ),
+    };
+    let ratio = if total > 0 {
+        (done as f32 / total as f32).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let detail = if total > 0 {
+        format!(
+            "{label} · {done}/{total} ({}%)",
+            (ratio * 100.0).round() as u32
+        )
+    } else {
+        label
+    };
+    ui.label(RichText::new(detail).size(11.0).color(theme::TEXT_MUTED));
+    ui.add_space(3.0);
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 8.0), egui::Sense::hover());
+    let painter = ui.painter();
+    painter.rect_filled(rect, egui::CornerRadius::same(4), theme::BORDER);
+    if ratio > 0.0 {
+        let mut filled = rect;
+        filled.max.x = rect.min.x + rect.width() * ratio;
+        painter.rect_filled(filled, egui::CornerRadius::same(4), theme::CONTROL_BLUE);
+    }
+}
+
 fn t(locale: crate::editor::cli::Locale, es: &'static str, en: &'static str) -> String {
     tr(locale, es, en).to_string()
 }
@@ -948,6 +994,11 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                     if !app.worldgen.status.is_empty() {
                         ui.add_space(8.0);
                         ui.label(RichText::new(&app.worldgen.status).size(11.0).color(theme::TEXT_MUTED));
+                    }
+
+                    if let Some(generation) = app.worldgen.generation {
+                        ui.add_space(6.0);
+                        generation_progress(ui, locale, generation);
                     }
 
                     ui.add_space(10.0);
