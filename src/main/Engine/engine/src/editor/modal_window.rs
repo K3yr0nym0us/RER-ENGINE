@@ -94,7 +94,7 @@ const CONTROLS_WIDTH: f64 = 1188.0;
 const CONTROLS_HEIGHT: f64 = 460.0;
 /// El generador de mundo necesita más ancho que `lg`: terreno y reparto de
 /// blueprints van uno al lado del otro (antes `xl` medía 1140 + 48 de padding).
-const WORLDGEN_WIDTH: f64 = 1080.0;
+const WORLDGEN_WIDTH: f64 = 1140.0;
 const WORLDGEN_HEIGHT: f64 = 780.0;
 /// La modal de plugins era `lg` (800 de contenido + 48 de padding).
 const PLUGINS_WIDTH: f64 = 848.0;

@@ -199,11 +199,8 @@ fn slider(
             .size(12.0)
             .color(theme::TEXT_MUTED),
     );
-    ui.add(
-        egui::Slider::new(value, min..=max)
-            .step_by(step as f64)
-            .show_value(false),
-    );
+    // Mismo range que el resto del editor; ocupa todo el ancho disponible.
+    widgets::range_slider(ui, value, min, max, step, theme::CONTROL_BLUE);
 }
 
 fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
@@ -797,7 +794,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                     // original: terreno a la izquierda, blueprints a la derecha.
                     widgets::top_row(ui, |ui| {
                         let gap = ui.spacing().item_spacing.x;
-                        let total = ui.available_width() - gap;
+                        let total = ui.available_width() - gap - 12.0;
                         ui.allocate_ui_with_layout(
                             egui::vec2(total * 0.694, 0.0),
                             egui::Layout::top_down(egui::Align::Min),
@@ -844,7 +841,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         let side_width = 90.0;
                         let gap = ui.spacing().item_spacing.x;
                         let generate_width =
-                            (ui.available_width() - side_width * 2.0 - gap * 2.0).max(160.0);
+                            (ui.available_width() - side_width * 2.0 - gap * 2.0 - 12.0).max(160.0);
                         if bootstrap_button(ui, icons::PLAY, &label, Btn::Primary, generate_width, !busy)
                         {
                             match app.worldgen.library_path.clone() {
