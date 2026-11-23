@@ -27,6 +27,9 @@ impl FrameRenderer {
     }
 
     pub(super) fn pipe_handles(&self) -> Pipes {
+        // Índices fijos del registro raster 1× (taa=8 … gizmo_lines=14). Un pipeline
+        // extra *antes* de present desplaza composite/present: UNORM sobre el swapchain
+        // y el set `full` de composite enlazado como si fuera present.
         Pipes {
             forward: self.pipelines[0],
             forward_blend: self.pipelines[1],

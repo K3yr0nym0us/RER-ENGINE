@@ -257,7 +257,7 @@ impl State {
             live_fps: 0.0,
             autosave_enabled: false,
             autosave_last_tick: Instant::now(),
-            target_fps: 60,
+            target_fps: 0,
             blocked_on_keep_horizontal: HashMap::new(),
             pending_slides: HashMap::new(),
             save_registry: EntitySaveRegistry::new(),

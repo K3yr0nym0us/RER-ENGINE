@@ -423,8 +423,12 @@ impl State {
                 self.rebuild_grid();
             }
             EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) => {
-                self.target_fps = fps.clamp(1, 1000);
-                log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
+                self.target_fps = if fps == 0 { 0 } else { fps.clamp(1, 1000) };
+                if self.target_fps == 0 {
+                    log::info!("[render] Límite de FPS actualizado: sin límite");
+                } else {
+                    log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
+                }
             }
             EngineCommand::Common(EngineCommandCommon::SetPreviewPlaying { playing }) => {
                 if self.preview_playing == playing {

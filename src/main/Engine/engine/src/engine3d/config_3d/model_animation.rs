@@ -363,19 +363,34 @@ impl State {
                 (clip_index, active.time_s, active.loop_)
             };
             let clip = &asset.clips[clip_index];
+            let duration_s = clip.duration_s;
+            let clip_name = clip.name.clone();
+            let prev_time = time_s;
 
             let mut new_time = time_s + dt;
-            if new_time >= clip.duration_s {
+            if new_time >= duration_s {
                 if loop_ {
-                    new_time %= clip.duration_s.max(1e-6);
+                    new_time %= duration_s.max(1e-6);
                 } else {
-                    new_time = clip.duration_s;
+                    new_time = duration_s;
                     finished_ids.push(id);
                 }
             }
 
             if let Some(active) = self.active_model_clips.get_mut(&id) {
                 active.time_s = new_time;
+            }
+
+            let root_motion = self
+                .root_motion_by_clip
+                .get(&id)
+                .and_then(|by_name| by_name.get(&clip_name))
+                .copied()
+                .unwrap_or(false);
+            let player_driven =
+                self.is_play_controller_active() && self.play_character_entity == Some(id);
+            if root_motion && !player_driven {
+                apply_clip_root_motion_to_entity(self, id, &asset, clip, prev_time, dt, loop_);
             }
 
             self.write_joint_matrices_all_parts(
@@ -410,6 +425,9 @@ impl State {
 
         if let Some(clip) = clip {
             apply_clip_to_locals(clip, time_s, &mut local_transforms);
+            if let Some(root) = root_joint_index(asset, clip) {
+                lock_root_planar_translation(&mut local_transforms, asset, root);
+            }
         }
 
         self.apply_bone_physics_to_locals(entity_id, asset, self.delta_time, &mut local_transforms);
@@ -685,9 +703,38 @@ fn find_keyframe_pair(
     Some((&keys[last], &keys[last], 0.0))
 }
 
-/// Joint que gobierna el desplazamiento del clip: el más alto en la jerarquía
-/// que tenga canales de traslación/rotación. En exportaciones de Blender suele
-/// ser `Hips` (hijo de `Armature`), no el nodo raíz sin padre.
+fn clip_has_translation(clip: &AnimationClip, joint: usize) -> bool {
+    clip.channels
+        .iter()
+        .any(|ch| ch.joint_index == joint && matches!(ch.property, AnimProperty::Translation))
+}
+
+fn clip_has_tr(clip: &AnimationClip, joint: usize) -> bool {
+    clip.channels.iter().any(|ch| {
+        ch.joint_index == joint
+            && matches!(
+                ch.property,
+                AnimProperty::Translation | AnimProperty::Rotation
+            )
+    })
+}
+
+fn joint_locomotion_kind(name: &str) -> u8 {
+    let lower = name.to_ascii_lowercase();
+    if lower.contains("hips") || lower.contains("pelvis") {
+        0
+    } else if lower.contains("root") {
+        1
+    } else {
+        2
+    }
+}
+
+/// Joint que gobierna el desplazamiento del clip.
+///
+/// Prioridad: Hips/Pelvis con traslación (aunque sea hijo de Armature), luego
+/// `root`, luego el más alto con canal de traslación. El Armature de Mixamo
+/// suele ser más superficial y no debe ganar a Hips.
 fn root_joint_index(asset: &ModelAsset, clip: &AnimationClip) -> Option<usize> {
     let depth = |mut ji: usize| -> usize {
         let mut d = 0;
@@ -701,33 +748,78 @@ fn root_joint_index(asset: &ModelAsset, clip: &AnimationClip) -> Option<usize> {
         d
     };
 
-    let mut best: Option<(usize, usize, usize)> = None;
+    let mut best: Option<(u8, u8, usize, usize)> = None;
     for ji in 0..asset.joint_parents.len().min(MAX_JOINTS) {
-        let has_motion = clip.channels.iter().any(|ch| {
-            ch.joint_index == ji
-                && matches!(
-                    ch.property,
-                    AnimProperty::Translation | AnimProperty::Rotation
-                )
-        });
-        if !has_motion {
+        let has_t = clip_has_translation(clip, ji);
+        if !has_t && !clip_has_tr(clip, ji) {
             continue;
         }
         let name = asset.joint_names.get(ji).map(String::as_str).unwrap_or("");
-        let lower = name.to_ascii_lowercase();
-        let preference = if lower.contains("root") {
-            0
-        } else if lower.contains("hips") {
-            1
-        } else {
-            2
-        };
-        let score = (depth(ji), preference, ji);
+        let kind = joint_locomotion_kind(name);
+        // Sin traslación no puede mover al personaje: va después de cualquier T.
+        let translation_rank = if has_t { 0 } else { 1 };
+        let score = (translation_rank, kind, depth(ji), ji);
         if best.is_none_or(|b| score < b) {
             best = Some(score);
         }
     }
-    best.map(|(_, _, ji)| ji)
+    best.map(|(_, _, _, ji)| ji)
+}
+
+/// Deja el XZ del hueso de locomoción en la pose bind: el clip no arrastra
+/// la malla. El check de root motion aplica ese XZ al transform de la entidad.
+fn lock_root_planar_translation(locals: &mut [Mat4], asset: &ModelAsset, joint: usize) {
+    let Some(local) = locals.get_mut(joint) else {
+        return;
+    };
+    let Some(bind) = asset.bind_local.get(joint) else {
+        return;
+    };
+    let (scale, rotation, translation) = local.to_scale_rotation_translation();
+    let bind_t = bind.to_scale_rotation_translation().2;
+    *local = Mat4::from_scale_rotation_translation(
+        scale,
+        rotation,
+        Vec3::new(bind_t.x, translation.y, bind_t.z),
+    );
+}
+
+fn apply_clip_root_motion_to_entity(
+    state: &mut State,
+    id: EntityId,
+    asset: &ModelAsset,
+    clip: &AnimationClip,
+    from_t: f32,
+    dt: f32,
+    loop_: bool,
+) {
+    if dt <= 0.0 {
+        return;
+    }
+    let from = from_t.min(clip.duration_s);
+    let mut to = from + dt;
+    if to > clip.duration_s {
+        if loop_ {
+            return;
+        }
+        to = clip.duration_s;
+    }
+    let Some((delta, _)) = root_motion_delta(asset, clip, from, to) else {
+        return;
+    };
+    let planar = Vec3::new(delta.x, 0.0, delta.z);
+    if planar.length_squared() <= 1e-10 {
+        return;
+    }
+    let Some(transform) = state.world.get_mut::<Transform>(id) else {
+        return;
+    };
+    let scaled = Vec3::new(
+        planar.x * transform.scale.x,
+        0.0,
+        planar.z * transform.scale.z,
+    );
+    transform.position += transform.rotation * scaled;
 }
 
 /// Matriz del joint raíz en el espacio normalizado del modelo (mismo `norm`
@@ -853,6 +945,24 @@ mod root_motion_tests {
                 rotation: Some([0.0, 0.0, 0.0, 1.0]),
                 scale: None,
             }],
+        });
+        assert_eq!(root_joint_index(&asset, &clip), Some(1));
+    }
+
+    #[test]
+    fn root_joint_prefiere_hips_aunque_armature_sea_mas_alto() {
+        let mut asset = test_asset();
+        asset.joint_parents = vec![None, Some(0)];
+        asset.inverse_bind = vec![Mat4::IDENTITY.to_cols_array_2d(); 2];
+        asset.bind_local = vec![Mat4::IDENTITY; 2];
+        asset.joint_prefix_world = vec![Mat4::IDENTITY; 2];
+        asset.joint_names = vec!["RaptorArmature".into(), "Hips".into()];
+        let mut clip = translation_clip();
+        clip.channels[0].joint_index = 1;
+        clip.channels.push(AnimChannel {
+            joint_index: 0,
+            property: AnimProperty::Translation,
+            keyframes: clip.channels[0].keyframes.clone(),
         });
         assert_eq!(root_joint_index(&asset, &clip), Some(1));
     }

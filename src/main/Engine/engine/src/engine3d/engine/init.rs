@@ -339,7 +339,7 @@ impl State {
             autosave_enabled: false,
             autosave_last_tick: Instant::now(),
             save_registry: EntitySaveRegistry::new(),
-            target_fps: 60,
+            target_fps: 0,
             graphics_texture_tier:
                 crate::engine3d::config_3d::texture_graphics::TextureGraphicsTier::Medium,
             reflection_tier:

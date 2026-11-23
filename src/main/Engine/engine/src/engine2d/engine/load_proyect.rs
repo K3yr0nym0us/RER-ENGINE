@@ -843,10 +843,10 @@ fn build_import_scene_payload(
             })
         });
 
-    let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps > 0.0 {
+    let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps >= 0.0 {
         view.world.targetFps as u64
     } else {
-        60
+        0
     };
 
     ImportScenePayload {
@@ -985,10 +985,10 @@ fn apply_loaded_proyect_2d(
             size: view.world.gridCellSize,
         },
     ));
-    let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps > 0.0 {
+    let target_fps = if view.world.targetFps.is_finite() && view.world.targetFps >= 0.0 {
         view.world.targetFps as u64
     } else {
-        60
+        0
     };
     state.handle_command(EngineCommand::Common(EngineCommandCommon::SetTargetFps {
         fps: target_fps,

@@ -13,6 +13,7 @@ pub(super) struct SetLayouts {
     pub(super) denoise: vk::DescriptorSetLayout,
     pub(super) rt: vk::DescriptorSetLayout,
     pub(super) bvh: vk::DescriptorSetLayout,
+    pub(super) sky_bg: vk::DescriptorSetLayout,
 }
 
 impl SetLayouts {
@@ -34,8 +35,9 @@ impl SetLayouts {
             self.denoise,
             self.rt,
             self.bvh,
+            self.sky_bg,
         ];
-        // Hay que deduplicar: 12 campos no son 12 objetos. `create_sets` hace `let taa = full;`
+        // Hay que deduplicar: 13 campos no son 13 objetos. `create_sets` hace `let taa = full;`
         // (los dos comparten layout), así que sin esto se destruía el mismo handle dos veces y la
         // validación lo devolvía como `vkDestroyDescriptorSetLayout(): ... Invalid Object`.
         let mut seen: Vec<u64> = Vec::with_capacity(all.len());
@@ -158,8 +160,16 @@ pub(super) fn create_sets(
             ),
         ],
     )?;
+    let sky_bg = set_layout(
+        device,
+        &[binding(
+            0,
+            vk::DescriptorType::UNIFORM_BUFFER,
+            vk::ShaderStageFlags::FRAGMENT,
+        )],
+    )?;
     // TAA y denoise comparten forma (3 samplers de color en set 0), así que reutilizan el MISMO
-    // layout: `SetLayouts` tiene 12 campos pero 11 objetos, y `SetLayouts::destroy` deduplica.
+    // layout: `SetLayouts` tiene 13 campos pero 12 objetos, y `SetLayouts::destroy` deduplica.
     let taa = full;
     let denoise = set_layout(
         device,
@@ -286,6 +296,7 @@ pub(super) fn create_sets(
         denoise,
         rt,
         bvh,
+        sky_bg,
     };
     let sets = DescriptorSets {
         scene: [
@@ -350,6 +361,10 @@ pub(super) fn create_sets(
         sky: [
             alloc_set(device, pool, full)?,
             alloc_set(device, pool, full)?,
+        ],
+        sky_bg: [
+            alloc_set(device, pool, sky_bg)?,
+            alloc_set(device, pool, sky_bg)?,
         ],
     };
     Ok((pool, layouts, sets))

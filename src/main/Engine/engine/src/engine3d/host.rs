@@ -465,7 +465,7 @@ impl App {
             gilrs: Gilrs::new().ok(),
             gamepad_pressed: HashSet::new(),
             next_frame_at: std::time::Instant::now(),
-            target_fps: 60,
+            target_fps: 0,
             cursor_captured: false,
             editor_fly_capture: false,
             right_click_motion: (0.0, 0.0),
@@ -777,7 +777,7 @@ impl App {
             return true;
         }
         if let EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) = &cmd {
-            self.target_fps = (*fps).clamp(1, 1000);
+            self.target_fps = if *fps == 0 { 0 } else { (*fps).clamp(1, 1000) };
             self.next_frame_at = std::time::Instant::now();
         }
         let mut preview_toggle = None;
@@ -1638,10 +1638,18 @@ impl ApplicationHandler<EngineCommand> for App {
     /// Es el único lugar correcto para pedir el siguiente frame en modo Poll.
     /// Usando WaitUntil capamos al FPS objetivo y el CPU puede dormir entre frames.
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.tick();
+
+        if self.target_fps == 0 {
+            if let Some(state) = &self.state {
+                state.window().request_redraw();
+            }
+            event_loop.set_control_flow(ControlFlow::Poll);
+            return;
+        }
+
         let frame_duration =
             std::time::Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
-
-        self.tick();
 
         let now = std::time::Instant::now();
         if now >= self.next_frame_at {
@@ -1697,7 +1705,7 @@ pub fn run() {
         gilrs: Gilrs::new().ok(),
         gamepad_pressed: HashSet::new(),
         next_frame_at: std::time::Instant::now(),
-        target_fps: 60,
+        target_fps: 0,
         cursor_captured: false,
         editor_fly_capture: false,
         right_click_motion: (0.0, 0.0),

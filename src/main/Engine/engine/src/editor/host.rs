@@ -986,6 +986,21 @@ impl Drop for EditorApplication {
 }
 
 impl EditorApplication {
+    fn request_editor_redraw(&mut self, event_loop: &ActiveEventLoop) {
+        if let Some(editor) = self.editor.as_mut() {
+            editor.sync_particle_window(event_loop);
+            editor.sync_modal_window(event_loop);
+            editor.sync_model_picker_window(event_loop);
+            editor.window.request_redraw();
+            if let Some(modal) = editor.modal_window.as_ref() {
+                modal.request_redraw();
+            }
+            if let Some(picker) = editor.model_picker_window.as_ref() {
+                picker.request_redraw();
+            }
+        }
+    }
+
     fn send_engine(&mut self, command: Value) {
         // Motor in-process: si ya está cargado se despacha ya; si no, se encola para
         // el primer frame tras `attach_engine`.
@@ -1755,32 +1770,26 @@ impl ApplicationHandler<UserEvent> for EditorApplication {
         let now = Instant::now();
         // El limitador de la UI (`set_target_fps`) se aplica aquí: antes el editor
         // seguía siempre a 60 y el motor recibía `update()` a la frecuencia del monitor.
-        let requested = self
-            .editor
-            .as_ref()
-            .map_or(self.target_fps, |editor| {
+        let requested = {
+            let raw = self.editor.as_ref().map_or(self.target_fps, |editor| {
                 u64::from(editor.app.world.target_fps)
-            })
-            .clamp(1, 1000);
+            });
+            if raw == 0 { 0 } else { raw.clamp(1, 1000) }
+        };
         if requested != self.target_fps {
             self.target_fps = requested;
             self.next_frame_at = now;
         }
 
+        if self.target_fps == 0 {
+            self.request_editor_redraw(event_loop);
+            event_loop.set_control_flow(ControlFlow::Poll);
+            return;
+        }
+
         let frame_duration = Duration::from_nanos(1_000_000_000 / self.target_fps.max(1));
         if now >= self.next_frame_at {
-            if let Some(editor) = self.editor.as_mut() {
-                editor.sync_particle_window(event_loop);
-                editor.sync_modal_window(event_loop);
-                editor.sync_model_picker_window(event_loop);
-                editor.window.request_redraw();
-                if let Some(modal) = editor.modal_window.as_ref() {
-                    modal.request_redraw();
-                }
-                if let Some(picker) = editor.model_picker_window.as_ref() {
-                    picker.request_redraw();
-                }
-            }
+            self.request_editor_redraw(event_loop);
             self.next_frame_at += frame_duration;
             if self.next_frame_at < now {
                 self.next_frame_at = now + frame_duration;
@@ -1848,7 +1857,7 @@ pub fn run() {
         proxy,
         editor: None,
         next_frame_at: Instant::now(),
-        target_fps: 60,
+        target_fps: 0,
         exit_after_save: false,
         exit_request_pending: false,
         pending_logs: Vec::new(),

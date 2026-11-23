@@ -33,7 +33,7 @@ use egui_phosphor::regular as icons;
 | Wide sidebar button | `ui_kit::wide_button_click_sized` |
 | On/off | `ui_kit::switch_value` |
 | Slider | `ui_kit::range_slider` |
-| Combo | `ui_kit::combo_text` / `combo_u32` / `combo_string` |
+| Combo | `ui_kit::combo_text` / `combo_u32_labeled` / `combo_string` |
 | Text field | `ui_kit::text_field` |
 | Number draft | `NumberDraft` + `ui_kit::number_input` |
 | Modal chrome | `ui_kit::modal_panel` + `modal_title` + `body_text` |

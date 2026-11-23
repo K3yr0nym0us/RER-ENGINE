@@ -18,12 +18,13 @@
 //! | Botón de modal (crear, aplicar, cancelar, borrar) | [`modal_button`] / [`modal_button_bold`] + [`ModalButtonStyle`] | `egui::Button`, `ui.button` |
 //! | Botón ancho de sidebar | [`wide_button_click_sized`] | `egui::Button` |
 //! | Botón de icono 30×30 | [`small_icon_button_click`] | `egui::Button` |
+//! | Botón de icono sólido | [`solid_icon_button_click`] | `egui::Button` relleno a mano |
 //! | Icono de fila (escenas, assets) | [`icon_action`] | `egui::Button` |
 //! | Pastilla / tier (Low/Med/High) | [`pill_button_click`] / [`tier_row_choice`] | `RadioButton`, `SelectableLabel` |
 //! | Interruptor on/off | [`switch_value`] | `egui::Checkbox` |
 //! | Toggle cuadrado con icono | [`icon_toggle_value`] | `egui::Button` |
 //! | Slider | [`range_slider`] / [`range_slider_no_tooltip`] + [`range_end_labels`] | `egui::Slider` |
-//! | Combo de texto / FPS / rutas | [`combo_text`] / [`combo_u32`] / [`combo_string`] | `egui::ComboBox` suelto |
+//! | Combo de texto / FPS / rutas | [`combo_text`] / [`combo_u32_labeled`] / [`combo_string`] | `egui::ComboBox` suelto |
 //! | Campo de texto | [`text_field`] / [`text_field_sized`] | `TextEdit` crudo |
 //! | Campo numérico (draft) | [`number_input`] + [`NumberDraft`] | `DragValue`, `Slider` |
 //! | Título / cuerpo de modal | [`modal_title`] / [`body_text`] | `ui.heading`, `ui.colored_label` |

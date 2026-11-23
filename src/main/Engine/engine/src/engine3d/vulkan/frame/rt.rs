@@ -74,15 +74,12 @@ impl FrameRenderer {
         &mut self,
         slot: usize,
         input: &FrameInput<'_>,
-        pipes: &Pipes,
+        _pipes: &Pipes,
         device: &ash::Device,
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
-        let _ = (pipes, device, cmd);
         if !input.raytracing {
-            // Sin trazado: el shader del BVH con `counts.x == 0` escribe el cielo.
-            let view = self.targets.background.view;
-            self.dispatch_bvh(slot, input, 0, view, device, cmd)?;
+            self.draw_sky_background(slot, input, device, cmd)?;
         } else if self.gpu.hw_rt() {
             self.rebuild_tlas(slot, input, cmd)?;
             let view = self.targets.background.view;
@@ -91,6 +88,45 @@ impl FrameRenderer {
             let view = self.targets.background.view;
             self.dispatch_bvh(slot, input, 0, view, device, cmd)?;
         }
+        Ok(())
+    }
+
+    /// Cielo procedural en `targets.background` sin despachar BVH ni subir nodos/triángulos.
+    fn draw_sky_background(
+        &mut self,
+        slot: usize,
+        input: &FrameInput<'_>,
+        device: &ash::Device,
+        cmd: vk::CommandBuffer,
+    ) -> Result<(), VulkanError> {
+        let extent = self.rt_pass_extent(false);
+        let uniform = rt_camera_bytes(input.scene, extent, &input.sky, &input.rtx);
+        self.rt_ubo_bg[slot].write(0, &uniform)?;
+        draw_fullscreen(
+            device,
+            cmd,
+            self.sky_bg_pipeline,
+            self.sky_bg_layout,
+            self.sets.sky_bg[slot],
+            self.targets.background.view,
+            extent,
+            &[],
+        );
+        // Raster escribe COLOR_ATTACHMENT; `copy_color` y `sky.frag` (MSAA) leen GENERAL.
+        crate::engine3d::vulkan::gpu::cmd_image_barrier(
+            device,
+            cmd,
+            self.targets.background.image,
+            vk::ImageAspectFlags::COLOR,
+            self.targets.background.mips,
+            self.targets.background.layers,
+            vk::ImageLayout::GENERAL,
+            vk::ImageLayout::GENERAL,
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+            vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::TRANSFER,
+            vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+            vk::AccessFlags::SHADER_READ | vk::AccessFlags::TRANSFER_READ,
+        );
         Ok(())
     }
 

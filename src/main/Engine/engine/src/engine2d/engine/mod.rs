@@ -261,7 +261,7 @@ pub struct State {
     live_fps: f32,
     autosave_enabled: bool,
     autosave_last_tick: Instant,
-    /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
+    /// Límite de FPS del bucle (sincronizado con `set_target_fps`). `0` = sin límite.
     pub(crate) target_fps: u64,
     /// Bloqueo persistente de input horizontal para `on_keep`.
     /// Mientras exista, la misma dirección no vuelve a ejecutar el callback de control.

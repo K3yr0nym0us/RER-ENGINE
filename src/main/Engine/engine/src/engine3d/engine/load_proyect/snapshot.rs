@@ -209,7 +209,7 @@ pub(crate) fn build_fp_placeholder_saved_scene(id: u32, name: &str) -> SavedScen
         gridVisible: true,
         gridCellSize: 1.0,
         gravity: Some(15.0),
-        targetFps: 60.0,
+        targetFps: 0.0,
         lightAmbient: Some(DEFAULT_LIGHT_AMBIENT),
         lightIntensity: Some(DEFAULT_LIGHT_INTENSITY),
         shadowDarkness: Some(DEFAULT_SHADOW_DARKNESS),

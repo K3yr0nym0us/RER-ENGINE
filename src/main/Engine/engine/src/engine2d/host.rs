@@ -176,7 +176,7 @@ impl ApplicationHandler<EngineCommand> for App {
             return;
         }
         if let EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) = &cmd {
-            self.target_fps = (*fps).clamp(1, 1000);
+            self.target_fps = if *fps == 0 { 0 } else { (*fps).clamp(1, 1000) };
             self.next_frame_at = std::time::Instant::now();
         }
         // When entering game mode, automatically focus the engine window
@@ -212,9 +212,13 @@ impl ApplicationHandler<EngineCommand> for App {
             .state
             .as_ref()
             .map(|s| s.target_fps)
-            .unwrap_or(self.target_fps)
-            .max(1);
-        let frame_duration = std::time::Duration::from_nanos(1_000_000_000 / fps_limit);
+            .unwrap_or(self.target_fps);
+        let uncapped = fps_limit == 0;
+        let frame_duration = if uncapped {
+            std::time::Duration::ZERO
+        } else {
+            std::time::Duration::from_nanos(1_000_000_000 / fps_limit.max(1))
+        };
 
         let now = std::time::Instant::now();
         if let Some(state) = self.state.as_mut() {
@@ -244,6 +248,14 @@ impl ApplicationHandler<EngineCommand> for App {
                 self.gamepad_pressed.clear();
                 state.clear_all_on_keep_horizontal_blocks();
             }
+        }
+
+        if uncapped {
+            if let Some(state) = &self.state {
+                state.window().request_redraw();
+            }
+            event_loop.set_control_flow(ControlFlow::Poll);
+            return;
         }
 
         if now >= self.next_frame_at {
@@ -284,7 +296,7 @@ impl App {
             gilrs: Gilrs::new().ok(),
             gamepad_pressed: HashSet::new(),
             next_frame_at: std::time::Instant::now(),
-            target_fps: 60,
+            target_fps: 0,
         }
     }
 
@@ -847,7 +859,7 @@ pub fn run() {
         gilrs: Gilrs::new().ok(),
         gamepad_pressed: HashSet::new(),
         next_frame_at: std::time::Instant::now(),
-        target_fps: 60,
+        target_fps: 0,
     };
     event_loop
         .run_app(&mut app)

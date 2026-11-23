@@ -68,6 +68,7 @@ fn spv(name: &str) -> &'static [u8] {
         "present.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/present.frag.spv")),
         "depth_only.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/depth_only.frag.spv")),
         "sky.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/sky.frag.spv")),
+        "sky_bg.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/sky_bg.frag.spv")),
         // Partículas GPU-driven.
         "particle_spawn_sim" => include_bytes!(concat!(env!("OUT_DIR"), "/spawn_sim.comp.spv")),
         "particle_build_indirect" => {
@@ -267,8 +268,8 @@ pub struct FrameRenderer {
     pipelines: Vec<vk::Pipeline>,
     pool: vk::DescriptorPool,
     /// Los `VkDescriptorSetLayout` del renderer. Se guardan porque hay que destruirlos: el leak que
-    /// reportaba `vkDestroyDevice(): N leaked objects` al cerrar eran exactamente estos. Son 12
-    /// campos pero 11 objetos (`taa` comparte layout con `full`).
+    /// reportaba `vkDestroyDevice(): N leaked objects` al cerrar eran exactamente estos. Son 13
+    /// campos pero 12 objetos (`taa` comparte layout con `full`; `sky_bg` es propio).
     set_layouts: SetLayouts,
     samplers: Vec<vk::Sampler>,
     sets: DescriptorSets,
@@ -299,6 +300,9 @@ pub struct FrameRenderer {
     bvh_pipeline: vk::Pipeline,
     rt_layout: vk::PipelineLayout,
     bvh_layout: vk::PipelineLayout,
+    /// Cielo raster (`sky_bg.frag`) cuando RT está apagado: no despacha BVH vacío.
+    sky_bg_pipeline: vk::Pipeline,
+    sky_bg_layout: vk::PipelineLayout,
     sbt_stride: u32,
     sbt_address: u64,
     blas_cache: HashMap<u64, Accel>,
@@ -387,6 +391,8 @@ struct DescriptorSets {
     present: [vk::DescriptorSet; FRAMES],
     /// Fondo trazado para el quad del cielo del pase MSAA (misma layout que `full`).
     sky: [vk::DescriptorSet; FRAMES],
+    /// UBO de cámara/cielo del triángulo `sky_bg` (un set por slot en vuelo).
+    sky_bg: [vk::DescriptorSet; FRAMES],
 }
 
 #[derive(Clone, Copy)]
@@ -535,6 +541,7 @@ impl FrameRenderer {
                 vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
             )?;
             write_uniform(device, sets.gizmo[slot], 0, &gizmo_ubo[slot])?;
+            write_uniform(device, sets.sky_bg[slot], 0, &rt_ubo_bg[slot])?;
             write_storage(device, sets.joints[slot], 0, &joints[slot])?;
             // Fondo para el quad del cielo del pase MSAA.
             write_combined(
@@ -579,6 +586,7 @@ impl FrameRenderer {
         let full_layout = pipeline_layout(device, &[set_layouts.full], 32)?;
         let taa_layout = pipeline_layout(device, &[set_layouts.taa], 8)?;
         let denoise_layout = pipeline_layout(device, &[set_layouts.denoise], 4)?;
+        let sky_bg_layout = pipeline_layout(device, &[set_layouts.sky_bg], 0)?;
         layouts.extend([
             forward_layout,
             skinned_layout,
@@ -589,6 +597,7 @@ impl FrameRenderer {
             full_layout,
             taa_layout,
             denoise_layout,
+            sky_bg_layout,
         ]);
         let vert = shader(device, spv("forward.vert"), &mut shaders)?;
         let frag = shader(device, spv("forward.frag"), &mut shaders)?;
@@ -842,6 +851,21 @@ impl FrameRenderer {
             &mut pipelines,
         )?;
         let depth_pipelines = [depth_only, depth_only_skinned];
+        // Después del registro indexado (`pipe_handles` 0..=14) y de depth_only: el MSAA
+        // hace pop de los últimos, y meter esto entre taa y present desplazaba los índices.
+        let sky_bg_frag = shader(device, spv("sky_bg.frag"), &mut shaders)?;
+        let sky_bg_pipeline = graphics(
+            device,
+            sky_bg_layout,
+            full_vert,
+            Some(sky_bg_frag),
+            &empty_vertex(),
+            &[COLOR],
+            None,
+            false,
+            false,
+            &mut pipelines,
+        )?;
         // Pool GPU de partículas: pipelines y descriptores dedicados, sin tocar el registro
         // indexado de `pipelines` del renderer (el MSAA hace pop de los últimos).
         let volume = VolumetricState::new(gpu, 32, 8, 0.0)?;
@@ -932,6 +956,8 @@ impl FrameRenderer {
             bvh_pipeline: bvh_pipe,
             rt_layout,
             bvh_layout,
+            sky_bg_pipeline,
+            sky_bg_layout,
             sbt_stride,
             sbt_address,
             blas_cache: HashMap::new(),

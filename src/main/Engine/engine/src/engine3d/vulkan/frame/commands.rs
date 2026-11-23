@@ -356,7 +356,7 @@ pub(super) fn copy_color(
         vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         vk::PipelineStageFlags::ALL_COMMANDS,
         vk::PipelineStageFlags::TRANSFER,
-        vk::AccessFlags::SHADER_WRITE,
+        vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
         vk::AccessFlags::TRANSFER_READ,
     );
     crate::engine3d::vulkan::gpu::cmd_image_barrier(

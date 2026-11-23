@@ -464,6 +464,51 @@ pub fn small_icon_button_click(ui: &mut egui::Ui, icon: &str, hint: &str) -> boo
     clicked
 }
 
+/// Botón de icono 30×30 con relleno sólido (play/stop de animación).
+pub fn solid_icon_button_click(
+    ui: &mut egui::Ui,
+    icon: &str,
+    hint: &str,
+    fill: Color32,
+    enabled: bool,
+) -> bool {
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(30.0, 30.0), sense);
+    let response = if enabled {
+        response.on_hover_cursor(egui::CursorIcon::PointingHand)
+    } else {
+        response
+    };
+    let alpha = if enabled { 1.0 } else { 0.4 };
+    let drawn = if enabled && response.hovered() {
+        fill.linear_multiply(0.85)
+    } else {
+        fill
+    };
+    let painter = ui.painter();
+    painter.rect(
+        rect,
+        egui::CornerRadius::same(5),
+        drawn.linear_multiply(alpha),
+        Stroke::new(1.0, drawn.linear_multiply(alpha)),
+        StrokeKind::Inside,
+    );
+    painter.text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        icon,
+        FontId::proportional(14.0),
+        Color32::WHITE.linear_multiply(alpha),
+    );
+    let clicked = enabled && response.clicked();
+    let _ = response.on_hover_text(hint);
+    clicked
+}
+
 /// Botón ancho interactivo. Devuelve `true` si se pulsó.
 pub fn wide_button_click_sized(
     ui: &mut egui::Ui,
@@ -928,24 +973,26 @@ pub fn combo_text(
     changed
 }
 
-/// Combo numérico (p. ej. límite de FPS). Devuelve `true` si cambió.
-pub fn combo_u32(
+/// Combo numérico con etiqueta por valor (p. ej. `0` → «Sin límites»).
+pub fn combo_u32_labeled(
     ui: &mut egui::Ui,
     id: &str,
     width: f32,
-    options: &[u32],
+    options: &[(u32, String)],
     selected: &mut u32,
 ) -> bool {
+    let selected_label = options
+        .iter()
+        .find(|(value, _)| *value == *selected)
+        .map(|(_, label)| label.as_str())
+        .map_or_else(|| format!("{selected} FPS"), str::to_string);
     let mut changed = false;
     egui::ComboBox::from_id_salt(id)
         .width(width)
-        .selected_text(format!("{} FPS", *selected))
+        .selected_text(selected_label)
         .show_ui(ui, |ui| {
-            for value in options {
-                if ui
-                    .selectable_label(*selected == *value, format!("{value} FPS"))
-                    .clicked()
-                {
+            for (value, label) in options {
+                if ui.selectable_label(*selected == *value, label).clicked() {
                     *selected = *value;
                     changed = true;
                 }

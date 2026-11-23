@@ -242,6 +242,7 @@ pub struct WorldSettings {
     pub grid_visible: bool,
     pub grid_cell_size: f32,
     pub gravity: f32,
+    /// `0` = sin límite (default 2D y 3D).
     pub target_fps: u32,
     pub light_ambient: f32,
     pub light_intensity: f32,
@@ -305,7 +306,7 @@ impl Default for WorldSettings {
             grid_visible: true,
             grid_cell_size: 1.0,
             gravity: 15.0,
-            target_fps: 60,
+            target_fps: 0,
             light_ambient: 0.06,
             light_intensity: 1.0,
             shadow_darkness: 0.9,
@@ -974,6 +975,15 @@ mod tests {
         assert_eq!(world.msaa_tier, MsaaTier::High);
         assert_eq!(world.ssaa_tier, SsaaTier::Medium);
         assert_eq!(world.texture_detail_distance, 42.0);
+    }
+
+    #[test]
+    fn unlimited_target_fps_is_zero() {
+        let mut world = WorldSettings::default();
+        world.apply_snapshot(&json!({
+            "world": { "target_fps": 0 }
+        }));
+        assert_eq!(world.target_fps, 0);
     }
 
     #[test]

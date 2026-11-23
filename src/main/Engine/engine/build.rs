@@ -33,6 +33,7 @@ const SHADERS_3D: &[(&str, &str)] = &[
     ("shaders/raster/present.frag", "present.frag.spv"),
     ("shaders/raster/depth_only.frag", "depth_only.frag.spv"),
     ("shaders/raster/sky.frag", "sky.frag.spv"),
+    ("shaders/raster/sky_bg.frag", "sky_bg.frag.spv"),
     // Partículas GPU-driven (F1: fuego; F2–F4 reutilizan los mismos pipelines).
     ("shaders/particles/spawn_sim.comp", "spawn_sim.comp.spv"),
     (

@@ -38,8 +38,12 @@ impl State {
                 log::info!("[audio] detenido por comando externo");
             }
             EngineCommand::Common(EngineCommandCommon::SetTargetFps { fps }) => {
-                self.target_fps = fps.clamp(1, 1000);
-                log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
+                self.target_fps = if fps == 0 { 0 } else { fps.clamp(1, 1000) };
+                if self.target_fps == 0 {
+                    log::info!("[render] Límite de FPS actualizado: sin límite");
+                } else {
+                    log::info!("[render] Límite de FPS actualizado: {}", self.target_fps);
+                }
             }
             EngineCommand::Common(EngineCommandCommon::SetCtrlHeld { held }) => {
                 self.ctrl_held = held;

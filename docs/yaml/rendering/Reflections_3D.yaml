@@ -13,8 +13,8 @@
 #   - docs/yaml/rendering/Shadows_3D.yaml
 #   - docs/yaml/rendering/Reflections_Diagnostics.yaml
 
-version: 9
-updated: 2026-11-20
+version: 10
+updated: 2026-11-23
 
 principle:
   owner: motor_3d
@@ -97,7 +97,7 @@ frame_order:
   source: engine/src/engine3d/vulkan/frame/mod.rs::FrameRenderer::record
   steps:
     - ensure_msaa (G-buffer multisampleado y pipelines del tier de MSAA)
-    - trace_background (fondo por RT o BVH) + sky copy/quad
+    - trace_background (sky_bg.frag si RT off; si no RT/BVH) + sky copy/quad
     - shadow_pass (si el tier de sombras lo pide)
     - capture_probe por sonda refrescada
     - forward_pass (MRT + resolución MSAA + segundo pase de profundidad)

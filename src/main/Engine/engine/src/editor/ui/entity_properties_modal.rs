@@ -1407,7 +1407,7 @@ fn animations_tab(
             .inner_margin(egui::Margin::same(6));
         frame.show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label(body(&anim.name, 12.0));
+                ui.spacing_mut().item_spacing.x = 6.0;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if !is_3d
                         && icon_button(ui, icons::TRASH, theme::DANGER, &t(locale, "Eliminar animación", "Delete animation"), true)
@@ -1428,11 +1428,12 @@ fn animations_tab(
                     {
                         open_nested("editAnimation", state, commands);
                     }
-                    if icon_button(
+                    let play_hint = if playing { "Stop" } else { "Play" };
+                    if widgets::solid_icon_button_click(
                         ui,
                         if playing { icons::STOP } else { icons::PLAY },
+                        play_hint,
                         if playing { theme::DANGER } else { theme::SUCCESS },
-                        if playing { "Stop" } else { "Play" },
                         can_play,
                     ) {
                         if playing {
@@ -1448,6 +1449,16 @@ fn animations_tab(
                             state.playing_animation_name = Some(anim.name.clone());
                         }
                     }
+                    let display =
+                        crate::editor::entity_properties::animation_clip_display_name(&anim.name);
+                    let width = ui.available_width();
+                    ui.add_sized(
+                        [width, 30.0],
+                        egui::Label::new(body(display, 12.0))
+                            .truncate()
+                            .sense(Sense::hover()),
+                    )
+                    .on_hover_text(&anim.name);
                 });
             });
             if is_3d && anim.embedded_in_model {

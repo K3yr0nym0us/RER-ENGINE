@@ -475,7 +475,12 @@ fn apply_action(app: &mut EditorApp, action: WorldAction) {
         WorldAction::SetTargetFps(fps) => {
             app.world.target_fps = fps;
             app.send_engine(json!({ "cmd": "set_target_fps", "fps": fps }));
-            app.push_log(format!("[Rendimiento] Límite de FPS: {fps}"), false);
+            let label = if fps == 0 {
+                "sin límite".to_string()
+            } else {
+                fps.to_string()
+            };
+            app.push_log(format!("[Rendimiento] Límite de FPS: {label}"), false);
         }
         WorldAction::SetBackground(path) => {
             match path.as_deref() {

@@ -17,7 +17,7 @@ use egui_phosphor::regular as icons;
 ## Obligatorio
 
 - Botones: `ui_kit::modal_button` / `wide_button_click_sized` / `small_icon_button_click` / `icon_action` / `pill_button_click`.
-- Switch: `ui_kit::switch_value`. Slider: `ui_kit::range_slider`. Combo: `ui_kit::combo_text` / `combo_u32` / `combo_string`.
+- Switch: `ui_kit::switch_value`. Slider: `ui_kit::range_slider`. Combo: `ui_kit::combo_text` / `combo_u32_labeled` / `combo_string`.
 - Texto: `ui_kit::text_field`, `modal_title`, `body_text`, `caption`, `hint`, `tiny`.
 - Acordeón: `ui_kit::accordion_item` + `accordion_header`. Modal nativa: `ui_kit::modal_panel`.
 - Colores: `theme::*`. Iconos: `egui_phosphor::regular`.

@@ -72,6 +72,26 @@ pub(crate) struct PropAnimation {
     pub root_motion: bool,
 }
 
+/// Nombre corto para la UI: los stacks de Blender/Mixamo llegan como
+/// `Armature|Armature|Clip|Armature`; el usuario solo debe ver el clip.
+pub(crate) fn animation_clip_display_name(name: &str) -> &str {
+    let trimmed = name.trim();
+    if !trimmed.contains('|') {
+        return trimmed;
+    }
+    let parts: Vec<&str> = trimmed.split('|').filter(|part| !part.is_empty()).collect();
+    if parts.len() <= 1 {
+        return trimmed;
+    }
+    let armature = parts[0];
+    parts
+        .iter()
+        .rev()
+        .copied()
+        .find(|part| !part.eq_ignore_ascii_case(armature))
+        .unwrap_or(parts[parts.len() - 1])
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct PropScript {
     pub name: String,
@@ -555,6 +575,18 @@ fn quat_to_euler_degrees(q: [f32; 4]) -> [f32; 3] {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn animation_clip_display_name_keeps_the_unique_segment() {
+        assert_eq!(
+            animation_clip_display_name(
+                "RaptorArmature|RaptorArmature|RaptorArmature|Raptor_SniffGround_Anim|RaptorArmature"
+            ),
+            "Raptor_SniffGround_Anim"
+        );
+        assert_eq!(animation_clip_display_name("Walk"), "Walk");
+        assert_eq!(animation_clip_display_name("Armature|Idle"), "Idle");
+    }
 
     #[test]
     fn projectile_name_matches_expected_pattern() {

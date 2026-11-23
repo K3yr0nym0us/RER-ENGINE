@@ -405,7 +405,7 @@ pub struct State {
     pub(crate) fp_baseline_defer_frames: u8,
     /// Registro multi-escena del editor (baselines, dirty, cambio de escena activa).
     pub(crate) editor_scenes: crate::engine3d::engine::editor_scenes::EditorSceneStore,
-    /// Límite de FPS del bucle (sincronizado con `set_target_fps`).
+    /// Límite de FPS del bucle (sincronizado con `set_target_fps`). `0` = sin límite.
     pub(crate) target_fps: u64,
     /// Nivel gráfico global de texturas GLB embebidas.
     pub(crate) graphics_texture_tier:
