@@ -32,6 +32,9 @@ unsafe extern "system" fn vk_debug_callback(
     let message = unsafe { std::ffi::CStr::from_ptr((*data).p_message) };
     let message = message.to_string_lossy();
     let message = message.replace('\n', " | ");
+    // stderr además del sink egui: así `RER_VK_VALIDATION=1` deja VUID en la
+    // terminal del proceso (yarn/CI) y no solo en la consola inferior del editor.
+    eprintln!("[vulkan-validación] {message}");
     if severity.intersects(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR) {
         log::error!("[vulkan-validación] {message}");
     } else {
@@ -43,12 +46,14 @@ unsafe extern "system" fn vk_debug_callback(
 pub(super) fn feature_query() -> (
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR<'static>,
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR<'static>,
+    vk::PhysicalDeviceVulkan11Features<'static>,
     vk::PhysicalDeviceVulkan12Features<'static>,
     vk::PhysicalDeviceVulkan13Features<'static>,
 ) {
     (
         vk::PhysicalDeviceAccelerationStructureFeaturesKHR::default(),
         vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default(),
+        vk::PhysicalDeviceVulkan11Features::default(),
         vk::PhysicalDeviceVulkan12Features::default(),
         vk::PhysicalDeviceVulkan13Features::default(),
     )
@@ -293,13 +298,18 @@ impl SharedGpu {
 
         let queue_family = pick_queue_family(&instance, &surface_loader, physical, surface)?;
 
-        let (mut queried_as, mut queried_rt, mut queried_12, mut queried_13) = feature_query();
+        let (mut queried_as, mut queried_rt, mut queried_11, mut queried_12, mut queried_13) =
+            feature_query();
         let mut feature_header = vk::PhysicalDeviceFeatures2::default()
             .push_next(&mut queried_13)
             .push_next(&mut queried_12)
+            .push_next(&mut queried_11)
             .push_next(&mut queried_as)
             .push_next(&mut queried_rt);
         instance.get_physical_device_features2(physical, &mut feature_header);
+        // MultiView es obligatorio en Vulkan 1.1; el motor ya exige 1.3, así que en la
+        // práctica siempre está disponible. Se consulta para degradar con seguridad.
+        let multiview = queried_11.multiview != vk::FALSE;
 
         if queried_13.dynamic_rendering == vk::FALSE || queried_13.synchronization2 == vk::FALSE {
             return Err(VulkanError::new(
@@ -325,6 +335,7 @@ impl SharedGpu {
             .acceleration_structure(true);
         let mut enabled_rt =
             vk::PhysicalDeviceRayTracingPipelineFeaturesKHR::default().ray_tracing_pipeline(true);
+        let mut enabled_11 = vk::PhysicalDeviceVulkan11Features::default().multiview(multiview);
         let mut enabled_12 = vk::PhysicalDeviceVulkan12Features::default()
             // Solo el motor que traza necesita direcciones de dispositivo; activarla sin soporte
             // haría fallar `create_device`, así que sigue a la opción del motor.
@@ -406,7 +417,8 @@ impl SharedGpu {
             .enabled_extension_names(&device_exts)
             .enabled_features(&base_features)
             .push_next(&mut enabled_13)
-            .push_next(&mut enabled_12);
+            .push_next(&mut enabled_12)
+            .push_next(&mut enabled_11);
         if hw_rt {
             device_info = device_info
                 .push_next(&mut enabled_as)
@@ -458,10 +470,33 @@ impl SharedGpu {
             .create_command_pool(
                 &vk::CommandPoolCreateInfo::default()
                     .queue_family_index(queue_family)
-                    .flags(vk::CommandPoolCreateFlags::TRANSIENT),
+                    .flags(
+                        vk::CommandPoolCreateFlags::TRANSIENT
+                            | vk::CommandPoolCreateFlags::RESET_COMMAND_BUFFER,
+                    ),
                 None,
             )
             .map_err(|error| vk_error("crear el command pool de un solo uso", error))?;
+
+        // Fence y command buffer únicos para los submits síncronos: se reinician en cada
+        // `one_shot` en vez de crearlos y destruirlos por cada upload.
+        let one_shot_fence = unsafe {
+            device
+                .create_fence(&vk::FenceCreateInfo::default(), None)
+                .map_err(|error| vk_error("crear el fence de un solo uso", error))?
+        };
+        let one_shot_command = unsafe {
+            device.allocate_command_buffers(
+                &vk::CommandBufferAllocateInfo::default()
+                    .command_pool(one_shot_pool)
+                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .command_buffer_count(1),
+            )
+        }
+        .map_err(|error| {
+            unsafe { device.destroy_fence(one_shot_fence, None) };
+            vk_error("reservar el command buffer de un solo uso", error)
+        })?[0];
 
         let (accel, rt_pipeline, rt_props) = if hw_rt {
             let accel = ash::khr::acceleration_structure::Device::new(&instance, &device);
@@ -488,6 +523,14 @@ impl SharedGpu {
             (None, None, None)
         };
 
+        // Un único VkPipelineCache por device: reutiliza la compilación de shaders entre
+        // pipelines, tiers MSAA/GBuffer y motores, sin persistencia en disco (sin hash SPIR-V).
+        let pipeline_cache = unsafe {
+            device
+                .create_pipeline_cache(&vk::PipelineCacheCreateInfo::default(), None)
+                .map_err(|error| vk_error("crear la caché de pipelines", error))?
+        };
+
         Ok(Self {
             inner: Arc::new(GpuInner {
                 entry,
@@ -496,14 +539,18 @@ impl SharedGpu {
                 surface,
                 physical,
                 device,
+                pipeline_cache,
                 queue: Mutex::new(queue),
                 queue_family,
                 hw_rt,
+                multiview,
                 swapchain_loader,
                 swapchain: Mutex::new(swapchain),
                 allocator: ManuallyDrop::new(Mutex::new(allocator)),
                 command_pool,
                 one_shot_pool,
+                one_shot_fence,
+                one_shot_command,
                 one_shot_lock: Mutex::new(()),
                 frames: Mutex::new(frames),
                 frame_slot: AtomicUsize::new(0),

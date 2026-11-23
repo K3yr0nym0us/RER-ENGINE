@@ -1,6 +1,7 @@
 use super::*;
 
 pub(super) struct Targets {
+    gpu: SharedGpu,
     pub(super) extent: vk::Extent2D,
     pub(super) scene: GpuImage,
     pub(super) normal: Option<GpuImage>,
@@ -24,9 +25,16 @@ pub(super) struct Targets {
     pub(super) history: [GpuImage; 2],
     pub(super) shadow: GpuImage,
     pub(super) probe: GpuImage,
-    /// Cara 1× de sonda: solo Color (el cubemap no usa Normal/Albedo/World/Velocity).
-    pub(super) probe_color: GpuImage,
-    pub(super) probe_depth: GpuImage,
+    /// Una vista 2D por capa del cubemap array (`slot * 6 + cara`): la sonda dibuja
+    /// directamente en su capa, sin render target intermedio ni copia.
+    pub(super) probe_face_views: Vec<vk::ImageView>,
+    /// Igual sobre `probe_depth` (también array) para el fallback de seis pases.
+    pub(super) probe_face_depth_views: Vec<vk::ImageView>,
+    /// Vista 2D-array de las 6 caras de cada sonda, para el pase multiview.
+    pub(super) probe_slot_views: Vec<vk::ImageView>,
+    pub(super) probe_slot_depth_views: Vec<vk::ImageView>,
+    /// Se mantiene vivo por su imagen; los pases usan las vistas por cara/slot de abajo.
+    _probe_depth: GpuImage,
     /// G-buffer multisampleado del pase forward (solo existe si el tier de MSAA pide > 1).
     pub(super) ms: Option<MultisampleTargets>,
     /// Cara de sonda multisampleada (solo existe si el tier de MSAA pide > 1).
@@ -50,7 +58,7 @@ pub(super) struct MultisampleTargets {
 
 /// Copia multisampleada de la cara de sonda (solo Color).
 ///
-/// Se resuelve contra `probe_color` 1×, que `capture_probe` copia a la capa del cubemap.
+/// Se resuelve directamente contra la vista 2D de la capa del cubemap que corresponda.
 /// Ranuras 1..=4 del `begin_rendering` quedan en `RenderingAttachmentInfo::default()`.
 /// La profundidad MS no se resuelve: solo se usa como adjunto del pase y se descarta
 /// con `DONT_CARE`.
@@ -68,6 +76,55 @@ impl ProbeMultisampleTargets {
 
 fn opt_view(image: &Option<GpuImage>) -> Option<vk::ImageView> {
     image.as_ref().map(|image| image.view)
+}
+
+/// Vista sobre un rango de capas de una imagen array de sondas (`count = 1` → una cara).
+fn probe_view(
+    gpu: &SharedGpu,
+    image: vk::Image,
+    format: vk::Format,
+    aspect: vk::ImageAspectFlags,
+    base_layer: u32,
+    count: u32,
+    name: &str,
+) -> Result<vk::ImageView, VulkanError> {
+    let view_type = if count == 1 {
+        vk::ImageViewType::TYPE_2D
+    } else {
+        vk::ImageViewType::TYPE_2D_ARRAY
+    };
+    unsafe {
+        gpu.device().create_image_view(
+            &vk::ImageViewCreateInfo::default()
+                .image(image)
+                .view_type(view_type)
+                .format(format)
+                .subresource_range(vk::ImageSubresourceRange {
+                    aspect_mask: aspect,
+                    base_mip_level: 0,
+                    level_count: 1,
+                    base_array_layer: base_layer,
+                    layer_count: count,
+                }),
+            None,
+        )
+    }
+    .map_err(|error| vk_error(&format!("crear la vista {name}"), error))
+}
+
+impl Drop for Targets {
+    fn drop(&mut self) {
+        let device = self.gpu.device();
+        for view in self
+            .probe_face_views
+            .iter()
+            .chain(self.probe_face_depth_views.iter())
+            .chain(self.probe_slot_views.iter())
+            .chain(self.probe_slot_depth_views.iter())
+        {
+            unsafe { device.destroy_image_view(*view, None) };
+        }
+    }
 }
 
 fn gbuffer_color_usage() -> vk::ImageUsageFlags {
@@ -213,21 +270,63 @@ impl Targets {
             width: crate::engine3d::probe_registry::PROBE_FACE_SIZE,
             height: crate::engine3d::probe_registry::PROBE_FACE_SIZE,
         };
-        let probe_color = gpu.create_image(
+        let probe_depth = gpu.create_image_layers(
             probe_extent,
-            COLOR,
-            color_usage,
-            vk::ImageAspectFlags::COLOR,
-            "probe-face",
-        )?;
-        let probe_depth = gpu.create_image(
-            probe_extent,
+            crate::engine3d::probe_registry::PROBE_CUBE_ARRAY_LAYERS,
+            1,
             DEPTH,
             vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
             vk::ImageAspectFlags::DEPTH,
-            "probe-depth",
+            "probe-depth-array",
         )?;
+        let layers = crate::engine3d::probe_registry::PROBE_CUBE_ARRAY_LAYERS;
+        let slots = crate::engine3d::probe_registry::MAX_PROBES as u32;
+        let mut probe_face_views = Vec::with_capacity(layers as usize);
+        let mut probe_face_depth_views = Vec::with_capacity(layers as usize);
+        let mut probe_slot_views = Vec::with_capacity(slots as usize);
+        let mut probe_slot_depth_views = Vec::with_capacity(slots as usize);
+        for layer in 0..layers {
+            probe_face_views.push(probe_view(
+                gpu,
+                probe.image,
+                COLOR,
+                vk::ImageAspectFlags::COLOR,
+                layer,
+                1,
+                "probe-face",
+            )?);
+            probe_face_depth_views.push(probe_view(
+                gpu,
+                probe_depth.image,
+                DEPTH,
+                vk::ImageAspectFlags::DEPTH,
+                layer,
+                1,
+                "probe-face-depth",
+            )?);
+        }
+        for slot in 0..slots {
+            probe_slot_views.push(probe_view(
+                gpu,
+                probe.image,
+                COLOR,
+                vk::ImageAspectFlags::COLOR,
+                slot * 6,
+                6,
+                "probe-slot",
+            )?);
+            probe_slot_depth_views.push(probe_view(
+                gpu,
+                probe_depth.image,
+                DEPTH,
+                vk::ImageAspectFlags::DEPTH,
+                slot * 6,
+                6,
+                "probe-slot-depth",
+            )?);
+        }
         Ok(Self {
+            gpu: gpu.clone(),
             extent,
             scene,
             normal,
@@ -247,8 +346,11 @@ impl Targets {
             history,
             shadow,
             probe,
-            probe_color,
-            probe_depth,
+            probe_face_views,
+            probe_face_depth_views,
+            probe_slot_views,
+            probe_slot_depth_views,
+            _probe_depth: probe_depth,
             ms: None,
             probe_ms: None,
         })
@@ -668,6 +770,7 @@ impl FrameRenderer {
         };
         let set = GbufferPipeSet::create(
             device,
+            self.gpu.pipeline_cache(),
             self.layouts[0],
             self.layouts[1],
             self.forward_vert,

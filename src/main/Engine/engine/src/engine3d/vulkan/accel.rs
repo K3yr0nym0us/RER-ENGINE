@@ -7,20 +7,69 @@ use gpu_allocator::MemoryLocation;
 use super::error::{VulkanError, vk_error};
 use super::gpu::{GpuBuffer, SharedGpu};
 
+const BLAS_FRAMES: usize = 2;
+
+/// Huella de la geometría de un BLAS: solo cambia si cambia la topología o el formato.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BlasSignature {
+    primitive_count: u32,
+    vertex_stride: u64,
+    vertex_address: u64,
+    index_address: u64,
+    fast_trace: bool,
+}
+
 pub struct Accel {
     gpu: SharedGpu,
     pub handle: vk::AccelerationStructureKHR,
-    /// Mantiene viva la memoria del AS; su `Drop` la libera después del handle.
-    #[allow(dead_code)]
-    pub storage: GpuBuffer,
+    /// Mantiene viva la memoria del AS; su `Drop` libera el handle antes que el buffer.
+    pub storage: Option<GpuBuffer>,
     pub address: u64,
+    /// Scratch, firma y generación del BLAS de este frame en vuelo.
+    scratch: Option<GpuBuffer>,
+    signature: Option<BlasSignature>,
+    built_generation: u64,
+    /// Generación compartida por los dos estados: sube cuando cambia la geometría.
+    generation: u64,
+    /// Estado del otro frame en vuelo: AS y scratch separados para no reutilizarlos
+    /// mientras el frame anterior todavía los está leyendo.
+    twin: Option<Box<Accel>>,
+}
+
+impl Accel {
+    /// Estado vacío para un BLAS que aún no se ha grabado en ningún command buffer.
+    pub fn empty(gpu: &SharedGpu) -> Self {
+        Self {
+            gpu: gpu.clone(),
+            handle: vk::AccelerationStructureKHR::null(),
+            storage: None,
+            address: 0,
+            scratch: None,
+            signature: None,
+            built_generation: 0,
+            generation: 0,
+            twin: None,
+        }
+    }
+
+    /// Dirección del BLAS del frame en vuelo `frame_slot`.
+    pub fn address_for(&self, frame_slot: usize) -> u64 {
+        if frame_slot.is_multiple_of(BLAS_FRAMES) {
+            self.address
+        } else {
+            self.twin.as_ref().map_or(self.address, |twin| twin.address)
+        }
+    }
 }
 
 impl Drop for Accel {
     fn drop(&mut self) {
-        if let Some(accel) = self.gpu.accel() {
+        if self.handle != vk::AccelerationStructureKHR::null()
+            && let Some(accel) = self.gpu.accel()
+        {
             unsafe { accel.destroy_acceleration_structure(self.handle, None) };
         }
+        // `twin` se destruye solo: su Drop libera su propio handle y scratch.
     }
 }
 
@@ -46,91 +95,192 @@ fn align_scratch(value: u64, alignment: u64) -> u64 {
     value.div_ceil(alignment) * alignment
 }
 
-/// Construye un BLAS de triángulos opacos y espera a que termine.
-pub fn build_blas(
-    gpu: &SharedGpu,
-    input: &BlasInput,
-    fast_trace: bool,
-) -> Result<Accel, VulkanError> {
-    let accel = gpu.accel().ok_or_else(|| {
-        VulkanError::new("El device no expone VK_KHR_acceleration_structure.".to_string())
-    })?;
-    let primitive_count = input.primitive_count.max(1);
-    let triangles = triangle_geometry(input);
-    let geometries = [vk::AccelerationStructureGeometryKHR::default()
-        .geometry_type(vk::GeometryTypeKHR::TRIANGLES)
-        .flags(vk::GeometryFlagsKHR::OPAQUE)];
-    let mut geometries = geometries;
-    geometries[0].geometry.triangles = triangles;
-    let build_flags = if fast_trace {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BlasOp {
+    Build,
+    Update,
+}
+
+/// UPDATE solo es legal si el BUILD anterior usó `ALLOW_UPDATE` y no cambió la firma.
+fn blas_op(
+    has_accel: bool,
+    prev: Option<BlasSignature>,
+    now: BlasSignature,
+    storage_fits: bool,
+    force_build: bool,
+) -> BlasOp {
+    if force_build || !has_accel || !storage_fits || prev != Some(now) {
+        BlasOp::Build
+    } else {
+        BlasOp::Update
+    }
+}
+
+fn blas_flags(fast_trace: bool) -> vk::BuildAccelerationStructureFlagsKHR {
+    let quality = if fast_trace {
         vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_TRACE
     } else {
         vk::BuildAccelerationStructureFlagsKHR::PREFER_FAST_BUILD
     };
-    let mut build = vk::AccelerationStructureBuildGeometryInfoKHR::default()
+    // Sin ALLOW_UPDATE en el BUILD inicial, un UPDATE posterior sería inválido.
+    quality | vk::BuildAccelerationStructureFlagsKHR::ALLOW_UPDATE
+}
+
+fn blas_signature(input: &BlasInput, fast_trace: bool) -> BlasSignature {
+    BlasSignature {
+        primitive_count: input.primitive_count,
+        vertex_stride: input.vertex_stride,
+        vertex_address: input.vertex_address,
+        index_address: input.index_address,
+        fast_trace,
+    }
+}
+
+/// Graba el BUILD/UPDATE del BLAS en `cmd` y lo deja listo para el trazado de rayos
+/// del frame (barrera AS_BUILD → RT). No hace submit ni espera fences.
+pub fn record_blas(
+    gpu: &SharedGpu,
+    slot: &mut Accel,
+    input: &BlasInput,
+    fast_trace: bool,
+    dirty: bool,
+    frame_slot: usize,
+    cmd: vk::CommandBuffer,
+) -> Result<(), VulkanError> {
+    let loader = gpu.accel().ok_or_else(|| {
+        VulkanError::new("El device no expone VK_KHR_acceleration_structure.".to_string())
+    })?;
+    if dirty {
+        slot.generation = slot.generation.wrapping_add(1);
+    }
+    let generation = slot.generation;
+    let state: &mut Accel = if frame_slot.is_multiple_of(BLAS_FRAMES) {
+        slot
+    } else {
+        slot.twin
+            .get_or_insert_with(|| Box::new(Accel::empty(gpu)))
+            .as_mut()
+    };
+    let signature = blas_signature(input, fast_trace);
+    let has_accel = state.handle != vk::AccelerationStructureKHR::null();
+    // Cada slot se actualiza en su propio frame, con la generación vigente: el slot
+    // hermano se pondrá al día en su próximo frame sin mostrar una pose atrasada.
+    if has_accel && state.signature == Some(signature) && state.built_generation == generation {
+        return Ok(());
+    }
+
+    let primitive_count = input.primitive_count.max(1);
+    let mut geometries = [vk::AccelerationStructureGeometryKHR::default()
+        .geometry_type(vk::GeometryTypeKHR::TRIANGLES)
+        .flags(vk::GeometryFlagsKHR::OPAQUE)];
+    geometries[0].geometry.triangles = triangle_geometry(input);
+    let flags = blas_flags(fast_trace);
+    let size_info = vk::AccelerationStructureBuildGeometryInfoKHR::default()
         .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
-        .flags(build_flags)
+        .flags(flags)
         .mode(vk::BuildAccelerationStructureModeKHR::BUILD)
         .geometries(&geometries);
     let mut sizes = vk::AccelerationStructureBuildSizesInfoKHR::default();
     unsafe {
-        accel.get_acceleration_structure_build_sizes(
+        loader.get_acceleration_structure_build_sizes(
             vk::AccelerationStructureBuildTypeKHR::DEVICE,
-            &build,
+            &size_info,
             &[primitive_count],
             &mut sizes,
         );
     }
-    let storage = gpu.create_buffer(
-        sizes.acceleration_structure_size.max(256),
-        as_usage(),
-        MemoryLocation::GpuOnly,
-        "blas",
-    )?;
-    let handle = unsafe {
-        accel.create_acceleration_structure(
-            &vk::AccelerationStructureCreateInfoKHR::default()
-                .buffer(storage.buffer)
-                .size(sizes.acceleration_structure_size.max(256))
-                .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL),
-            None,
-        )
-    }
-    .map_err(|error| vk_error("crear el BLAS", error))?;
-    let address = unsafe {
-        accel.get_acceleration_structure_device_address(
-            &vk::AccelerationStructureDeviceAddressInfoKHR::default()
-                .acceleration_structure(handle),
-        )
+    let storage_needed = sizes.acceleration_structure_size.max(256);
+    let storage_fits = state
+        .storage
+        .as_ref()
+        .is_some_and(|storage| storage.size >= storage_needed);
+    let op = blas_op(has_accel, state.signature, signature, storage_fits, false);
+    let scratch_needed = match op {
+        BlasOp::Build => sizes.build_scratch_size,
+        BlasOp::Update => sizes.update_scratch_size.max(sizes.build_scratch_size),
     };
     let scratch_align = gpu
         .rt_properties()
         .map(|props| u64::from(props.min_scratch_alignment))
         .unwrap_or(256);
-    let scratch = gpu.create_buffer(
-        align_scratch(sizes.build_scratch_size.max(256), scratch_align),
+    grow_gpu_buffer(
+        gpu,
+        &mut state.scratch,
+        align_scratch(scratch_needed.max(256), scratch_align),
         scratch_usage(),
         MemoryLocation::GpuOnly,
         "blas-scratch",
     )?;
-    build = build
-        .dst_acceleration_structure(handle)
-        .scratch_data(device_address_mut(scratch.address));
+    if op == BlasOp::Build && !storage_fits {
+        if has_accel {
+            unsafe { loader.destroy_acceleration_structure(state.handle, None) };
+        }
+        state.handle = vk::AccelerationStructureKHR::null();
+        let storage =
+            gpu.create_buffer(storage_needed, as_usage(), MemoryLocation::GpuOnly, "blas")?;
+        let storage_buffer = storage.buffer;
+        state.storage = Some(storage);
+        state.handle = unsafe {
+            loader.create_acceleration_structure(
+                &vk::AccelerationStructureCreateInfoKHR::default()
+                    .buffer(storage_buffer)
+                    .size(storage_needed)
+                    .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL),
+                None,
+            )
+        }
+        .map_err(|error| vk_error("crear el BLAS", error))?;
+        state.address = unsafe {
+            loader.get_acceleration_structure_device_address(
+                &vk::AccelerationStructureDeviceAddressInfoKHR::default()
+                    .acceleration_structure(state.handle),
+            )
+        };
+    }
+    let scratch_address = state
+        .scratch
+        .as_ref()
+        .ok_or_else(|| VulkanError::new("No hay scratch para el BLAS.".to_string()))?
+        .address;
+    let mode = match op {
+        BlasOp::Build => vk::BuildAccelerationStructureModeKHR::BUILD,
+        BlasOp::Update => vk::BuildAccelerationStructureModeKHR::UPDATE,
+    };
+    let mut build = vk::AccelerationStructureBuildGeometryInfoKHR::default()
+        .ty(vk::AccelerationStructureTypeKHR::BOTTOM_LEVEL)
+        .flags(flags)
+        .mode(mode)
+        .geometries(&geometries)
+        .dst_acceleration_structure(state.handle)
+        .scratch_data(device_address_mut(scratch_address));
+    if op == BlasOp::Update {
+        build = build.src_acceleration_structure(state.handle);
+    }
     let range = [vk::AccelerationStructureBuildRangeInfoKHR::default()
         .primitive_count(input.primitive_count)
         .primitive_offset(0)
         .first_vertex(0)
         .transform_offset(0)];
     let ranges: &[&[vk::AccelerationStructureBuildRangeInfoKHR]] = &[&range];
-    gpu.one_shot(|_device, command| unsafe {
-        accel.cmd_build_acceleration_structures(command, &[build], ranges);
-    })?;
-    Ok(Accel {
-        gpu: gpu.clone(),
-        handle,
-        storage,
-        address,
-    })
+    unsafe {
+        loader.cmd_build_acceleration_structures(cmd, &[build], ranges);
+        let barrier = vk::MemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR)
+            .src_access_mask(vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR)
+            .dst_stage_mask(
+                vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR
+                    | vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            )
+            .dst_access_mask(
+                vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR | vk::AccessFlags2::SHADER_READ,
+            );
+        let barriers = [barrier];
+        let dependency = vk::DependencyInfo::default().memory_barriers(&barriers);
+        gpu.device().cmd_pipeline_barrier2(cmd, &dependency);
+    }
+    state.signature = Some(signature);
+    state.built_generation = generation;
+    Ok(())
 }
 
 pub struct TlasInstance {
@@ -340,10 +490,12 @@ pub fn record_tlas(
         );
     }
     let storage_needed = sizes.acceleration_structure_size.max(256);
-    let storage_fits = slot
-        .accel
-        .as_ref()
-        .is_some_and(|accel| accel.storage.size >= storage_needed);
+    let storage_fits = slot.accel.as_ref().is_some_and(|accel| {
+        accel
+            .storage
+            .as_ref()
+            .is_some_and(|storage| storage.size >= storage_needed)
+    });
     let op = tlas_op(
         slot.accel.is_some(),
         slot.topology,
@@ -400,8 +552,13 @@ pub fn record_tlas(
         slot.accel = Some(Accel {
             gpu: gpu.clone(),
             handle,
-            storage,
+            storage: Some(storage),
             address,
+            scratch: None,
+            signature: None,
+            built_generation: 0,
+            generation: 0,
+            twin: None,
         });
     }
     let Some(accel) = slot.accel.as_ref() else {
@@ -425,21 +582,19 @@ pub fn record_tlas(
     let ranges: &[&[vk::AccelerationStructureBuildRangeInfoKHR]] = &[&range];
     unsafe {
         loader.cmd_build_acceleration_structures(cmd, &[size_info], ranges);
-        let barrier = vk::MemoryBarrier::default()
-            .src_access_mask(vk::AccessFlags::ACCELERATION_STRUCTURE_WRITE_KHR)
+        let barrier = vk::MemoryBarrier2::default()
+            .src_stage_mask(vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR)
+            .src_access_mask(vk::AccessFlags2::ACCELERATION_STRUCTURE_WRITE_KHR)
+            .dst_stage_mask(
+                vk::PipelineStageFlags2::RAY_TRACING_SHADER_KHR
+                    | vk::PipelineStageFlags2::ACCELERATION_STRUCTURE_BUILD_KHR,
+            )
             .dst_access_mask(
-                vk::AccessFlags::ACCELERATION_STRUCTURE_READ_KHR | vk::AccessFlags::SHADER_READ,
+                vk::AccessFlags2::ACCELERATION_STRUCTURE_READ_KHR | vk::AccessFlags2::SHADER_READ,
             );
-        gpu.device().cmd_pipeline_barrier(
-            cmd,
-            vk::PipelineStageFlags::ACCELERATION_STRUCTURE_BUILD_KHR,
-            vk::PipelineStageFlags::RAY_TRACING_SHADER_KHR
-                | vk::PipelineStageFlags::ACCELERATION_STRUCTURE_BUILD_KHR,
-            vk::DependencyFlags::empty(),
-            &[barrier],
-            &[],
-            &[],
-        );
+        let barriers = [barrier];
+        let dependency = vk::DependencyInfo::default().memory_barriers(&barriers);
+        gpu.device().cmd_pipeline_barrier2(cmd, &dependency);
     }
     slot.topology = topology;
     slot.instance_count = count;
@@ -471,7 +626,20 @@ fn device_address_mut(address: u64) -> vk::DeviceOrHostAddressKHR {
 
 #[cfg(test)]
 mod tests {
-    use super::{TlasInstance, TlasOp, tlas_op, tlas_topology};
+    use super::{
+        BlasInput, BlasOp, TlasInstance, TlasOp, align_scratch, blas_op, blas_signature, tlas_op,
+        tlas_topology,
+    };
+
+    fn blas_in(vertex: u64, index: u64, stride: u64, triangles: u32) -> BlasInput {
+        BlasInput {
+            vertex_address: vertex,
+            index_address: index,
+            vertex_stride: stride,
+            max_vertex: 3,
+            primitive_count: triangles,
+        }
+    }
 
     fn inst(blas: u64, custom: u32, tx: f32) -> TlasInstance {
         TlasInstance {
@@ -533,5 +701,40 @@ mod tests {
             tlas_op(true, topology, 1, false, topology, 1, false, false, false),
             TlasOp::Build
         );
+    }
+
+    #[test]
+    fn blas_update_only_when_signature_and_storage_match() {
+        let sig = blas_signature(&blas_in(100, 200, 12, 4), false);
+        assert_eq!(blas_op(true, Some(sig), sig, true, false), BlasOp::Update);
+        assert_eq!(blas_op(false, Some(sig), sig, true, false), BlasOp::Build);
+        assert_eq!(blas_op(true, Some(sig), sig, false, false), BlasOp::Build);
+        assert_eq!(blas_op(true, Some(sig), sig, true, true), BlasOp::Build);
+        assert_eq!(blas_op(true, None, sig, true, false), BlasOp::Build);
+    }
+
+    #[test]
+    fn blas_build_when_topology_or_flags_change() {
+        let base = blas_signature(&blas_in(100, 200, 12, 4), false);
+        let cases = [
+            blas_signature(&blas_in(100, 200, 12, 5), false),
+            blas_signature(&blas_in(100, 200, 16, 4), false),
+            blas_signature(&blas_in(300, 200, 12, 4), false),
+            blas_signature(&blas_in(100, 400, 12, 4), false),
+            blas_signature(&blas_in(100, 200, 12, 4), true),
+        ];
+        for changed in cases {
+            assert_eq!(
+                blas_op(true, Some(base), changed, true, false),
+                BlasOp::Build
+            );
+        }
+    }
+
+    #[test]
+    fn scratch_alignment_only_grows_when_needed() {
+        assert_eq!(align_scratch(100, 256), 256);
+        assert_eq!(align_scratch(256, 256), 256);
+        assert_eq!(align_scratch(257, 256), 512);
     }
 }

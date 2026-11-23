@@ -137,15 +137,16 @@ impl State {
         let raytracing = self.reflection_mode == ReflectionMode::Rt;
         let ssr = self.reflection_mode == ReflectionMode::Ssr;
 
-        // Probes: la lista se resuelve una vez por frame (gizmos + captura).
-        let mut probe_list: Vec<(crate::engine3d::ecs::EntityId, GlamVec3, usize)> = Vec::new();
-        let mut probe_fields: Vec<crate::engine3d::probe_registry::ProbeField> = Vec::new();
-        if reflections {
-            self.ensure_probe_slots_allocated();
-            probe_list = self.reflection_probe_render_list();
-            probe_fields = self.reflection_probe_fields();
-        }
-        let probes_active = self.reflection_probes_enabled && !probe_list.is_empty();
+        // Gizmos siempre: si SSR/RT está apagado (default) la sonda no tiene malla
+        // y sin wireframe el botón «Insertar sonda» parece no hacer nada.
+        self.ensure_probe_slots_allocated();
+        let probe_list = self.reflection_probe_render_list();
+        let probe_fields = if reflections {
+            self.reflection_probe_fields()
+        } else {
+            Vec::new()
+        };
+        let probes_active = reflections && self.reflection_probes_enabled && !probe_list.is_empty();
 
         // Uniformes de escena completos (cámara + luz + bias), como en el render wgpu.
         let view = self.camera_view_matrix();
@@ -910,7 +911,8 @@ impl State {
             });
         }
         // Reflejos trazados por hardware para lo skinned: mismas poses que ya calculó el
-        // refresco del BVH, con su propio BLAS (rebuild solo en el frame que cambió la pose).
+        // refresco del BVH, con su propio BLAS (UPDATE en el command buffer del frame que
+        // cambió la pose, sin submit ni fence extra).
         // La clave no colisiona con `mesh_idx` de los lotes estáticos por el bit alto.
         let skinned_base = rt_records.len();
         for instance in &self.rt_skinned_instances {

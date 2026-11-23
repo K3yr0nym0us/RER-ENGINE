@@ -121,7 +121,7 @@ pub(crate) struct SceneUniforms {
     pub(crate) light_view_proj: [[f32; 4]; 4],
     /// x = intensidad, y = oscuridad de sombra, z = 1/texel sombra, w = radio PCF.
     pub(crate) light_params: [f32; 4],
-    /// xy = jitter subpíxel de TAA; z = peso del IBL de sondas; w sin uso.
+    /// xy = jitter subpíxel de TAA; z = peso del IBL de sondas; w = metros/texel de sombra.
     pub(crate) jitter: [f32; 4],
     /// x = near, y = far; z = 1 cuando SSR/reflejos activos (forward IBL cede especular).
     /// w = capa GPU de Grass (0 = sin fotos de terreno).
@@ -130,4 +130,23 @@ pub(crate) struct SceneUniforms {
     pub(crate) shadow_bias: [f32; 4],
     /// rgb = color del aura de interacción (flag 8.0 en play).
     pub(crate) aura_color: [f32; 4],
+}
+
+impl SceneUniforms {
+    /// Offset de `jitter.z` (peso IBL) en el UBO de escena. La captura de sondas
+    /// tiene que poner este campo a 0, no `light_params.y` (oscuridad de sombra).
+    pub(crate) const IBL_WEIGHT_OFFSET: u64 = std::mem::offset_of!(Self, jitter) as u64 + 8;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SceneUniforms;
+
+    #[test]
+    fn ibl_weight_is_jitter_z_not_shadow_darkness() {
+        let jitter_z = std::mem::offset_of!(SceneUniforms, jitter) as u64 + 8;
+        let shadow_darkness = std::mem::offset_of!(SceneUniforms, light_params) as u64 + 4;
+        assert_eq!(SceneUniforms::IBL_WEIGHT_OFFSET, jitter_z);
+        assert_ne!(SceneUniforms::IBL_WEIGHT_OFFSET, shadow_darkness);
+    }
 }

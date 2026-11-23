@@ -242,16 +242,24 @@ void main() {
     if (u.depth_plane.z < 0.5) {
         lit += u.light_color.rgb * spec * (1.0 - roughness) * shadow_factor * 0.35;
     }
-    // IBL de sondas. `v_tex.z` es la ranura del cubemap array asignada a esta instancia
-    // (-1 = fuera de todo volumen de influencia). El peso viaja en `jitter.z` y solo es > 0
-    // si hay sondas activas; sin sonda cercana se cae al color de cielo procedural.
+    // IBL especular de sondas: no es una luz. `v_tex.z` es la ranura (-1 = fuera
+    // del volumen → no se aplica). El peso va en `jitter.z`.
+    // Con SSR/RT (`depth_plane.z`) el composite ya pinta la banda reflectiva
+    // (roughness ≤ 0.35). Superponer el cubemap duplicaba el reflejo y, por la
+    // convención Y del cubemap, salía de cabeza.
     if (!terrain && u.jitter.z > 0.0) {
         float probe_index = v_tex.z;
-        vec3 probe_dir = normalize(mix(n, reflect(-v, n), clamp(1.0 - roughness, 0.0, 1.0)));
-        vec3 probe = probe_index >= 0.0
-            ? texture(probe_cube, vec4(probe_dir, probe_index)).rgb
-            : vec3(0.72, 0.86, 0.98);
-        lit += albedo * probe * u.jitter.z;
+        bool ssr_owns_spec = u.depth_plane.z >= 0.5 && roughness <= 0.35;
+        if (probe_index >= 0.0 && !ssr_owns_spec) {
+            vec3 probe_dir = normalize(mix(n, reflect(-v, n), clamp(1.0 - roughness, 0.0, 1.0)));
+            vec3 env = texture(probe_cube, vec4(probe_dir, probe_index)).rgb;
+            float ndotv = max(dot(n, v), 0.0);
+            float f0 = mix(0.04, 1.0, metallic);
+            float fresnel = mix(f0, 1.0, pow(1.0 - ndotv, 5.0));
+            float gloss = clamp(1.0 - roughness, 0.0, 1.0);
+            vec3 tint = mix(vec3(1.0), albedo, metallic);
+            lit += env * tint * fresnel * gloss * u.jitter.z;
+        }
     }
     float flag = v_flag.x;
     float rim = pow(1.0 - max(dot(n, v), 0.0), 2.5);

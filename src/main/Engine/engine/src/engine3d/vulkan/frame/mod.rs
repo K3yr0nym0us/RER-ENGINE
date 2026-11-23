@@ -274,6 +274,11 @@ pub struct FrameRenderer {
     samplers: Vec<vk::Sampler>,
     sets: DescriptorSets,
     scene_ubo: [GpuBuffer; FRAMES],
+    /// Seis view-proj de sonda (binding 4 del set de escena) para el pase multiview.
+    probe_faces_ubo: [GpuBuffer; FRAMES],
+    /// Forward/skinned con `view_mask` y `PROBE_MULTIVIEW = true` (solo con la feature).
+    probe_mv_forward: Option<vk::Pipeline>,
+    probe_mv_skinned: Option<vk::Pipeline>,
     gizmo_ubo: [GpuBuffer; FRAMES],
     /// UBO del pase de reflejos (resolución reducida según el tier RTX).
     rt_ubo: [GpuBuffer; FRAMES],
@@ -513,6 +518,10 @@ impl FrameRenderer {
             host_buffer(gpu, 512, "scene-ubo-0")?,
             host_buffer(gpu, 512, "scene-ubo-1")?,
         ];
+        let probe_faces_ubo = [
+            host_buffer(gpu, 6 * 64, "probe-faces-0")?,
+            host_buffer(gpu, 6 * 64, "probe-faces-1")?,
+        ];
         let gizmo_ubo = [
             host_buffer(gpu, 256, "gizmo-ubo-0")?,
             host_buffer(gpu, 256, "gizmo-ubo-1")?,
@@ -547,6 +556,7 @@ impl FrameRenderer {
         let tris = host_buffer(gpu, 1024 * 1024, "bvh-tris")?;
         for slot in 0..FRAMES {
             write_uniform(device, sets.scene[slot], 0, &scene_ubo[slot])?;
+            write_uniform(device, sets.scene[slot], 4, &probe_faces_ubo[slot])?;
             write_combined(
                 device,
                 sets.scene[slot],
@@ -620,6 +630,7 @@ impl FrameRenderer {
         let shadow_vert = shader(device, spv("shadow.vert"), &mut shaders)?;
         let forward = graphics(
             device,
+            gpu.pipeline_cache(),
             forward_layout,
             vert,
             Some(frag),
@@ -632,6 +643,7 @@ impl FrameRenderer {
         )?;
         let forward_blend = graphics_blend_color_only(
             device,
+            gpu.pipeline_cache(),
             forward_layout,
             vert,
             Some(frag),
@@ -643,6 +655,7 @@ impl FrameRenderer {
         )?;
         let skinned = graphics(
             device,
+            gpu.pipeline_cache(),
             skinned_layout,
             skinned_vert,
             Some(frag),
@@ -655,6 +668,7 @@ impl FrameRenderer {
         )?;
         let skinned_blend = graphics_blend_color_only(
             device,
+            gpu.pipeline_cache(),
             skinned_layout,
             skinned_vert,
             Some(frag),
@@ -666,10 +680,11 @@ impl FrameRenderer {
         )?;
         let shadow = graphics(
             device,
+            gpu.pipeline_cache(),
             shadow_layout,
             shadow_vert,
             None,
-            &static_vertex(),
+            &shadow_static_vertex(),
             &[],
             Some(DEPTH),
             false,
@@ -678,6 +693,7 @@ impl FrameRenderer {
         )?;
         let shadow_skinned = graphics(
             device,
+            gpu.pipeline_cache(),
             shadow_skinned_layout,
             skinned_vert,
             None,
@@ -692,6 +708,7 @@ impl FrameRenderer {
         let gizmo_frag = shader(device, spv("gizmo.frag"), &mut shaders)?;
         let gizmo = graphics(
             device,
+            gpu.pipeline_cache(),
             gizmo_layout,
             gizmo_vert,
             Some(gizmo_frag),
@@ -706,10 +723,11 @@ impl FrameRenderer {
         let hud_frag = shader(device, spv("hud.frag"), &mut shaders)?;
         let hud = graphics(
             device,
+            gpu.pipeline_cache(),
             hud_layout,
             hud_vert,
             Some(hud_frag),
-            &static_vertex(),
+            &hud_instance_vertex(),
             &[gpu.swapchain_format()],
             None,
             true,
@@ -726,6 +744,7 @@ impl FrameRenderer {
         let sky_frag = shader(device, spv("sky.frag"), &mut shaders)?;
         let taa = graphics(
             device,
+            gpu.pipeline_cache(),
             taa_layout,
             full_vert,
             Some(taa_frag),
@@ -738,6 +757,7 @@ impl FrameRenderer {
         )?;
         let ssr = graphics(
             device,
+            gpu.pipeline_cache(),
             full_layout,
             full_vert,
             Some(ssr_frag),
@@ -750,6 +770,7 @@ impl FrameRenderer {
         )?;
         let temporal = graphics(
             device,
+            gpu.pipeline_cache(),
             full_layout,
             full_vert,
             Some(temporal_frag),
@@ -762,6 +783,7 @@ impl FrameRenderer {
         )?;
         let denoise = graphics(
             device,
+            gpu.pipeline_cache(),
             denoise_layout,
             full_vert,
             Some(denoise_frag),
@@ -774,6 +796,7 @@ impl FrameRenderer {
         )?;
         let composite = graphics(
             device,
+            gpu.pipeline_cache(),
             full_layout,
             full_vert,
             Some(composite_frag),
@@ -786,6 +809,7 @@ impl FrameRenderer {
         )?;
         let present = graphics(
             device,
+            gpu.pipeline_cache(),
             full_layout,
             full_vert,
             Some(present_frag),
@@ -800,6 +824,7 @@ impl FrameRenderer {
         // esqueletos y sockets (paridad con el `grid_pipeline` de wgpu).
         let gizmo_lines = graphics_topology(
             device,
+            gpu.pipeline_cache(),
             gizmo_layout,
             gizmo_vert,
             Some(gizmo_frag),
@@ -830,6 +855,7 @@ impl FrameRenderer {
         };
         let bvh_pipe = create_compute(
             device,
+            gpu.pipeline_cache(),
             spv("bvh"),
             set_layouts.bvh,
             &mut shaders,
@@ -843,6 +869,7 @@ impl FrameRenderer {
         let depth_frag = shader(device, spv("depth_only.frag"), &mut shaders)?;
         let depth_only = graphics(
             device,
+            gpu.pipeline_cache(),
             forward_layout,
             vert,
             Some(depth_frag),
@@ -855,6 +882,7 @@ impl FrameRenderer {
         )?;
         let depth_only_skinned = graphics(
             device,
+            gpu.pipeline_cache(),
             skinned_layout,
             skinned_vert,
             Some(depth_frag),
@@ -871,6 +899,7 @@ impl FrameRenderer {
         let sky_bg_frag = shader(device, spv("sky_bg.frag"), &mut shaders)?;
         let sky_bg_pipeline = graphics(
             device,
+            gpu.pipeline_cache(),
             sky_bg_layout,
             full_vert,
             Some(sky_bg_frag),
@@ -881,6 +910,39 @@ impl FrameRenderer {
             false,
             &mut pipelines,
         )?;
+        // Después de TODO el registro indexado (pipe_handles 0..=14): estos dos pipelines
+        // no deben desplazar los índices fijos de shadow/present/gizmo_lines.
+        let (probe_mv_forward, probe_mv_skinned) = if gpu.multiview() {
+            let probe_formats = GbufferMask::color_only().formats();
+            let forward_probe = graphics_probe(
+                device,
+                gpu.pipeline_cache(),
+                forward_layout,
+                vert,
+                frag,
+                &static_vertex(),
+                &probe_formats,
+                Some(DEPTH),
+                1,
+                &mut pipelines,
+            )?;
+            let skinned_probe = graphics_probe(
+                device,
+                gpu.pipeline_cache(),
+                skinned_layout,
+                skinned_vert,
+                frag,
+                &skinned_vertex(),
+                &probe_formats,
+                Some(DEPTH),
+                1,
+                &mut pipelines,
+            )?;
+            (Some(forward_probe), Some(skinned_probe))
+        } else {
+            log::warn!("[vulkan] multiview ausente: captura de sondas con seis pases");
+            (None, None)
+        };
         // Pool GPU de partículas: pipelines y descriptores dedicados, sin tocar el registro
         // indexado de `pipelines` del renderer (el MSAA hace pop de los últimos).
         let volume = VolumetricState::new(gpu, 32, 8, 0.0)?;
@@ -961,6 +1023,7 @@ impl FrameRenderer {
             (gbuffer_mask, 1),
             GbufferPipeSet::create(
                 device,
+                gpu.pipeline_cache(),
                 layouts[0],
                 layouts[1],
                 vert,
@@ -998,6 +1061,9 @@ impl FrameRenderer {
             samplers,
             sets,
             scene_ubo,
+            probe_faces_ubo,
+            probe_mv_forward,
+            probe_mv_skinned,
             gizmo_ubo,
             rt_ubo,
             rt_ubo_bg,

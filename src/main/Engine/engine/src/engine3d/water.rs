@@ -1056,13 +1056,9 @@ struct SurfaceCorner {
 }
 
 fn blend_normals(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
-    let n = Vec3::new(
-        a[0] * (1.0 - t) + b[0] * t,
-        a[1] * (1.0 - t) + b[1] * t,
-        a[2] * (1.0 - t) + b[2] * t,
-    )
-    .normalize();
-    [n.x, n.y, n.z]
+    Vec3::lerp(Vec3::from(a), Vec3::from(b), t)
+        .normalize()
+        .to_array()
 }
 
 /// Mínimo suave (unión redondeada) con radio `k`, en unidades de celda. Donde

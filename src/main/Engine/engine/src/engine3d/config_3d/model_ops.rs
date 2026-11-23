@@ -216,6 +216,9 @@ impl State {
         id: EntityId,
         transform: &Transform,
     ) -> (GlamVec3, GlamVec3) {
+        if self.is_reflection_probe_entity(id) {
+            return self.reflection_probe_pick_aabb(transform);
+        }
         if self.play_character_entity == Some(id)
             && let Some((center, half)) = self.play_character_world_pick_aabb()
         {
@@ -608,40 +611,61 @@ impl State {
         center: GlamVec3,
         half: GlamVec3,
     ) -> Option<f32> {
-        let min = center - half;
-        let max = center + half;
-        let mut tmin = f32::NEG_INFINITY;
-        let mut tmax = f32::INFINITY;
+        glam_aabb_ray_hit(origin, dir, center, half)
+    }
+}
 
-        let oa = origin.to_array();
-        let da = dir.to_array();
-        let mna = min.to_array();
-        let mxa = max.to_array();
-        for i in 0..3 {
-            let o = oa[i];
-            let d = da[i];
-            let mn = mna[i];
-            let mx = mxa[i];
-            if d.abs() < 1e-8 {
-                if o < mn || o > mx {
-                    return None;
-                }
-            } else {
-                let inv = 1.0 / d;
-                let mut t1 = (mn - o) * inv;
-                let mut t2 = (mx - o) * inv;
-                if t1 > t2 {
-                    std::mem::swap(&mut t1, &mut t2);
-                }
-                tmin = tmin.max(t1);
-                tmax = tmax.min(t2);
-                if tmax < tmin {
-                    return None;
-                }
-            }
-        }
+/// Ray/AABB de picking con parry3d (re-exportado por rapier3d).
+/// `solid = false` conserva la semántica anterior: si el origen está dentro
+/// de la caja se devuelve el tiempo de salida en vez del de entrada.
+fn glam_aabb_ray_hit(
+    origin: GlamVec3,
+    dir: GlamVec3,
+    center: GlamVec3,
+    half: GlamVec3,
+) -> Option<f32> {
+    use rapier3d::parry::bounding_volume::Aabb;
+    use rapier3d::parry::query::{Ray, RayCast};
 
-        let t = if tmin >= 0.0 { tmin } else { tmax };
-        if t >= 0.0 { Some(t) } else { None }
+    let aabb = Aabb::new(center - half, center + half);
+    let ray = Ray::new(origin, dir);
+    aabb.cast_local_ray(&ray, f32::MAX, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ray_intersects_aabb_devuelve_el_mismo_toi_que_antes() {
+        let toi = State::ray_intersects_aabb(
+            glam::Vec3::new(-5.0, 0.0, 0.0),
+            glam::Vec3::X,
+            glam::Vec3::ZERO,
+            glam::Vec3::ONE,
+        );
+        assert_eq!(toi, Some(4.0));
+    }
+
+    #[test]
+    fn origen_dentro_de_la_caja_devuelve_la_salida() {
+        let toi = State::ray_intersects_aabb(
+            glam::Vec3::ZERO,
+            glam::Vec3::X,
+            glam::Vec3::ZERO,
+            glam::Vec3::ONE,
+        );
+        assert_eq!(toi, Some(1.0));
+    }
+
+    #[test]
+    fn rayo_paralelo_fuera_de_la_caja_no_hay_hit() {
+        let toi = State::ray_intersects_aabb(
+            glam::Vec3::new(0.0, 5.0, 0.0),
+            glam::Vec3::X,
+            glam::Vec3::ZERO,
+            glam::Vec3::ONE,
+        );
+        assert_eq!(toi, None);
     }
 }

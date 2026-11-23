@@ -566,6 +566,18 @@ mod tests {
     }
 
     #[test]
+    fn deserialize_spawn_reflection_probe_command() {
+        let json = r#"{"cmd":"spawn_reflection_probe"}"#;
+        let cmd: EngineCommand = serde_json::from_str(json).expect("spawn_reflection_probe IPC");
+        match cmd {
+            EngineCommand::Only3d(EngineCommand3dOnly::SpawnReflectionProbe { position }) => {
+                assert_eq!(position, None);
+            }
+            other => panic!("expected Only3d SpawnReflectionProbe, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn deserialize_set_reflection_debug_view_command() {
         let json = r#"{"cmd":"set_reflection_debug_view","view":"ssr_debug"}"#;
         let cmd: EngineCommand = serde_json::from_str(json).expect("set_reflection_debug_view IPC");

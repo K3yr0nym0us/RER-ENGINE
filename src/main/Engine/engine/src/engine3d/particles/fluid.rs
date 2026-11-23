@@ -32,6 +32,7 @@
 #![allow(dead_code)]
 #![allow(clippy::needless_range_loop)]
 
+use glam::Vec3;
 use std::collections::HashMap;
 use std::hash::{BuildHasher, Hasher};
 
@@ -451,27 +452,27 @@ impl SpatialGrid {
 }
 
 // ---------------------------------------------------------------------------
-// Utilidades vec3 sobre [f32; 3] (sin dependencias de glam/nalgebra)
+// Utilidades vec3 sobre [f32; 3]: delegan en glam, convertir solo en la frontera
 // ---------------------------------------------------------------------------
 
 fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+    (Vec3::from(a) - Vec3::from(b)).to_array()
 }
 
 fn dot(a: [f32; 3], b: [f32; 3]) -> f32 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+    Vec3::from(a).dot(Vec3::from(b))
 }
 
 fn length(a: [f32; 3]) -> f32 {
-    dot(a, a).sqrt()
+    Vec3::from(a).length()
 }
 
 fn scale(a: [f32; 3], s: f32) -> [f32; 3] {
-    [a[0] * s, a[1] * s, a[2] * s]
+    (Vec3::from(a) * s).to_array()
 }
 
 fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [a[0] + b[0], a[1] + b[1], a[2] + b[2]]
+    (Vec3::from(a) + Vec3::from(b)).to_array()
 }
 
 fn normalize(a: [f32; 3]) -> [f32; 3] {

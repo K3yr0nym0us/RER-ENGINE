@@ -3,21 +3,19 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::engine3d::vulkan::{GpuBuffer, SharedGpu};
 
-/// `0x0008_0000` es `VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR`.
-const AS_INPUT: vk::BufferUsageFlags = vk::BufferUsageFlags::from_raw(0x0008_0000);
 const VERTEX_USAGE_RAW: vk::BufferUsageFlags = vk::BufferUsageFlags::from_raw(
     vk::BufferUsageFlags::VERTEX_BUFFER.as_raw()
         | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS.as_raw()
         | vk::BufferUsageFlags::STORAGE_BUFFER.as_raw()
         | vk::BufferUsageFlags::TRANSFER_DST.as_raw()
-        | AS_INPUT.as_raw(),
+        | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR.as_raw(),
 );
 const INDEX_USAGE_RAW: vk::BufferUsageFlags = vk::BufferUsageFlags::from_raw(
     vk::BufferUsageFlags::INDEX_BUFFER.as_raw()
         | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS.as_raw()
         | vk::BufferUsageFlags::STORAGE_BUFFER.as_raw()
         | vk::BufferUsageFlags::TRANSFER_DST.as_raw()
-        | AS_INPUT.as_raw(),
+        | vk::BufferUsageFlags::ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_KHR.as_raw(),
 );
 
 // ---------------------------------------------------------------------------

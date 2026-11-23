@@ -59,7 +59,12 @@ impl State {
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SpawnReflectionProbe { position }) => {
                 log::info!("[reflexiones] IPC spawn_reflection_probe");
-                let _ = self.spawn_reflection_probe(position);
+                if let Some(id) = self.spawn_reflection_probe(position) {
+                    self.selected_entities.clear();
+                    self.selected_entities.push(id);
+                    self.selected_entity = Some(id);
+                    self.send_entity_selected_event(id);
+                }
             }
             EngineCommand::Only3d(EngineCommand3dOnly::SetReflectionDebugView { view }) => {
                 if let Some(v) =

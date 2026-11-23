@@ -5,8 +5,11 @@ pub mod geometry;
 pub mod grid;
 pub mod hud_image_asset;
 pub mod hud_layers;
+pub mod hud_props;
+pub mod hud_undo;
 pub mod ndc_draw;
 pub mod screen_hud_atlas;
+pub mod screens;
 pub mod text_input;
 pub mod viewport;
 

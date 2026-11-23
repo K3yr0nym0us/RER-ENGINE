@@ -140,9 +140,10 @@ impl FrameRenderer {
             return Ok(());
         }
         let fast_trace = input.rtx.fast_trace;
+        let tlas_slot = slot.min(FRAMES - 1);
         if self.blas_fast_trace != fast_trace {
-            // Los BLAS se reconstruyen con los flags del nuevo tier; el TLAS también.
-            self.blas_cache.clear();
+            // La firma del BLAS incluye `fast_trace`: cada slot lo reconstruirá con los
+            // nuevos flags. El TLAS se invalida para reconstruirse también.
             for tlas in &mut self.tlas {
                 tlas.invalidate();
             }
@@ -154,13 +155,16 @@ impl FrameRenderer {
         let stride = std::mem::size_of::<RtMaterialGpu>();
         let mut force_build = false;
         for batch in input.rt.iter() {
-            if batch.rebuild {
-                self.blas_cache.remove(&batch.key);
-                force_build = true;
-            }
-            if !self.blas_cache.contains_key(&batch.key) && batch.index_count >= 3 {
-                let blas = accel::build_blas(
+            if batch.index_count >= 3 {
+                let is_new = !self.blas_cache.contains_key(&batch.key);
+                let gpu = &self.gpu;
+                let blas = self
+                    .blas_cache
+                    .entry(batch.key)
+                    .or_insert_with(|| accel::Accel::empty(gpu));
+                accel::record_blas(
                     &self.gpu,
+                    blas,
                     &BlasInput {
                         vertex_address: batch.vertex.address,
                         index_address: batch.index.address,
@@ -169,13 +173,17 @@ impl FrameRenderer {
                         primitive_count: batch.index_count / 3,
                     },
                     fast_trace,
+                    batch.rebuild,
+                    tlas_slot,
+                    cmd,
                 )?;
-                self.blas_cache.insert(batch.key, blas);
-                force_build = true;
+                if is_new || batch.rebuild {
+                    force_build = true;
+                }
             }
             if let Some(blas) = self.blas_cache.get(&batch.key) {
                 instances.push(TlasInstance {
-                    blas_address: blas.address,
+                    blas_address: blas.address_for(tlas_slot),
                     transform: batch.transform,
                     custom_index: instances.len() as u32,
                 });
@@ -201,7 +209,6 @@ impl FrameRenderer {
         )?;
         self.geos.write(0, &geos)?;
         self.materials.write(0, &materials)?;
-        let tlas_slot = slot.min(FRAMES - 1);
         accel::record_tlas(
             &self.gpu,
             &mut self.tlas[tlas_slot],

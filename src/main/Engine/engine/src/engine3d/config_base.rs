@@ -524,8 +524,7 @@ impl State {
         &self,
         transform: &crate::engine3d::ecs::Transform,
     ) -> (glam::Vec3, glam::Vec3) {
-        use crate::engine3d::probe_registry::REFLECTION_PROBE_GIZMO_RADIUS_M;
-        let r = (REFLECTION_PROBE_GIZMO_RADIUS_M * 1.35).max(0.2);
+        let r = crate::engine3d::probe_registry::reflection_probe_editor_pick_half_extent();
         (transform.position, glam::Vec3::splat(r))
     }
 

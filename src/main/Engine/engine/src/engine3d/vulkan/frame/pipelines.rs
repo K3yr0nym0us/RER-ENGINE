@@ -55,6 +55,22 @@ pub(super) fn static_vertex() -> VertexSpec {
     }
 }
 
+/// `shadow.vert` solo lee posición (0) y la matriz de instancia (3–6).
+/// Conserva el stride del mesh estático para reutilizar los mismos buffers.
+pub(super) fn shadow_static_vertex() -> VertexSpec {
+    let mut spec = static_vertex();
+    spec.attributes
+        .retain(|attribute| matches!(attribute.location, 0 | 3 | 4 | 5 | 6));
+    spec
+}
+
+/// `hud_inst.vert` no consume el normal (location 1); el resto coincide con el mesh estático.
+pub(super) fn hud_instance_vertex() -> VertexSpec {
+    let mut spec = static_vertex();
+    spec.attributes.retain(|attribute| attribute.location != 1);
+    spec
+}
+
 pub(super) fn skinned_vertex() -> VertexSpec {
     VertexSpec {
         bindings: vec![
@@ -126,6 +142,7 @@ pub(super) fn attr(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn graphics(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: Option<vk::ShaderModule>,
@@ -138,6 +155,7 @@ pub(super) fn graphics(
 ) -> Result<vk::Pipeline, VulkanError> {
     graphics_with_depth_test(
         device,
+        cache,
         layout,
         vert,
         frag,
@@ -159,6 +177,7 @@ pub(super) fn graphics(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn graphics_no_depth_test(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: Option<vk::ShaderModule>,
@@ -169,6 +188,7 @@ pub(super) fn graphics_no_depth_test(
 ) -> Result<vk::Pipeline, VulkanError> {
     graphics_with_depth_test(
         device,
+        cache,
         layout,
         vert,
         frag,
@@ -186,6 +206,7 @@ pub(super) fn graphics_no_depth_test(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn graphics_topology(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: Option<vk::ShaderModule>,
@@ -198,13 +219,15 @@ pub(super) fn graphics_topology(
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
     graphics_with_depth_test(
-        device, layout, vert, frag, vertex, colors, depth, blend, depth_bias, topology, true, keep,
+        device, cache, layout, vert, frag, vertex, colors, depth, blend, depth_bias, topology,
+        true, keep,
     )
 }
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn graphics_with_depth_test(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: Option<vk::ShaderModule>,
@@ -218,7 +241,7 @@ pub(super) fn graphics_with_depth_test(
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
     graphics_with_gbuffer_blend(
-        device, layout, vert, frag, vertex, colors, depth, blend, true, !blend, depth_bias,
+        device, cache, layout, vert, frag, vertex, colors, depth, blend, true, !blend, depth_bias,
         topology, depth_test, keep,
     )
 }
@@ -230,6 +253,7 @@ pub(super) fn graphics_with_depth_test(
 #[allow(clippy::too_many_arguments)]
 pub(super) fn graphics_blend_color_only(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: Option<vk::ShaderModule>,
@@ -241,6 +265,7 @@ pub(super) fn graphics_blend_color_only(
 ) -> Result<vk::Pipeline, VulkanError> {
     graphics_with_gbuffer_blend(
         device,
+        cache,
         layout,
         vert,
         frag,
@@ -257,9 +282,9 @@ pub(super) fn graphics_blend_color_only(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn graphics_with_gbuffer_blend(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: Option<vk::ShaderModule>,
@@ -274,6 +299,97 @@ fn graphics_with_gbuffer_blend(
     depth_test: bool,
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
+    graphics_with_gbuffer_blend_ex(
+        device,
+        cache,
+        layout,
+        vert,
+        frag,
+        vertex,
+        colors,
+        depth,
+        blend,
+        blend_gbuffer,
+        depth_write,
+        depth_bias,
+        topology,
+        depth_test,
+        0,
+        false,
+        keep,
+    )
+}
+
+/// Variante multiview (sondas): `view_mask` y `PROBE_MULTIVIEW = true` en el vertex shader.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn graphics_probe(
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    layout: vk::PipelineLayout,
+    vert: vk::ShaderModule,
+    frag: vk::ShaderModule,
+    vertex: &VertexSpec,
+    colors: &[vk::Format],
+    depth: Option<vk::Format>,
+    samples: u32,
+    keep: &mut Vec<vk::Pipeline>,
+) -> Result<vk::Pipeline, VulkanError> {
+    let spec = VertexSpec {
+        bindings: vertex.bindings.clone(),
+        attributes: vertex.attributes.clone(),
+        samples: samples.max(1),
+    };
+    graphics_with_gbuffer_blend_ex(
+        device,
+        cache,
+        layout,
+        vert,
+        Some(frag),
+        &spec,
+        colors,
+        depth,
+        false,
+        true,
+        true,
+        false,
+        vk::PrimitiveTopology::TRIANGLE_LIST,
+        true,
+        PROBE_VIEW_MASK,
+        true,
+        keep,
+    )
+}
+
+pub(super) const PROBE_VIEW_MASK: u32 = 0b11_1111;
+
+#[allow(clippy::too_many_arguments)]
+fn graphics_with_gbuffer_blend_ex(
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    layout: vk::PipelineLayout,
+    vert: vk::ShaderModule,
+    frag: Option<vk::ShaderModule>,
+    vertex: &VertexSpec,
+    colors: &[vk::Format],
+    depth: Option<vk::Format>,
+    blend: bool,
+    blend_gbuffer: bool,
+    depth_write: bool,
+    depth_bias: bool,
+    topology: vk::PrimitiveTopology,
+    depth_test: bool,
+    view_mask: u32,
+    probe_spec: bool,
+    keep: &mut Vec<vk::Pipeline>,
+) -> Result<vk::Pipeline, VulkanError> {
+    let probe_data = [1u32];
+    let probe_entries = [vk::SpecializationMapEntry::default()
+        .constant_id(0)
+        .offset(0)
+        .size(4)];
+    let probe_spec_info = vk::SpecializationInfo::default()
+        .map_entries(&probe_entries)
+        .data(bytemuck::bytes_of(&probe_data));
     let name = c"main";
     let mut stages = vec![
         vk::PipelineShaderStageCreateInfo::default()
@@ -281,6 +397,9 @@ fn graphics_with_gbuffer_blend(
             .module(vert)
             .name(name),
     ];
+    if probe_spec {
+        stages[0] = stages[0].specialization_info(&probe_spec_info);
+    }
     if let Some(frag) = frag {
         stages.push(
             vk::PipelineShaderStageCreateInfo::default()
@@ -337,7 +456,9 @@ fn graphics_with_gbuffer_blend(
     let blend_state = vk::PipelineColorBlendStateCreateInfo::default().attachments(&attachments);
     let dynamics = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
     let dynamic = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamics);
-    let mut rendering = vk::PipelineRenderingCreateInfo::default().color_attachment_formats(colors);
+    let mut rendering = vk::PipelineRenderingCreateInfo::default()
+        .color_attachment_formats(colors)
+        .view_mask(view_mask);
     if let Some(depth) = depth {
         rendering = rendering.depth_attachment_format(depth);
     }
@@ -353,23 +474,22 @@ fn graphics_with_gbuffer_blend(
         .dynamic_state(&dynamic)
         .layout(layout)
         .push_next(&mut rendering);
-    let pipeline =
-        match unsafe { device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None) }
-        {
-            Ok(mut created) => created.remove(0),
-            Err((created, error)) => {
-                for pipeline in created {
-                    unsafe { device.destroy_pipeline(pipeline, None) };
-                }
-                return Err(vk_error("crear un pipeline gráfico", error));
+    let pipeline = match unsafe { device.create_graphics_pipelines(cache, &[info], None) } {
+        Ok(mut created) => created.remove(0),
+        Err((created, error)) => {
+            for pipeline in created {
+                unsafe { device.destroy_pipeline(pipeline, None) };
             }
-        };
+            return Err(vk_error("crear un pipeline gráfico", error));
+        }
+    };
     keep.push(pipeline);
     Ok(pipeline)
 }
 
 pub(super) fn create_compute(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     bytes: &[u8],
     layout_set: vk::DescriptorSetLayout,
     shaders: &mut Vec<vk::ShaderModule>,
@@ -387,9 +507,7 @@ pub(super) fn create_compute(
     let info = vk::ComputePipelineCreateInfo::default()
         .stage(stage)
         .layout(layout);
-    let pipeline = match unsafe {
-        device.create_compute_pipelines(vk::PipelineCache::null(), &[info], None)
-    } {
+    let pipeline = match unsafe { device.create_compute_pipelines(cache, &[info], None) } {
         Ok(mut created) => created.remove(0),
         Err((created, error)) => {
             for pipeline in created {
@@ -473,7 +591,7 @@ pub(super) fn create_rt_pipeline(
     let pipeline = match unsafe {
         rt.create_ray_tracing_pipelines(
             vk::DeferredOperationKHR::null(),
-            vk::PipelineCache::null(),
+            gpu.pipeline_cache(),
             &[info],
             None,
         )
@@ -515,4 +633,33 @@ pub(super) fn create_rt_pipeline(
     )?;
     let address = buffer.address;
     Ok((pipeline, buffer, stride, address))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn locations(spec: &VertexSpec) -> Vec<u32> {
+        spec.attributes
+            .iter()
+            .map(|attribute| attribute.location)
+            .collect()
+    }
+
+    #[test]
+    fn shadow_static_vertex_matches_shadow_vert() {
+        assert_eq!(locations(&shadow_static_vertex()), vec![0, 3, 4, 5, 6]);
+        assert_eq!(
+            shadow_static_vertex().bindings[0].stride,
+            static_vertex().bindings[0].stride
+        );
+    }
+
+    #[test]
+    fn hud_instance_vertex_skips_unused_normal() {
+        assert_eq!(
+            locations(&hud_instance_vertex()),
+            vec![0, 2, 3, 4, 5, 6, 7, 8]
+        );
+    }
 }

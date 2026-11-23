@@ -61,40 +61,37 @@ pub(super) fn reflections_body(
     );
     ui.add_space(4.0);
 
-    // Las probes siguen con su flujo y comportamiento actuales.
-    ui.horizontal(|ui| {
-        let mut probes = world.reflection_probes;
-        if widgets::switch_value(
-            ui,
-            &mut probes,
-            crate::editor::i18n::tr(
-                locale,
-                "Reflection probes en el render",
-                "Reflection probes in the render",
-            ),
-        ) {
-            actions.push(WorldAction::SetReflectionProbes(probes));
-        }
-        let width = ui.available_width();
-        if widgets::wide_button_click_sized(
-            ui,
-            width,
-            "",
-            crate::editor::i18n::tr(
-                locale,
-                "Insertar sonda de reflexión",
-                "Insert reflection probe",
-            ),
-            crate::editor::i18n::tr(
-                locale,
-                "Coloca una sonda en el centro del viewport",
-                "Place a probe at the viewport center",
-            ),
-            crate::editor::theme::INFO,
-        ) {
-            actions.push(WorldAction::SpawnReflectionProbe);
-        }
-    });
+    let mut probes = world.reflection_probes;
+    if widgets::switch_value(
+        ui,
+        &mut probes,
+        crate::editor::i18n::tr(
+            locale,
+            "Reflection probes en el render",
+            "Reflection probes in the render",
+        ),
+    ) {
+        actions.push(WorldAction::SetReflectionProbes(probes));
+    }
+    ui.add_space(4.0);
+    if widgets::wide_button_click_sized(
+        ui,
+        ui.available_width(),
+        "",
+        crate::editor::i18n::tr(
+            locale,
+            "Insertar sonda de reflexión",
+            "Insert reflection probe",
+        ),
+        crate::editor::i18n::tr(
+            locale,
+            "Coloca una sonda en el centro del viewport",
+            "Place a probe at the viewport center",
+        ),
+        crate::editor::theme::INFO,
+    ) {
+        actions.push(WorldAction::SpawnReflectionProbe);
+    }
     ui.add_space(4.0);
 
     widgets::caption(

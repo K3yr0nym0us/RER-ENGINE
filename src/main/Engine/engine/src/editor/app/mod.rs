@@ -289,13 +289,36 @@ mod tests {
     }
 
     #[test]
-    fn enabling_runtime_layer_shows_noisy_events() {
+    fn high_frequency_events_stay_silent_with_runtime_layer() {
         let mut app = test_app();
         app.log_layers
             .set(rer_engine_core::logging::LogLayer::Runtime, true);
         app.log_engine_event(&json!({ "event": "debug_metrics", "fps": 60 }));
+        app.log_engine_event(&json!({ "event": "entity_hovered", "id": 1 }));
+        app.log_engine_event(&json!({ "event": "autosave_tick" }));
+        assert!(app.log.is_empty());
+    }
+
+    #[test]
+    fn entity_selected_logs_once_until_the_id_changes() {
+        let mut app = test_app();
+        app.log_layers
+            .set(rer_engine_core::logging::LogLayer::Runtime, true);
+        let selected = json!({
+            "event": "entity_selected",
+            "id": 12,
+            "name": "RefProbe_01",
+            "position": [1.0, 2.0, 3.0],
+            "rotation": [0.0, 0.0, 0.0, 1.0],
+            "scale": [40.0, 40.0, 40.0],
+            "physics_enabled": false,
+            "physics_type": ""
+        });
+        app.log_engine_event(&selected);
+        app.handle_engine_event(&selected);
+        app.log_engine_event(&selected);
         assert_eq!(app.log.len(), 1);
-        assert!(app.log[0].text.starts_with("[debug_metrics]"));
+        assert_eq!(app.log[0].text, "[Selección] RefProbe_01");
     }
 
     #[test]

@@ -80,6 +80,12 @@ pub(super) fn create_sets(
                 vk::DescriptorType::UNIFORM_BUFFER,
                 vk::ShaderStageFlags::FRAGMENT,
             ),
+            // Seis view-proj de sonda para el pase multiview (solo lo lee el vertex shader).
+            binding(
+                4,
+                vk::DescriptorType::UNIFORM_BUFFER,
+                vk::ShaderStageFlags::VERTEX,
+            ),
         ],
     )?;
     let albedo = set_layout(

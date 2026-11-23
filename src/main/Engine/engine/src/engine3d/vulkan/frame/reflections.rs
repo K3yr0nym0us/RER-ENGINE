@@ -76,12 +76,11 @@ impl FrameRenderer {
             width: face_size,
             height: face_size,
         };
-        let views = [Some(self.targets.probe_color.view), None, None, None, None];
-        const LIGHT_PARAMS_Y: usize = 64 * 4 + 16 * 2 + 16 + 64 + 4;
-        let base_layer = (capture
+        let ibl_weight_offset = crate::engine3d::engine::SceneUniforms::IBL_WEIGHT_OFFSET;
+        let probe_slot = capture
             .slot
-            .min(crate::engine3d::probe_registry::MAX_PROBES - 1) as u32)
-            * 6;
+            .min(crate::engine3d::probe_registry::MAX_PROBES - 1) as u32;
+        let base_layer = probe_slot * 6;
         // La captura puede usar el G-buffer MS de sonda o el camino 1× según el tier actual.
         // Se decide una vez por sonda, no por cara.
         let probe_ms = self.targets.probe_ms.as_ref().filter(|ms| {
@@ -100,50 +99,91 @@ impl FrameRenderer {
             1
         };
         let pipes = self.overlay_gbuffer_pipes(*pipes, GbufferMask::color_only(), probe_samples);
-        for face in 0..6 {
-            let mut scene = input.scene.to_vec();
-            let vp = cube_face_view_proj(capture.origin, face);
-            if scene.len() >= 64 {
-                scene[..64].copy_from_slice(bytemuck::bytes_of(&vp));
+
+        if probe_ms.is_none()
+            && let (Some(forward), Some(skinned)) = (self.probe_mv_forward, self.probe_mv_skinned)
+        {
+            // Un solo pase: seis VP van en el binding 4 y `gl_ViewIndex` elige la cara.
+            let mut faces = [0u8; 6 * 64];
+            for face in 0..6 {
+                let vp = cube_face_view_proj(capture.origin, face);
+                faces[face * 64..(face + 1) * 64].copy_from_slice(bytemuck::bytes_of(&vp));
             }
-            // Sin IBL durante la captura: evita muestrear el cubemap que se está escribiendo.
-            if scene.len() >= LIGHT_PARAMS_Y + 4 {
-                scene[LIGHT_PARAMS_Y..LIGHT_PARAMS_Y + 4].copy_from_slice(&0f32.to_le_bytes());
+            let faces_ubo = self.probe_faces_ubo[slot].buffer;
+            unsafe {
+                device.cmd_update_buffer(cmd, faces_ubo, 0, &faces);
+                // Sin IBL durante la captura: evita muestrear el cubemap que se está escribiendo.
+                if input.scene.len() as u64 >= ibl_weight_offset + 4 {
+                    device.cmd_update_buffer(
+                        cmd,
+                        self.scene_ubo[slot].buffer,
+                        ibl_weight_offset,
+                        &0f32.to_le_bytes(),
+                    );
+                }
             }
-            if !scene.is_empty() {
-                unsafe { device.cmd_update_buffer(cmd, self.scene_ubo[slot].buffer, 0, &scene) };
-                buffer_barrier(device, cmd, self.scene_ubo[slot].buffer);
-            }
-            if let Some(ms) = probe_ms {
-                let ms_views = ms.views();
-                let ms_depth = ms.depth.view;
-                begin_color_ms(device, cmd, &ms_views, ms_depth, &views, extent, true);
-                set_viewport(device, cmd, extent);
-                self.draw_forward(slot, input, &pipes, device, cmd, 0.0);
-                unsafe { device.cmd_end_rendering(cmd) };
-            } else {
-                begin_color(
-                    device,
-                    cmd,
-                    &views,
-                    Some(self.targets.probe_depth.view),
-                    extent,
-                    true,
-                );
-                set_viewport(device, cmd, extent);
-                self.draw_forward(slot, input, &pipes, device, cmd, 0.0);
-                unsafe { device.cmd_end_rendering(cmd) };
-            }
-            // `copy_color` escribe en `base_array_layer`, así que cada cara de cada sonda ocupa su
-            // propia capa (slot * 6 + cara) en vez de pisar la ranura 0.
-            copy_color(
+            buffer_barrier(device, cmd, faces_ubo);
+            buffer_barrier(device, cmd, self.scene_ubo[slot].buffer);
+            let views = [
+                Some(self.targets.probe_slot_views[probe_slot as usize]),
+                None,
+                None,
+                None,
+                None,
+            ];
+            let depth = self.targets.probe_slot_depth_views[probe_slot as usize];
+            begin_color_masked(
                 device,
                 cmd,
-                &self.targets.probe_color,
-                &self.targets.probe,
+                &views,
+                Some(depth),
                 extent,
-                base_layer + face as u32,
+                true,
+                PROBE_VIEW_MASK,
             );
+            set_viewport(device, cmd, extent);
+            let mut mv_pipes = pipes;
+            mv_pipes.forward = forward;
+            mv_pipes.skinned = skinned;
+            self.draw_forward(slot, input, &mv_pipes, device, cmd, 0.0);
+            unsafe { device.cmd_end_rendering(cmd) };
+        } else {
+            // Fallback (también si no hay multiview o si la sonda es MSAA): seis pases, cada uno
+            // directamente en la vista de su capa del cubemap array (sin `copy_color`).
+            for face in 0..6 {
+                // Solo cambian 64 B de la view-proj y 4 B del parámetro de IBL: subir el UBO
+                // completo por cara era redundante (la escena ya se escribió antes del pase).
+                let layer = base_layer + face as u32;
+                let face_view = Some(self.targets.probe_face_views[layer as usize]);
+                let ubo = self.scene_ubo[slot].buffer;
+                unsafe {
+                    if input.scene.len() >= 64 {
+                        let vp = cube_face_view_proj(capture.origin, face);
+                        device.cmd_update_buffer(cmd, ubo, 0, bytemuck::bytes_of(&vp));
+                    }
+                    // Sin IBL durante la captura: evita muestrear el cubemap que se está escribiendo.
+                    if input.scene.len() as u64 >= ibl_weight_offset + 4 {
+                        device.cmd_update_buffer(cmd, ubo, ibl_weight_offset, &0f32.to_le_bytes());
+                    }
+                }
+                buffer_barrier(device, cmd, ubo);
+                if let Some(ms) = probe_ms {
+                    let ms_views = ms.views();
+                    let ms_depth = ms.depth.view;
+                    let resolve = [face_view, None, None, None, None];
+                    begin_color_ms(device, cmd, &ms_views, ms_depth, &resolve, extent, true);
+                    set_viewport(device, cmd, extent);
+                    self.draw_forward(slot, input, &pipes, device, cmd, 0.0);
+                    unsafe { device.cmd_end_rendering(cmd) };
+                } else {
+                    let views = [face_view, None, None, None, None];
+                    let depth = self.targets.probe_face_depth_views[layer as usize];
+                    begin_color(device, cmd, &views, Some(depth), extent, true);
+                    set_viewport(device, cmd, extent);
+                    self.draw_forward(slot, input, &pipes, device, cmd, 0.0);
+                    unsafe { device.cmd_end_rendering(cmd) };
+                }
+            }
         }
         if !input.scene.is_empty() {
             unsafe { device.cmd_update_buffer(cmd, self.scene_ubo[slot].buffer, 0, input.scene) };

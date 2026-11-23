@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_multiview : enable
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
@@ -25,6 +26,13 @@ layout(set = 0, binding = 0) uniform Scene {
     vec4 shadow_bias;
 } u;
 
+// Seis VP de sonda. Bloque independiente para NO cambiar el layout de `Scene` (lo comparten
+// forward.frag / depth_only.frag / shadow.vert) ni sus offsets. Solo activo en el pase multiview.
+layout(set = 0, binding = 4) uniform ProbeFaces {
+    mat4 face_vp[6];
+} probe_faces;
+layout(constant_id = 0) const bool PROBE_MULTIVIEW = false;
+
 layout(location = 0) out vec3 v_world;
 layout(location = 1) out vec3 v_normal;
 layout(location = 2) out vec2 v_uv;
@@ -44,5 +52,9 @@ void main() {
     v_tex = tex_layer_pad;
     v_curr = u.view_proj_stable * world;
     v_prev = u.prev_view_proj * world;
-    gl_Position = u.view_proj * world;
+    mat4 vp = u.view_proj;
+    if (PROBE_MULTIVIEW) {
+        vp = probe_faces.face_vp[gl_ViewIndex];
+    }
+    gl_Position = vp * world;
 }

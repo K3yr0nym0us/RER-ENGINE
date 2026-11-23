@@ -147,6 +147,18 @@ impl EditorApp {
         if name.is_empty() {
             return;
         }
+        // Hover, métricas y ticks: saturaban la consola al arrastrar un gizmo
+        // (sobre todo con `RER_LOG_LAYERS=all` / capa Runtime).
+        if matches!(
+            name,
+            "debug_metrics"
+                | "entity_hovered"
+                | "entity_unhovered"
+                | "autosave_tick"
+                | "player_ui_text_boxes_list"
+        ) {
+            return;
+        }
         // Los errores se muestran siempre; el resto depende de su capa.
         if !is_engine_error_event(name) && !self.log_layers.contains(engine_event_layer(name)) {
             return;
@@ -158,6 +170,24 @@ impl EditorApp {
                 self.push_log(format!("[Motor] listo (gravedad {gravity:.2})"), false);
             }
             "stopped" => self.push_log("[Motor] detenido", false),
+            "entity_selected" => {
+                let id = event.get("id").and_then(Value::as_u64);
+                if self.selected_entity.as_ref().map(|entity| entity.id) == id {
+                    return;
+                }
+                let label = event
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .filter(|name| !name.is_empty())
+                    .unwrap_or("entidad");
+                self.push_log(format!("[Selección] {label}"), false);
+            }
+            "entity_deselected" => {
+                if self.selected_entity.is_none() {
+                    return;
+                }
+                self.push_log("[Selección] ninguna", false);
+            }
             "error" => {
                 let message = event
                     .get("message")

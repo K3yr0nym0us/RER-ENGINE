@@ -1,4 +1,5 @@
 #version 450
+#extension GL_EXT_multiview : enable
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
@@ -26,6 +27,12 @@ layout(set = 0, binding = 0) uniform Scene {
     vec4 depth_plane;
     vec4 shadow_bias;
 } u;
+
+// Ver `forward.vert`: bloque propio para no alterar el layout compartido de `Scene`.
+layout(set = 0, binding = 4) uniform ProbeFaces {
+    mat4 face_vp[6];
+} probe_faces;
+layout(constant_id = 0) const bool PROBE_MULTIVIEW = false;
 
 layout(set = 2, binding = 0) readonly buffer Joints {
     mat4 palette[];
@@ -60,5 +67,9 @@ void main() {
     v_tex = tex_layer_pad;
     v_curr = u.view_proj_stable * world;
     v_prev = u.prev_view_proj * world;
-    gl_Position = u.view_proj * world;
+    mat4 vp = u.view_proj;
+    if (PROBE_MULTIVIEW) {
+        vp = probe_faces.face_vp[gl_ViewIndex];
+    }
+    gl_Position = vp * world;
 }

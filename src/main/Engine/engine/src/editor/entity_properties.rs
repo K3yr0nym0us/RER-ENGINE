@@ -556,19 +556,10 @@ fn animations_from(meta: &Value) -> Vec<PropAnimation> {
         .unwrap_or_default()
 }
 
-/// YXZ -> grados (equivalente a `quatToEulerYxzDegrees` del renderer).
+/// YXZ -> grados, en orden [pitch (X), yaw (Y), roll (Z)] como espera el panel.
 fn quat_to_euler_degrees(q: [f32; 4]) -> [f32; 3] {
-    let [x, y, z, w] = q;
-    let sinr_cosp = 2.0 * (w * x + y * z);
-    let cosr_cosp = 1.0 - 2.0 * (x * x + y * y);
-    let roll = sinr_cosp.atan2(cosr_cosp);
-    let sinp = (2.0 * (w * y - z * x)).clamp(-1.0, 1.0);
-    let pitch = sinp.asin();
-    let siny_cosp = 2.0 * (w * z + x * y);
-    let cosy_cosp = 1.0 - 2.0 * (y * y + z * z);
-    let yaw = siny_cosp.atan2(cosy_cosp);
-    let rad = 180.0 / std::f32::consts::PI;
-    [roll * rad, pitch * rad, yaw * rad]
+    let (yaw, pitch, roll) = glam::Quat::from_array(q).to_euler(glam::EulerRot::YXZ);
+    [pitch.to_degrees(), yaw.to_degrees(), roll.to_degrees()]
 }
 
 #[cfg(test)]
@@ -600,6 +591,33 @@ mod tests {
     fn identity_quaternion_has_zero_euler() {
         let [x, y, z] = quat_to_euler_degrees([0.0, 0.0, 0.0, 1.0]);
         assert!(x.abs() < 1e-4 && y.abs() < 1e-4 && z.abs() < 1e-4);
+    }
+
+    #[test]
+    fn quat_a_euler_ida_y_vuelta_respeta_yxz() {
+        let yaw = 40.0_f32.to_radians();
+        let pitch = (-25.0_f32).to_radians();
+        let roll = 15.0_f32.to_radians();
+        let q = glam::Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, roll);
+        let e = quat_to_euler_degrees(q.to_array());
+        for (got, want) in e.iter().zip([-25.0, 40.0, 15.0]) {
+            assert!((got - want).abs() < 1e-3, "esperado {want}, obtenido {got}");
+        }
+    }
+
+    #[test]
+    fn los_campos_del_panel_coinciden_con_play_character() {
+        let q = glam::Quat::from_euler(
+            glam::EulerRot::YXZ,
+            40.0_f32.to_radians(),
+            (-25.0_f32).to_radians(),
+            15.0_f32.to_radians(),
+        );
+        let (yaw, pitch, roll) = q.to_euler(glam::EulerRot::YXZ);
+        assert_eq!(
+            quat_to_euler_degrees(q.to_array()),
+            [pitch.to_degrees(), yaw.to_degrees(), roll.to_degrees()]
+        );
     }
 
     #[test]

@@ -259,6 +259,7 @@ impl VolumetricState {
         let mut layouts = Vec::new();
         let density_pipeline = create_compute(
             device,
+            gpu.pipeline_cache(),
             spv("volume_density"),
             density_layout,
             &mut shaders,
@@ -267,6 +268,7 @@ impl VolumetricState {
         )?;
         let light_pipeline = create_compute(
             device,
+            gpu.pipeline_cache(),
             spv("volume_light"),
             light_layout,
             &mut shaders,

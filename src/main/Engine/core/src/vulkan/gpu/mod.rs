@@ -51,9 +51,13 @@ struct GpuInner {
     surface: vk::SurfaceKHR,
     physical: vk::PhysicalDevice,
     device: ash::Device,
+    /// Cache de pipelines compartida por los motores 2D y 3D sobre este device.
+    pipeline_cache: vk::PipelineCache,
     queue: Mutex<vk::Queue>,
     queue_family: u32,
     hw_rt: bool,
+    /// `multiview` de Vulkan 1.1 (obligatorio desde 1.1, consultado por si acaso).
+    multiview: bool,
     swapchain_loader: ash::khr::swapchain::Device,
     swapchain: Mutex<SwapchainState>,
     /// Se suelta a mano en `Drop`, antes de `destroy_device`.
@@ -63,6 +67,9 @@ struct GpuInner {
     /// espera del editor no compartan el mismo command pool.
     one_shot_pool: vk::CommandPool,
     one_shot_lock: Mutex<()>,
+    /// Fence y command buffer reutilizados por `one_shot`; su uso está serializado por `one_shot_lock`.
+    one_shot_fence: vk::Fence,
+    one_shot_command: vk::CommandBuffer,
     frames: Mutex<[FrameSync; FRAMES_IN_FLIGHT]>,
     frame_slot: AtomicUsize,
     accel: Option<ash::khr::acceleration_structure::Device>,
@@ -90,6 +97,7 @@ impl Drop for GpuInner {
                     self.device.destroy_fence(frame.fence, None);
                 }
             }
+            self.device.destroy_fence(self.one_shot_fence, None);
             self.device.destroy_command_pool(self.command_pool, None);
             self.device.destroy_command_pool(self.one_shot_pool, None);
             {
@@ -108,6 +116,8 @@ impl Drop for GpuInner {
             }
             // El allocator libera los bloques de memoria con el device todavía vivo.
             ManuallyDrop::drop(&mut self.allocator);
+            self.device
+                .destroy_pipeline_cache(self.pipeline_cache, None);
             self.device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
             if let (Some(loader), Some(messenger)) = (self.debug_utils.as_ref(), self.messenger) {
@@ -155,6 +165,7 @@ mod frame;
 mod memory;
 mod present;
 mod swapchain;
+mod sync;
 
 use self::frame::FrameSync;
 pub use self::frame::{FrameAcquire, FrameTarget};
@@ -162,6 +173,10 @@ use self::memory::pick_sample_count;
 pub use self::memory::{GpuBuffer, GpuImage};
 pub use self::present::PresentTarget;
 use self::swapchain::SwapchainState;
+pub use self::sync::{
+    BarrierScope, access_flags2, buffer_memory_barrier2, image_memory_barrier2,
+    pipeline_stage_flags2,
+};
 
 impl SharedGpu {
     pub fn hw_rt(&self) -> bool {
@@ -206,6 +221,21 @@ impl SharedGpu {
 
     pub fn device(&self) -> &ash::Device {
         &self.inner.device
+    }
+
+    /// Cache de pipelines única por device: la comparten todos los motores y todos los tiers.
+    pub fn pipeline_cache(&self) -> vk::PipelineCache {
+        self.inner.pipeline_cache
+    }
+
+    /// Recursos del submit síncrono: `one_shot_lock` garantiza que solo un hilo los use a la vez.
+    pub(super) fn one_shot_resources(&self) -> (vk::Fence, vk::CommandBuffer) {
+        (self.inner.one_shot_fence, self.inner.one_shot_command)
+    }
+
+    /// Soporte de multiview: si es `false`, la captura de sondas usa seis pases.
+    pub fn multiview(&self) -> bool {
+        self.inner.multiview
     }
 
     /// Instancia Vulkan, necesaria para crear el renderer de egui sobre este mismo device.
@@ -270,32 +300,47 @@ pub fn cmd_image_barrier(
     src_access: vk::AccessFlags,
     dst_access: vk::AccessFlags,
 ) {
-    let barrier = vk::ImageMemoryBarrier::default()
-        .old_layout(old_layout)
-        .new_layout(new_layout)
-        .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-        .image(image)
-        .subresource_range(vk::ImageSubresourceRange {
+    let barrier = image_barrier2(
+        image, aspect, mips, layers, old_layout, new_layout, src_stage, dst_stage, src_access,
+        dst_access,
+    );
+    let barriers = [barrier];
+    let dependency = vk::DependencyInfo::default().image_memory_barriers(&barriers);
+    unsafe {
+        device.cmd_pipeline_barrier2(command, &dependency);
+    }
+}
+
+/// Barrera2 equivalente a la clásica de `cmd_image_barrier`. Se extrae para poder
+/// comprobar layouts, etapas y accesos sin necesidad de un device.
+fn image_barrier2(
+    image: vk::Image,
+    aspect: vk::ImageAspectFlags,
+    mips: u32,
+    layers: u32,
+    old_layout: vk::ImageLayout,
+    new_layout: vk::ImageLayout,
+    src_stage: vk::PipelineStageFlags,
+    dst_stage: vk::PipelineStageFlags,
+    src_access: vk::AccessFlags,
+    dst_access: vk::AccessFlags,
+) -> vk::ImageMemoryBarrier2<'static> {
+    image_memory_barrier2(
+        image,
+        vk::ImageSubresourceRange {
             aspect_mask: aspect,
             base_mip_level: 0,
             level_count: mips.max(1),
             base_array_layer: 0,
             layer_count: layers.max(1),
-        })
-        .src_access_mask(src_access)
-        .dst_access_mask(dst_access);
-    unsafe {
-        device.cmd_pipeline_barrier(
-            command,
-            src_stage,
-            dst_stage,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[],
-            &[barrier],
-        );
-    }
+        },
+        old_layout,
+        new_layout,
+        src_stage,
+        dst_stage,
+        src_access,
+        dst_access,
+    )
 }
 
 #[cfg(test)]
@@ -329,5 +374,37 @@ mod tests {
     #[test]
     fn pick_sample_count_without_msaa_support_returns_one() {
         assert_eq!(pick_sample_count(vk::SampleCountFlags::empty(), 8), 1);
+    }
+
+    #[test]
+    fn cmd_image_barrier2_preserves_layouts_and_access() {
+        let barrier = super::image_barrier2(
+            vk::Image::null(),
+            vk::ImageAspectFlags::COLOR,
+            2,
+            3,
+            vk::ImageLayout::GENERAL,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            vk::PipelineStageFlags::ALL_COMMANDS,
+            vk::PipelineStageFlags::TRANSFER,
+            vk::AccessFlags::SHADER_WRITE,
+            vk::AccessFlags::TRANSFER_READ,
+        );
+        assert!(barrier.old_layout == vk::ImageLayout::GENERAL);
+        assert!(barrier.new_layout == vk::ImageLayout::TRANSFER_SRC_OPTIMAL);
+        assert_eq!(
+            barrier.src_stage_mask,
+            vk::PipelineStageFlags2::ALL_COMMANDS
+        );
+        assert_eq!(barrier.dst_stage_mask, vk::PipelineStageFlags2::TRANSFER);
+        assert_eq!(barrier.src_access_mask, vk::AccessFlags2::SHADER_WRITE);
+        assert_eq!(barrier.dst_access_mask, vk::AccessFlags2::TRANSFER_READ);
+        assert!(barrier.subresource_range.aspect_mask == vk::ImageAspectFlags::COLOR);
+        assert_eq!(barrier.subresource_range.base_mip_level, 0);
+        assert_eq!(barrier.subresource_range.level_count, 2);
+        assert_eq!(barrier.subresource_range.base_array_layer, 0);
+        assert_eq!(barrier.subresource_range.layer_count, 3);
+        assert_eq!(barrier.src_queue_family_index, vk::QUEUE_FAMILY_IGNORED);
+        assert_eq!(barrier.dst_queue_family_index, vk::QUEUE_FAMILY_IGNORED);
     }
 }

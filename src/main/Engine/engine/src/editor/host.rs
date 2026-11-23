@@ -53,6 +53,8 @@ impl InProcessEngine {
             Self::Three(app) => {
                 if let Some(parsed) = crate::engine3d::ipc::parse_command(command) {
                     app.handle_command(parsed);
+                } else {
+                    log::warn!("[editor] comando 3D no parseado: {command}");
                 }
             }
             Self::Two(app) => {

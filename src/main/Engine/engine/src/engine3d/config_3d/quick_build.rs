@@ -127,6 +127,7 @@ fn apply_blueprint_instance_metadata(state: &mut State, id: EntityId, bp: &Quick
     }
 }
 
+/// Caso particular de `ray_plane_intersect` para el plano Y (sin `max_t`).
 fn ray_intersect_y_plane(origin: Vec3, dir: Vec3, y: f32) -> Option<Vec3> {
     if dir.y.abs() < 1e-8 {
         return None;

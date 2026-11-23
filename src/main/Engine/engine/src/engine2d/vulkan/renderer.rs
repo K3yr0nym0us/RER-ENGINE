@@ -322,6 +322,7 @@ impl Renderer {
         let swapchain_format = gpu.swapchain_format();
         let pipe_scene_opaque = make_pipeline(
             device,
+            gpu.pipeline_cache(),
             layout_scene,
             vert_scene,
             frag_scene,
@@ -340,6 +341,7 @@ impl Renderer {
         )?;
         let pipe_scene_2d = make_pipeline(
             device,
+            gpu.pipeline_cache(),
             layout_scene,
             vert_scene,
             frag_scene,
@@ -358,6 +360,7 @@ impl Renderer {
         )?;
         let pipe_blit = make_pipeline(
             device,
+            gpu.pipeline_cache(),
             layout_blit,
             vert_blit,
             frag_blit,
@@ -371,6 +374,7 @@ impl Renderer {
         )?;
         let pipe_line = make_pipeline(
             device,
+            gpu.pipeline_cache(),
             layout_line,
             vert_line,
             frag_line,
@@ -384,6 +388,7 @@ impl Renderer {
         )?;
         let pipe_gizmo = make_pipeline(
             device,
+            gpu.pipeline_cache(),
             layout_line,
             vert_line,
             frag_line,
@@ -401,6 +406,7 @@ impl Renderer {
         // omitirlo aquí produce exactamente el mismo resultado.
         let pipe_snap_hint = make_pipeline(
             device,
+            gpu.pipeline_cache(),
             layout_scene,
             vert_scene,
             frag_scene,
@@ -417,6 +423,7 @@ impl Renderer {
         // el atlas de UI y usa los uniformes NDC (`ScreenHudSceneUniforms::ndc_identity`).
         let pipe_hud = make_pipeline(
             device,
+            gpu.pipeline_cache(),
             layout_hud,
             vert_hud,
             frag_hud,
@@ -1303,6 +1310,7 @@ fn attribute(
 #[allow(clippy::too_many_arguments)]
 fn make_pipeline(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: vk::ShaderModule,
@@ -1377,7 +1385,7 @@ fn make_pipeline(
         .dynamic_state(&dynamic)
         .layout(layout)
         .push_next(&mut rendering);
-    match unsafe { device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None) } {
+    match unsafe { device.create_graphics_pipelines(cache, &[info], None) } {
         Ok(mut created) => Ok(created.remove(0)),
         Err((created, error)) => {
             for pipeline in created {

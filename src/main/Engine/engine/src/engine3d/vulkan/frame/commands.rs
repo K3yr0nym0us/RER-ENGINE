@@ -199,6 +199,20 @@ pub(super) fn begin_color_ms(
     extent: vk::Extent2D,
     clear: bool,
 ) {
+    begin_color_ms_masked(device, cmd, ms_views, ms_depth, resolve, extent, clear, 0);
+}
+
+/// Igual que `begin_color_ms` pero con `view_mask` de multiview (sondas).
+pub(super) fn begin_color_ms_masked(
+    device: &ash::Device,
+    cmd: vk::CommandBuffer,
+    ms_views: &[Option<vk::ImageView>; 5],
+    ms_depth: vk::ImageView,
+    resolve: &[Option<vk::ImageView>; 5],
+    extent: vk::Extent2D,
+    clear: bool,
+    view_mask: u32,
+) {
     let colors: [vk::RenderingAttachmentInfo; 5] = std::array::from_fn(|index| {
         color_rendering_attachment(ms_views[index], index, clear, resolve[index])
     });
@@ -219,6 +233,7 @@ pub(super) fn begin_color_ms(
             extent,
         })
         .layer_count(1)
+        .view_mask(view_mask)
         .color_attachments(&colors)
         .depth_attachment(&depth_info);
     unsafe { device.cmd_begin_rendering(cmd, &info) };
@@ -231,6 +246,19 @@ pub(super) fn begin_color(
     depth: Option<vk::ImageView>,
     extent: vk::Extent2D,
     clear: bool,
+) {
+    begin_color_masked(device, cmd, views, depth, extent, clear, 0);
+}
+
+/// Igual que `begin_color` pero con `view_mask` de multiview (sondas).
+pub(super) fn begin_color_masked(
+    device: &ash::Device,
+    cmd: vk::CommandBuffer,
+    views: &[Option<vk::ImageView>; 5],
+    depth: Option<vk::ImageView>,
+    extent: vk::Extent2D,
+    clear: bool,
+    view_mask: u32,
 ) {
     let colors: [vk::RenderingAttachmentInfo; 5] =
         std::array::from_fn(|index| color_rendering_attachment(views[index], index, clear, None));
@@ -253,6 +281,7 @@ pub(super) fn begin_color(
             extent,
         })
         .layer_count(1)
+        .view_mask(view_mask)
         .color_attachments(&colors);
     if let Some(depth_info) = depth_info.as_ref() {
         info = info.depth_attachment(depth_info);
@@ -332,6 +361,41 @@ pub(super) fn transition_depth(
     *current = want;
 }
 
+/// Barrera de una sola cara de una imagen array: `cmd_image_barrier` cubre todos los
+/// mips y capas, aquí solo se transiciona el subrecurso que copia `copy_color`.
+fn copy_color_barrier(
+    device: &ash::Device,
+    cmd: vk::CommandBuffer,
+    image: vk::Image,
+    base_array_layer: u32,
+    old_layout: vk::ImageLayout,
+    new_layout: vk::ImageLayout,
+    src_stage: vk::PipelineStageFlags,
+    dst_stage: vk::PipelineStageFlags,
+    src_access: vk::AccessFlags,
+    dst_access: vk::AccessFlags,
+) {
+    let barrier = crate::engine3d::vulkan::gpu::image_memory_barrier2(
+        image,
+        vk::ImageSubresourceRange {
+            aspect_mask: vk::ImageAspectFlags::COLOR,
+            base_mip_level: 0,
+            level_count: 1,
+            base_array_layer,
+            layer_count: 1,
+        },
+        old_layout,
+        new_layout,
+        src_stage,
+        dst_stage,
+        src_access,
+        dst_access,
+    );
+    let barriers = [barrier];
+    let dependency = vk::DependencyInfo::default().image_memory_barriers(&barriers);
+    unsafe { device.cmd_pipeline_barrier2(cmd, &dependency) };
+}
+
 pub(super) fn copy_color(
     device: &ash::Device,
     cmd: vk::CommandBuffer,
@@ -340,13 +404,11 @@ pub(super) fn copy_color(
     extent: vk::Extent2D,
     layer: u32,
 ) {
-    crate::engine3d::vulkan::gpu::cmd_image_barrier(
+    copy_color_barrier(
         device,
         cmd,
         src.image,
-        vk::ImageAspectFlags::COLOR,
-        src.mips,
-        src.layers,
+        0,
         vk::ImageLayout::GENERAL,
         vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         vk::PipelineStageFlags::ALL_COMMANDS,
@@ -354,13 +416,11 @@ pub(super) fn copy_color(
         vk::AccessFlags::SHADER_WRITE | vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
         vk::AccessFlags::TRANSFER_READ,
     );
-    crate::engine3d::vulkan::gpu::cmd_image_barrier(
+    copy_color_barrier(
         device,
         cmd,
         dst.image,
-        vk::ImageAspectFlags::COLOR,
-        dst.mips,
-        dst.layers,
+        layer,
         vk::ImageLayout::GENERAL,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         vk::PipelineStageFlags::ALL_COMMANDS,
@@ -396,13 +456,11 @@ pub(super) fn copy_color(
             &[region],
         )
     };
-    crate::engine3d::vulkan::gpu::cmd_image_barrier(
+    copy_color_barrier(
         device,
         cmd,
         src.image,
-        vk::ImageAspectFlags::COLOR,
-        src.mips,
-        src.layers,
+        0,
         vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
         vk::ImageLayout::GENERAL,
         vk::PipelineStageFlags::TRANSFER,
@@ -410,13 +468,11 @@ pub(super) fn copy_color(
         vk::AccessFlags::TRANSFER_READ,
         vk::AccessFlags::SHADER_READ,
     );
-    crate::engine3d::vulkan::gpu::cmd_image_barrier(
+    copy_color_barrier(
         device,
         cmd,
         dst.image,
-        vk::ImageAspectFlags::COLOR,
-        dst.mips,
-        dst.layers,
+        layer,
         vk::ImageLayout::TRANSFER_DST_OPTIMAL,
         vk::ImageLayout::GENERAL,
         vk::PipelineStageFlags::TRANSFER,
@@ -511,25 +567,19 @@ pub(super) fn begin_color_one(
 }
 
 pub(super) fn buffer_barrier(device: &ash::Device, cmd: vk::CommandBuffer, buffer: vk::Buffer) {
-    let barrier = vk::BufferMemoryBarrier::default()
-        .src_access_mask(vk::AccessFlags::TRANSFER_WRITE)
-        .dst_access_mask(vk::AccessFlags::UNIFORM_READ)
+    let barrier = vk::BufferMemoryBarrier2::default()
+        .src_stage_mask(vk::PipelineStageFlags2::TRANSFER)
+        .src_access_mask(vk::AccessFlags2::TRANSFER_WRITE)
+        .dst_stage_mask(vk::PipelineStageFlags2::VERTEX_SHADER)
+        .dst_access_mask(vk::AccessFlags2::UNIFORM_READ)
         .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
         .buffer(buffer)
         .offset(0)
         .size(vk::WHOLE_SIZE);
-    unsafe {
-        device.cmd_pipeline_barrier(
-            cmd,
-            vk::PipelineStageFlags::TRANSFER,
-            vk::PipelineStageFlags::VERTEX_SHADER,
-            vk::DependencyFlags::empty(),
-            &[],
-            &[barrier],
-            &[],
-        );
-    }
+    let barriers = [barrier];
+    let dependency = vk::DependencyInfo::default().buffer_memory_barriers(&barriers);
+    unsafe { device.cmd_pipeline_barrier2(cmd, &dependency) };
 }
 
 pub(super) fn host_buffer(

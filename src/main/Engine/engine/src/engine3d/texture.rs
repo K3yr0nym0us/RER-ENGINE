@@ -36,7 +36,9 @@ impl TextureArray {
             Self::MAX_LAYERS,
             mip_levels,
             Self::FORMAT,
-            vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+            vk::ImageUsageFlags::SAMPLED
+                | vk::ImageUsageFlags::TRANSFER_DST
+                | vk::ImageUsageFlags::TRANSFER_SRC,
             vk::ImageAspectFlags::COLOR,
             "texture-array",
         )?;
@@ -69,11 +71,13 @@ impl TextureArray {
         w: u32,
         h: u32,
     ) -> Result<TextureLayer, VulkanError> {
-        let chain = build_layer_mip_chain_timed(rgba.to_vec(), w, h);
-        self.upload_layer_from_mips(gpu, &chain.mips)
+        // Solo el mip 0 se genera en CPU; el resto lo produce la GPU con blits.
+        let base = resize_rgba_vec_to_layer(rgba.to_vec(), w, h, self.width, self.height);
+        self.upload_layer_from_mips(gpu, &[base])
     }
 
     /// Sube mips ya preparados en CPU (p. ej. hilo de precarga de modelos).
+    /// Se conserva el mip 0 y se regenera la cadena en GPU.
     pub fn pack_prepared_mips(
         &mut self,
         gpu: &SharedGpu,
@@ -84,15 +88,14 @@ impl TextureArray {
                 "[TextureArray] mip chain inválida ({} niveles) — reconstruyendo desde mip0",
                 mips.len()
             );
-            let base = mips
-                .first()
-                .cloned()
-                .unwrap_or_else(|| vec![255, 255, 255, 255]);
-            let (w, h) = infer_base_dimensions_from_mip0(&base);
-            let chain = build_layer_mip_chain_timed(base, w, h);
-            return self.upload_layer_from_mips(gpu, &chain.mips);
         }
-        self.upload_layer_from_mips(gpu, mips)
+        let mip0 = mips
+            .first()
+            .cloned()
+            .unwrap_or_else(|| vec![255, 255, 255, 255]);
+        let (w, h) = infer_base_dimensions_from_mip0(&mip0);
+        let base = resize_rgba_vec_to_layer(mip0, w, h, self.width, self.height);
+        self.upload_layer_from_mips(gpu, &[base])
     }
 
     /// Copia un tile RGBA en una capa ya empaquetada (mip 0). El shader de
@@ -136,11 +139,19 @@ impl TextureArray {
             return Ok(Self::fallback_layer());
         }
         let layer = self.next_layer;
-        for (level, mip_data) in mips.iter().enumerate() {
-            let mip_w = (self.width >> level).max(1);
-            let mip_h = (self.height >> level).max(1);
-            gpu.upload_rgba_layer(&self.image, level as u32, layer, mip_w, mip_h, mip_data)?;
-        }
+        let regions: Vec<_> = mips
+            .iter()
+            .enumerate()
+            .map(|(level, data)| {
+                (
+                    (self.width >> level).max(1),
+                    (self.height >> level).max(1),
+                    data.as_slice(),
+                )
+            })
+            .collect();
+        gpu.upload_rgba_mips(&self.image, layer, &regions)?;
+        record_mip_chain(gpu, &self.image, layer)?;
         self.next_layer += 1;
         Ok(layer)
     }
@@ -151,13 +162,9 @@ impl TextureArray {
         rgba: &[u8],
         layer: TextureLayer,
     ) -> Result<(), VulkanError> {
-        let mips = generate_mip_chain_owned(rgba.to_vec(), self.width, self.height);
-        for (level, mip_data) in mips.iter().enumerate() {
-            let mip_w = (self.width >> level).max(1);
-            let mip_h = (self.height >> level).max(1);
-            gpu.upload_rgba_layer(&self.image, level as u32, layer, mip_w, mip_h, mip_data)?;
-        }
-        Ok(())
+        // El pixel blanco del fallback también genera sus mips en GPU.
+        gpu.upload_rgba_mips(&self.image, layer, &[(self.width, self.height, rgba)])?;
+        record_mip_chain(gpu, &self.image, layer)
     }
 
     pub fn image(&self) -> &GpuImage {
@@ -165,67 +172,191 @@ impl TextureArray {
     }
 }
 
-/// Promedia bloques 2×2 (box filter) para el siguiente nivel de mip.
-fn box_filter_halve(src: &[u8], sw: u32, sh: u32) -> (Vec<u8>, u32, u32) {
-    let dw = (sw / 2).max(1);
-    let dh = (sh / 2).max(1);
-    if sw <= 1 && sh <= 1 {
-        return (src.to_vec(), sw, sh);
-    }
-
-    let mut dst = vec![0u8; (dw * dh * 4) as usize];
-    for y in 0..dh {
-        for x in 0..dw {
-            let mut r = 0u32;
-            let mut g = 0u32;
-            let mut b = 0u32;
-            let mut a = 0u32;
-            let mut n = 0u32;
-            let sy = y * 2;
-            let sx = x * 2;
-            for dy in 0..2u32 {
-                for dx in 0..2u32 {
-                    let py = sy + dy;
-                    let px = sx + dx;
-                    if py >= sh || px >= sw {
-                        continue;
-                    }
-                    let i = ((py * sw + px) * 4) as usize;
-                    r += src[i] as u32;
-                    g += src[i + 1] as u32;
-                    b += src[i + 2] as u32;
-                    a += src[i + 3] as u32;
-                    n += 1;
-                }
-            }
-            let n = n.max(1);
-            let di = ((y * dw + x) * 4) as usize;
-            dst[di] = (r / n) as u8;
-            dst[di + 1] = (g / n) as u8;
-            dst[di + 2] = (b / n) as u8;
-            dst[di + 3] = (a / n) as u8;
-        }
-    }
-    (dst, dw, dh)
-}
-
+/// Cadena de mips para el bake/precarga: reutiliza `imageops` en vez de un filtro propio.
 fn generate_mip_chain_owned(base: Vec<u8>, base_w: u32, base_h: u32) -> Vec<Vec<u8>> {
     let level_count = mip_level_count(base_w.max(base_h)) as usize;
     let mut chain = Vec::with_capacity(level_count);
     let mut cw = base_w;
     let mut ch = base_h;
-    chain.push(base);
-    loop {
+    let mut current = base;
+    for _ in 0..level_count {
+        chain.push(current.clone());
         if cw <= 1 && ch <= 1 {
             break;
         }
-        let src = chain.last().expect("mip chain vacía");
-        let (next, nw, nh) = box_filter_halve(src, cw, ch);
+        let nw = (cw / 2).max(1);
+        let nh = (ch / 2).max(1);
+        current = resize_rgba_vec_to_layer(current, cw, ch, nw, nh);
         cw = nw;
         ch = nh;
-        chain.push(next);
     }
     chain
+}
+
+/// Genera los mips 1..N de una capa con `vkCmdBlitImage` y deja la imagen en GENERAL.
+fn record_mip_chain(
+    gpu: &SharedGpu,
+    image: &GpuImage,
+    layer: TextureLayer,
+) -> Result<(), VulkanError> {
+    let levels = image.mips;
+    if levels <= 1 {
+        return Ok(());
+    }
+    let handle = image.image;
+    let aspect = image.aspect;
+    let base_w = image.extent.width;
+    let base_h = image.extent.height;
+
+    gpu.one_shot(move |device, command| {
+        let all = vk::ImageSubresourceRange {
+            aspect_mask: aspect,
+            base_mip_level: 0,
+            level_count: levels,
+            base_array_layer: layer,
+            layer_count: 1,
+        };
+        let barrier = |old_layout, new_layout, src_access, dst_access, range| {
+            vk::ImageMemoryBarrier::default()
+                .old_layout(old_layout)
+                .new_layout(new_layout)
+                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
+                .image(handle)
+                .subresource_range(range)
+                .src_access_mask(src_access)
+                .dst_access_mask(dst_access)
+        };
+
+        // GENERAL (mip 0 ya subido) -> TRANSFER_SRC_OPTIMAL para toda la capa.
+        let to_src = barrier(
+            vk::ImageLayout::GENERAL,
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            vk::AccessFlags::SHADER_READ | vk::AccessFlags::TRANSFER_WRITE,
+            vk::AccessFlags::TRANSFER_READ,
+            all,
+        );
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command,
+                vk::PipelineStageFlags::FRAGMENT_SHADER | vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[to_src],
+            );
+        }
+
+        for mip in 0..levels - 1 {
+            let dst_range = vk::ImageSubresourceRange {
+                aspect_mask: aspect,
+                base_mip_level: mip + 1,
+                level_count: 1,
+                base_array_layer: layer,
+                layer_count: 1,
+            };
+            let to_dst = barrier(
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::AccessFlags::TRANSFER_READ,
+                vk::AccessFlags::TRANSFER_WRITE,
+                dst_range,
+            );
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[to_dst],
+                );
+            }
+
+            let blit = vk::ImageBlit {
+                src_subresource: vk::ImageSubresourceLayers {
+                    aspect_mask: aspect,
+                    mip_level: mip,
+                    base_array_layer: layer,
+                    layer_count: 1,
+                },
+                src_offsets: [
+                    vk::Offset3D::default(),
+                    vk::Offset3D {
+                        x: (base_w >> mip).max(1) as i32,
+                        y: (base_h >> mip).max(1) as i32,
+                        z: 1,
+                    },
+                ],
+                dst_subresource: vk::ImageSubresourceLayers {
+                    aspect_mask: aspect,
+                    mip_level: mip + 1,
+                    base_array_layer: layer,
+                    layer_count: 1,
+                },
+                dst_offsets: [
+                    vk::Offset3D::default(),
+                    vk::Offset3D {
+                        x: (base_w >> (mip + 1)).max(1) as i32,
+                        y: (base_h >> (mip + 1)).max(1) as i32,
+                        z: 1,
+                    },
+                ],
+            };
+            unsafe {
+                device.cmd_blit_image(
+                    command,
+                    handle,
+                    vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    handle,
+                    vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    &[blit],
+                    vk::Filter::LINEAR,
+                );
+            }
+
+            // El destino pasa a ser la fuente del siguiente blit.
+            let back_to_src = barrier(
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::AccessFlags::TRANSFER_READ,
+                dst_range,
+            );
+            unsafe {
+                device.cmd_pipeline_barrier(
+                    command,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::PipelineStageFlags::TRANSFER,
+                    vk::DependencyFlags::empty(),
+                    &[],
+                    &[],
+                    &[back_to_src],
+                );
+            }
+        }
+
+        let to_general = barrier(
+            vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            vk::ImageLayout::GENERAL,
+            vk::AccessFlags::TRANSFER_READ,
+            vk::AccessFlags::SHADER_READ,
+            all,
+        );
+        unsafe {
+            device.cmd_pipeline_barrier(
+                command,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::DependencyFlags::empty(),
+                &[],
+                &[],
+                &[to_general],
+            );
+        }
+    })
 }
 
 pub(crate) fn layer_mip_chain_valid_for_array(mips: &[Vec<u8>]) -> bool {
@@ -258,13 +389,7 @@ fn infer_base_dimensions_from_mip0(mip0: &[u8]) -> (u32, u32) {
 }
 
 fn mip_level_count(size: u32) -> u32 {
-    let mut levels = 1u32;
-    let mut s = size;
-    while s > 1 {
-        s /= 2;
-        levels += 1;
-    }
-    levels
+    (u32::BITS - size.leading_zeros()).max(1)
 }
 
 fn resize_rgba_vec_to_layer(rgba: Vec<u8>, w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {

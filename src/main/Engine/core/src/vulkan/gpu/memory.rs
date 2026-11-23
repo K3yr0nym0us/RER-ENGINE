@@ -562,33 +562,105 @@ impl SharedGpu {
         })
     }
 
-    pub fn upload_rgba_layer(
+    /// Sube una cadena completa de mips de una capa con un único staging buffer y un único submit.
+    ///
+    /// Cada tupla de `mips` es `(ancho, alto, rgba)`; el nivel de mip es el índice de la tupla.
+    pub fn upload_rgba_mips(
         &self,
         image: &GpuImage,
-        mip: u32,
         layer: u32,
-        width: u32,
-        height: u32,
-        rgba: &[u8],
+        mips: &[(u32, u32, &[u8])],
     ) -> Result<(), VulkanError> {
+        self.upload_rgba_mips_at(image, 0, layer, mips)
+    }
+
+    fn upload_rgba_mips_at(
+        &self,
+        image: &GpuImage,
+        first_mip: u32,
+        layer: u32,
+        mips: &[(u32, u32, &[u8])],
+    ) -> Result<(), VulkanError> {
+        if mips.is_empty() {
+            return Ok(());
+        }
+        let offset_align = (self.inner.limits.optimal_buffer_copy_offset_alignment as usize).max(1);
+        let row_align = (self.inner.limits.optimal_buffer_copy_row_pitch_alignment as usize).max(4);
+        let mut packed: Vec<u8> = Vec::new();
+        let mut regions = Vec::with_capacity(mips.len());
+        for (level, &(width, height, rgba)) in mips.iter().enumerate() {
+            let w = width.max(1);
+            let h = height.max(1);
+            let row_bytes = (w as usize).checked_mul(4).ok_or_else(|| {
+                VulkanError::new("mip demasiado ancho para el staging".to_string())
+            })?;
+            let needed = row_bytes.checked_mul(h as usize).ok_or_else(|| {
+                VulkanError::new("mip demasiado grande para el staging".to_string())
+            })?;
+            if rgba.len() < needed {
+                return Err(VulkanError::new(format!(
+                    "mip {} incompleto: {} bytes, se esperaban {needed}",
+                    first_mip as usize + level,
+                    rgba.len()
+                )));
+            }
+            let pitch = align_up(row_bytes, row_align);
+            let offset = align_up(packed.len(), offset_align);
+            if offset > packed.len() {
+                packed.resize(offset, 0);
+            }
+            let start = packed.len();
+            let total = pitch
+                .checked_mul(h as usize)
+                .ok_or_else(|| VulkanError::new("staging de mips desbordado".to_string()))?;
+            let end = start
+                .checked_add(total)
+                .ok_or_else(|| VulkanError::new("staging de mips desbordado".to_string()))?;
+            packed.resize(end, 0);
+            for row in 0..h as usize {
+                let src = row * row_bytes;
+                let dst = start + row * pitch;
+                packed[dst..dst + row_bytes].copy_from_slice(&rgba[src..src + row_bytes]);
+            }
+            regions.push(
+                vk::BufferImageCopy::default()
+                    .buffer_offset(offset as u64)
+                    .buffer_row_length((pitch / 4) as u32)
+                    .buffer_image_height(h)
+                    .image_subresource(vk::ImageSubresourceLayers {
+                        aspect_mask: image.aspect,
+                        mip_level: first_mip + level as u32,
+                        base_array_layer: layer,
+                        layer_count: 1,
+                    })
+                    .image_extent(vk::Extent3D {
+                        width: w,
+                        height: h,
+                        depth: 1,
+                    }),
+            );
+        }
         let staging = self.create_buffer_with_data(
-            rgba,
+            &packed,
             vk::BufferUsageFlags::TRANSFER_SRC,
             MemoryLocation::CpuToGpu,
-            "tex-staging",
+            "tex-mips-staging",
         )?;
         let image_handle = image.image;
         let aspect = image.aspect;
-        let mips = image.mips;
-        let layers = image.layers;
+        let range = vk::ImageSubresourceRange {
+            aspect_mask: aspect,
+            base_mip_level: first_mip,
+            level_count: mips.len() as u32,
+            base_array_layer: layer,
+            layer_count: 1,
+        };
         self.one_shot(move |device, command| {
-            cmd_image_barrier(
+            cmd_image_barrier_subresource(
                 device,
                 command,
                 image_handle,
-                aspect,
-                mips,
-                layers,
+                range,
                 vk::ImageLayout::GENERAL,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 vk::PipelineStageFlags::FRAGMENT_SHADER,
@@ -596,34 +668,20 @@ impl SharedGpu {
                 vk::AccessFlags::SHADER_READ,
                 vk::AccessFlags::TRANSFER_WRITE,
             );
-            let region = vk::BufferImageCopy::default()
-                .image_subresource(vk::ImageSubresourceLayers {
-                    aspect_mask: aspect,
-                    mip_level: mip,
-                    base_array_layer: layer,
-                    layer_count: 1,
-                })
-                .image_extent(vk::Extent3D {
-                    width: width.max(1),
-                    height: height.max(1),
-                    depth: 1,
-                });
             unsafe {
                 device.cmd_copy_buffer_to_image(
                     command,
                     staging.buffer,
                     image_handle,
                     vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    &[region],
+                    &regions,
                 );
             }
-            cmd_image_barrier(
+            cmd_image_barrier_subresource(
                 device,
                 command,
                 image_handle,
-                aspect,
-                mips,
-                layers,
+                range,
                 vk::ImageLayout::TRANSFER_DST_OPTIMAL,
                 vk::ImageLayout::GENERAL,
                 vk::PipelineStageFlags::TRANSFER,
@@ -633,6 +691,19 @@ impl SharedGpu {
             );
         })?;
         Ok(())
+    }
+
+    /// Sube un único nivel a una mip/capa concreta (API de compatibilidad).
+    pub fn upload_rgba_layer(
+        &self,
+        image: &GpuImage,
+        mip: u32,
+        layer: u32,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Result<(), VulkanError> {
+        self.upload_rgba_mips_at(image, mip, layer, &[(width, height, rgba)])
     }
 
     /// Sube un subrectángulo RGBA a una imagen (atlas HUD).
@@ -733,6 +804,9 @@ impl SharedGpu {
     }
 
     /// Graba, envía y espera un command buffer de un solo uso (uploads y builds).
+    ///
+    /// Reutiliza el fence y el command buffer del device: `one_shot_lock` serializa su uso y
+    /// `wait_for_fences` deja el fence señalado antes de que la siguiente llamada lo reinicie.
     pub fn one_shot(
         &self,
         record: impl FnOnce(&ash::Device, vk::CommandBuffer),
@@ -742,16 +816,16 @@ impl SharedGpu {
             .one_shot_lock
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
-        let command = unsafe {
-            self.inner.device.allocate_command_buffers(
-                &vk::CommandBufferAllocateInfo::default()
-                    .command_pool(self.inner.one_shot_pool)
-                    .level(vk::CommandBufferLevel::PRIMARY)
-                    .command_buffer_count(1),
-            )
-        }
-        .map_err(|error| vk_error("reservar un command buffer", error))?[0];
+        let (fence, command) = self.one_shot_resources();
         unsafe {
+            self.inner
+                .device
+                .reset_fences(&[fence])
+                .map_err(|error| vk_error("reiniciar el fence de upload", error))?;
+            self.inner
+                .device
+                .reset_command_buffer(command, vk::CommandBufferResetFlags::empty())
+                .map_err(|error| vk_error("reiniciar el command buffer de upload", error))?;
             self.inner
                 .device
                 .begin_command_buffer(
@@ -768,12 +842,6 @@ impl SharedGpu {
                 .end_command_buffer(command)
                 .map_err(|error| vk_error("cerrar un command buffer", error))?;
         }
-        let fence = unsafe {
-            self.inner
-                .device
-                .create_fence(&vk::FenceCreateInfo::default(), None)
-                .map_err(|error| vk_error("crear un fence de upload", error))?
-        };
         let buffers = [command];
         let submit = vk::SubmitInfo::default().command_buffers(&buffers);
         {
@@ -793,12 +861,34 @@ impl SharedGpu {
                     .map_err(|error| vk_error("esperar un upload", error))?;
             }
         }
-        unsafe {
-            self.inner.device.destroy_fence(fence, None);
-            self.inner
-                .device
-                .free_command_buffers(self.inner.one_shot_pool, &[command]);
-        }
         Ok(())
+    }
+}
+
+fn align_up(value: usize, align: usize) -> usize {
+    value.div_ceil(align) * align
+}
+
+/// Barrera de imagen acotada a un rango explícito: el helper de `gpu/mod.rs` siempre
+/// empieza en mip 0 y capa 0, aquí hace falta escribir una sola capa del array.
+fn cmd_image_barrier_subresource(
+    device: &ash::Device,
+    command: vk::CommandBuffer,
+    image: vk::Image,
+    range: vk::ImageSubresourceRange,
+    old_layout: vk::ImageLayout,
+    new_layout: vk::ImageLayout,
+    src_stage: vk::PipelineStageFlags,
+    dst_stage: vk::PipelineStageFlags,
+    src_access: vk::AccessFlags,
+    dst_access: vk::AccessFlags,
+) {
+    let barrier = super::image_memory_barrier2(
+        image, range, old_layout, new_layout, src_stage, dst_stage, src_access, dst_access,
+    );
+    let barriers = [barrier];
+    let dependency = vk::DependencyInfo::default().image_memory_barriers(&barriers);
+    unsafe {
+        device.cmd_pipeline_barrier2(command, &dependency);
     }
 }

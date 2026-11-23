@@ -202,6 +202,15 @@ fn try_begin_entity_drag_at_press(
     if let Some(axis) = axis {
         if axis == GIZMO_CENTER_AXIS && state.transform_gizmo_mode == TransformGizmoMode::Translate
         {
+            let gizmo_axes_only = state
+                .selected_entity_ids()
+                .iter()
+                .copied()
+                .any(|id| state.sun_entity == Some(id) || state.is_reflection_probe_entity(id));
+            if gizmo_axes_only {
+                *left_click_pos = None;
+                return;
+            }
             if let Some(plane_point) = state.selection_center() {
                 let plane_normal = state.camera.view_forward();
                 if let Some(last_world) =
@@ -284,9 +293,8 @@ fn try_promote_left_click_to_entity_drag(
     let Some(hit) = state.selected_entity_at_pixel(press.0, press.1) else {
         return;
     };
-    // El sol se mueve SOLO con el gizmo: un clic+arrastre sobre su halo no debe
-    // arrastrarlo en el plano de vista (y menos aún al hacer clic para activar).
-    if state.sun_entity == Some(hit) {
+    // El sol y las sondas se mueven SOLO con las flechas del gizmo.
+    if state.sun_entity == Some(hit) || state.is_reflection_probe_entity(hit) {
         return;
     }
     if let Some(plane_point) = state.selection_center() {

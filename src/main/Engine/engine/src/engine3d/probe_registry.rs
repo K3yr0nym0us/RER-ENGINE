@@ -17,6 +17,13 @@ pub const REFLECTION_PROBE_PATH_MARKER: &str = "[ReflectionProbe]";
 /// Radio del gizmo de editor para probes (metros).
 pub const REFLECTION_PROBE_GIZMO_RADIUS_M: f32 = 0.3;
 
+/// Semieje de pick/hover/gizmo de flechas. El `scale` de la entidad es el
+/// volumen de influencia (`radio * 2`), no el tamaño visual del editor.
+#[must_use]
+pub fn reflection_probe_editor_pick_half_extent() -> f32 {
+    (REFLECTION_PROBE_GIZMO_RADIUS_M * 1.35).max(0.2)
+}
+
 /// Número máximo de reflection probes simultáneas (= capas del cubemap array / 6).
 pub const MAX_PROBES: usize = 8;
 
@@ -258,6 +265,16 @@ mod tests {
         // `spawn_reflection_probe_entity` guarda `scale = radio * 2`.
         assert!((reflection_probe_world_radius(40.0) - 20.0).abs() < 1e-5);
         assert!((reflection_probe_world_radius(0.0) - 0.15).abs() < 1e-5);
+    }
+
+    #[test]
+    fn editor_pick_half_ignores_influence_scale() {
+        let half = reflection_probe_editor_pick_half_extent();
+        assert!(half < 1.0);
+        assert!(
+            half * 10.0 < DEFAULT_REFLECTION_PROBE_INFLUENCE_M,
+            "el gizmo de flechas no debe usar el volumen de {DEFAULT_REFLECTION_PROBE_INFLUENCE_M} m"
+        );
     }
 
     #[test]

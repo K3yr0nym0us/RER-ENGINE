@@ -9,7 +9,7 @@
 //! - Pool de descriptores DEDICADO (decisión del plan): los sets de partículas no
 //!   comparten presupuesto con los del renderer.
 //!
-//! Sincronización (todas con `cmd_pipeline_barrier` clásico, patrón del repo):
+//! Sincronización (todas con `cmd_pipeline_barrier2` / Synchronization2):
 //! 1. `vkCmdFillBuffer` del contador de salida + barrera `TRANSFER_WRITE -> COMPUTE`.
 //! 2. Barrera compute previo -> compute (buffers de lectura + indirecto).
 //! 3. `dispatch_indirect` de `spawn_sim`.
@@ -432,6 +432,7 @@ impl ParticlePool {
 
         let volumetric_splat_pipeline = compute_pipeline(
             device,
+            gpu.pipeline_cache(),
             spv("volume_splat"),
             volumetric_splat_layout,
             &mut shaders,
@@ -439,6 +440,7 @@ impl ParticlePool {
         )?;
         let sim_pipeline = compute_pipeline(
             device,
+            gpu.pipeline_cache(),
             spv("particle_spawn_sim"),
             sim_layout,
             &mut shaders,
@@ -446,6 +448,7 @@ impl ParticlePool {
         )?;
         let build_pipeline = compute_pipeline(
             device,
+            gpu.pipeline_cache(),
             spv("particle_build_indirect"),
             build_layout,
             &mut shaders,
@@ -455,6 +458,7 @@ impl ParticlePool {
         let draw_frag = shader(device, spv("particle_render.frag"), &mut shaders)?;
         let draw_pipeline = particle_graphics_pipeline(
             device,
+            gpu.pipeline_cache(),
             draw_layout,
             draw_vert,
             draw_frag,
@@ -463,6 +467,7 @@ impl ParticlePool {
         )?;
         let draw_alpha_pipeline = particle_graphics_pipeline(
             device,
+            gpu.pipeline_cache(),
             draw_layout,
             draw_vert,
             draw_frag,
@@ -471,11 +476,18 @@ impl ParticlePool {
         )?;
         // WBOIT: acumulación en 2 adjuntos (RGBA16F + R16F) y resolve fullscreen.
         let wboit_frag = shader(device, spv("particle_wboit.frag"), &mut shaders)?;
-        let wboit_pipeline =
-            particle_wboit_pipeline(device, draw_layout, draw_vert, wboit_frag, &mut pipelines)?;
+        let wboit_pipeline = particle_wboit_pipeline(
+            device,
+            gpu.pipeline_cache(),
+            draw_layout,
+            draw_vert,
+            wboit_frag,
+            &mut pipelines,
+        )?;
         let resolve_frag = shader(device, spv("particle_wboit_resolve.frag"), &mut shaders)?;
         let resolve_pipeline = full_screen_pipeline(
             device,
+            gpu.pipeline_cache(),
             resolve_layout,
             spv("full.vert"),
             resolve_frag,
@@ -1250,6 +1262,7 @@ fn push_layout(
 
 fn compute_pipeline(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     bytes: &[u8],
     layout: vk::PipelineLayout,
     shaders: &mut Vec<vk::ShaderModule>,
@@ -1263,9 +1276,7 @@ fn compute_pipeline(
     let info = vk::ComputePipelineCreateInfo::default()
         .stage(stage)
         .layout(layout);
-    let pipeline = match unsafe {
-        device.create_compute_pipelines(vk::PipelineCache::null(), &[info], None)
-    } {
+    let pipeline = match unsafe { device.create_compute_pipelines(cache, &[info], None) } {
         Ok(mut created) => created.remove(0),
         Err((created, error)) => {
             for partial in created {
@@ -1290,6 +1301,7 @@ enum BlendMode {
 /// lluvia/nieve `SRC_ALPHA/ONE_MINUS_SRC_ALPHA` (convención de `graphics()` del repo).
 fn particle_graphics_pipeline(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: vk::ShaderModule,
@@ -1365,20 +1377,18 @@ fn particle_graphics_pipeline(
         .dynamic_state(&dynamic)
         .layout(layout)
         .push_next(&mut rendering);
-    let pipeline =
-        match unsafe { device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None) }
-        {
-            Ok(mut created) => created.remove(0),
-            Err((created, error)) => {
-                for partial in created {
-                    unsafe { device.destroy_pipeline(partial, None) };
-                }
-                return Err(vk_error(
-                    "crear el pipeline de billboards de partículas",
-                    error,
-                ));
+    let pipeline = match unsafe { device.create_graphics_pipelines(cache, &[info], None) } {
+        Ok(mut created) => created.remove(0),
+        Err((created, error)) => {
+            for partial in created {
+                unsafe { device.destroy_pipeline(partial, None) };
             }
-        };
+            return Err(vk_error(
+                "crear el pipeline de billboards de partículas",
+                error,
+            ));
+        }
+    };
     pipelines.push(pipeline);
     Ok(pipeline)
 }
@@ -1389,6 +1399,7 @@ fn particle_graphics_pipeline(
 /// feature `independentBlend` (habilitada en `context.rs`).
 fn particle_wboit_pipeline(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert: vk::ShaderModule,
     frag: vk::ShaderModule,
@@ -1460,17 +1471,15 @@ fn particle_wboit_pipeline(
         .dynamic_state(&dynamic)
         .layout(layout)
         .push_next(&mut rendering);
-    let pipeline =
-        match unsafe { device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None) }
-        {
-            Ok(mut created) => created.remove(0),
-            Err((created, error)) => {
-                for partial in created {
-                    unsafe { device.destroy_pipeline(partial, None) };
-                }
-                return Err(vk_error("crear el pipeline WBOIT de partículas", error));
+    let pipeline = match unsafe { device.create_graphics_pipelines(cache, &[info], None) } {
+        Ok(mut created) => created.remove(0),
+        Err((created, error)) => {
+            for partial in created {
+                unsafe { device.destroy_pipeline(partial, None) };
             }
-        };
+            return Err(vk_error("crear el pipeline WBOIT de partículas", error));
+        }
+    };
     pipelines.push(pipeline);
     Ok(pipeline)
 }
@@ -1479,6 +1488,7 @@ fn particle_wboit_pipeline(
 /// escribe una sola imagen de color sin depth.
 fn full_screen_pipeline(
     device: &ash::Device,
+    cache: vk::PipelineCache,
     layout: vk::PipelineLayout,
     vert_bytes: &[u8],
     frag: vk::ShaderModule,
@@ -1529,22 +1539,20 @@ fn full_screen_pipeline(
         .dynamic_state(&dynamic)
         .layout(layout)
         .push_next(&mut rendering);
-    let pipeline =
-        match unsafe { device.create_graphics_pipelines(vk::PipelineCache::null(), &[info], None) }
-        {
-            Ok(mut created) => created.remove(0),
-            Err((created, error)) => {
-                for partial in created {
-                    unsafe { device.destroy_pipeline(partial, None) };
-                }
-                return Err(vk_error("crear el pipeline de resolve WBOIT", error));
+    let pipeline = match unsafe { device.create_graphics_pipelines(cache, &[info], None) } {
+        Ok(mut created) => created.remove(0),
+        Err((created, error)) => {
+            for partial in created {
+                unsafe { device.destroy_pipeline(partial, None) };
             }
-        };
+            return Err(vk_error("crear el pipeline de resolve WBOIT", error));
+        }
+    };
     pipelines.push(pipeline);
     Ok(pipeline)
 }
 
-/// Barreras de buffer de memoria (patrón barrier1 del repo; Vulkan 1.3 lo mantiene).
+/// Barreras de buffer de memoria mediante Synchronization2 (`DependencyInfo`).
 fn buffer_barriers(
     device: &ash::Device,
     cmd: vk::CommandBuffer,
@@ -1554,30 +1562,16 @@ fn buffer_barriers(
     dst_stage: vk::PipelineStageFlags,
     dst_access: vk::AccessFlags,
 ) {
-    let barriers: Vec<vk::BufferMemoryBarrier> = buffers
+    let barriers: Vec<vk::BufferMemoryBarrier2<'_>> = buffers
         .iter()
         .map(|buffer| {
-            vk::BufferMemoryBarrier::default()
-                .src_access_mask(src_access)
-                .dst_access_mask(dst_access)
-                .src_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .dst_queue_family_index(vk::QUEUE_FAMILY_IGNORED)
-                .buffer(*buffer)
-                .offset(0)
-                .size(vk::WHOLE_SIZE)
+            crate::engine3d::vulkan::gpu::buffer_memory_barrier2(
+                *buffer, src_stage, dst_stage, src_access, dst_access,
+            )
         })
         .collect();
-    unsafe {
-        device.cmd_pipeline_barrier(
-            cmd,
-            src_stage,
-            dst_stage,
-            vk::DependencyFlags::empty(),
-            &[],
-            &barriers,
-            &[],
-        );
-    }
+    let dependency = vk::DependencyInfo::default().buffer_memory_barriers(&barriers);
+    unsafe { device.cmd_pipeline_barrier2(cmd, &dependency) };
 }
 
 #[cfg(test)]

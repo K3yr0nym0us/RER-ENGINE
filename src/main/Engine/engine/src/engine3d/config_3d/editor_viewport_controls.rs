@@ -58,6 +58,9 @@ pub fn distance_to_frame_aabb(half_extents: Vec3, fov_y_rad: f32, aspect: f32, m
     dist_v.max(dist_h).clamp(0.5, 500.0)
 }
 
+/// Intersección directa rayo/plano en glam, equivalente al raycast de parry
+/// contra un plano infinito. Se conserva la fórmula para no introducir
+/// conversiones a nalgebra en el array de gizmos.
 pub(crate) fn ray_plane_intersect(
     ray_origin: Vec3,
     ray_dir: Vec3,

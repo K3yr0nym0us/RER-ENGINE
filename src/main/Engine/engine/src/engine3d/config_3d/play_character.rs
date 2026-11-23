@@ -15,21 +15,9 @@ use crate::engine3d::entity_save_meta::EntitySaveMeta;
 use crate::engine3d::ipc::{EngineEvent, send_event};
 
 impl State {
-    /// Punto delante del jugador a altura de torso (colocación de reflection probes).
+    /// Centro del viewport del editor (pivote de la órbita), no delante del jugador.
     pub(crate) fn default_reflection_probe_spawn_position(&self) -> [f32; 3] {
-        const FORWARD_M: f32 = 2.0;
-
-        let feet = self.play_character_feet_position();
-        let half_h = self
-            .play_character_entity
-            .and_then(|id| self.world.get::<Transform>(id))
-            .map(|t| self.play_character_body_height_world(t.scale.y) * 0.5)
-            .unwrap_or(PLAY_CHARACTER_BODY_HEIGHT * 0.5);
-        let body_center = Vec3::new(feet.x, feet.y + half_h, feet.z);
-        let yaw = self.play_character_body_yaw();
-        let (sy, cy) = yaw.sin_cos();
-        let forward = Vec3::new(-sy, 0.0, cy);
-        (body_center + forward * FORWARD_M).to_array()
+        self.orbit_view_anchor().to_array()
     }
 
     /// AABB de hover/click alineado al volumen visual del jugador (centro de malla, no solo cápsula).

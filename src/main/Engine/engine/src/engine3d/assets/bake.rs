@@ -35,6 +35,10 @@ fn category_to_u8(category: Option<&str>) -> u8 {
     }
 }
 
+/// Los bytes son RGBA8 sin conversión de color: el `.rtex` solo admite la etiqueta
+/// `Rgba8UnormSrgb`, pero en GPU se suben a un array `R8G8B8A8_UNORM` y la lectura
+/// lineal la hace el shader. Se conservan los mips CPU (generados con `imageops`)
+/// para el bake/precarga; en tiempo de ejecución la cadena se regenera con blits.
 fn texture_to_rtex(tex: &MaterialTextureCpu) -> RtexData {
     let mips = if let Some(chain) = &tex.layer_mips {
         chain.iter().cloned().collect()

@@ -121,6 +121,7 @@ impl GbufferPipeSet {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn create(
         device: &ash::Device,
+        cache: vk::PipelineCache,
         forward_layout: vk::PipelineLayout,
         skinned_layout: vk::PipelineLayout,
         forward_vert: vk::ShaderModule,
@@ -144,6 +145,7 @@ impl GbufferPipeSet {
         let built = (|| {
             let forward = graphics(
                 device,
+                cache,
                 forward_layout,
                 forward_vert,
                 Some(forward_frag),
@@ -156,6 +158,7 @@ impl GbufferPipeSet {
             )?;
             let forward_blend = graphics_blend_color_only(
                 device,
+                cache,
                 forward_layout,
                 forward_vert,
                 Some(forward_frag),
@@ -167,6 +170,7 @@ impl GbufferPipeSet {
             )?;
             let skinned = graphics(
                 device,
+                cache,
                 skinned_layout,
                 skinned_vert,
                 Some(forward_frag),
@@ -179,6 +183,7 @@ impl GbufferPipeSet {
             )?;
             let skinned_blend = graphics_blend_color_only(
                 device,
+                cache,
                 skinned_layout,
                 skinned_vert,
                 Some(forward_frag),
@@ -192,6 +197,7 @@ impl GbufferPipeSet {
                 if let Some((layout, vert, frag)) = sky {
                     graphics_no_depth_test(
                         device,
+                        cache,
                         layout,
                         vert,
                         Some(frag),

@@ -1,11 +1,28 @@
 // Política de texturas embebidas en glTF/GLB (carga en editor + catálogo por material).
 
 use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader, Cursor, Seek};
 use std::path::Path;
 
 use gltf::image::Source;
+use image::ImageReader;
 
-/// Dimensiones aproximadas leyendo solo cabecera JPEG/PNG (sin decodificar píxeles).
+/// Dimensiones leyendo solo la cabecera a través del decoder de `image` (sin decodificar píxeles).
+///
+/// `with_guessed_format` detecta el formato por magic bytes, así que cubre PNG/JPEG/WebP y
+/// cualquier formato añadido a la crate. Devuelve `None` si el formato no se reconoce.
+fn dimensions_via_image_reader<R: BufRead + Seek>(reader: R) -> Option<(u32, u32)> {
+    let (w, h) = ImageReader::new(reader)
+        .with_guessed_format()
+        .ok()?
+        .into_dimensions()
+        .ok()?;
+    (w > 0 && h > 0).then_some((w, h))
+}
+
+/// Fallback temporal: dimensiones aproximadas leyendo solo cabecera JPEG/PNG (sin decodificar píxeles).
+///
+/// Se conserva un tiempo para formatos poco comunes que `image` no detecte; retirar en un commit posterior.
 pub fn peek_encoded_dimensions(bytes: &[u8]) -> Option<(u32, u32)> {
     if bytes.len() >= 24 && bytes[0] == 0x89 && bytes[1..4] == *b"PNG" {
         let w = u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
@@ -66,7 +83,7 @@ pub(crate) fn gltf_image_search_label(image: gltf::Image) -> String {
     parts.join(" ")
 }
 
-/// Dimensiones JPEG/PNG sin copiar el blob embebido completo (crítico en GLB grandes).
+/// Dimensiones sin copiar el blob embebido completo ni decodificar píxeles (crítico en GLB grandes).
 pub(crate) fn peek_gltf_image_dimensions(
     image: gltf::Image,
     buffers: &[gltf::buffer::Data],
@@ -77,11 +94,18 @@ pub(crate) fn peek_gltf_image_dimensions(
             let parent = &buffers[view.buffer().index()].0;
             let begin = view.offset();
             let end = begin.saturating_add(view.length()).min(parent.len());
-            peek_encoded_dimensions(&parent[begin..end])
+            let bytes = &parent[begin..end];
+            dimensions_via_image_reader(Cursor::new(bytes))
+                .or_else(|| peek_encoded_dimensions(bytes))
         }
         Source::Uri { uri, .. } => {
             let base = base?;
             let path = base.join(uri.strip_prefix('/').unwrap_or(uri));
+            let file = std::fs::File::open(&path).ok()?;
+            if let Some(dims) = dimensions_via_image_reader(BufReader::new(file)) {
+                return Some(dims);
+            }
+            // Fallback: solo si `image` no reconoce el formato, leemos la cabecera fija.
             let mut file = std::fs::File::open(path).ok()?;
             let mut header = [0u8; 32 * 1024];
             let n = std::io::Read::read(&mut file, &mut header).ok()?;
