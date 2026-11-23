@@ -239,6 +239,7 @@ impl ModalWindow {
 
         window.set_visible(true);
         window.focus_window();
+        window.request_redraw();
 
         Ok(Self {
             window,

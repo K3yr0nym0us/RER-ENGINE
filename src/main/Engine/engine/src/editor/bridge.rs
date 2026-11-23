@@ -12,14 +12,6 @@ fn write_line(line: &str) {
     let _ = stdout.flush();
 }
 
-/// Reenvía una línea del motor tal cual para que Electron la entregue a React.
-pub fn forward_line(line: &str) {
-    if line.trim().is_empty() {
-        return;
-    }
-    write_line(line);
-}
-
 /// Avisa a Electron de que la ventana Rust ya está lista.
 ///
 /// Electron oculta su ventana React y la deja viva como host de las ventanas

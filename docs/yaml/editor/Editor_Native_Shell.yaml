@@ -8,8 +8,8 @@
 #   - docs/yaml/editor/Player_UI_Model.yaml (dropdown Interfaz de usuario)
 #   - docs/yaml/gameplay/Blueprints_Model_2D.yaml / _3D.yaml (quick build)
 
-version: 1
-updated: 2026-11-17
+version: 2
+updated: 2026-11-23
 
 window:
   single_window: true
@@ -234,6 +234,10 @@ sidebar_native:
       El fondo es #1f2237 y las pestanas usan widgets::modal_tab.
       Cero delegacion: las ventanas migradas poseen su estado y envian comandos al motor.
       El guardado incluye pantallas UI, blueprints, entity_meta y scripts desde el editor.
+      Present: el viewport sigue el FPS del proyecto (0 = sin límite). Las ventanas
+      modal y el selector de modelos se piden a 30 FPS (`AUX_WINDOW_FPS` en host.rs);
+      el input (clic, tecla, rueda, resize) pide redraw al instante. Sin este tope,
+      plugins/worldgen presentaban Vulkan al mismo ritmo que un viewport sin límite.
       ui_set_active_screen no es ventana: accion 100% Rust en sidebar_left (sync + set_active).
     host: src/main/Engine/engine/src/editor/modal_window.rs
     modals:

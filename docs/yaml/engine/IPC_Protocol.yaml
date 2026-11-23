@@ -9,8 +9,8 @@
 #   - src/main/Engine/engine/ARCHITECTURE.md
 #   - .cursor/rules/shared-types.mdc
 
-version: 3
-updated: 2026-11-19
+version: 4
+updated: 2026-11-23
 
 summary: |
   El launcher Electron envía la configuración de arranque (`set-game-style`) y
@@ -74,7 +74,13 @@ transport:
   console_capture:
     note: Electron permanece como proceso padre y reenvía stdout/stderr del editor a la terminal (yarn dev)
   editor_engine:
-    note: el editor egui consume el motor en proceso; no hay transporte IPC entre ellos
+    note: |
+      El editor egui consume el motor en proceso; no hay transporte IPC entre ellos.
+      Los `EngineEvent` van por un canal in-process (`install_event_sink` →
+      `UserEvent::EngineEvent`). Ya no se duplican a stdout para Electron: el
+      launcher no interpreta esos JSON, solo captura la consola en yarn dev.
+      Siguen en stdout los avisos del puente (`editor_ready`, `editor_locale`,
+      `project_saved` / `project_save_failed`).
 
 flow: |
   Launcher (React)        Main (Electron)              Editor egui / Motor (Rust)

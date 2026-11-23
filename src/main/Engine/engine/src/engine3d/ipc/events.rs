@@ -802,7 +802,8 @@ fn emit(json: String, silent: bool) {
     }
 }
 
-/// Escribe un evento JSON en stdout y lo flushea inmediatamente.
+/// Serializa un evento JSON. Con sink in-process (editor) va por canal;
+/// si no, a stdout con flush (motor standalone).
 pub fn send_event(event: &EngineEvent) {
     if let Ok(json) = serde_json::to_string(event) {
         emit(json, false);

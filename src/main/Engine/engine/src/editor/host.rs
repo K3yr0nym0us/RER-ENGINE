@@ -22,6 +22,12 @@ use crate::editor::modal_window::{ModalWindow, NativeModal};
 use crate::editor::user_event::{LogEvent, UserEvent};
 use rer_engine_core::vulkan::VulkanOptions;
 
+/// Present de ventanas modal / selector de modelos, independiente del FPS del
+/// viewport. Con «Sin límites» el editor hace `Poll`; estas superficies no
+/// deben presentar Vulkan a ese ritmo. El input de la modal sigue pidiendo
+/// redraw al instante (`handle_modal_window_event`).
+const AUX_WINDOW_FPS: u64 = 30;
+
 /// Motor in-process del editor: 3D o 2D según el tipo de proyecto.
 pub(crate) enum InProcessEngine {
     Three(Box<crate::engine3d::host::App>),
@@ -246,8 +252,9 @@ impl EditorWindow {
             .name("engine-events".into())
             .spawn(move || {
                 for line in sink_rx {
-                    // Mismo JSON hacia Electron: las modales no cambian.
-                    crate::editor::bridge::forward_line(&line);
+                    // In-process: el editor consume el JSON por UserEvent.
+                    // Electron ya no interpreta eventos del motor (solo captura
+                    // stdout en yarn dev); reenviarlos saturaba la consola.
                     if let Ok(value) = serde_json::from_str::<Value>(&line)
                         && events_proxy
                             .send_event(UserEvent::EngineEvent(value))
@@ -312,7 +319,6 @@ impl EditorWindow {
             .name("engine2d-events".into())
             .spawn(move || {
                 for line in sink_rx {
-                    crate::editor::bridge::forward_line(&line);
                     if let Ok(value) = serde_json::from_str::<Value>(&line)
                         && events_proxy
                             .send_event(UserEvent::EngineEvent(value))
@@ -968,6 +974,8 @@ struct EditorApplication {
     proxy: EventLoopProxy<UserEvent>,
     editor: Option<EditorWindow>,
     next_frame_at: Instant,
+    /// Próximo present de modal / model picker (`AUX_WINDOW_FPS`).
+    next_aux_frame_at: Instant,
     target_fps: u64,
     /// Tras guardar desde la modal de salida, cerrar el editor.
     exit_after_save: bool,
@@ -992,11 +1000,19 @@ impl EditorApplication {
             editor.sync_modal_window(event_loop);
             editor.sync_model_picker_window(event_loop);
             editor.window.request_redraw();
-            if let Some(modal) = editor.modal_window.as_ref() {
-                modal.request_redraw();
-            }
-            if let Some(picker) = editor.model_picker_window.as_ref() {
-                picker.request_redraw();
+            let has_aux = editor.modal_window.is_some() || editor.model_picker_window.is_some();
+            if has_aux {
+                let now = Instant::now();
+                if now >= self.next_aux_frame_at {
+                    self.next_aux_frame_at =
+                        now + Duration::from_nanos(1_000_000_000 / AUX_WINDOW_FPS);
+                    if let Some(modal) = editor.modal_window.as_ref() {
+                        modal.request_redraw();
+                    }
+                    if let Some(picker) = editor.model_picker_window.as_ref() {
+                        picker.request_redraw();
+                    }
+                }
             }
         }
     }
@@ -1857,6 +1873,7 @@ pub fn run() {
         proxy,
         editor: None,
         next_frame_at: Instant::now(),
+        next_aux_frame_at: Instant::now(),
         target_fps: 0,
         exit_after_save: false,
         exit_request_pending: false,
