@@ -1064,19 +1064,27 @@ impl FrameRenderer {
             let extent = self.ssr_extent();
             self.targets.resize_ssr(&self.gpu, extent)?;
         }
-        // El tier de sombras exige otro resolución: se reasigna SOLO el shadow map. Es seguro
-        // porque `begin_frame` espera a la GPU (`RER_VK_SYNC_FRAMES`) antes de grabar, así la
-        // imagen vieja no puede estar referenciada por un frame en vuelo.
+        // El tier de sombras exige otra resolución: se reasigna SOLO el shadow map.
+        // `begin_frame` espera el fence de ESTE slot; el editor además pone
+        // `RER_VK_SYNC_FRAMES=0`, así que el otro frame en vuelo puede seguir muestreando
+        // la vista vieja. Hay que esperar a la GPU, reescribir los sets y soltar el
+        // `GpuImage` antiguo después: si el Drop corre antes, el validador invalida el
+        // command buffer que ya está en recording.
         let wanted_shadow = input
             .shadow_map_size
             .clamp(SHADOW_MAP_MIN, self.gpu.max_image_dimension());
         if wanted_shadow != self.shadow_size {
+            unsafe {
+                self.gpu.device().device_wait_idle().map_err(|error| {
+                    vk_error("esperar a la GPU antes de reasignar el shadow map", error)
+                })?;
+            }
             let mut size = wanted_shadow;
             // Un tier Ultra pide 8192² de D32 (256 MB). Si el adaptador no lo aguanta, se baja a
             // la mitad en vez de abortar el frame en cada fotograma.
-            loop {
+            let retired_shadow = loop {
                 match self.targets.recreate_shadow(&self.gpu, size) {
-                    Ok(()) => break,
+                    Ok(old) => break old,
                     Err(error) if size > SHADOW_MAP_MIN => {
                         log::warn!(
                             "[sombras] no se pudo crear el shadow map de {size} px ({error}); se intenta con la mitad."
@@ -1085,10 +1093,11 @@ impl FrameRenderer {
                     }
                     Err(error) => return Err(error),
                 }
-            }
+            };
             self.shadow_size = size;
             self.shadow_layout = DEPTH_ATTACHMENT;
             self.rewrite_target_descriptors()?;
+            drop(retired_shadow);
             log::info!("[sombras] shadow map reasignado a {size}x{size} px");
         }
         if self.albedo_image != input.albedo.image {
@@ -1122,31 +1131,30 @@ impl FrameRenderer {
         // con los de 1× porque la captura de sondas dibuja en imágenes de una muestra; solo
         // `forward_pass` cambia a los pipelines MSAA.
         self.ensure_msaa(input.msaa_samples, &device)?;
-        // Partículas: compute de simulación ANTES de cualquier pase gráfico (fill del
-        // contador de salida + sim + build_indirect + barreras Compute -> Graphics).
-        if !input.particles.is_empty() {
-            self.particle_pool
-                .sim(slot, input.particles, &device, cmd)?;
-        }
-        // Sombras volumétricas: la calidad la fija el tier de sombras y el pase sigue el
-        // mismo interruptor que el shadow map (`shadows && sun_above_horizon`).
+        // Sombras volumétricas: la calidad la fija el tier de sombras. Hay que reasignar
+        // (y reenlazar) ANTES del sim de partículas: si `ensure` destruye las vistas 3D
+        // después de `cmd_bind_descriptor_sets`, el CB queda inválido el resto del frame.
         let volume_wanted =
             input.volumetric_resolution > 0 && input.shadows && input.sun_above_horizon;
-        let volume_rebound = self.volumetric.ensure(
+        if let Some(retired_volume) = self.volumetric.ensure(
             &self.gpu,
             input.volumetric_resolution.max(8),
             input.volumetric_steps,
             input.volumetric_blend,
-        )?;
-        // Al cambiar el tier se reasignan las imágenes: reenlazamos sus descriptores antes
-        // de que el splat y el forward las usen en este mismo frame.
-        if volume_rebound {
+        )? {
             self.particle_pool
                 .rewrite_volumetric_views(&self.volumetric)?;
             let sampler = self.volumetric.sampler();
             let light_views = [self.volumetric.light_view(0), self.volumetric.light_view(1)];
             let ubos = [self.volumetric.ubo(0).buffer, self.volumetric.ubo(1).buffer];
             self.rewrite_scene_volume_descriptors(sampler, light_views, ubos)?;
+            drop(retired_volume);
+        }
+        // Partículas: compute de simulación ANTES de cualquier pase gráfico (fill del
+        // contador de salida + sim + build_indirect + barreras Compute -> Graphics).
+        if !input.particles.is_empty() {
+            self.particle_pool
+                .sim(slot, input.particles, &device, cmd)?;
         }
         let volume = &mut self.volumetric;
         let casters: Vec<(u32, vk::DescriptorSet, u32)> = if volume_wanted {

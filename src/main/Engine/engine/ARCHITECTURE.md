@@ -85,13 +85,17 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
 
 - **Sombras** (`set_shadow_tier`): resuelve el lado del shadow map (Low 1024, Medium 2048,
   High 4096, Ultra 8192; `Off` no dibuja el pase). `record()` reasigna solo esa imagen cuando
-  cambia (`Targets::recreate_shadow`), recortado a `max_image_dimension2_d`, y si la asignación
-  falla baja a la mitad en vez de abortar cada frame. El texel del PCF y el snapping de la
-  matriz de luz salen del tamaño real (`active_shadow_map_size`), y el radio PCF escala con la
-  raíz del tamaño para que la penumbra no se afinde al subir resolución; por encima de 2.5
-  texeles el kernel pasa de 3×3 a 5×5. Sigue siendo un único mapa sobre los bounds del mundo:
-  no hay cascadas (CSM). Se intentó y se retiró: la evidencia de qué quedó descartado está en
-  `docs/yaml/rendering/Shadows_3D.yaml` (`csm_attempt`) para no volver a empezar de cero.
+  cambia (`Targets::recreate_shadow` devuelve el mapa viejo). El command buffer ya está
+  grabando y el editor pone `RER_VK_SYNC_FRAMES=0`, así que hay que `device_wait_idle`,
+  reescribir los descriptor sets y soltar el `GpuImage` después; el volumen 3D del mismo
+  tier se reasigna antes del sim de partículas. Recortado a `max_image_dimension2_d`, y si
+  la asignación falla baja a la mitad en vez de abortar cada frame. El texel del PCF y el
+  snapping de la matriz de luz salen del tamaño real (`active_shadow_map_size`), y el radio
+  PCF escala con la raíz del tamaño para que la penumbra no se afinde al subir resolución;
+  por encima de 2.5 texeles el kernel pasa de 3×3 a 5×5. Sigue siendo un único mapa sobre
+  los bounds del mundo: no hay cascadas (CSM). Se intentó y se retiró: la evidencia de qué
+  quedó descartado está en `docs/yaml/rendering/Shadows_3D.yaml` (`csm_attempt`) para no
+  volver a empezar de cero.
 - **MSAA** (`set_msaa_tier`): Low 1× (por defecto, sin multisampling), Medium 2×, High 4×,
   Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
   `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). Con >1× se crean copias

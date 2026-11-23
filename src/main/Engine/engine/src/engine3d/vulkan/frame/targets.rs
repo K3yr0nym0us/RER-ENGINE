@@ -366,14 +366,17 @@ impl Targets {
         Ok(())
     }
 
-    /// Reasigna solo el shadow map al lado pedido por el tier. La imagen vieja se libera con su
-    /// `Drop` (destruye view + image + bloque del allocator).
+    /// Reasigna solo el shadow map al lado pedido por el tier.
+    ///
+    /// Devuelve la imagen vieja para soltarla **después** de reescribir los descriptor sets.
+    /// Si se destruye el `ImageView` mientras el command buffer está grabando y el set de
+    /// escena todavía lo referencia, el validador invalida el buffer (VUID recording).
     pub(super) fn recreate_shadow(
         &mut self,
         gpu: &SharedGpu,
         size: u32,
-    ) -> Result<(), VulkanError> {
-        self.shadow = gpu.create_image(
+    ) -> Result<GpuImage, VulkanError> {
+        let shadow = gpu.create_image(
             vk::Extent2D {
                 width: size,
                 height: size,
@@ -383,7 +386,7 @@ impl Targets {
             vk::ImageAspectFlags::DEPTH,
             "shadow",
         )?;
-        Ok(())
+        Ok(std::mem::replace(&mut self.shadow, shadow))
     }
 
     /// Reasigna solo el target de reflejos RT cuando cambia la resolución del tier RTX.

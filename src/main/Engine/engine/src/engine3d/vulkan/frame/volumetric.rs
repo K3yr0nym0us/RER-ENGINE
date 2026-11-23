@@ -303,24 +303,26 @@ impl VolumetricState {
         })
     }
 
-    /// Ajusta la calidad al tier. Devuelve `true` si se recrearon los recursos (el llamador
-    /// debe reenlazar las vistas en los sets de partículas).
+    /// Ajusta la calidad al tier. Devuelve el estado viejo si se recrearon los recursos:
+    /// el llamador debe reenlazar las vistas y **luego** soltarlo. Destruir las imágenes
+    /// 3D mientras un command buffer en grabación sigue apuntando a sus views invalida el CB.
     pub(super) fn ensure(
         &mut self,
         gpu: &SharedGpu,
         requested: u32,
         steps: u32,
         blend: f32,
-    ) -> Result<bool, VulkanError> {
+    ) -> Result<Option<Self>, VulkanError> {
         self.steps = steps;
         self.blend = blend;
         if volume_resolution(requested, gpu.max_image_dimension()) == self.resolution {
-            return Ok(false);
+            return Ok(None);
         }
-        // El tier cambia en caliente: esperamos a la GPU antes de soltar las imágenes viejas.
+        // El tier cambia en caliente: el otro slot en vuelo puede estar muestreando el volumen.
         let _ = unsafe { gpu.device().device_wait_idle() };
-        *self = Self::new(gpu, requested, steps, blend)?;
-        Ok(true)
+        let mut next = Self::new(gpu, requested, steps, blend)?;
+        std::mem::swap(self, &mut next);
+        Ok(Some(next))
     }
 
     /// Invalida el histórico temporal (carga de escena, resize del volumen).

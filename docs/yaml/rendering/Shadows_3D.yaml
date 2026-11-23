@@ -10,14 +10,16 @@
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 7
-updated: 2026-11-20
+version: 8
+updated: 2026-11-23
 
 principle:
   owner: motor_3d
   pipeline: |
     1. Shadow pass único a `targets.shadow` (D32_SFLOAT) con el lado del tier; se reasigna
-       la imagen cuando cambia el tier (`Targets::recreate_shadow`).
+       la imagen cuando cambia el tier (`Targets::recreate_shadow` devuelve el `GpuImage`
+       viejo). `record()` espera a la GPU, reescribe los descriptor sets y suelta la vista
+       antigua después (ver `live_tier_recreate`).
     2. Sombreado en el forward con sampler de comparación (`LESS_OR_EQUAL`) + PCF; el texel y
        el radio salen del tamaño real del mapa (`State::active_shadow_map_size`).
     3. El mapa pasa ATTACHMENT → READ_ONLY con registro explícito de layout
@@ -78,9 +80,10 @@ commands:
     params: { tier: off | low | medium | high | ultra }
     effect: |
       Cambia la resolución real del shadow map (o salta el pase con Off). `FrameRenderer`
-      detecta el cambio en `record()`, reasigna solo esa imagen y reescribe los descriptors
-      que la referencian en todos los slots en vuelo; el log muestra
-      "[sombras] shadow map reasignado a NxN px".
+      detecta el cambio en `record()`, espera a la GPU (`device_wait_idle`), reasigna esa
+      imagen, reescribe los descriptors de todos los slots y recién entonces suelta el
+      `GpuImage` viejo. El mismo cambio reasigna el volumen 3D antes del sim de partículas
+      (ver `live_tier_recreate`). El log muestra "[sombras] shadow map reasignado a NxN px".
 
 events:
   shadow_tier_changed:
@@ -121,8 +124,10 @@ volumetric_shadows:
     luz directa, no un bloqueo total.
   resources: |
     `VolumetricState` (frame/volumetric.rs) posee 3 volúmenes por slot en vuelo (R32U + 2×R32F),
-    su UBO y sus propios pipelines. Cada slot lee como histórico la imagen de luz del otro slot,
-    así que los descriptores son estables y no se reescriben por frame.
+    su UBO y sus propios pipelines. Cada slot lee como histórico la imagen de luz del otro slot:
+    en régimen estable los descriptores no se reescriben por frame. Al cambiar el tier,
+    `ensure` recrea los volúmenes y devuelve el estado viejo; el llamador reescribe las vistas
+    de partículas/escena y lo suelta después, siempre ANTES de `particle_pool.sim`.
   quality_shared_with_tier:
     # Mismo accordion; sin botones ni campos nuevos en WorldSettings / IPC / .save.
     off:    { resolution: 0,  steps: 0,  blend: 0.00 }
@@ -134,10 +139,42 @@ volumetric_shadows:
       `ShadowTier::{volumetric_resolution, volumetric_steps, volumetric_blend}` derivan estos
       valores. El pase comparte el interruptor del shadow map (`shadows && sun_above_horizon`):
       con Off o de noche no se ejecuta. La resolución se recorta a `max_image_dimension`.
+      Un cambio de tier recrea las imágenes 3D: ver `live_tier_recreate` (no soltar vistas
+      mientras el command buffer está grabando).
   tradeoffs: |
     El clamp vecinal del histórico y el blend bajo limitan el ghosting cuando el humo se mueve;
     `reset_taa_history()` invalida también el volumen al cargar escena. Solo se esparce densidad
     de emisores dentro del volumen que sigue a la cámara (emisiones lejanas no proyectan sombra).
+
+live_tier_recreate:
+  status: implementado
+  symptom: |
+    Cambiar el tier en caliente (World → Shadows) recreaba el mapa y las sombras se veían
+    bien, pero el validador llenaba la consola con VUID `commandBuffer-recording`:
+    `VkImageView` destruido que un `VkDescriptorSet` seguía usando, y a partir de ahí
+    cada `vkCmdBind*` / `Dispatch` / `Draw` del mismo buffer.
+  cause: |
+    `record()` corre DESPUÉS de `begin_frame` (el command buffer ya está en recording).
+    `GpuImage` Drop destruye el `VkImageView` al instante. El editor pone
+    `RER_VK_SYNC_FRAMES=0` durante la carga, así `begin_frame` solo espera el fence de
+    ESTE slot: el otro frame en vuelo y el set de escena siguen referenciando la vista
+    vieja. El comentario que decía que `begin_frame` deja la GPU ociosa era falso en el
+    editor. El mismo tier reasigna el volumen 3D (`VolumetricState::ensure`); si eso
+    ocurre DESPUÉS del sim de partículas, el CB ya enlazó sets con las vistas 3D viejas
+    y queda inválido el resto del frame.
+  contract: |
+    1. `device_wait_idle` antes de soltar recursos que el otro slot en vuelo puede estar
+       muestreando.
+    2. `Targets::recreate_shadow` crea el mapa nuevo y DEVUELVE el `GpuImage` viejo.
+    3. `rewrite_target_descriptors` apunta los sets de todos los slots al view nuevo.
+    4. Recién entonces se suelta la imagen vieja.
+    5. `VolumetricState::ensure` devuelve el estado viejo; se reescriben las vistas de
+       partículas/escena y se suelta después; todo esto ANTES de `particle_pool.sim`.
+  files:
+    - src/main/Engine/engine/src/engine3d/vulkan/frame/mod.rs
+    - src/main/Engine/engine/src/engine3d/vulkan/frame/targets.rs
+    - src/main/Engine/engine/src/engine3d/vulkan/frame/volumetric.rs
+    - src/main/Engine/engine/src/editor/host.rs
 
 camera_dependent_caster_culling:
   status: implementado
