@@ -8,14 +8,12 @@ repetirlos en cada archivo fuente.
 
 ---
 
-## FastNoiseLite
+## Ruido procedimental — tablas de gradientes
 
-- **Repositorio:** https://github.com/Auburn/FastNoiseLite
-- **Archivo de referencia:** `CSharp/FastNoiseLite.cs`
 - **Uso en RER-ENGINE:** puerto a Rust del algoritmo de ruido y de las tablas de
   gradientes (`src/main/Engine/worldgen/src/noise/`). Los literales de las tablas
-  se generaron desde el código original para que los valores coincidan con la
-  referencia.
+  se generaron a partir de la implementación de referencia para que los valores
+  coincidan bit a bit.
 - **Licencia:** MIT — Copyright (c) 2020 Jordan Peck (jordan.me2@gmail.com);
   Copyright (c) 2020 Contributors.
 
@@ -44,9 +42,8 @@ repetirlos en cada archivo fuente.
 
 ---
 
-## KawaiiFluid
+## Núcleo físico de fluidos
 
-- **Repositorio:** https://github.com/GTLBruteForce/KawaiiFluid
 - **Uso en RER-ENGINE:** puerto a Rust del núcleo físico del sistema de fluidos,
   analizado shader a shader
   (`src/main/Engine/engine/src/engine3d/particles/fluid.rs`).
@@ -90,15 +87,13 @@ repetirlos en cada archivo fuente.
 ## Referencias de diseño (worldgen)
 
 El generador de mundos toma como guía de diseño (patrones de seeds por dominio,
-temas de features, optimización de chunks y convención de densidad) a:
+temas de features, optimización de chunks y convención de densidad) referencias
+conceptuales de:
 
-- **primitive-voxels-godot** — https://github.com/TsokasGit/primitive-voxels-godot
-  (sistema procedural de terreno voxel con Marching Cubes para Godot 4). El
-  archivo `LICENSE` del repositorio es CC0 1.0 Universal; el README indica MIT.
-- **VoxelLodTerrain / Voxel Tools (Zylann)** — https://github.com/Zylann/godot_voxel
-  (MIT): hilo de biomas y estructura de chunks por capas Y.
-- **Clasificación de biomas de Whittaker** (temperatura + humedad) y la
-  aproximación de *Neo Terrain* (temperatura, humedad y lapse rate).
+- Sistemas procedurales de terreno voxel con Marching Cubes.
+- Hilos de biomas y estructura de chunks por capas Y.
+- Clasificación de biomas por temperatura y humedad, con aproximación de lapse
+  rate.
 
 Se usaron como referencia conceptual; el código de RER-ENGINE está implementado
 en Rust dentro del crate `worldgen`.
@@ -109,12 +104,12 @@ en Rust dentro del crate `worldgen`.
 
 Patrones de interacción y de API que sirvieron de guía, sin código copiado:
 
-- **Blender**: esquema de navegación del viewport (MMB órbita, Shift+MMB paneo,
+- Esquema de navegación de viewport estilo DCC (MMB órbita, Shift+MMB paneo,
   Ctrl+MMB dolly, rueda zoom, Numpad `.` encuadrar) y corrección de orientación
   Z-up → Y-up en la importación glTF.
-- **Godot**: patrón de cuerpo cinemático (`CharacterBody`) para el deslizamiento
-  multi-paso con snap al suelo y atlas de glifos para la UI del jugador.
-- **Minecraft**: mirar alrededor con el botón derecho del ratón.
+- Patrón de cuerpo cinemático para el deslizamiento multi-paso con snap al suelo
+  y atlas de glifos para la UI del jugador.
+- Mirar alrededor con el botón derecho del ratón.
 
 ---
 

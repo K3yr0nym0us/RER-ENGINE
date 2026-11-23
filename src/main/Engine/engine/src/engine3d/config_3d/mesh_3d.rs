@@ -200,7 +200,7 @@ fn upright_candidate_score(
     y_score + feet_bonus
 }
 
-/// AABB + centroide bajo (pies abajo) para desempatar ±90° en Mixamo/GLB.
+/// AABB + centroide bajo (pies abajo) para desempatar ±90° en rigs de terceros/GLB.
 pub(crate) fn upright_quat_from_vertices_bounds(
     min: [f32; 3],
     max: [f32; 3],

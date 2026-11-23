@@ -587,7 +587,7 @@ impl PhysicsWorld {
         None
     }
 
-    /// `move_and_slide` con cápsula anclada en los pies (CharacterBody3D-style).
+    /// `move_and_slide` con cápsula anclada en los pies (estilo cuerpo cinemático).
     pub(crate) fn move_character_capsule_at_feet(
         &mut self,
         feet: Vec3,

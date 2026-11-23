@@ -81,7 +81,7 @@ ipc_events:
 save:
   field: bone_physics
   format:
-    - bone_name: "mixamorig:Hair_01"
+    - bone_name: "Hair_01"
       mode: dynamic
   files:
     serialize: engine/src/engine3d/save_entity_3d.rs

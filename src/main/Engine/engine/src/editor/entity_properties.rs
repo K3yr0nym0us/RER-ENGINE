@@ -72,7 +72,7 @@ pub(crate) struct PropAnimation {
     pub root_motion: bool,
 }
 
-/// Nombre corto para la UI: los stacks de Blender/Mixamo llegan como
+/// Nombre corto para la UI: los stacks de DCC/rigs de terceros llegan como
 /// `Armature|Armature|Clip|Armature`; el usuario solo debe ver el clip.
 pub(crate) fn animation_clip_display_name(name: &str) -> &str {
     let trimmed = name.trim();

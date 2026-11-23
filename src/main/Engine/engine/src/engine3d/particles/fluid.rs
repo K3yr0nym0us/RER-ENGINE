@@ -4,8 +4,9 @@
 //! bidireccional con actores — partículas de agua que caen, salpican y QUEDAN
 //! contenidas dentro de una caja contenedora.
 //!
-//! Implementación derivada del núcleo físico de KawaiiFluid (MIT). Créditos,
-//! licencia y bibliografía en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
+//! Implementación derivada del núcleo físico de un solver de fluidos MIT de
+//! terceros. Créditos, licencia y bibliografía en `THIRD_PARTY_NOTICES.md` en la
+//! raíz del repositorio.
 //!
 //! Pipeline por substep:
 //! 1. **Predict**: `v += (gravedad + cohesión) * dt`, viscosidad XSPH,

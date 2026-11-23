@@ -1,7 +1,7 @@
 //! Ruido procedural determinista para el generador de mundos.
 //!
-//! Implementación derivada de FastNoiseLite (MIT, Auburn): créditos, licencia y
-//! referencias en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
+//! Implementación derivada de un generador de ruido MIT de terceros: créditos,
+//! licencia y referencias en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
 //!
 //! Las tablas de gradientes (`tables.rs`) se generaron programáticamente para
 //! coincidir con la referencia y evitar errores de transcripción. Sus literales

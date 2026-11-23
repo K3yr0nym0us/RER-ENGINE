@@ -1,5 +1,5 @@
 // Tablas de gradientes del generador de ruido.
-// Derivado de FastNoiseLite (MIT, Auburn): ver `THIRD_PARTY_NOTICES.md` en la raíz.
+// Derivado de un generador de ruido MIT de terceros: ver `THIRD_PARTY_NOTICES.md` en la raíz.
 // Generadas programáticamente para evitar errores de transcripción.
 
 /// Gradientes 2D: 128 pares (x, y) indexados por `hash & (127 << 1)`.

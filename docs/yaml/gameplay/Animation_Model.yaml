@@ -226,7 +226,7 @@ rhai:
     use_cases:
       - Caminar/correr: el personaje avanza según la animación
       - Ataques con paso adelante (dash, golpe con lunge)
-      - Animaciones de escalada o empuje autorizadas en Blender
+      - Animaciones de escalada o empuje autorizadas en un DCC externo
   animation_scripts: |
     Scripts en anim.scripts se adjuntan al reproducir y se desadjuntan al parar.
 

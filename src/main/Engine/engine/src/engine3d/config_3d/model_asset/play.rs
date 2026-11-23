@@ -289,7 +289,7 @@ pub(crate) fn needs_skinned_forward_correction(asset: &ModelAsset) -> bool {
     bone_yaw.abs() >= 0.35
 }
 
-/// Compensa yaw del hueso raíz (Mixamo suele traer ~±90° en bind).
+/// Compensa yaw del hueso raíz (los rigs de terceros suelen traer ~±90° en bind).
 pub(crate) fn apply_hips_bind_yaw_to_forward(fwd: glam::Vec2, asset: &ModelAsset) -> glam::Vec2 {
     let Some(hi) = find_hips_joint_index(asset) else {
         return fwd;

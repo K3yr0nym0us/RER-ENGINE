@@ -1,6 +1,6 @@
 # TAA 3D (temporal anti-aliasing)
 #
-# Post-proceso 3D alineado con UE / Unity / Godot 4.
+# Post-proceso 3D alineado con las prácticas actuales de render en tiempo real.
 # Solo proyectos 3D. Control en World → Anti-Aliasing.
 #
 # Relacionado con:

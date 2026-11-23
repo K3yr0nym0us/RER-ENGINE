@@ -733,8 +733,8 @@ fn joint_locomotion_kind(name: &str) -> u8 {
 /// Joint que gobierna el desplazamiento del clip.
 ///
 /// Prioridad: Hips/Pelvis con traslación (aunque sea hijo de Armature), luego
-/// `root`, luego el más alto con canal de traslación. El Armature de Mixamo
-/// suele ser más superficial y no debe ganar a Hips.
+/// `root`, luego el más alto con canal de traslación. El Armature de rigs de
+/// terceros suele ser más superficial y no debe ganar a Hips.
 fn root_joint_index(asset: &ModelAsset, clip: &AnimationClip) -> Option<usize> {
     let depth = |mut ji: usize| -> usize {
         let mut d = 0;

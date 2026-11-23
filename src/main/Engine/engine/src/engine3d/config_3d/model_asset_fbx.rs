@@ -347,7 +347,7 @@ fn inverse_bind_for_skin(
     ibm
 }
 
-/// Incluye nodos padre (p. ej. Armature de Mixamo) que no tienen cluster pero afectan la jerarqu├¡a.
+/// Incluye nodos padre (p. ej. Armature de rigs de terceros) que no tienen cluster pero afectan la jerarquía.
 fn extend_fbx_skeleton_with_ancestors(
     scene: &ufbx::Scene,
     skeleton: &mut FbxSkeletonData,
