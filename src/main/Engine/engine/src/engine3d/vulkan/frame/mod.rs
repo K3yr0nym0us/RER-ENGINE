@@ -344,8 +344,14 @@ pub struct FrameRenderer {
     /// Escala de SSAA activa (1 = sin supersampling). Redimensiona el G-buffer respecto al viewport
     /// y el `present` reduce esa imagen al tamaño nativo con filtrado bilineal.
     ssaa_scale: f32,
-    /// `[forward, forward_blend, skinned, skinned_blend]` creados con `msaa_samples` muestras.
-    ms_pipelines: Option<[vk::Pipeline; 5]>,
+    /// Pipelines forward por `(GbufferMask, samples)`, fuera de `pipe_handles`.
+    gbuffer_pipe_cache: HashMap<(GbufferMask, u32), GbufferPipeSet>,
+    /// Máscara activa del G-buffer de pantalla (las sondas usan siempre `COLOR`).
+    gbuffer_mask: GbufferMask,
+    /// Dummy 1×1 para descriptores de ranuras apagadas (RGBA8 / RGBA16F / RG16F).
+    dummy_rgba8: GpuImage,
+    dummy_rgba16f: GpuImage,
+    dummy_rg16f: GpuImage,
     /// `[depth_only, depth_only_skinned]` a 1×: rellenan `targets.depth` tras el pase MSAA.
     depth_pipelines: [vk::Pipeline; 2],
     /// Pool GPU del sistema de partículas (buffers, pipelines y descriptores dedicados).
@@ -421,6 +427,12 @@ impl Drop for FrameRenderer {
         let device = self.gpu.device();
         unsafe {
             let _ = device.device_wait_idle();
+            let cache = std::mem::take(&mut self.gbuffer_pipe_cache);
+            for pipes in cache.into_values() {
+                pipes.destroy(device);
+            }
+            // Dummy 1×1 (RGBA8 / RGBA16F / RG16F): el GPU ya está idle. `GpuImage::drop`
+            // destruye image/view/memory al caer los campos, justo después de este cuerpo.
             for pipeline in self.pipelines.drain(..) {
                 device.destroy_pipeline(pipeline, None);
             }
@@ -443,6 +455,7 @@ impl Drop for FrameRenderer {
 
 mod commands;
 mod forward;
+mod gbuffer;
 mod layouts;
 mod particles;
 mod pipelines;
@@ -453,6 +466,7 @@ mod shadow;
 mod targets;
 mod volumetric;
 use self::commands::*;
+use self::gbuffer::{GbufferMask, GbufferPipeSet};
 use self::layouts::*;
 use self::particles::ParticlePool;
 use self::pipelines::*;
@@ -462,7 +476,8 @@ use self::volumetric::VolumetricState;
 impl FrameRenderer {
     pub fn new(gpu: &SharedGpu, albedo: &GpuImage) -> Result<Self, VulkanError> {
         let extent = gpu.extent();
-        let targets = Targets::new(gpu, extent)?;
+        let gbuffer_mask = GbufferMask::color_only();
+        let targets = Targets::new(gpu, extent, gbuffer_mask)?;
         clear_probe_cube(gpu, targets.probe.image)?;
         let device = gpu.device();
         let (pool, set_layouts, sets) = create_sets(device)?;
@@ -915,10 +930,55 @@ impl FrameRenderer {
             depth_only,
             depth_only_skinned,
         );
+        let dummy_extent = vk::Extent2D {
+            width: 1,
+            height: 1,
+        };
+        let dummy_usage = vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST;
+        let dummy_rgba8 = gpu.create_image(
+            dummy_extent,
+            COLOR,
+            dummy_usage,
+            vk::ImageAspectFlags::COLOR,
+            "gbuffer-dummy-rgba8",
+        )?;
+        let dummy_rgba16f = gpu.create_image(
+            dummy_extent,
+            WORLD,
+            dummy_usage,
+            vk::ImageAspectFlags::COLOR,
+            "gbuffer-dummy-rgba16f",
+        )?;
+        let dummy_rg16f = gpu.create_image(
+            dummy_extent,
+            VELOCITY,
+            dummy_usage,
+            vk::ImageAspectFlags::COLOR,
+            "gbuffer-dummy-rg16f",
+        )?;
+        let mut gbuffer_pipe_cache = HashMap::new();
+        gbuffer_pipe_cache.insert(
+            (gbuffer_mask, 1),
+            GbufferPipeSet::create(
+                device,
+                layouts[0],
+                layouts[1],
+                vert,
+                frag,
+                skinned_vert,
+                &gbuffer_mask.formats(),
+                1,
+                None,
+            )?,
+        );
         Ok(Self {
             msaa_samples: 1,
             ssaa_scale: 1.0,
-            ms_pipelines: None,
+            gbuffer_pipe_cache,
+            gbuffer_mask,
+            dummy_rgba8,
+            dummy_rgba16f,
+            dummy_rg16f,
             forward_vert: vert,
             forward_frag: frag,
             skinned_vert,
@@ -1033,7 +1093,8 @@ impl FrameRenderer {
             self.gpu.max_image_dimension(),
         );
         if self.targets.extent != render_extent {
-            self.targets.recreate(&self.gpu, render_extent)?;
+            self.targets
+                .recreate(&self.gpu, render_extent, self.gbuffer_mask)?;
             // Las imágenes nuevas nacen en su layout inicial (DEPTH → ATTACHMENT); el registro
             // anterior ya no describe la realidad y hay que reiniciarlo.
             self.depth_layout = DEPTH_ATTACHMENT;
@@ -1041,7 +1102,8 @@ impl FrameRenderer {
             // `recreate` también destruye el G-buffer multisampleado y el shadow map en su tamaño
             // base: hay que volver a crearlos, si no MSAA (ni el tamaño SSAA) se apaga solo tras
             // un resize porque `ensure_msaa` ve el mismo nivel de muestras y sale por su early-return.
-            self.targets.ensure_ms(&self.gpu, self.msaa_samples)?;
+            self.targets
+                .ensure_ms(&self.gpu, self.msaa_samples, self.gbuffer_mask)?;
             self.shadow_size = crate::engine3d::engine::SHADOW_MAP_SIZE;
             self.rewrite_target_descriptors()?;
         }
@@ -1126,10 +1188,12 @@ impl FrameRenderer {
         let pipes = self.pipe_handles();
         let device = self.gpu.device().clone();
         let cmd = frame.command;
-        // El tier de MSAA puede haber cambiado: se ajustan el G-buffer multisampleado y sus
-        // pipelines antes de cualquier pase que dependa del número de muestras. `pipes` se queda
-        // con los de 1× porque la captura de sondas dibuja en imágenes de una muestra; solo
-        // `forward_pass` cambia a los pipelines MSAA.
+        // Máscara del G-buffer (TAA/SSR/RT) y MSAA: se ajustan adjuntos y la caché de pipelines
+        // antes de cualquier pase. `pipes` se queda con los de 1× indexados; `forward_pass` y
+        // `capture_probe` overlayan la caché `(máscara, samples)`.
+        let gbuffer_mask =
+            GbufferMask::from_settings(input.taa_enabled, input.ssr, input.raytracing);
+        self.ensure_gbuffer_mask(gbuffer_mask, &device)?;
         self.ensure_msaa(input.msaa_samples, &device)?;
         // Sombras volumétricas: la calidad la fija el tier de sombras. Hay que reasignar
         // (y reenlazar) ANTES del sim de partículas: si `ensure` destruye las vistas 3D
@@ -1272,6 +1336,38 @@ impl FrameRenderer {
             unsafe { self.gpu.device().update_descriptor_sets(&[write], &[]) };
         }
         Ok(())
+    }
+
+    pub(super) fn sampled_normal(&self) -> vk::ImageView {
+        self.targets
+            .normal
+            .as_ref()
+            .map(|image| image.view)
+            .unwrap_or(self.dummy_rgba8.view)
+    }
+
+    pub(super) fn sampled_albedo(&self) -> vk::ImageView {
+        self.targets
+            .albedo_out
+            .as_ref()
+            .map(|image| image.view)
+            .unwrap_or(self.dummy_rgba8.view)
+    }
+
+    pub(super) fn sampled_world(&self) -> vk::ImageView {
+        self.targets
+            .world
+            .as_ref()
+            .map(|image| image.view)
+            .unwrap_or(self.dummy_rgba16f.view)
+    }
+
+    pub(super) fn sampled_velocity(&self) -> vk::ImageView {
+        self.targets
+            .velocity
+            .as_ref()
+            .map(|image| image.view)
+            .unwrap_or(self.dummy_rg16f.view)
     }
 
     /// Enlaza el álbum de álbedos nuevo en TODOS los slots en vuelo.

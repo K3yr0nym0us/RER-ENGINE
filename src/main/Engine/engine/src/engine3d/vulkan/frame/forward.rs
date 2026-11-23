@@ -2,20 +2,24 @@ use super::*;
 
 impl FrameRenderer {
     pub(super) fn forward_pipes(&self, base: Pipes) -> Pipes {
-        match self.ms_pipelines {
-            Some([forward, forward_blend, skinned, skinned_blend, sky])
-                if self.msaa_samples > 1 =>
-            {
-                let mut pipes = base;
-                pipes.forward = forward;
-                pipes.forward_blend = forward_blend;
-                pipes.skinned = skinned;
-                pipes.skinned_blend = skinned_blend;
-                pipes.sky = sky;
-                pipes
-            }
-            _ => base,
-        }
+        let samples = if self.msaa_samples > 1 {
+            self.msaa_samples
+        } else {
+            1
+        };
+        self.overlay_gbuffer_pipes(base, self.gbuffer_mask, samples)
+    }
+
+    pub(super) fn overlay_gbuffer_pipes(
+        &self,
+        base: Pipes,
+        mask: GbufferMask,
+        samples: u32,
+    ) -> Pipes {
+        self.gbuffer_pipe_cache
+            .get(&(mask, samples))
+            .map(|set| set.overlay(base))
+            .unwrap_or(base)
     }
 
     /// `Pipes` con los pipelines de solo-profundidad (sin adjuntos de color) para el segundo pase.
@@ -212,13 +216,7 @@ impl FrameRenderer {
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
         let extent = self.targets.extent;
-        let resolve = [
-            self.targets.scene.view,
-            self.targets.normal.view,
-            self.targets.albedo_out.view,
-            self.targets.world.view,
-            self.targets.velocity.view,
-        ];
+        let resolve = self.targets.color_views();
         // `ms.samples == msaa_samples`: si el G-buffer no se recreó aún para este nivel, se cae
         // al camino de 1× en vez de mezclar pipelines y adjuntos con muestras distintas.
         let msaa = self.msaa_samples > 1
@@ -243,19 +241,11 @@ impl FrameRenderer {
         let color_pipes = self.forward_pipes(*pipes);
         // Vistas multisampleadas copiadas fuera del borrow: los pases necesitan `&mut self` para
         // registrar los layouts de profundidad y `self.targets.ms` prestado no convive con eso.
-        let ms_pack: Option<([vk::ImageView; 5], vk::ImageView)> = if msaa {
-            self.targets.ms.as_ref().map(|ms| {
-                (
-                    [
-                        ms.scene.view,
-                        ms.normal.view,
-                        ms.albedo.view,
-                        ms.world.view,
-                        ms.velocity.view,
-                    ],
-                    ms.depth.view,
-                )
-            })
+        let ms_pack: Option<([Option<vk::ImageView>; 5], vk::ImageView)> = if msaa {
+            self.targets
+                .ms
+                .as_ref()
+                .map(|ms| (Targets::ms_views(ms), ms.depth.view))
         } else {
             None
         };

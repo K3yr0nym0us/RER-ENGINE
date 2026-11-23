@@ -149,45 +149,59 @@ pub(super) fn begin_depth(
     unsafe { device.cmd_begin_rendering(cmd, &info) };
 }
 
+/// Ranura de color inactiva: el info queda en `default()` (view nulo, layout UNDEFINED,
+/// resolve NONE, resolve layout UNDEFINED). No se toca el layout: COLOR_ATTACHMENT_OPTIMAL
+/// o GENERAL con view nulo es ilegal en Vulkan 1.3 dynamic rendering.
+pub(super) fn color_rendering_attachment(
+    view: Option<vk::ImageView>,
+    index: usize,
+    clear: bool,
+    resolve: Option<vk::ImageView>,
+) -> vk::RenderingAttachmentInfo<'static> {
+    let Some(view) = view else {
+        return vk::RenderingAttachmentInfo::default();
+    };
+    let value = if index == 0 {
+        [0.72, 0.86, 0.98, 1.0]
+    } else {
+        [0.0, 0.0, 0.0, 0.0]
+    };
+    let mut info = vk::RenderingAttachmentInfo::default()
+        .image_view(view)
+        .image_layout(vk::ImageLayout::GENERAL)
+        .load_op(if clear || index > 0 {
+            vk::AttachmentLoadOp::CLEAR
+        } else {
+            vk::AttachmentLoadOp::LOAD
+        })
+        .store_op(vk::AttachmentStoreOp::STORE)
+        .clear_value(clear_color(value));
+    if let Some(resolve_view) = resolve {
+        info = info
+            .resolve_image_view(resolve_view)
+            .resolve_image_layout(vk::ImageLayout::GENERAL)
+            // `resolveMode != NONE` es lo que hace que el contenido multisampleado llegue a la
+            // imagen 1×; con NONE el resolve no ocurre y la imagen 1× quedaría vacía.
+            .resolve_mode(vk::ResolveModeFlags::AVERAGE);
+    }
+    info
+}
+
 /// Inicia el pase forward sobre el G-buffer multisampleado y resuelve cada adjunto sobre su
 /// imagen 1× (la que ya consumen TAA/SSR/present). La profundidad multisampleada se descarta:
 /// `targets.depth` se rellena después con un segundo pase a 1×.
 pub(super) fn begin_color_ms(
     device: &ash::Device,
     cmd: vk::CommandBuffer,
-    ms_views: &[vk::ImageView; 5],
+    ms_views: &[Option<vk::ImageView>; 5],
     ms_depth: vk::ImageView,
-    resolve: &[vk::ImageView; 5],
+    resolve: &[Option<vk::ImageView>; 5],
     extent: vk::Extent2D,
     clear: bool,
 ) {
-    let colors: Vec<vk::RenderingAttachmentInfo> = ms_views
-        .iter()
-        .zip(resolve)
-        .enumerate()
-        .map(|(index, (view, resolve_view))| {
-            let value = if index == 0 {
-                [0.72, 0.86, 0.98, 1.0]
-            } else {
-                [0.0, 0.0, 0.0, 0.0]
-            };
-            vk::RenderingAttachmentInfo::default()
-                .image_view(*view)
-                .image_layout(vk::ImageLayout::GENERAL)
-                .load_op(if clear || index > 0 {
-                    vk::AttachmentLoadOp::CLEAR
-                } else {
-                    vk::AttachmentLoadOp::LOAD
-                })
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .resolve_image_view(*resolve_view)
-                .resolve_image_layout(vk::ImageLayout::GENERAL)
-                // `resolveMode != NONE` es lo que hace que el contenido multisampleado llegue a la
-                // imagen 1×; con NONE el resolve no ocurre y la imagen 1× quedaría vacía.
-                .resolve_mode(vk::ResolveModeFlags::AVERAGE)
-                .clear_value(clear_color(value))
-        })
-        .collect();
+    let colors: [vk::RenderingAttachmentInfo; 5] = std::array::from_fn(|index| {
+        color_rendering_attachment(ms_views[index], index, clear, resolve[index])
+    });
     let depth_info = vk::RenderingAttachmentInfo::default()
         .image_view(ms_depth)
         .image_layout(vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
@@ -213,32 +227,13 @@ pub(super) fn begin_color_ms(
 pub(super) fn begin_color(
     device: &ash::Device,
     cmd: vk::CommandBuffer,
-    views: &[vk::ImageView; 5],
+    views: &[Option<vk::ImageView>; 5],
     depth: Option<vk::ImageView>,
     extent: vk::Extent2D,
     clear: bool,
 ) {
-    let colors: Vec<vk::RenderingAttachmentInfo> = views
-        .iter()
-        .enumerate()
-        .map(|(index, view)| {
-            let value = if index == 0 {
-                [0.72, 0.86, 0.98, 1.0]
-            } else {
-                [0.0, 0.0, 0.0, 0.0]
-            };
-            vk::RenderingAttachmentInfo::default()
-                .image_view(*view)
-                .image_layout(vk::ImageLayout::GENERAL)
-                .load_op(if clear || index > 0 {
-                    vk::AttachmentLoadOp::CLEAR
-                } else {
-                    vk::AttachmentLoadOp::LOAD
-                })
-                .store_op(vk::AttachmentStoreOp::STORE)
-                .clear_value(clear_color(value))
-        })
-        .collect();
+    let colors: [vk::RenderingAttachmentInfo; 5] =
+        std::array::from_fn(|index| color_rendering_attachment(views[index], index, clear, None));
     let depth_info = depth.map(|view| {
         vk::RenderingAttachmentInfo::default()
             .image_view(view)
@@ -552,4 +547,21 @@ pub(super) fn host_buffer(
         MemoryLocation::CpuToGpu,
         name,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unused_color_slot_stays_on_default_attachment_info() {
+        // Incluso si llega un resolve, un slot `None` no debe tocar layout ni resolve.
+        let unused = color_rendering_attachment(None, 3, true, Some(vk::ImageView::null()));
+        let default = vk::RenderingAttachmentInfo::default();
+        assert_eq!(unused.image_view, default.image_view);
+        assert_eq!(unused.image_layout, vk::ImageLayout::UNDEFINED);
+        assert_eq!(unused.resolve_mode, vk::ResolveModeFlags::NONE);
+        assert_eq!(unused.resolve_image_layout, vk::ImageLayout::UNDEFINED);
+        assert_eq!(unused.resolve_image_view, vk::ImageView::null());
+    }
 }

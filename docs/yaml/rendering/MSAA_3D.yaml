@@ -1,9 +1,10 @@
 # MSAA 3D (multisample anti-aliasing del pase forward)
 #
 # Implementado sobre Ash/Vulkan en `engine/src/engine3d/vulkan/frame/mod.rs`. El MRT forward se dibuja
-# contra copias multisampleadas de los 5 adjuntos y se resuelve contra los G-buffers 1× que
-# consumen TAA, SSR, denoise, composite y present. La captura de sondas tiene su propio par MS 1×.
-# Shadow map y post-FX siguen a 1 muestra.
+# contra copias multisampleadas de los adjuntos *activos* de `GbufferMask` y se resuelve contra los
+# G-buffers 1× que consumen TAA, SSR, denoise, composite y present. `colorAttachmentCount` sigue en 5;
+# las ranuras apagadas usan `VkRenderingAttachmentInfo` por defecto (view nulo, layout UNDEFINED).
+# La captura de sondas asigna solo Color+depth (par MS 64×64). Shadow map y post-FX siguen a 1 muestra.
 #
 # Relacionado con:
 #   - docs/yaml/rendering/TAA_3D.yaml
@@ -11,18 +12,20 @@
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 5
-updated: 2026-11-09
+version: 6
+updated: 2026-11-23
 
 principle:
   owner: motor_3d
   pipeline: |
-    1. Forward MRT (scene, normal_rough, albedo, world, velocity) + depth D32:
-       sample_count = N del tier; cada adjunto declara `resolveImageView` con
-       `resolveMode = AVERAGE` hacia su imagen 1×.
+    1. Forward MRT con 5 ranuras fijas + depth D32. Solo se asignan las activas
+       (`GbufferMask`: Color siempre; Normal+Albedo+World si SSR/RT; Velocity si TAA).
+       sample_count = N del tier; cada adjunto activo declara `resolveImageView` con
+       `resolveMode = AVERAGE` hacia su imagen 1×. Las inactivas quedan en
+       `VkRenderingAttachmentInfo::default()`.
     2. El fondo trazado se dibuja dentro del mismo pase con un quad full-screen
-       (`shaders/raster/sky.frag`), sin prueba ni escritura de profundidad, y escribe
-       las 5 salidas (una salida no escrita deja el adjunto sin valor definido).
+       (`shaders/raster/sky.frag`), sin prueba ni escritura de profundidad, con el
+       pipeline de la misma máscara (formatos UNDEFINED en ranuras apagadas).
     3. La profundidad multisampleada se descarta (`storeOp = DONT_CARE`); `targets.depth`
        se rellena con un segundo pase a 1× usando `shaders/raster/depth_only.frag`
        (sin salidas de color, solo el `discard` del alfa cortada).
@@ -30,14 +33,15 @@ principle:
   note: |
     Low = Off (1 muestra, sin resolve; es el default y el camino de siempre).
     La captura de sondas usa `ProbeMultisampleTargets` a PROBE_FACE_SIZE (64×64) con el mismo
-    sample count del tier: dibuja cada cara con los pipelines MS y resuelve el color a los
-    `probe_*` 1× antes de copiarla al cubemap; la profundidad MS se descarta con DONT_CARE.
+    sample count del tier, pero **solo Color+depth**: dibuja cada cara con pipelines de máscara
+    COLOR (caché `(GbufferMask, samples)` fuera de `pipe_handles`) y resuelve a `probe_color`
+    1× antes de copiarla al cubemap; la profundidad MS se descarta con DONT_CARE.
     El número efectivo sale del adaptador: `SharedGpu::max_gbuffer_samples` intersecta
     `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`; si no llega a 2×
     devuelve 1× y el renderer no crea G-buffer multisampleado.
     Vulkan exige que `rasterizationSamples` del pipeline coincida con el `sampleCount` de
-    TODOS los adjuntos, por eso el sample count viaja en `VertexSpec` y los pipelines
-    forward/skinned existen en dos versiones (1× para la captura de sondas, N× para el frame).
+    TODOS los adjuntos activos; el sample count viaja en `VertexSpec`. Dummy 1×1 (RGBA8,
+    RGBA16F, RG16F) rellenan descriptores de ranuras apagadas.
     `vkCmdCopyImage` no puede copiar entre distinto número de muestras
     (VUID-vkCmdCopyImage-srcImage-00136): de ahí que el fondo sea un quad y no una copia.
     Tras un resize, `Targets::recreate` destruye el G-buffer MSAA y hay que volver a
@@ -64,9 +68,9 @@ commands:
     params: { tier: low | medium | high | ultra }
     effect: |
       Recorta el nivel al soporte del adaptador (`clamp_sample_count`), crea/suelta las
-      copias MS del G-buffer (`Targets::ensure_ms`) y recrea los 5 pipelines MSAA
-      (forward, forward blend, skinned, skinned blend, quad de cielo). Si el nivel efectivo
-      baja del pedido, se registra un `log::warn!` con el motivo.
+      copias MS de los adjuntos activos (`Targets::ensure_ms`) y rellena la caché de
+      pipelines `(máscara, samples)` (forward, blend, skinned, sky si N>1). Si el nivel
+      efectivo baja del pedido, se registra un `log::warn!` con el motivo.
 
 events:
   msaa_tier_changed:
@@ -105,10 +109,10 @@ extended_scope:
     status: implemented
     detail: |
       `Targets::ensure_ms` crea `ProbeMultisampleTargets` a `PROBE_FACE_SIZE` (64×64) con el mismo
-      sample count del tier. `capture_probe` usa `begin_color_ms` con los 5 adjuntos MS y resuelve
-      contra los `probe_*` 1×; el color resuelto se copia a la capa `slot*6+face` del cubemap.
+      sample count del tier, solo Color+depth. `capture_probe` usa `begin_color_ms` con ranura 0
+      activa y 1..=4 en `default()`; el color resuelto se copia a la capa `slot*6+face` del cubemap.
       La profundidad MS se descarta con `DONT_CARE`; no se resuelve.
-      Coste: 5 texturas de 64×64 + depth por sonda; a 8× es menos de 1 MB.
+      Coste: 1 textura de 64×64 + depth por sonda.
   msaa_in_overlay_ui:
     status: descartado
     reason: |

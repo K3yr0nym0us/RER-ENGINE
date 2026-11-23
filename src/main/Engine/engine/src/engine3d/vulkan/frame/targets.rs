@@ -3,10 +3,10 @@ use super::*;
 pub(super) struct Targets {
     pub(super) extent: vk::Extent2D,
     pub(super) scene: GpuImage,
-    pub(super) normal: GpuImage,
-    pub(super) albedo_out: GpuImage,
-    pub(super) world: GpuImage,
-    pub(super) velocity: GpuImage,
+    pub(super) normal: Option<GpuImage>,
+    pub(super) albedo_out: Option<GpuImage>,
+    pub(super) world: Option<GpuImage>,
+    pub(super) velocity: Option<GpuImage>,
     pub(super) depth: GpuImage,
     pub(super) background: GpuImage,
     pub(super) reflection: GpuImage,
@@ -24,11 +24,8 @@ pub(super) struct Targets {
     pub(super) history: [GpuImage; 2],
     pub(super) shadow: GpuImage,
     pub(super) probe: GpuImage,
+    /// Cara 1× de sonda: solo Color (el cubemap no usa Normal/Albedo/World/Velocity).
     pub(super) probe_color: GpuImage,
-    pub(super) probe_normal: GpuImage,
-    pub(super) probe_albedo: GpuImage,
-    pub(super) probe_world: GpuImage,
-    pub(super) probe_velocity: GpuImage,
     pub(super) probe_depth: GpuImage,
     /// G-buffer multisampleado del pase forward (solo existe si el tier de MSAA pide > 1).
     pub(super) ms: Option<MultisampleTargets>,
@@ -36,60 +33,82 @@ pub(super) struct Targets {
     pub(super) probe_ms: Option<ProbeMultisampleTargets>,
 }
 
-/// Copias multisampleadas de los 5 adjuntos del G-buffer + su profundidad.
+/// Copias multisampleadas de los adjuntos activos del G-buffer + su profundidad.
 ///
 /// Se resuelven contra las imágenes 1× que ya consume TAA/SSR/present, así que el resto del frame
-/// no cambia. La profundidad NO se resuelve: se rellena con un segundo pase a 1× (ver
-/// `forward_pass`), porque el resolve de un adjunto de profundidad tiene requisitos de layout que
-/// no aportan nada frente a volver a rasterizar los lotes opacos.
+/// no cambia. Ranuras apagadas por la máscara no se asignan. La profundidad NO se resuelve: se
+/// rellena con un segundo pase a 1× (ver `forward_pass`).
 pub(super) struct MultisampleTargets {
     pub(super) samples: u32,
     pub(super) scene: GpuImage,
-    pub(super) normal: GpuImage,
-    pub(super) albedo: GpuImage,
-    pub(super) world: GpuImage,
-    pub(super) velocity: GpuImage,
+    pub(super) normal: Option<GpuImage>,
+    pub(super) albedo: Option<GpuImage>,
+    pub(super) world: Option<GpuImage>,
+    pub(super) velocity: Option<GpuImage>,
     pub(super) depth: GpuImage,
 }
 
-/// Copias multisampleadas de una cara de sonda.
+/// Copia multisampleada de la cara de sonda (solo Color).
 ///
-/// Se resuelven contra `probe_color`, `probe_normal`, etc. 1×, y el color resuelto es el que
-/// `capture_probe` copia a la capa del cubemap. La profundidad MS no se resuelve: solo se usa
-/// como adjunto del pase de captura y se descarta con `DONT_CARE`.
+/// Se resuelve contra `probe_color` 1×, que `capture_probe` copia a la capa del cubemap.
+/// Ranuras 1..=4 del `begin_rendering` quedan en `RenderingAttachmentInfo::default()`.
+/// La profundidad MS no se resuelve: solo se usa como adjunto del pase y se descarta
+/// con `DONT_CARE`.
 pub(super) struct ProbeMultisampleTargets {
     pub(super) samples: u32,
     pub(super) scene: GpuImage,
-    pub(super) normal: GpuImage,
-    pub(super) albedo: GpuImage,
-    pub(super) world: GpuImage,
-    pub(super) velocity: GpuImage,
     pub(super) depth: GpuImage,
 }
 
 impl ProbeMultisampleTargets {
-    pub(super) fn views(&self) -> [vk::ImageView; 5] {
-        [
-            self.scene.view,
-            self.normal.view,
-            self.albedo.view,
-            self.world.view,
-            self.velocity.view,
-        ]
+    pub(super) fn views(&self) -> [Option<vk::ImageView>; 5] {
+        [Some(self.scene.view), None, None, None, None]
     }
 }
 
+fn opt_view(image: &Option<GpuImage>) -> Option<vk::ImageView> {
+    image.as_ref().map(|image| image.view)
+}
+
+fn gbuffer_color_usage() -> vk::ImageUsageFlags {
+    vk::ImageUsageFlags::COLOR_ATTACHMENT
+        | vk::ImageUsageFlags::SAMPLED
+        | vk::ImageUsageFlags::STORAGE
+        | vk::ImageUsageFlags::TRANSFER_SRC
+        | vk::ImageUsageFlags::TRANSFER_DST
+}
+
 impl Targets {
-    pub(super) fn new(gpu: &SharedGpu, extent: vk::Extent2D) -> Result<Self, VulkanError> {
+    pub(super) fn color_views(&self) -> [Option<vk::ImageView>; 5] {
+        [
+            Some(self.scene.view),
+            opt_view(&self.normal),
+            opt_view(&self.albedo_out),
+            opt_view(&self.world),
+            opt_view(&self.velocity),
+        ]
+    }
+
+    pub(super) fn ms_views(ms: &MultisampleTargets) -> [Option<vk::ImageView>; 5] {
+        [
+            Some(ms.scene.view),
+            opt_view(&ms.normal),
+            opt_view(&ms.albedo),
+            opt_view(&ms.world),
+            opt_view(&ms.velocity),
+        ]
+    }
+
+    pub(super) fn new(
+        gpu: &SharedGpu,
+        extent: vk::Extent2D,
+        mask: GbufferMask,
+    ) -> Result<Self, VulkanError> {
         let extent = vk::Extent2D {
             width: extent.width.max(1),
             height: extent.height.max(1),
         };
-        let color_usage = vk::ImageUsageFlags::COLOR_ATTACHMENT
-            | vk::ImageUsageFlags::SAMPLED
-            | vk::ImageUsageFlags::STORAGE
-            | vk::ImageUsageFlags::TRANSFER_SRC
-            | vk::ImageUsageFlags::TRANSFER_DST;
+        let color_usage = gbuffer_color_usage();
         let color = |name| {
             gpu.create_image(
                 extent,
@@ -100,22 +119,38 @@ impl Targets {
             )
         };
         let scene = color("scene")?;
-        let normal = color("normal")?;
-        let albedo_out = color("albedo-out")?;
-        let world = gpu.create_image(
-            extent,
-            WORLD,
-            color_usage,
-            vk::ImageAspectFlags::COLOR,
-            "world",
-        )?;
-        let velocity = gpu.create_image(
-            extent,
-            VELOCITY,
-            color_usage,
-            vk::ImageAspectFlags::COLOR,
-            "velocity",
-        )?;
+        let normal = if mask.contains(GbufferMask::NORMAL) {
+            Some(color("normal")?)
+        } else {
+            None
+        };
+        let albedo_out = if mask.contains(GbufferMask::ALBEDO) {
+            Some(color("albedo-out")?)
+        } else {
+            None
+        };
+        let world = if mask.contains(GbufferMask::WORLD) {
+            Some(gpu.create_image(
+                extent,
+                WORLD,
+                color_usage,
+                vk::ImageAspectFlags::COLOR,
+                "world",
+            )?)
+        } else {
+            None
+        };
+        let velocity = if mask.contains(GbufferMask::VELOCITY) {
+            Some(gpu.create_image(
+                extent,
+                VELOCITY,
+                color_usage,
+                vk::ImageAspectFlags::COLOR,
+                "velocity",
+            )?)
+        } else {
+            None
+        };
         let depth = gpu.create_image(
             extent,
             DEPTH,
@@ -185,34 +220,6 @@ impl Targets {
             vk::ImageAspectFlags::COLOR,
             "probe-face",
         )?;
-        let probe_normal = gpu.create_image(
-            probe_extent,
-            COLOR,
-            color_usage,
-            vk::ImageAspectFlags::COLOR,
-            "probe-n",
-        )?;
-        let probe_albedo = gpu.create_image(
-            probe_extent,
-            COLOR,
-            color_usage,
-            vk::ImageAspectFlags::COLOR,
-            "probe-a",
-        )?;
-        let probe_world = gpu.create_image(
-            probe_extent,
-            WORLD,
-            color_usage,
-            vk::ImageAspectFlags::COLOR,
-            "probe-w",
-        )?;
-        let probe_velocity = gpu.create_image(
-            probe_extent,
-            VELOCITY,
-            color_usage,
-            vk::ImageAspectFlags::COLOR,
-            "probe-v",
-        )?;
         let probe_depth = gpu.create_image(
             probe_extent,
             DEPTH,
@@ -241,18 +248,110 @@ impl Targets {
             shadow,
             probe,
             probe_color,
-            probe_normal,
-            probe_albedo,
-            probe_world,
-            probe_velocity,
             probe_depth,
             ms: None,
             probe_ms: None,
         })
     }
 
-    /// Crea (o recrea) el G-buffer multisampleado para `samples` muestras.
-    pub(super) fn ensure_ms(&mut self, gpu: &SharedGpu, samples: u32) -> Result<(), VulkanError> {
+    /// Crea (o recrea) el G-buffer 1× opcional según la máscara. Devuelve las imágenes
+    /// retiradas para soltarlas **después** de reescribir descriptores (mismo protocolo que
+    /// el shadow map).
+    pub(super) fn apply_mask(
+        &mut self,
+        gpu: &SharedGpu,
+        mask: GbufferMask,
+        ms_samples: u32,
+    ) -> Result<Vec<GpuImage>, VulkanError> {
+        let usage = gbuffer_color_usage();
+        let mut retired = Vec::new();
+        Self::sync_slot(
+            &mut self.normal,
+            mask.contains(GbufferMask::NORMAL),
+            || {
+                gpu.create_image(
+                    self.extent,
+                    COLOR,
+                    usage,
+                    vk::ImageAspectFlags::COLOR,
+                    "normal",
+                )
+            },
+            &mut retired,
+        )?;
+        Self::sync_slot(
+            &mut self.albedo_out,
+            mask.contains(GbufferMask::ALBEDO),
+            || {
+                gpu.create_image(
+                    self.extent,
+                    COLOR,
+                    usage,
+                    vk::ImageAspectFlags::COLOR,
+                    "albedo-out",
+                )
+            },
+            &mut retired,
+        )?;
+        Self::sync_slot(
+            &mut self.world,
+            mask.contains(GbufferMask::WORLD),
+            || {
+                gpu.create_image(
+                    self.extent,
+                    WORLD,
+                    usage,
+                    vk::ImageAspectFlags::COLOR,
+                    "world",
+                )
+            },
+            &mut retired,
+        )?;
+        Self::sync_slot(
+            &mut self.velocity,
+            mask.contains(GbufferMask::VELOCITY),
+            || {
+                gpu.create_image(
+                    self.extent,
+                    VELOCITY,
+                    usage,
+                    vk::ImageAspectFlags::COLOR,
+                    "velocity",
+                )
+            },
+            &mut retired,
+        )?;
+        if ms_samples > 1 || self.ms.is_some() {
+            self.ensure_ms(gpu, ms_samples, mask)?;
+        }
+        Ok(retired)
+    }
+
+    fn sync_slot(
+        slot: &mut Option<GpuImage>,
+        want: bool,
+        create: impl FnOnce() -> Result<GpuImage, VulkanError>,
+        retired: &mut Vec<GpuImage>,
+    ) -> Result<(), VulkanError> {
+        match (slot.is_some(), want) {
+            (true, false) => {
+                if let Some(old) = slot.take() {
+                    retired.push(old);
+                }
+            }
+            (false, true) => *slot = Some(create()?),
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Crea (o recrea) el G-buffer multisampleado para `samples` muestras y la máscara activa.
+    pub(super) fn ensure_ms(
+        &mut self,
+        gpu: &SharedGpu,
+        samples: u32,
+        mask: GbufferMask,
+    ) -> Result<(), VulkanError> {
         if samples <= 1 {
             // Soltar las imágenes liberadas por `Drop` de `GpuImage`.
             self.ms = None;
@@ -276,24 +375,40 @@ impl Targets {
         let ms = MultisampleTargets {
             samples,
             scene: ms_color("scene-ms")?,
-            normal: ms_color("normal-ms")?,
-            albedo: ms_color("albedo-ms")?,
-            world: gpu.create_image_with_samples(
-                self.extent,
-                WORLD,
-                ms_samples,
-                usage,
-                vk::ImageAspectFlags::COLOR,
-                "world-ms",
-            )?,
-            velocity: gpu.create_image_with_samples(
-                self.extent,
-                VELOCITY,
-                ms_samples,
-                usage,
-                vk::ImageAspectFlags::COLOR,
-                "velocity-ms",
-            )?,
+            normal: if mask.contains(GbufferMask::NORMAL) {
+                Some(ms_color("normal-ms")?)
+            } else {
+                None
+            },
+            albedo: if mask.contains(GbufferMask::ALBEDO) {
+                Some(ms_color("albedo-ms")?)
+            } else {
+                None
+            },
+            world: if mask.contains(GbufferMask::WORLD) {
+                Some(gpu.create_image_with_samples(
+                    self.extent,
+                    WORLD,
+                    ms_samples,
+                    usage,
+                    vk::ImageAspectFlags::COLOR,
+                    "world-ms",
+                )?)
+            } else {
+                None
+            },
+            velocity: if mask.contains(GbufferMask::VELOCITY) {
+                Some(gpu.create_image_with_samples(
+                    self.extent,
+                    VELOCITY,
+                    ms_samples,
+                    usage,
+                    vk::ImageAspectFlags::COLOR,
+                    "velocity-ms",
+                )?)
+            } else {
+                None
+            },
             depth: gpu.create_image_with_samples(
                 self.extent,
                 DEPTH,
@@ -323,24 +438,6 @@ impl Targets {
         let probe_ms = ProbeMultisampleTargets {
             samples,
             scene: ms_probe_color("probe-scene-ms")?,
-            normal: ms_probe_color("probe-normal-ms")?,
-            albedo: ms_probe_color("probe-albedo-ms")?,
-            world: gpu.create_image_with_samples(
-                probe_extent,
-                WORLD,
-                ms_samples,
-                usage,
-                vk::ImageAspectFlags::COLOR,
-                "probe-world-ms",
-            )?,
-            velocity: gpu.create_image_with_samples(
-                probe_extent,
-                VELOCITY,
-                ms_samples,
-                usage,
-                vk::ImageAspectFlags::COLOR,
-                "probe-velocity-ms",
-            )?,
             depth: gpu.create_image_with_samples(
                 probe_extent,
                 DEPTH,
@@ -353,7 +450,7 @@ impl Targets {
 
         self.ms = Some(ms);
         self.probe_ms = Some(probe_ms);
-        log::info!("[msaa] cara de sonda multisampleada a {samples}x");
+        log::info!("[msaa] cara de sonda: solo color a {samples}x");
         Ok(())
     }
 
@@ -361,8 +458,9 @@ impl Targets {
         &mut self,
         gpu: &SharedGpu,
         extent: vk::Extent2D,
+        mask: GbufferMask,
     ) -> Result<(), VulkanError> {
-        *self = Self::new(gpu, extent)?;
+        *self = Self::new(gpu, extent, mask)?;
         Ok(())
     }
 
@@ -477,133 +575,109 @@ impl FrameRenderer {
         Ok(())
     }
 
-    /// Ajusta el G-buffer multisampleado y sus pipelines al número de muestras pedido por el tier.
+    /// Ajusta el G-buffer multisampleado y rellena la caché de pipelines `(máscara, samples)`.
     ///
     /// Se consulta al adaptador (`max_gbuffer_samples`), así que un `Ultra` en una GPU sin soporte
-    /// baja a 1× en vez de crear pipelines inválidos. Los pipelines de 1× siguen existiendo porque
-    /// la captura de sondas dibuja en imágenes de una muestra.
+    /// baja a 1× en vez de crear pipelines inválidos. Los pipelines no entran en `self.pipelines`
+    /// (`pipe_handles` 0..=14 se mantiene).
     pub(super) fn ensure_msaa(
         &mut self,
         requested: u32,
         device: &ash::Device,
     ) -> Result<(), VulkanError> {
         let wanted = self.gpu.max_gbuffer_samples(requested).clamp(1, 8);
-        if wanted == self.msaa_samples {
-            return Ok(());
-        }
-        self.targets.ensure_ms(&self.gpu, wanted)?;
-        if let Some(old) = self.ms_pipelines.take() {
-            for pipeline in old {
-                unsafe { device.destroy_pipeline(pipeline, None) };
-            }
-            // Eran los últimos del registro: se quitan para no destruirlos otra vez en `Drop`.
-            for _ in old {
-                self.pipelines.pop();
-            }
-        }
-        if wanted > 1 {
-            let static_ms = with_samples(static_vertex(), wanted);
-            let skinned_ms = with_samples(skinned_vertex(), wanted);
-            let created = [
-                graphics(
-                    device,
-                    self.layouts[0],
-                    self.forward_vert,
-                    Some(self.forward_frag),
-                    &static_ms,
-                    &MRT,
-                    Some(DEPTH),
-                    false,
-                    false,
-                    &mut self.pipelines,
-                ),
-                graphics(
-                    device,
-                    self.layouts[0],
-                    self.forward_vert,
-                    Some(self.forward_frag),
-                    &static_ms,
-                    &MRT,
-                    Some(DEPTH),
-                    true,
-                    false,
-                    &mut self.pipelines,
-                ),
-                graphics(
-                    device,
-                    self.layouts[1],
-                    self.skinned_vert,
-                    Some(self.forward_frag),
-                    &skinned_ms,
-                    &MRT,
-                    Some(DEPTH),
-                    false,
-                    false,
-                    &mut self.pipelines,
-                ),
-                graphics(
-                    device,
-                    self.layouts[1],
-                    self.skinned_vert,
-                    Some(self.forward_frag),
-                    &skinned_ms,
-                    &MRT,
-                    Some(DEPTH),
-                    true,
-                    false,
-                    &mut self.pipelines,
-                ),
-                // `vkCmdCopyImage` no puede copiar de 1× a 2× (VUID-vkCmdCopyImage-srcImage-00136),
-                // así que el fondo trazado se dibuja con un quad full-screen sobre el adjunto
-                // multisampleado, sin prueba ni escritura de profundidad.
-                graphics_no_depth_test(
-                    device,
-                    self.layout_full,
-                    self.full_vert,
-                    Some(self.sky_frag),
-                    &with_samples(empty_vertex(), wanted),
-                    &MRT,
-                    Some(DEPTH),
-                    &mut self.pipelines,
-                ),
-            ];
-            let mut built = Vec::new();
-            for pipeline in created {
-                match pipeline {
-                    Ok(pipeline) => built.push(pipeline),
-                    Err(error) => {
-                        for partial in built {
-                            unsafe { device.destroy_pipeline(partial, None) };
-                        }
-                        return Err(error);
-                    }
+        if wanted != self.msaa_samples {
+            self.targets
+                .ensure_ms(&self.gpu, wanted, self.gbuffer_mask)?;
+            self.msaa_samples = wanted;
+            if wanted > 1 {
+                log::info!("[msaa] G-buffer multisampleado a {wanted}x");
+                if wanted != requested {
+                    log::warn!(
+                        "[msaa] el tier pidió {requested}x y el adaptador llega a {}x como G-buffer \
+                         (color y profundidad a la vez): se usa {wanted}x",
+                        self.gpu.gbuffer_sample_ceiling()
+                    );
                 }
-            }
-            let [forward, forward_blend, skinned, skinned_blend, sky] =
-                built.try_into().map_err(|_| {
-                    VulkanError::new(
-                        "No se pudieron crear los pipelines MSAA del forward.".to_string(),
-                    )
-                })?;
-            self.ms_pipelines = Some([forward, forward_blend, skinned, skinned_blend, sky]);
-        }
-        self.msaa_samples = wanted;
-        if wanted > 1 {
-            log::info!("[msaa] G-buffer multisampleado a {wanted}x");
-            if wanted != requested {
-                // Sin este aviso, un Ultra que baja a 4x es indistinguible de un Ultra roto.
+            } else if requested > 1 {
                 log::warn!(
-                    "[msaa] el tier pidió {requested}x y el adaptador llega a {}x como G-buffer \
-                     (color y profundidad a la vez): se usa {wanted}x",
-                    self.gpu.gbuffer_sample_ceiling()
+                    "[msaa] el tier pidió {requested}x pero la intersección color∩profundidad del \
+                     adaptador no da multisampling: el G-buffer trabaja a 1x"
                 );
             }
-        } else if requested > 1 {
-            log::warn!(
-                "[msaa] el tier pidió {requested}x pero la intersección color∩profundidad del \
-                 adaptador no da multisampling: el G-buffer trabaja a 1x"
-            );
         }
+        self.warm_gbuffer_pipes(device)?;
+        Ok(())
+    }
+
+    /// Recorta el G-buffer de pantalla a la máscara (TAA/SSR/RT). Protocolo shadow-tier:
+    /// `wait_idle`, recrear, reescribir descriptores, soltar las imágenes viejas después.
+    pub(super) fn ensure_gbuffer_mask(
+        &mut self,
+        mask: GbufferMask,
+        device: &ash::Device,
+    ) -> Result<(), VulkanError> {
+        if mask == self.gbuffer_mask {
+            return Ok(());
+        }
+        let velocity_on = !self.gbuffer_mask.contains(GbufferMask::VELOCITY)
+            && mask.contains(GbufferMask::VELOCITY);
+        unsafe {
+            device.device_wait_idle().map_err(|error| {
+                vk_error("esperar a la GPU antes de cambiar el G-buffer", error)
+            })?;
+        }
+        let retired = self
+            .targets
+            .apply_mask(&self.gpu, mask, self.msaa_samples)?;
+        self.gbuffer_mask = mask;
+        self.rewrite_target_descriptors()?;
+        drop(retired);
+        self.warm_gbuffer_pipes(device)?;
+        if velocity_on {
+            self.reset_taa_history();
+            log::info!("[gbuffer] velocity activada: historial TAA invalidado");
+        }
+        log::info!("[gbuffer] máscara {:#04x}", mask.bits());
+        Ok(())
+    }
+
+    pub(super) fn warm_gbuffer_pipes(&mut self, device: &ash::Device) -> Result<(), VulkanError> {
+        self.ensure_gbuffer_pipes(device, GbufferMask::color_only(), 1)?;
+        self.ensure_gbuffer_pipes(device, self.gbuffer_mask, 1)?;
+        if self.msaa_samples > 1 {
+            self.ensure_gbuffer_pipes(device, GbufferMask::color_only(), self.msaa_samples)?;
+            self.ensure_gbuffer_pipes(device, self.gbuffer_mask, self.msaa_samples)?;
+        }
+        Ok(())
+    }
+
+    fn ensure_gbuffer_pipes(
+        &mut self,
+        device: &ash::Device,
+        mask: GbufferMask,
+        samples: u32,
+    ) -> Result<(), VulkanError> {
+        if self.gbuffer_pipe_cache.contains_key(&(mask, samples)) {
+            return Ok(());
+        }
+        let sky = if samples > 1 {
+            Some((self.layout_full, self.full_vert, self.sky_frag))
+        } else {
+            None
+        };
+        let set = GbufferPipeSet::create(
+            device,
+            self.layouts[0],
+            self.layouts[1],
+            self.forward_vert,
+            self.forward_frag,
+            self.skinned_vert,
+            &mask.formats(),
+            samples,
+            sky,
+        )?;
+        self.gbuffer_pipe_cache.insert((mask, samples), set);
         Ok(())
     }
 }

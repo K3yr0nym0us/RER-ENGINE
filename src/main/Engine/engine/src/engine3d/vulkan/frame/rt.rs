@@ -269,7 +269,7 @@ impl FrameRenderer {
             device,
             set,
             5,
-            self.targets.normal.view,
+            self.sampled_normal(),
             self.samplers[2],
             vk::ImageLayout::GENERAL,
         )?;
@@ -278,7 +278,7 @@ impl FrameRenderer {
             device,
             set,
             7,
-            self.targets.albedo_out.view,
+            self.sampled_albedo(),
             self.samplers[2],
             vk::ImageLayout::GENERAL,
         )?;
@@ -396,7 +396,7 @@ impl FrameRenderer {
             device,
             set,
             6,
-            self.targets.normal.view,
+            self.sampled_normal(),
             self.samplers[2],
             vk::ImageLayout::GENERAL,
         )?;
@@ -404,7 +404,7 @@ impl FrameRenderer {
             device,
             set,
             7,
-            self.targets.albedo_out.view,
+            self.sampled_albedo(),
             self.samplers[2],
             vk::ImageLayout::GENERAL,
         )?;

@@ -98,17 +98,21 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   volver a empezar de cero.
 - **MSAA** (`set_msaa_tier`): Low 1× (por defecto, sin multisampling), Medium 2×, High 4×,
   Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
-  `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). Con >1× se crean copias
-  multisampleadas de los 5 adjuntos del G-buffer que se resuelven (`resolveMode = AVERAGE`)
-  sobre las imágenes 1× que ya consumen TAA/SSR/present. El fondo trazado **no se copia** al
+  `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). El G-buffer de pantalla sigue
+  una máscara (`GbufferMask`): Color siempre; Normal+Albedo+World si SSR o RT; Velocity si TAA.
+  `colorAttachmentCount` permanece en 5 (`location` 0..4); las ranuras apagadas usan
+  `vk::Format::UNDEFINED` y `VkRenderingAttachmentInfo` por defecto (view nulo, layout UNDEFINED,
+  resolve NONE). Con >1× se crean copias multisampleadas **solo de los adjuntos activos** y se
+  resuelven (`resolveMode = AVERAGE`) sobre las imágenes 1×. El fondo trazado **no se copia** al
   adjunto multisampleado (`vkCmdCopyImage` exige las mismas muestras en origen y destino,
   VUID-vkCmdCopyImage-srcImage-00136): se dibuja un quad full-screen con `sky.frag`, sin prueba ni
-  escritura de profundidad, que escribe las cinco salidas del G-buffer para que ningún adjunto
-  quede sin definir. La profundidad multisampleada se descarta y `targets.depth` se rellena con un
-  segundo pase a 1× con los pipelines de `depth_only.frag` (sin salidas de color, solo el `discard`
-  del alfa cortado, para que la profundidad coincida con la imagen resuelta). Tras un resize hay que
-  recrear el G-buffer MSAA (`ensure_ms`), porque `Targets::recreate` lo destruye y `ensure_msaa`
-  saldría por su early-return. La captura de sondas sigue dibujando con los pipelines de 1×.
+  escritura de profundidad. La profundidad multisampleada se descarta y `targets.depth` se rellena
+  con un segundo pase a 1× con `depth_only.frag`. Tras un resize hay que recrear el G-buffer MSAA
+  (`ensure_ms`). Las sondas asignan solo Color+depth (1× y MS); sus pipelines viven en la caché
+  `(GbufferMask, samples)` fuera de `pipe_handles`. Dummy 1×1 (RGBA8 / RGBA16F / RG16F) rellenan
+  descriptores de ranuras apagadas. Al cambiar la máscara: `device_wait_idle`, recrear adjuntos,
+  reescribir sets y soltar las imágenes viejas; si se enciende Velocity se llama
+  `reset_taa_history()` y el adjunto nuevo se limpia con `LOAD_OP_CLEAR`.
 - **Reflejos** (`set_reflection_tier`): `Off` (por defecto) deja solo el forward+TAA; cualquier
   otro tier activa la cadena SSR → denoise → composite. El switch adicional de ray tracing
   (`set_reflection_raytracing`) hace que el trazado use `VK_KHR_ray_tracing_pipeline` si el
@@ -184,7 +188,7 @@ submodulo, no el arbol completo:
 
 | Modulo | Contenido |
 |---|---|
-| `src/engine3d/vulkan/frame/` | `mod` (FrameRenderer/record), `targets`, `forward`, `present`, `rt`, `reflections`, `shadow`, `commands`, `layouts`, `pipelines` |
+| `src/engine3d/vulkan/frame/` | `mod` (FrameRenderer/record), `gbuffer` (`GbufferMask` y caché de pipelines), `targets`, `forward`, `present`, `rt`, `reflections`, `shadow`, `commands`, `layouts`, `pipelines` |
 | `src/engine3d/engine/commands/` | `system`, `scenes`, `entities`, `assets`, `graphics`, `world`, `player_ui`, `animation`, `scripts`, `sockets` |
 | `src/engine3d/engine/load_proyect/` | `schema`, `manifest`, `paths`, `restore`, `scene`, `events`, `snapshot` |
 | `src/engine3d/config_3d/model_asset/` | `types`, `material`, `import`, `asset`, `animation`, `skeleton`, `play` |

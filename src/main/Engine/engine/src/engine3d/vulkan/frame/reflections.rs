@@ -18,21 +18,23 @@ impl FrameRenderer {
         };
         // El trazado lee normal/depth recién escritos por el forward pass. La depth ya queda
         // registrada en READ_ONLY por `forward_pass`; aquí solo se sincroniza el G-buffer normal.
-        crate::engine3d::vulkan::gpu::cmd_image_barrier(
-            device,
-            cmd,
-            self.targets.normal.image,
-            vk::ImageAspectFlags::COLOR,
-            1,
-            1,
-            vk::ImageLayout::GENERAL,
-            vk::ImageLayout::GENERAL,
-            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
-                | vk::PipelineStageFlags::FRAGMENT_SHADER,
-            src_stage,
-            vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::SHADER_WRITE,
-            vk::AccessFlags::SHADER_READ,
-        );
+        if let Some(normal) = self.targets.normal.as_ref() {
+            crate::engine3d::vulkan::gpu::cmd_image_barrier(
+                device,
+                cmd,
+                normal.image,
+                vk::ImageAspectFlags::COLOR,
+                1,
+                1,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::GENERAL,
+                vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT
+                    | vk::PipelineStageFlags::FRAGMENT_SHADER,
+                src_stage,
+                vk::AccessFlags::COLOR_ATTACHMENT_WRITE | vk::AccessFlags::SHADER_WRITE,
+                vk::AccessFlags::SHADER_READ,
+            );
+        }
         if self.gpu.hw_rt() {
             let view = self.targets.reflection.view;
             self.dispatch_rays(slot, input, 1, view, device, cmd)?;
@@ -74,13 +76,7 @@ impl FrameRenderer {
             width: face_size,
             height: face_size,
         };
-        let views = [
-            self.targets.probe_color.view,
-            self.targets.probe_normal.view,
-            self.targets.probe_albedo.view,
-            self.targets.probe_world.view,
-            self.targets.probe_velocity.view,
-        ];
+        let views = [Some(self.targets.probe_color.view), None, None, None, None];
         const LIGHT_PARAMS_Y: usize = 64 * 4 + 16 * 2 + 16 + 64 + 4;
         let base_layer = (capture
             .slot
@@ -88,14 +84,22 @@ impl FrameRenderer {
             * 6;
         // La captura puede usar el G-buffer MS de sonda o el camino 1× según el tier actual.
         // Se decide una vez por sonda, no por cara.
-        let probe_ms = self
-            .targets
-            .probe_ms
-            .as_ref()
-            .filter(|ms| ms.samples > 1 && ms.samples == self.msaa_samples);
+        let probe_ms = self.targets.probe_ms.as_ref().filter(|ms| {
+            ms.samples > 1
+                && ms.samples == self.msaa_samples
+                && self
+                    .gbuffer_pipe_cache
+                    .contains_key(&(GbufferMask::color_only(), ms.samples))
+        });
         if let Some(ms) = probe_ms {
-            log::debug!("[msaa] captura de sonda a {}x", ms.samples);
+            log::debug!("[msaa] captura de sonda a {}x (solo color)", ms.samples);
         }
+        let probe_samples = if probe_ms.is_some() {
+            self.msaa_samples
+        } else {
+            1
+        };
+        let pipes = self.overlay_gbuffer_pipes(*pipes, GbufferMask::color_only(), probe_samples);
         for face in 0..6 {
             let mut scene = input.scene.to_vec();
             let vp = cube_face_view_proj(capture.origin, face);
@@ -112,10 +116,10 @@ impl FrameRenderer {
             }
             if let Some(ms) = probe_ms {
                 let ms_views = ms.views();
-                begin_color_ms(device, cmd, &ms_views, ms.depth.view, &views, extent, true);
+                let ms_depth = ms.depth.view;
+                begin_color_ms(device, cmd, &ms_views, ms_depth, &views, extent, true);
                 set_viewport(device, cmd, extent);
-                let ms_pipes = self.forward_pipes(*pipes);
-                self.draw_forward(slot, input, &ms_pipes, device, cmd, 0.0);
+                self.draw_forward(slot, input, &pipes, device, cmd, 0.0);
                 unsafe { device.cmd_end_rendering(cmd) };
             } else {
                 begin_color(
@@ -127,7 +131,7 @@ impl FrameRenderer {
                     true,
                 );
                 set_viewport(device, cmd, extent);
-                self.draw_forward(slot, input, pipes, device, cmd, 0.0);
+                self.draw_forward(slot, input, &pipes, device, cmd, 0.0);
                 unsafe { device.cmd_end_rendering(cmd) };
             }
             // `copy_color` escribe en `base_array_layer`, así que cada cara de cada sonda ocupa su

@@ -69,7 +69,7 @@ impl FrameRenderer {
                     device,
                     self.sets.ssr[slot],
                     1,
-                    self.targets.normal.view,
+                    self.sampled_normal(),
                     clamp,
                     vk::ImageLayout::GENERAL,
                 )?;
@@ -85,7 +85,7 @@ impl FrameRenderer {
                     device,
                     self.sets.ssr[slot],
                     5,
-                    self.targets.albedo_out.view,
+                    self.sampled_albedo(),
                     clamp,
                     vk::ImageLayout::GENERAL,
                 )?;
@@ -126,7 +126,7 @@ impl FrameRenderer {
                 device,
                 self.sets.denoise[slot],
                 2,
-                self.targets.normal.view,
+                self.sampled_normal(),
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -190,7 +190,7 @@ impl FrameRenderer {
                     device,
                     set,
                     2,
-                    self.targets.normal.view,
+                    self.sampled_normal(),
                     clamp,
                     vk::ImageLayout::GENERAL,
                 )?;
@@ -271,7 +271,7 @@ impl FrameRenderer {
                 device,
                 self.sets.composite[slot],
                 3,
-                self.targets.normal.view,
+                self.sampled_normal(),
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -279,7 +279,7 @@ impl FrameRenderer {
                 device,
                 self.sets.composite[slot],
                 4,
-                self.targets.world.view,
+                self.sampled_world(),
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -288,7 +288,7 @@ impl FrameRenderer {
                 device,
                 self.sets.composite[slot],
                 5,
-                self.targets.albedo_out.view,
+                self.sampled_albedo(),
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
@@ -339,7 +339,7 @@ impl FrameRenderer {
                 device,
                 self.sets.taa[slot],
                 2,
-                self.targets.velocity.view,
+                self.sampled_velocity(),
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
