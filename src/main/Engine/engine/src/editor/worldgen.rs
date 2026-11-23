@@ -341,7 +341,7 @@ impl Default for PanelState {
             waterfalls: 2,
             biomes,
             biome_shares: shares,
-            replace_world: false,
+            replace_world: true,
         }
     }
 }
@@ -468,6 +468,22 @@ pub enum GenerationPhase {
     Mesh,
 }
 
+/// Tipo visual del aviso flotante del generador.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorldGenToastKind {
+    Success,
+    Error,
+    Info,
+}
+
+/// Aviso flotante: no ocupa sitio en el formulario.
+#[derive(Debug, Clone)]
+pub struct WorldGenToast {
+    pub message: String,
+    pub kind: WorldGenToastKind,
+    pub start_time: Option<f64>,
+}
+
 /// Progreso de generación mostrado en el botón principal.
 #[derive(Debug, Clone, Copy)]
 pub struct Generation {
@@ -486,7 +502,7 @@ pub struct WorldGenState {
     pub scatter_entries: Vec<ScatterEntry>,
     pub open_scatter_id: Option<String>,
     pub selected_model_path: String,
-    pub status: String,
+    pub toast: Option<WorldGenToast>,
     pub generation: Option<Generation>,
     pub distributing: bool,
     pub library_path: Option<String>,
@@ -498,6 +514,14 @@ pub struct WorldGenState {
 impl WorldGenState {
     pub fn inputs_locked(&self) -> bool {
         self.generation.is_some() || self.distributing
+    }
+
+    pub fn show_toast(&mut self, kind: WorldGenToastKind, message: impl Into<String>) {
+        self.toast = Some(WorldGenToast {
+            message: message.into(),
+            kind,
+            start_time: None,
+        });
     }
 
     /// Aplica los eventos `world_gen_*` del motor para actualizar la UI.
@@ -516,25 +540,18 @@ impl WorldGenState {
                     total,
                     phase,
                 });
-                if phase == GenerationPhase::Mesh && total > 0 && completed >= total {
-                    self.generation = None;
-                    self.world_generated = true;
-                    if !self.finish_handled {
-                        self.finish_handled = true;
-                        self.start_distribution();
-                    }
-                }
             }
             "world_gen_error" => {
                 self.finish_handled = true;
                 self.pending_scatter = 0;
                 self.generation = None;
                 self.distributing = false;
-                self.status = event
+                let message = event
                     .get("message")
                     .and_then(Value::as_str)
                     .unwrap_or("World generation failed")
                     .to_string();
+                self.show_toast(WorldGenToastKind::Error, message);
             }
             "world_gen_completed" => {
                 self.generation = None;
@@ -557,17 +574,14 @@ impl WorldGenState {
                     self.pending_scatter = 0;
                     self.generation = None;
                     self.distributing = false;
-                    self.status = "World generation failed".to_string();
+                    self.show_toast(WorldGenToastKind::Error, "World generation failed");
                 }
             }
             "world_gen_scatter_done" => {
                 self.pending_scatter = self.pending_scatter.saturating_sub(1);
-                let count = event.get("count").and_then(Value::as_u64).unwrap_or(0);
                 if self.pending_scatter == 0 {
                     self.distributing = false;
-                    self.status = "World ready".to_string();
-                } else {
-                    self.status = format!("Distributing blueprints… ({count})");
+                    self.show_toast(WorldGenToastKind::Success, "World ready");
                 }
             }
             _ => {}
@@ -579,12 +593,11 @@ impl WorldGenState {
         self.generation = None;
         if self.scatter_entries.is_empty() {
             self.distributing = false;
-            self.status = "World ready".to_string();
+            self.show_toast(WorldGenToastKind::Success, "World ready");
             return;
         }
         self.pending_scatter = self.scatter_entries.len() as u32;
         self.distributing = true;
-        self.status = "Distributing blueprints…".to_string();
         for entry in &self.scatter_entries {
             let rules = &entry.rules;
             self.commands.push(json!({
@@ -635,6 +648,7 @@ mod tests {
     #[test]
     fn default_panel_keeps_three_biomes_with_shares_summing_100() {
         let panel = PanelState::default();
+        assert!(panel.replace_world);
         assert_eq!(panel.biomes.iter().filter(|enabled| **enabled).count(), 3);
         assert_eq!(panel.biome_shares.iter().sum::<u32>(), 100);
         assert!(
@@ -681,8 +695,19 @@ mod tests {
         });
         state.start_distribution();
         assert!(state.distributing);
+        assert!(state.toast.is_none());
         assert_eq!(state.commands.len(), 2);
         assert_eq!(state.commands[0]["cmd"], json!("register_blueprint"));
         assert_eq!(state.commands[1]["cmd"], json!("world_gen_scatter"));
+    }
+
+    #[test]
+    fn empty_distribution_toasts_world_ready() {
+        let mut state = WorldGenState::default();
+        state.start_distribution();
+        assert!(!state.distributing);
+        let toast = state.toast.expect("toast");
+        assert_eq!(toast.kind, WorldGenToastKind::Success);
+        assert_eq!(toast.message, "World ready");
     }
 }

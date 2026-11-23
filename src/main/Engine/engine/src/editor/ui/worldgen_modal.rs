@@ -670,10 +670,14 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
             ui.add_space(8.0);
             ui.separator();
             ui.add_space(8.0);
-            ui.checkbox(
-                &mut panel.replace_world,
-                t(locale, "Replace current world", "Replace current world"),
-            );
+            widgets::top_row(ui, |ui| {
+                widgets::switch_value(ui, &mut panel.replace_world, "");
+                ui.label(
+                    RichText::new(t(locale, "Replace current world", "Replace current world"))
+                        .size(12.0)
+                        .color(theme::TEXT),
+                );
+            });
         },
     );
 }
@@ -1033,11 +1037,6 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         );
                     });
 
-                    if !app.worldgen.status.is_empty() {
-                        ui.add_space(8.0);
-                        ui.label(RichText::new(&app.worldgen.status).size(11.0).color(theme::TEXT_MUTED));
-                    }
-
                     if let Some(generation) = app.worldgen.generation {
                         ui.add_space(6.0);
                         generation_progress(ui, locale, generation);
@@ -1071,13 +1070,16 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                         if bootstrap_button(ui, icons::PLAY, &label, Btn::Primary, generate_width, !busy, busy)
                         {
                             match app.worldgen.library_path.clone() {
-                                None => app.worldgen.status = t(locale, "Install the World Generator plugin first",
-                                    "Install the World Generator plugin first"),
+                                None => app.worldgen.show_toast(
+                                    worldgen::WorldGenToastKind::Error,
+                                    t(locale, "Install the World Generator plugin first",
+                                        "Install the World Generator plugin first"),
+                                ),
                                 Some(path) => {
                                     app.worldgen.finish_handled = false;
                                     app.worldgen.pending_scatter = 0;
                                     app.worldgen.distributing = false;
-                                    app.worldgen.status.clear();
+                                    app.worldgen.toast = None;
                                     app.worldgen.generation = Some(worldgen::Generation {
                                         completed: 0, total: 0, phase: worldgen::GenerationPhase::Scan,
                                     });
@@ -1098,7 +1100,10 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             app.worldgen.pending_scatter = 0;
                             app.worldgen.distributing = false;
                             app.worldgen.generation = None;
-                            app.worldgen.status = t(locale, "Generation cancelled", "Generation cancelled");
+                            app.worldgen.show_toast(
+                                worldgen::WorldGenToastKind::Info,
+                                t(locale, "Generation cancelled", "Generation cancelled"),
+                            );
                             app.send_engine(json!({ "cmd": "world_gen_stop" }));
                         }
                         if bootstrap_button(ui, icons::TRASH, &t(locale, "Clear", "Clear"),
@@ -1106,12 +1111,30 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             app.worldgen.world_generated && !busy, false)
                         {
                             app.worldgen.world_generated = false;
-                            app.worldgen.status = t(locale, "World cleared", "World cleared");
+                            app.worldgen.show_toast(
+                                worldgen::WorldGenToastKind::Info,
+                                t(locale, "World cleared", "World cleared"),
+                            );
                             app.send_engine(json!({ "cmd": "world_gen_reset" }));
                         }
                     });
                 });
         });
+
+    let toast_expired = if let Some(toast) = app.worldgen.toast.as_mut() {
+        let kind = match toast.kind {
+            worldgen::WorldGenToastKind::Success => widgets::ToastKind::Success,
+            worldgen::WorldGenToastKind::Error => widgets::ToastKind::Error,
+            worldgen::WorldGenToastKind::Info => widgets::ToastKind::Info,
+        };
+        let message = toast.message.clone();
+        !widgets::floating_toast(ui, kind, &message, &mut toast.start_time)
+    } else {
+        false
+    };
+    if toast_expired {
+        app.worldgen.toast = None;
+    }
 
     worldgen::flush_commands(app);
 }

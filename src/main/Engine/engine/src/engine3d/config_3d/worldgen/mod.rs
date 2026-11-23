@@ -3,32 +3,42 @@
 //! División de responsabilidades (contrato del plan):
 //! - **La DLL (`rer-worldgen`) produce**: densidad, Marching Cubes, chunks,
 //!   splats. No hay ninguna lógica de generación en el engine.
-//! - **El engine consume**: subida a GPU con presupuesto por frame, entidades
-//!   ECS, eventos de progreso y limpieza.
+//! - **El engine consume**: subida a GPU con presupuesto por frame (el scan y
+//!   el mesh CPU van en el hilo `rer-worldgen`), entidades ECS, eventos de
+//!   progreso y limpieza.
 //!
 //! El flujo es: `world_gen_set_library_path` (ruta de la DLL instalada por el
-//! editor) → `world_gen_set_config` (JSON camelCase) → `world_gen_start` →
-//! `worldgen_tick` avanza la cola → eventos `world_gen_*` hacia el editor.
+//! editor) → `world_gen_set_config` (JSON camelCase, sin crear el mundo) →
+//! `world_gen_start` → el hilo `rer-worldgen` crea el handle (`wg_world_create`),
+//! barre columnas y meshea; `worldgen_tick` drena CPU, sube GPU
+//! (`CHUNKS_PER_FRAME`) y coloca scatter (`PLACEMENTS_PER_FRAME`) → eventos
+//! `world_gen_*` hacia el editor.
 
 mod abi;
 mod loader;
 mod types;
+mod worker;
 
 pub(crate) use types::CHUNKS_PER_FRAME;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use glam::Vec3;
 use serde::Deserialize;
 
 use crate::engine3d::config_3d::WorldBounds3D;
-use crate::engine3d::config_3d::worldgen::abi::{CHUNK_SIZE, Status, WgMeshBuffers};
+use crate::engine3d::config_3d::worldgen::abi::CHUNK_SIZE;
 use crate::engine3d::config_3d::worldgen::loader::WorldgenLibrary;
 use crate::engine3d::config_3d::worldgen::types::{
-    ChunkColumns, ChunkKey, GenerationArea, PendingChunk, SCAN_BUDGET_MS, SCAN_COLUMNS_PER_FRAME,
-    SPLAT_ATLAS_TILE_PX, SPLAT_ATLAS_TILES, ScanCursor, SplatAtlas, WgWorldHandle, WorldgenChunk,
-    WorldgenPlacement, WorldgenStatus,
+    ChunkColumns, ChunkKey, GenerationArea, PLACEMENTS_PER_FRAME, PendingChunk, PendingScatterJob,
+    PendingScatterPose, SPLAT_ATLAS_TILE_PX, SPLAT_ATLAS_TILES, ScanCursor, SplatAtlas,
+    WgWorldHandle, WorldgenChunk, WorldgenPlacement, WorldgenStatus,
+};
+use crate::engine3d::config_3d::worldgen::worker::{
+    PendingCpuChunk, WorldgenJob, WorldgenRunJob, WorldgenWorkerMsg, spawn_worldgen_worker,
 };
 use crate::engine3d::ecs::{MeshComponent, MeshLocalAabb, NonSelectable, SurfacePbr, Transform};
 use crate::engine3d::ipc::{EngineEvent, send_event};
@@ -70,6 +80,7 @@ impl super::super::engine::State {
     /// DLL anterior). Si cambia, se libera el mundo con la biblioteca vieja
     /// antes de soltarla.
     pub(crate) fn worldgen_set_library_path(&mut self, path: String) {
+        self.worldgen_cancel_worker();
         if self.worldgen.library.is_some()
             && self.worldgen.library_path.as_deref() == Some(path.as_str())
         {
@@ -91,8 +102,11 @@ impl super::super::engine::State {
                 send_event(&EngineEvent::WorldGenStatus {
                     state: self.worldgen.status.as_str().to_string(),
                 });
-                if let Some(config_json) = self.worldgen.config_json.clone() {
-                    self.worldgen_apply_config(&config_json);
+                if self.worldgen.config_json.is_some() {
+                    self.worldgen_set_status(WorldgenStatus::Ready);
+                    send_event(&EngineEvent::WorldGenStatus {
+                        state: self.worldgen.status.as_str().to_string(),
+                    });
                 }
             }
             Err(message) => {
@@ -104,20 +118,22 @@ impl super::super::engine::State {
         }
     }
 
-    /// `world_gen_set_config`: aplica la config (JSON camelCase de `WorldGenConfig`)
-    /// creando el handle del mundo en la DLL.
+    /// `world_gen_set_config`: guarda el JSON camelCase. El handle se crea en
+    /// el worker al generar; no bloquear el editor aquí.
     pub(crate) fn worldgen_set_config(&mut self, config_json: String) {
         // Nueva configuración: el área generada y el terreno anterior dejan de
         // ser válidos hasta el próximo `world_gen_start`.
         self.worldgen.generation = None;
         self.worldgen.generated = false;
-        self.worldgen.config_json = Some(config_json.clone());
+        self.worldgen.config_json = Some(config_json);
         if self.worldgen.library.is_none() {
-            // La config se aplicará cuando llegue la ruta del plugin.
             self.worldgen_set_status(WorldgenStatus::MissingLibrary);
             return;
         }
-        self.worldgen_apply_config(&config_json);
+        self.worldgen_set_status(WorldgenStatus::Ready);
+        send_event(&EngineEvent::WorldGenStatus {
+            state: self.worldgen.status.as_str().to_string(),
+        });
     }
 
     /// `world_gen_start`: genera el mundo desde cero con la config actual.
@@ -127,6 +143,7 @@ impl super::super::engine::State {
     /// mover una cara dentro del área, `worldgen_retrim` añade o recorta solo
     /// lo afectado.
     pub(crate) fn worldgen_start(&mut self, replace_ground: bool, resize_world: bool) {
+        self.worldgen_cancel_worker();
         if self.worldgen.library.is_none() {
             send_event(&EngineEvent::WorldGenError {
                 message: "world_gen_start sin plugin cargado".to_string(),
@@ -150,7 +167,7 @@ impl super::super::engine::State {
         // Generar desde el modal fija el mundo al tamaño pedido (el plugin es
         // la fuente del tamaño al crear el mundo). En restauraciones o
         // crecimientos automáticos se conservan las caras actuales.
-        if resize_world && self.worldgen.world.is_some() {
+        if resize_world {
             self.set_world_bounds_3d_faces(
                 config.bounds.length * 0.5,
                 config.bounds.length * 0.5,
@@ -169,11 +186,8 @@ impl super::super::engine::State {
         self.worldgen.scene_offset = scene_offset(area.min_x, area.min_z);
 
         let config_json = config_with_bounds(&config_json, &area, &self.world_bounds_3d);
-        self.worldgen.config_json = Some(config_json.clone());
-        self.worldgen_apply_config(&config_json);
-        if self.worldgen.world.is_none() {
-            return;
-        }
+        self.worldgen.config_json = Some(config_json);
+        self.worldgen_reset_generation_state();
         self.worldgen.generated = true;
 
         let voxel = config.resolution.voxel_size.max(0.001);
@@ -412,7 +426,9 @@ impl super::super::engine::State {
     /// vivo hasta `world_gen_reset` o `world_gen_unload`. Los chunks ya en
     /// escena se mantienen hasta el reset.
     pub(crate) fn worldgen_stop(&mut self) {
+        self.worldgen_cancel_worker();
         self.worldgen.replace_ground = false;
+        self.worldgen.scatter_jobs.clear();
         self.worldgen.pending.clear();
         self.worldgen.scan = None;
         self.worldgen.total_chunks = 0;
@@ -459,6 +475,12 @@ impl super::super::engine::State {
     /// instancias por la vía existente (`spawn_cached_model_part_at` con
     /// `blueprint_id`), compartiendo los recursos GPU del blueprint.
     pub(crate) fn worldgen_scatter(&mut self, rules_json: &str) {
+        if self.worldgen.inflight.is_some() {
+            send_event(&EngineEvent::WorldGenError {
+                message: "world_gen_scatter: la generación sigue en curso".to_string(),
+            });
+            return;
+        }
         // 1) Validaciones previas (sin llamar a la DLL todavía).
         let blueprint_id = serde_json::from_str::<serde_json::Value>(rules_json)
             .ok()
@@ -538,7 +560,7 @@ impl super::super::engine::State {
         // El préstamo de `library` termina aquí; a partir de este punto se
         // puede mutar `self` para colocar las entidades.
 
-        // 3) Colocación por la vía del blueprint (física, undo off, categoría).
+        // 3) Encola las colocaciones; el tick las spawnea con presupuesto.
         let display = meta
             .template_name
             .clone()
@@ -557,61 +579,54 @@ impl super::super::engine::State {
                 .scatter_rules
                 .push((blueprint_id.clone(), rules_json.to_string()));
         }
-        for (i, placement) in placements.iter().enumerate() {
-            let rotation = glam::Quat::from_rotation_y(placement.yaw).to_array();
-            let origin = self.worldgen.scene_offset;
-            let position = [
-                placement.position[0] + origin.x,
-                placement.position[1] + origin.y,
-                placement.position[2] + origin.z,
-            ];
-            // El plugin genera un área con margen: el scatter solo existe dentro
-            // del mundo visible.
-            if !self.world_bounds_3d.contains_xz(position[0], position[2]) {
-                continue;
-            }
-            let entity_id = self.spawn_cached_model_part_at(
-                part.mesh_idx,
-                part.tex_idx,
-                &model_path,
-                position,
-                rotation,
-                placement.scale,
-                &format!("{display} #{i}"),
-                "model",
-                Some(blueprint_id.clone()),
-                meta.category.clone(),
-                meta.physics_enabled
-                    .unwrap_or(meta.colision.unwrap_or(false)),
-                meta.physics_type.as_deref().unwrap_or("dynamic"),
-                part.local_bounds,
-                None,
-                part.roughness,
-                part.metallic,
-                part.ior,
-                false,
-            );
-            self.worldgen.placements.push(WorldgenPlacement {
-                blueprint_id: blueprint_id.clone(),
-                position,
-                rotation,
-                scale: placement.scale,
-                entity_id,
-            });
-        }
-        let placed = placements
+        let origin = self.worldgen.scene_offset;
+        let remaining: VecDeque<PendingScatterPose> = placements
             .iter()
-            .filter(|placement| {
-                let origin = self.worldgen.scene_offset;
-                self.world_bounds_3d.contains_xz(
+            .enumerate()
+            .filter_map(|(index, placement)| {
+                let position = [
                     placement.position[0] + origin.x,
+                    placement.position[1] + origin.y,
                     placement.position[2] + origin.z,
-                )
+                ];
+                if !self.world_bounds_3d.contains_xz(position[0], position[2]) {
+                    return None;
+                }
+                Some(PendingScatterPose {
+                    position,
+                    rotation: glam::Quat::from_rotation_y(placement.yaw).to_array(),
+                    scale: placement.scale,
+                    index,
+                })
             })
-            .count();
-        send_event(&EngineEvent::WorldGenScatterDone {
+            .collect();
+        if remaining.is_empty() {
+            send_event(&EngineEvent::WorldGenScatterDone {
+                blueprint_id,
+                count: 0,
+            });
+            return;
+        }
+        self.worldgen.scatter_jobs.push_back(PendingScatterJob {
             blueprint_id,
-            count: placed as u32,
+            model_path,
+            display,
+            mesh_idx: part.mesh_idx,
+            tex_idx: part.tex_idx,
+            category: meta.category.clone(),
+            physics_enabled: meta
+                .physics_enabled
+                .unwrap_or(meta.colision.unwrap_or(false)),
+            physics_type: meta
+                .physics_type
+                .clone()
+                .unwrap_or_else(|| "dynamic".to_string()),
+            local_bounds: part.local_bounds,
+            roughness: part.roughness,
+            metallic: part.metallic,
+            ior: part.ior,
+            remaining,
+            placed: 0,
         });
     }
 
@@ -725,7 +740,7 @@ impl super::super::engine::State {
 
         // 4) Generación del terreno: automática si el plugin está cargado.
         // Restaurar no quita el suelo: ese check solo viaja con Generar mundo.
-        if self.worldgen.library.is_some() && self.worldgen.world.is_some() {
+        if self.worldgen.library.is_some() && self.worldgen.config_json.is_some() {
             self.worldgen_start(false, false);
         }
         send_event(&EngineEvent::WorldGenStatus {
@@ -735,49 +750,222 @@ impl super::super::engine::State {
 
     // -- Tick por frame -------------------------------------------------------
 
-    /// Avanza el barrido de columnas o la cola de chunks con presupuesto
-    /// [`CHUNKS_PER_FRAME`]. Se llama desde `State::update`.
+    /// Drena el worker y sube como máximo [`CHUNKS_PER_FRAME`] mallas a GPU.
+    /// Scan y `wg_mesh_chunk` corren en `rer-worldgen`, no en este hilo.
+    /// El scatter se drena siempre (también tras Complete) para no congelar.
     pub(crate) fn worldgen_tick(&mut self) {
+        self.worldgen_tick_scatter();
         if self.worldgen.status != WorldgenStatus::Generating {
             return;
         }
-        if self.worldgen.scan.is_some() {
-            self.worldgen_scan_columns();
-            return;
+        if self.worldgen.inflight.is_none()
+            && (self.worldgen.scan.is_some() || !self.worldgen.pending.is_empty())
+        {
+            self.worldgen_dispatch_generation();
         }
-        for _ in 0..CHUNKS_PER_FRAME {
-            let Some(pending) = self.worldgen.pending.pop() else {
-                let replace_ground = self.worldgen.replace_ground;
-                self.worldgen.replace_ground = false;
-                // Progreso final antes de completar: la modal puede cerrar el
-                // spinner aunque se pierda el evento `world_gen_completed`.
-                if self.worldgen.total_chunks > 0 {
-                    send_event(&EngineEvent::WorldGenProgress {
-                        completed: self.worldgen.completed_chunks,
-                        total: self.worldgen.total_chunks,
-                        phase: Some("mesh".into()),
-                    });
-                }
-                self.worldgen_set_status(WorldgenStatus::Complete);
-                if replace_ground {
-                    self.remove_default_ground();
-                }
-                send_event(&EngineEvent::WorldGenStatus {
-                    state: self.worldgen.status.as_str().to_string(),
-                });
-                send_event(&EngineEvent::WorldGenCompleted {
-                    chunks: self.worldgen.completed_chunks,
-                });
-                return;
+        self.worldgen_drain_worker();
+        let mut uploaded = 0usize;
+        while uploaded < CHUNKS_PER_FRAME {
+            let Some(chunk) = self.worldgen.gpu_queue.pop_front() else {
+                break;
             };
-            if self.worldgen_spawn_chunk(pending.key, pending.lod).is_err() {
+            if self.worldgen_upload_cpu_chunk(chunk).is_err() {
                 return;
             }
+            uploaded += 1;
         }
-        send_event(&EngineEvent::WorldGenProgress {
-            completed: self.worldgen.completed_chunks,
-            total: self.worldgen.total_chunks,
-            phase: Some("mesh".into()),
+        if uploaded > 0 {
+            send_event(&EngineEvent::WorldGenProgress {
+                completed: self.worldgen.completed_chunks,
+                total: self.worldgen.total_chunks,
+                phase: Some("mesh".into()),
+            });
+        }
+        if self.worldgen.status == WorldgenStatus::Generating
+            && self.worldgen.inflight.is_none()
+            && self.worldgen.gpu_queue.is_empty()
+            && self.worldgen.scan.is_none()
+            && self.worldgen.pending.is_empty()
+        {
+            self.worldgen_finish_generation();
+        }
+    }
+
+    fn worldgen_ensure_worker(&mut self) {
+        if self.worldgen.job_tx.is_some() {
+            return;
+        }
+        let live = Arc::clone(&self.worldgen.live_generation);
+        let (job_tx, result_rx, join) = spawn_worldgen_worker(live);
+        self.worldgen.job_tx = Some(job_tx);
+        self.worldgen.result_rx = Some(result_rx);
+        self.worldgen.worker = Some(join);
+    }
+
+    fn worldgen_cancel_worker(&mut self) {
+        let Some(old) = self.worldgen.inflight else {
+            self.worldgen.gpu_queue.clear();
+            return;
+        };
+        self.worldgen.generation_id = self.worldgen.generation_id.wrapping_add(1);
+        self.worldgen
+            .live_generation
+            .store(self.worldgen.generation_id, Ordering::Release);
+        self.worldgen.gpu_queue.clear();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while self.worldgen.inflight == Some(old) && Instant::now() < deadline {
+            if !self.worldgen_try_recv_worker() {
+                std::thread::yield_now();
+            }
+        }
+        self.worldgen.gpu_queue.clear();
+    }
+
+    fn worldgen_dispatch_generation(&mut self) {
+        self.worldgen_ensure_worker();
+        let Some(ffi) = self.worldgen.library.as_ref().map(WorldgenLibrary::ffi) else {
+            return;
+        };
+        let handle = self
+            .worldgen
+            .world
+            .as_ref()
+            .map(|world| world.0 as usize)
+            .unwrap_or(0);
+        let create_json = if handle == 0 {
+            self.worldgen.config_json.clone()
+        } else {
+            None
+        };
+        if create_json.is_none() && handle == 0 {
+            return;
+        }
+        self.worldgen.generation_id = self.worldgen.generation_id.wrapping_add(1);
+        let generation = self.worldgen.generation_id;
+        self.worldgen
+            .live_generation
+            .store(generation, Ordering::Release);
+        self.worldgen.gpu_queue.clear();
+        let job = WorldgenJob::Run(Box::new(WorldgenRunJob {
+            generation,
+            handle,
+            create_json,
+            ffi,
+            scan: self.worldgen.scan.take(),
+            pending: std::mem::take(&mut self.worldgen.pending),
+            origin: self.worldgen.scene_offset.to_array(),
+        }));
+        self.worldgen.inflight = Some(generation);
+        if let Some(tx) = self.worldgen.job_tx.as_ref()
+            && tx.send(job).is_err()
+        {
+            self.worldgen.inflight = None;
+            self.worldgen_set_status(WorldgenStatus::LibraryError);
+            send_event(&EngineEvent::WorldGenError {
+                message: "hilo rer-worldgen cerrado".into(),
+            });
+        }
+    }
+
+    fn worldgen_drain_worker(&mut self) {
+        while self.worldgen_try_recv_worker() {}
+    }
+
+    fn worldgen_try_recv_worker(&mut self) -> bool {
+        let msg = {
+            let Some(rx) = self.worldgen.result_rx.as_ref() else {
+                return false;
+            };
+            match rx.try_recv() {
+                Ok(msg) => msg,
+                Err(_) => return false,
+            }
+        };
+        let live = self.worldgen.generation_id;
+        match msg {
+            WorldgenWorkerMsg::WorldCreated { generation, handle } => {
+                let ptr = handle as *mut std::ffi::c_void;
+                if generation == live {
+                    if let Some(old) = self.worldgen.world.take()
+                        && let Some(library) = self.worldgen.library.as_ref()
+                    {
+                        // # Seguridad: handle previo de esta misma biblioteca.
+                        unsafe { (library.world_free)(old.0) };
+                    }
+                    self.worldgen.world = Some(WgWorldHandle(ptr));
+                } else if let Some(library) = self.worldgen.library.as_ref() {
+                    // # Seguridad: job obsoleto; el worker ya no posee el handle.
+                    unsafe { (library.world_free)(ptr) };
+                }
+            }
+            WorldgenWorkerMsg::ScanProgress {
+                generation,
+                completed,
+                total,
+            } if generation == live => {
+                send_event(&EngineEvent::WorldGenProgress {
+                    completed,
+                    total,
+                    phase: Some("scan".into()),
+                });
+            }
+            WorldgenWorkerMsg::MeshPhase { generation, total } if generation == live => {
+                self.worldgen.total_chunks = total;
+                self.worldgen.completed_chunks = 0;
+                send_event(&EngineEvent::WorldGenProgress {
+                    completed: 0,
+                    total,
+                    phase: Some("mesh".into()),
+                });
+            }
+            WorldgenWorkerMsg::ChunkReady { generation, chunk } if generation == live => {
+                self.worldgen.gpu_queue.push_back(chunk);
+            }
+            WorldgenWorkerMsg::Failed {
+                generation,
+                message,
+            } => {
+                if self.worldgen.inflight == Some(generation) {
+                    self.worldgen.inflight = None;
+                }
+                if generation == live {
+                    self.worldgen.gpu_queue.clear();
+                    self.worldgen.replace_ground = false;
+                    self.worldgen.last_error = Some(message.clone());
+                    self.worldgen_set_status(WorldgenStatus::LibraryError);
+                    send_event(&EngineEvent::WorldGenError { message });
+                }
+            }
+            WorldgenWorkerMsg::Cancelled { generation }
+            | WorldgenWorkerMsg::Finished { generation }
+                if self.worldgen.inflight == Some(generation) =>
+            {
+                self.worldgen.inflight = None;
+            }
+            _ => {}
+        }
+        true
+    }
+
+    fn worldgen_finish_generation(&mut self) {
+        let replace_ground = self.worldgen.replace_ground;
+        self.worldgen.replace_ground = false;
+        if self.worldgen.total_chunks > 0 {
+            send_event(&EngineEvent::WorldGenProgress {
+                completed: self.worldgen.completed_chunks,
+                total: self.worldgen.total_chunks,
+                phase: Some("mesh".into()),
+            });
+        }
+        self.worldgen_set_status(WorldgenStatus::Complete);
+        if replace_ground {
+            self.remove_default_ground();
+        }
+        send_event(&EngineEvent::WorldGenStatus {
+            state: self.worldgen.status.as_str().to_string(),
+        });
+        send_event(&EngineEvent::WorldGenCompleted {
+            chunks: self.worldgen.completed_chunks,
         });
     }
 
@@ -789,6 +977,7 @@ impl super::super::engine::State {
 
     /// Libera el handle con la biblioteca que lo creó. No suelta la DLL.
     fn worldgen_release_world(&mut self) {
+        self.worldgen_cancel_worker();
         if let Some(handle) = self.worldgen.world.take()
             && let Some(library) = self.worldgen.library.as_ref()
         {
@@ -914,134 +1103,12 @@ impl super::super::engine::State {
         self.entity_colision.insert(entity_id, true);
     }
 
-    /// Avanza unas columnas del barrido. Al cubrir el mundo, ordena la cola
-    /// para que `pop` saque primero la superficie cercana.
-    fn worldgen_scan_columns(&mut self) {
-        let Some(mut scan) = self.worldgen.scan.take() else {
-            return;
-        };
-        let mut failed: Option<String> = None;
-        {
-            let Some(library) = self.worldgen.library.as_ref() else {
-                self.worldgen.scan = Some(scan);
-                return;
-            };
-            let Some(handle) = self.worldgen.world.as_ref() else {
-                self.worldgen.scan = Some(scan);
-                return;
-            };
-            let started = Instant::now();
-            let budget = Duration::from_millis(SCAN_BUDGET_MS);
-            let mut scanned = 0usize;
-            let scan_column = |scan: &mut ScanCursor, cx: i32, cz: i32| {
-                for cy in 0..=scan.max_y {
-                    // # Seguridad: handle válido de esta DLL, hilo del engine.
-                    let status = unsafe { (library.chunk_status)(handle.0, cx, cy, cz) };
-                    if status == 1 {
-                        scan.collected.push(PendingChunk {
-                            key: (cx, cy, cz),
-                            lod: 0,
-                        });
-                    } else if status < 0 {
-                        return Some(format!("wg_chunk_status({cx}, {cy}, {cz}) inválido"));
-                    }
-                }
-                None
-            };
-
-            if scan.columns.is_some() {
-                while let Some(&(cx, cz)) = scan
-                    .columns
-                    .as_ref()
-                    .and_then(|columns| columns.get(scan.column_index))
-                {
-                    if scanned >= SCAN_COLUMNS_PER_FRAME {
-                        break;
-                    }
-                    if scanned > 0 && started.elapsed() >= budget {
-                        break;
-                    }
-                    if let Some(message) = scan_column(&mut scan, cx, cz) {
-                        failed = Some(message);
-                        break;
-                    }
-                    scanned += 1;
-                    scan.column_index += 1;
-                }
-            } else {
-                loop {
-                    if scan.cz >= scan.cz_max || scanned >= SCAN_COLUMNS_PER_FRAME {
-                        break;
-                    }
-                    if scanned > 0 && started.elapsed() >= budget {
-                        break;
-                    }
-                    let cx = scan.cx;
-                    let cz = scan.cz;
-                    if let Some(message) = scan_column(&mut scan, cx, cz) {
-                        failed = Some(message);
-                        break;
-                    }
-                    scanned += 1;
-                    scan.cx += 1;
-                    if scan.cx >= scan.cx_max {
-                        scan.cx = scan.cx_min;
-                        scan.cz += 1;
-                    }
-                }
-            }
-        }
-        if let Some(message) = failed {
-            self.worldgen.scan = None;
-            self.worldgen.pending.clear();
-            self.worldgen_set_status(WorldgenStatus::LibraryError);
-            send_event(&EngineEvent::WorldGenError { message });
-            return;
-        }
-        let done = match scan.columns.as_ref() {
-            Some(columns) => scan.column_index >= columns.len(),
-            None => scan.cz >= scan.cz_max,
-        };
-        if done {
-            let cell = scan.cell;
-            let camera = Vec3::from_array(scan.camera);
-            let origin = self.worldgen.scene_offset;
-            let mut pending = scan.collected;
-            dedupe_pending(&mut pending);
-            finalize_pending(&mut pending, cell, camera, origin);
-            self.worldgen.total_chunks = pending.len() as u32;
-            self.worldgen.completed_chunks = 0;
-            self.worldgen.pending = pending;
-            self.worldgen.scan = None;
-            send_event(&EngineEvent::WorldGenProgress {
-                completed: 0,
-                total: self.worldgen.total_chunks,
-                phase: Some("mesh".into()),
-            });
-            return;
-        }
-        let (completed, total) = match scan.columns.as_ref() {
-            Some(columns) => (scan.column_index as u32, columns.len() as u32),
-            None => {
-                let width = (scan.cx_max - scan.cx_min).max(0);
-                let height = (scan.cz_max - scan.cz_min).max(0);
-                let scanned =
-                    (scan.cz - scan.cz_min).max(0) * width + (scan.cx - scan.cx_min).max(0);
-                (scanned as u32, (width * height).max(1) as u32)
-            }
-        };
-        send_event(&EngineEvent::WorldGenProgress {
-            completed,
-            total: total.max(1),
-            phase: Some("scan".into()),
-        });
-        self.worldgen.scan = Some(scan);
-    }
-
-    /// Crea (o recrea) el handle del mundo con la config actual.
-    fn worldgen_apply_config(&mut self, config_json: &str) {
+    /// Quita escena y handle previos. `wg_world_create` corre en el worker.
+    fn worldgen_reset_generation_state(&mut self) {
+        self.worldgen_cancel_worker();
         self.worldgen_despawn_scene();
         self.worldgen_release_world();
+        self.worldgen.scatter_jobs.clear();
         self.worldgen.pending.clear();
         self.worldgen.scan = None;
         self.worldgen.column_epoch = self.worldgen.column_epoch.wrapping_add(1);
@@ -1050,97 +1117,93 @@ impl super::super::engine::State {
         self.worldgen.splat_atlas.next_tile = 0;
         self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
-
-        let Some(library) = self.worldgen.library.as_ref() else {
-            return;
-        };
-        // # Seguridad: buffer de solo lectura de config_json.len() bytes.
-        let handle = unsafe { (library.world_create)(config_json.as_ptr(), config_json.len()) };
-        if handle.is_null() {
-            let message = library.last_error_text(std::ptr::null());
-            self.worldgen.last_error = Some(message.clone());
-            self.worldgen_set_status(WorldgenStatus::LibraryError);
-            send_event(&EngineEvent::WorldGenError { message });
-            return;
-        }
-        self.worldgen.world = Some(WgWorldHandle(handle));
-        self.worldgen_set_status(WorldgenStatus::Ready);
-        send_event(&EngineEvent::WorldGenStatus {
-            state: self.worldgen.status.as_str().to_string(),
-        });
     }
 
-    /// Genera, meshea y sube un chunk a la escena. Devuelve Err si hay que
-    /// abortar la cola (error de la DLL).
-    fn worldgen_spawn_chunk(&mut self, key: ChunkKey, lod: u32) -> Result<(), ()> {
-        let (cx, cy, cz) = key;
-        let pending_lod = lod;
-        // Reemplazo de un chunk re-mesheado (crecimiento/recorte): se libera la
-        // entidad y malla anteriores antes de pedir la nueva geometría.
-        self.worldgen_remove_spawned_chunk(key);
-        let Some(library) = self.worldgen.library.as_ref() else {
-            let message = "worldgen_spawn_chunk: plugin descargado a mitad de la cola".to_string();
-            self.worldgen.last_error = Some(message.clone());
-            self.worldgen_set_status(WorldgenStatus::LibraryError);
-            send_event(&EngineEvent::WorldGenError { message });
-            return Err(());
-        };
-        let Some(handle) = self.worldgen.world.as_ref() else {
-            let message =
-                "worldgen_spawn_chunk: mundo del plugin liberado a mitad de la cola".to_string();
-            self.worldgen.last_error = Some(message.clone());
-            self.worldgen_set_status(WorldgenStatus::LibraryError);
-            send_event(&EngineEvent::WorldGenError { message });
-            return Err(());
-        };
-
-        let mut buffers = WgMeshBuffers::empty();
-        // # Seguridad: handle válido de esta DLL y struct del contrato ABI.
-        let status =
-            unsafe { (library.mesh_chunk)(handle.0, cx, cy, cz, pending_lod, &mut buffers) };
-        if status != Status::Ok as i32 {
-            let message = format!(
-                "wg_mesh_chunk({cx}, {cy}, {cz}) = {status:?}: {}",
-                library.last_error_text(handle.0)
-            );
-            self.worldgen.last_error = Some(message.clone());
-            self.worldgen.replace_ground = false;
-            self.worldgen_set_status(WorldgenStatus::LibraryError);
-            send_event(&EngineEvent::WorldGenError { message });
-            return Err(());
-        }
-
-        // Copiar los buffers a memoria propia ANTES de liberarlos (allocator único).
-        let vertices: Vec<crate::engine3d::mesh::Vertex> = if buffers.vertex_count == 0 {
-            Vec::new()
-        } else {
-            // # Seguridad: punteros válidos para `vertex_count`/`index_count` elementos.
-            unsafe {
-                let positions =
-                    std::slice::from_raw_parts(buffers.positions, buffers.vertex_count * 3);
-                let normals = std::slice::from_raw_parts(buffers.normals, buffers.vertex_count * 3);
-                let uvs = std::slice::from_raw_parts(buffers.uvs, buffers.vertex_count * 2);
-                (0..buffers.vertex_count)
-                    .map(|i| crate::engine3d::mesh::Vertex {
-                        position: [positions[i * 3], positions[i * 3 + 1], positions[i * 3 + 2]],
-                        normal: [normals[i * 3], normals[i * 3 + 1], normals[i * 3 + 2]],
-                        uv: [uvs[i * 2], uvs[i * 2 + 1]],
-                    })
-                    .collect()
+    /// Coloca como máximo [`PLACEMENTS_PER_FRAME`] instancias de scatter.
+    fn worldgen_tick_scatter(&mut self) {
+        let mut spawned = 0usize;
+        while spawned < PLACEMENTS_PER_FRAME {
+            if self
+                .worldgen
+                .scatter_jobs
+                .front()
+                .is_some_and(|job| job.remaining.is_empty())
+            {
+                if let Some(done) = self.worldgen.scatter_jobs.pop_front() {
+                    send_event(&EngineEvent::WorldGenScatterDone {
+                        blueprint_id: done.blueprint_id,
+                        count: done.placed,
+                    });
+                }
+                continue;
             }
-        };
-        let indices: Vec<u32> = if buffers.index_count == 0 {
-            Vec::new()
-        } else {
-            // # Seguridad: ver arriba.
-            unsafe { std::slice::from_raw_parts(buffers.indices, buffers.index_count) }.to_vec()
-        };
-        // # Seguridad: buffers entregados por wg_mesh_chunk en esta misma DLL.
-        unsafe { (library.free_mesh_buffers)(&buffers) };
+            let Some(front) = self.worldgen.scatter_jobs.front() else {
+                break;
+            };
+            let mesh_idx = front.mesh_idx;
+            let tex_idx = front.tex_idx;
+            let model_path = front.model_path.clone();
+            let display = front.display.clone();
+            let blueprint_id = front.blueprint_id.clone();
+            let category = front.category.clone();
+            let physics_enabled = front.physics_enabled;
+            let physics_type = front.physics_type.clone();
+            let local_bounds = front.local_bounds;
+            let roughness = front.roughness;
+            let metallic = front.metallic;
+            let ior = front.ior;
+            let Some(pose) = self
+                .worldgen
+                .scatter_jobs
+                .front_mut()
+                .and_then(|job| job.remaining.pop_front())
+            else {
+                break;
+            };
+            let name = format!("{} #{}", display, pose.index);
+            let entity_id = self.spawn_cached_model_part_at(
+                mesh_idx,
+                tex_idx,
+                &model_path,
+                pose.position,
+                pose.rotation,
+                pose.scale,
+                &name,
+                "model",
+                Some(blueprint_id.clone()),
+                category,
+                physics_enabled,
+                &physics_type,
+                local_bounds,
+                None,
+                roughness,
+                metallic,
+                ior,
+                false,
+            );
+            self.worldgen.placements.push(WorldgenPlacement {
+                blueprint_id,
+                position: pose.position,
+                rotation: pose.rotation,
+                scale: pose.scale,
+                entity_id,
+            });
+            if let Some(job) = self.worldgen.scatter_jobs.front_mut() {
+                job.placed += 1;
+            }
+            spawned += 1;
+        }
+    }
+
+    /// Sube a GPU un chunk ya mesheado en el worker. Recorta al mundo visible.
+    fn worldgen_upload_cpu_chunk(&mut self, chunk: PendingCpuChunk) -> Result<(), ()> {
+        let key = chunk.key;
+        let (cx, cy, cz) = key;
+        self.worldgen_remove_spawned_chunk(key);
 
         let (mut vertices, indices) = clip_chunk_to_world_bounds(
-            &vertices,
-            &indices,
+            &chunk.vertices,
+            &chunk.indices,
             self.worldgen.scene_offset,
             self.world_bounds_3d.center().x,
             self.world_bounds_3d.center().z,
@@ -1151,7 +1214,6 @@ impl super::super::engine::State {
 
         self.worldgen.completed_chunks += 1;
         if vertices.is_empty() || indices.is_empty() {
-            // Chunk sin superficie: cuenta como completado sin entidad.
             send_event(&EngineEvent::WorldGenChunkReady {
                 cx,
                 cy,
@@ -1162,19 +1224,19 @@ impl super::super::engine::State {
         }
 
         let column_epoch = self.worldgen.column_epoch;
-        let use_splat = self.worldgen.material_base.is_some();
-        let tex_idx = match worldgen_pack_column_texture(
+        let tex_idx = match worldgen_stamp_column_splat(
             &mut self.texture_array,
             &self.vulkan,
-            library,
-            handle.0,
             &mut self.worldgen.columns,
             &mut self.worldgen.splat_atlas,
             &mut self.tex_layers,
             column_epoch,
             cx,
             cz,
-            use_splat,
+            chunk
+                .splat
+                .as_ref()
+                .map(|(pixels, dim)| (pixels.as_slice(), *dim)),
         ) {
             Some(tex_idx) => tex_idx,
             None => self.worldgen_ensure_fallback_texture(),
@@ -1311,83 +1373,59 @@ impl super::super::engine::State {
     }
 }
 
-/// Obtiene (y cachea) el splat de una columna vía la DLL.
-///
-/// Devuelve el índice en `tex_layers` (no la capa GPU). El renderer resuelve
-/// la capa con `texture_layer_for`.
-fn worldgen_pack_column_texture(
+/// Sella en el atlas un splat ya copiado por el worker.
+fn worldgen_stamp_column_splat(
     texture_array: &mut crate::engine3d::texture::TextureArray,
     vulkan: &crate::engine3d::vulkan::SharedGpu,
-    library: &WorldgenLibrary,
-    handle: *mut std::ffi::c_void,
     columns: &mut HashMap<(i32, i32), (usize, u32, u64)>,
     atlas: &mut SplatAtlas,
     tex_layers: &mut Vec<crate::engine3d::texture::TextureLayer>,
     epoch: u64,
     cx: i32,
     cz: i32,
-    use_splat: bool,
+    splat: Option<(&[u8], u32)>,
 ) -> Option<usize> {
     if let Some(&(tex_idx, _, cached_epoch)) = columns.get(&(cx, cz))
         && cached_epoch == epoch
     {
         return Some(tex_idx);
     }
-
-    let mut buffers = crate::engine3d::config_3d::worldgen::abi::WgChunkTextures::empty();
-    // # Seguridad: handle válido de esta DLL y struct del contrato ABI.
-    let status = unsafe { (library.chunk_textures)(handle, cx, cz, 0, &mut buffers) };
-    let source_ptr = if use_splat && !buffers.splat.is_null() {
-        buffers.splat
-    } else {
-        buffers.albedo
+    let Some((pixels, dim)) = splat else {
+        return columns.get(&(cx, cz)).map(|(tex_idx, _, _)| *tex_idx);
     };
-    if status == crate::engine3d::config_3d::worldgen::abi::Status::Ok as i32
-        && !source_ptr.is_null()
-    {
-        // # Seguridad: buffers del contrato; se copian antes de liberar.
-        let pixels = unsafe { std::slice::from_raw_parts(source_ptr, buffers.len) }.to_vec();
-        let dim = buffers.dim;
-        unsafe { (library.free_chunk_textures)(&buffers) };
 
-        if let Some(&(tex_idx, tile, _)) = columns.get(&(cx, cz)) {
-            if stamp_splat_tile(
-                texture_array,
-                vulkan,
-                tex_layers,
-                tex_idx,
-                tile,
-                &pixels,
-                dim,
-            ) {
-                columns.insert((cx, cz), (tex_idx, tile, epoch));
-                return Some(tex_idx);
-            }
+    if let Some(&(tex_idx, tile, _)) = columns.get(&(cx, cz)) {
+        if stamp_splat_tile(
+            texture_array,
+            vulkan,
+            tex_layers,
+            tex_idx,
+            tile,
+            pixels,
+            dim,
+        ) {
+            columns.insert((cx, cz), (tex_idx, tile, epoch));
             return Some(tex_idx);
         }
+        return Some(tex_idx);
+    }
 
-        if let Some((tex_idx, tile)) = alloc_splat_tile(texture_array, vulkan, atlas, tex_layers) {
-            if stamp_splat_tile(
-                texture_array,
-                vulkan,
-                tex_layers,
-                tex_idx,
-                tile,
-                &pixels,
-                dim,
-            ) {
-                columns.insert((cx, cz), (tex_idx, tile, epoch));
-                return Some(tex_idx);
-            }
-            log::warn!(
-                "[worldgen] no se pudo sellar el splat de la columna ({cx},{cz}) en el atlas"
-            );
-        } else {
-            log::warn!("[worldgen] atlas de splats lleno: la columna ({cx},{cz}) usa el fallback");
+    if let Some((tex_idx, tile)) = alloc_splat_tile(texture_array, vulkan, atlas, tex_layers) {
+        if stamp_splat_tile(
+            texture_array,
+            vulkan,
+            tex_layers,
+            tex_idx,
+            tile,
+            pixels,
+            dim,
+        ) {
+            columns.insert((cx, cz), (tex_idx, tile, epoch));
+            return Some(tex_idx);
         }
-    } else if !buffers.albedo.is_null() || !buffers.splat.is_null() {
-        // # Seguridad: liberar buffers parciales en error.
-        unsafe { (library.free_chunk_textures)(&buffers) };
+        log::warn!("[worldgen] no se pudo sellar el splat de la columna ({cx},{cz}) en el atlas");
+    } else {
+        log::warn!("[worldgen] atlas de splats lleno: la columna ({cx},{cz}) usa el fallback");
     }
     columns.get(&(cx, cz)).map(|(tex_idx, _, _)| *tex_idx)
 }
@@ -1472,7 +1510,12 @@ fn clamp_chunk_uvs(vertices: &mut [crate::engine3d::mesh::Vertex]) {
 
 /// Ordena por capa alta y cercanía, asigna LOD y deja el vector listo para
 /// `pop` (el primero a generar queda al final).
-fn finalize_pending(pending: &mut [PendingChunk], cell: f32, camera: Vec3, origin: Vec3) {
+pub(super) fn finalize_pending(
+    pending: &mut [PendingChunk],
+    cell: f32,
+    camera: Vec3,
+    origin: Vec3,
+) {
     pending.sort_by(|a, b| {
         let score = |c: &PendingChunk| -> (i32, f32) {
             let chunk_center = origin
@@ -1775,7 +1818,7 @@ fn chunk_world_rect(cx: i32, cz: i32, area: &GenerationArea, cell: f32) -> (f32,
     )
 }
 
-fn dedupe_pending(pending: &mut Vec<PendingChunk>) {
+pub(super) fn dedupe_pending(pending: &mut Vec<PendingChunk>) {
     let mut seen = std::collections::HashSet::with_capacity(pending.len());
     pending.retain(|chunk| seen.insert(chunk.key));
 }

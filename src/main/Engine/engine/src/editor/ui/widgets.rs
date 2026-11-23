@@ -858,6 +858,98 @@ pub fn viewport_notification(
     }
 }
 
+/// Semántica visual de un aviso flotante (éxito / error / info).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ToastKind {
+    Success,
+    Error,
+    Info,
+}
+
+/// Aviso flotante animado que no empuja el layout. Devuelve `false` al expirar.
+pub fn floating_toast(
+    ui: &mut egui::Ui,
+    kind: ToastKind,
+    text: &str,
+    start_time: &mut Option<f64>,
+) -> bool {
+    const FADE_IN: f32 = 0.22;
+    const HOLD: f32 = 2.6;
+    const FADE_OUT: f32 = 0.55;
+    const TOTAL: f32 = FADE_IN + HOLD + FADE_OUT;
+
+    let now = ui.ctx().input(|input| input.time);
+    let started = *start_time.get_or_insert(now);
+    let elapsed = (now - started) as f32;
+    if elapsed >= TOTAL {
+        return false;
+    }
+
+    ui.ctx().request_repaint();
+    let (accent, icon) = match kind {
+        ToastKind::Success => (crate::editor::theme::SUCCESS, icons::CHECK),
+        ToastKind::Error => (crate::editor::theme::DANGER, icons::WARNING),
+        ToastKind::Info => (crate::editor::theme::INFO, icons::INFO),
+    };
+    let alpha = if elapsed < FADE_IN {
+        (elapsed / FADE_IN).clamp(0.0, 1.0)
+    } else if elapsed < FADE_IN + HOLD {
+        1.0
+    } else {
+        (1.0 - (elapsed - FADE_IN - HOLD) / FADE_OUT).clamp(0.0, 1.0)
+    };
+    let slide = (1.0 - alpha).powi(2) * -22.0;
+    let pulse = 0.55 + 0.45 * ((now as f32) * 6.0).sin().abs();
+
+    egui::Area::new(egui::Id::new("rer_floating_toast"))
+        .order(egui::Order::Foreground)
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 14.0 + slide))
+        .interactable(false)
+        .show(ui.ctx(), |ui| {
+            let font = FontId::new(14.0, egui::FontFamily::Name("rer-bold".into()));
+            let galley = ui.painter().layout_no_wrap(
+                format!("{icon}  {text}"),
+                font.clone(),
+                crate::editor::theme::TEXT.linear_multiply(alpha),
+            );
+            let size = egui::vec2(galley.size().x + 36.0, 44.0);
+            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            let painter = ui.painter();
+            painter.rect_filled(
+                rect.translate(egui::vec2(0.0, 3.0)),
+                egui::CornerRadius::same(10),
+                egui::Color32::from_black_alpha((90.0 * alpha) as u8),
+            );
+            painter.rect_filled(
+                rect,
+                egui::CornerRadius::same(10),
+                crate::editor::theme::PANEL_BG.linear_multiply(alpha.max(0.15)),
+            );
+            painter.rect_stroke(
+                rect,
+                egui::CornerRadius::same(10),
+                Stroke::new(2.0, accent.linear_multiply(alpha * pulse)),
+                StrokeKind::Inside,
+            );
+            painter.rect_filled(
+                egui::Rect::from_min_size(rect.min, egui::vec2(6.0, rect.height())),
+                egui::CornerRadius {
+                    nw: 10,
+                    sw: 10,
+                    ne: 0,
+                    se: 0,
+                },
+                accent.linear_multiply(alpha),
+            );
+            painter.galley(
+                egui::pos2(rect.min.x + 18.0, rect.center().y - galley.size().y * 0.5),
+                galley,
+                crate::editor::theme::TEXT,
+            );
+        });
+    true
+}
+
 /// Marco de cuerpo de modal nativa: fondo `PANEL_BG` y padding 16.
 pub fn modal_panel<R>(
     ui: &mut egui::Ui,

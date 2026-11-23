@@ -35,6 +35,7 @@
 //! | Fila de tarjetas de distinta altura | [`top_row`] | `ui.horizontal` (escalera) |
 //! | Tarjeta de herramienta | [`tool_card_click`] | `egui::Button` grande |
 //! | Aviso sobre el viewport | [`viewport_notification`] | `egui::Window` flotante |
+//! | Aviso flotante animado | [`floating_toast`] + [`ToastKind`] | `ui.label` de estado |
 //! | Idioma | [`language_button`] | botón genérico |
 //! | Color | `crate::editor::theme::*` | `Color32::from_rgb` nuevo |
 //! | Icono | `egui_phosphor::regular` | emoji, FontAwesome, `egui::include_image` |

@@ -4,18 +4,24 @@
 //! módulo solo la consume: mallas → GPU, entidades ECS y eventos de progreso,
 //! con presupuesto por frame (mismo patrón que la precarga de modelos).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::mpsc::{Receiver, Sender};
+use std::thread::JoinHandle;
 
 use super::loader::WorldgenLibrary;
+use super::worker::{PendingCpuChunk, WorldgenJob, WorldgenWorkerMsg};
 
-/// Subidas de chunk a GPU por frame. Dos chunks de 32³ consumen ~1-2 ms de
-/// generación + subida en release; ajustable si el profiling lo pide.
+/// Subidas de chunk a GPU por frame. El scan/mesh CPU va en el hilo
+/// `rer-worldgen`; este tope solo cubre `Mesh::upload` + ECS.
 pub(crate) const CHUNKS_PER_FRAME: usize = 2;
-/// Tope de columnas XZ por frame. El tick también corta por
-/// [`SCAN_BUDGET_MS`] para emitir progreso aunque una columna sea cara.
+/// Instancias de scatter por frame. Colocar todas en un comando congelaba el
+/// editor al terminar la generación.
+pub(crate) const PLACEMENTS_PER_FRAME: usize = 8;
+/// Columnas XZ entre eventos de progreso de scan (el worker ya no recorta el
+/// hilo de render; el UI sigue recibiendo `completed/total`).
 pub(crate) const SCAN_COLUMNS_PER_FRAME: usize = 512;
-/// Presupuesto de barrido por frame: el UI recibe `completed/total` de columnas.
-pub(crate) const SCAN_BUDGET_MS: u64 = 8;
 
 /// Lado del tile de splat en el atlas (debe coincidir con `SPLAT_DIM` lod 0).
 pub(crate) const SPLAT_ATLAS_TILE_PX: u32 = 64;
@@ -42,13 +48,13 @@ impl SplatAtlas {
 
 /// Handle opaco del mundo en la DLL.
 ///
-/// `unsafe impl Send` justificado: el handle solo se crea, usa y libera desde el
-/// hilo del engine (update/comandos); la DLL garantiza que no cruza hilos y su
-/// estado interno es sincronizado (`Mutex` para errores, sin estado mutable por
-/// llamada). El `Library` vive en [`WorldgenState`], no en el handle.
+/// `unsafe impl Send` justificado: el handle se usa en el hilo del engine o, durante
+/// Generating, en el worker `rer-worldgen`. Nunca en ambos a la vez: un job nuevo
+/// invalida el anterior y el engine espera `Cancelled`/`Finished` antes de
+/// `world_free` / scatter. `wg_world_create` corre en el worker. El `Library`
+/// vive en [`WorldgenState`].
 pub(crate) struct WgWorldHandle(pub(crate) *mut std::ffi::c_void);
-// # Seguridad: el handle cruza hilos únicamente dentro del `State` embalado por el
-// loader del editor; el contrato del plugin no permite usos concurrentes.
+// # Seguridad: el contrato del plugin no permite usos concurrentes del handle.
 unsafe impl Send for WgWorldHandle {}
 
 /// Clave de chunk (debe coincidir con `rer_worldgen::chunks::ChunkKey`).
@@ -69,6 +75,34 @@ pub(crate) struct PendingChunk {
     pub key: ChunkKey,
     /// Nivel de LOD del chunk (0 = resolución completa).
     pub lod: u32,
+}
+
+/// Pose pendiente de spawn tras `wg_scatter` (presupuesto por frame).
+#[derive(Debug, Clone)]
+pub(crate) struct PendingScatterPose {
+    pub position: [f32; 3],
+    pub rotation: [f32; 4],
+    pub scale: [f32; 3],
+    pub index: usize,
+}
+
+/// Trabajo de scatter: un blueprint, N instancias en cola.
+#[derive(Debug, Clone)]
+pub(crate) struct PendingScatterJob {
+    pub blueprint_id: String,
+    pub model_path: String,
+    pub display: String,
+    pub mesh_idx: usize,
+    pub tex_idx: usize,
+    pub category: Option<String>,
+    pub physics_enabled: bool,
+    pub physics_type: String,
+    pub local_bounds: ([f32; 3], [f32; 3]),
+    pub roughness: f32,
+    pub metallic: f32,
+    pub ior: f32,
+    pub remaining: VecDeque<PendingScatterPose>,
+    pub placed: u32,
 }
 
 /// Colocación registrada por el scatter (para persistencia F8).
@@ -237,6 +271,8 @@ pub(crate) struct WorldgenState {
     pub fallback_tex_idx: Option<usize>,
     /// Colocaciones de blueprints registradas por el scatter (persistencia F8).
     pub placements: Vec<WorldgenPlacement>,
+    /// Instancias de scatter pendientes de spawn (presupuesto por frame).
+    pub scatter_jobs: VecDeque<PendingScatterJob>,
     /// Reglas de scatter aplicadas por blueprint (persistencia F8).
     pub scatter_rules: Vec<(String, String)>,
     /// Traslación de la geometría de la DLL: esquina mínima del área generada.
@@ -249,6 +285,17 @@ pub(crate) struct WorldgenState {
     pub generated: bool,
     /// Si es true, al completar la cola se quita el suelo checker.
     pub replace_ground: bool,
+    /// Generación viva: el worker aborta si no coincide con el job.
+    pub live_generation: Arc<AtomicU64>,
+    /// Último id de job enviado al worker.
+    pub generation_id: u64,
+    /// Job cuyo Finished/Failed/Cancelled aún no llegó.
+    pub inflight: Option<u64>,
+    /// Mallas CPU listas para subir a GPU este / próximos frames.
+    pub gpu_queue: VecDeque<PendingCpuChunk>,
+    pub job_tx: Option<Sender<WorldgenJob>>,
+    pub result_rx: Option<Receiver<WorldgenWorkerMsg>>,
+    pub worker: Option<JoinHandle<()>>,
 }
 
 impl Default for WorldgenState {
@@ -272,17 +319,39 @@ impl Default for WorldgenState {
             material_base: None,
             fallback_tex_idx: None,
             placements: Vec::new(),
+            scatter_jobs: VecDeque::new(),
             scatter_rules: Vec::new(),
             scene_offset: glam::Vec3::ZERO,
             generation: None,
             generated: false,
             replace_ground: false,
+            live_generation: Arc::new(AtomicU64::new(0)),
+            generation_id: 0,
+            inflight: None,
+            gpu_queue: VecDeque::new(),
+            job_tx: None,
+            result_rx: None,
+            worker: None,
         }
     }
 }
 
 impl Drop for WorldgenState {
     fn drop(&mut self) {
+        self.live_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Release);
+        if let Some(tx) = self.job_tx.take() {
+            let _ = tx.send(WorldgenJob::Shutdown);
+        }
+        if let Some(rx) = self.result_rx.take() {
+            while rx
+                .recv_timeout(std::time::Duration::from_millis(50))
+                .is_ok()
+            {}
+        }
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
         // El campo `library` se destruye después de este cuerpo. Liberar el
         // handle aquí evita descargar la DLL con el mundo todavía vivo.
         if let Some(handle) = self.world.take()

@@ -80,12 +80,14 @@ pesos RGBA). Capa 0 del array = checker del editor; Grass no puede usarla.
 
 `engine3d/config_3d/worldgen/`:
 
-1. `world_gen_start` → barrido de columnas (presupuesto
-   `SCAN_BUDGET_MS` / `SCAN_COLUMNS_PER_FRAME`, progreso `phase: scan`
-   con `completed/total` de columnas) para saber qué capas Y tienen
-   terreno.
-2. Cola de chunks: 2 mallas/frame (`CHUNKS_PER_FRAME`), progreso
-   `phase: mesh`.
+1. `world_gen_set_config` solo guarda el JSON. `world_gen_start` despacha al
+   hilo `rer-worldgen`, que crea el handle (`wg_world_create`), barre columnas
+   (`SCAN_COLUMNS_PER_FRAME` entre eventos `phase: scan`) y meshea
+   (`wg_mesh_chunk` / `wg_chunk_textures`). El hilo de render no espera
+   ese CPU.
+2. `worldgen_tick` drena CPU y sube como máximo 2 mallas/frame
+   (`CHUNKS_PER_FRAME`), progreso `phase: mesh`. Tras completar, el scatter
+   spawnea como máximo `PLACEMENTS_PER_FRAME` instancias/frame.
 3. Recorte rectangular a los límites visibles; UVs de splat acotadas a
    `[0, 1]`.
 4. **Seguimiento automático**: si el plugin ya generó el mundo y se mueve una
@@ -104,8 +106,8 @@ Instalación local: `%APPDATA%\rer-engine\plugins\world-gen\` con
 no debe tener la DLL cargada). Un cambio de shader/host GPU pide reiniciar
 `yarn dev`. No reinstalar el plugin desde el catálogo para una DLL local.
 
-Generar el mundo es **CPU** (densidad, mesh, splat). La GPU pinta después.
-Eso es normal.
+Generar el mundo es **CPU** (densidad, mesh, splat) en el hilo `rer-worldgen`.
+El tick del engine solo sube GPU. Eso es normal.
 
 ## Fachada FFI (`plugin_ffi`, ABI v2)
 

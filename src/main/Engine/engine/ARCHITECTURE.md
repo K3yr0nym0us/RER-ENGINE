@@ -349,3 +349,12 @@ Lista unificada al editor: evento `player_ui_text_boxes_list` (texto, botones, i
 **Persistencia (`.save`):** `export_save_snapshot` incluye `player_ui_text_boxes`, `player_ui_buttons`, `player_ui_images`, `player_ui_objects` y `playerUiScreens`; restauración en `load_proyect/`.
 
 **Scripting:** `set_active_player_ui`, `set_active_player_ui_by_name`, `clear_active_player_ui` (`scripting.rs`).
+
+## Worldgen (plugin)
+
+`wg_world_create`, scan (`wg_chunk_status`) y meshing (`wg_mesh_chunk` /
+`wg_chunk_textures`) corren en el hilo `rer-worldgen`. `State::update` drena CPU,
+sube como máximo `CHUNKS_PER_FRAME` mallas a GPU y coloca `PLACEMENTS_PER_FRAME`
+instancias de scatter. La DLL no se usa en paralelo: un generate nuevo cancela el
+job anterior y el engine espera `Cancelled`/`Finished` antes de `world_free` /
+scatter. `world_gen_set_config` solo guarda el JSON; el handle se crea en el worker.
