@@ -132,3 +132,20 @@ Las ecuaciones del solver de fluidos
   partículas de frontera: lattice virtual fuera de las paredes con masa
   efectiva ψ que reconstruye la media cáscara de vecinos que las paredes quitan.
 - Viscosidad XSPH (Macklin & Müller, 2013) — difusión de velocidad entre vecinos.
+
+---
+
+## rstar (vendor local)
+
+- **Uso en RER-ENGINE:** `src/main/Engine/vendor/rstar/` contiene una copia de
+  `rstar 0.13.1` (crate usado por `parry3d`/`rapier3d`) con una unica
+  modificacion: la dependencia `heapless` pasa de `0.8` a `0.9` para eliminar
+  los avisos RUSTSEC-2026-0574..0582 (unsound). La API que rstar utiliza
+  (`binary_heap::BinaryHeap::new/push/pop`) es compatible entre ambas versiones.
+  Se aplica mediante `[patch.crates-io]` en `src/main/Engine/Cargo.toml`.
+- **Licencia original:** MIT OR Apache-2.0 - Copyright (c) Stefan Altmayer y
+  los contribuidores de geo-rust. Se conservan `Cargo.toml`, `Cargo.toml.orig`,
+  `README.md` y `CHANGELOG.md` del crate original. Textos completos de la
+  licencia: https://github.com/georust/rstar
+- **Retirada:** cuando `parry3d` pase a usar `rstar >= 0.14` (que ya depende de
+  `heapless 0.9`), eliminar el directorio `vendor/rstar` y la entrada `[patch.crates-io]`.

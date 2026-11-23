@@ -6,6 +6,12 @@ members = [
 ]
 resolver = "2"
 
+# Parche local: rstar 0.13.x fija heapless 0.8 (9 avisos RUSTSEC-2026-0574..0582, unsound).
+# El vendor de `vendor/rstar` solo cambia esa dependencia a heapless 0.9; la API usada por
+# rstar (binary_heap::BinaryHeap) es compatible. Retirar cuando parry3d use rstar >= 0.14.
+[patch.crates-io]
+rstar = { path = "vendor/rstar" }
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
