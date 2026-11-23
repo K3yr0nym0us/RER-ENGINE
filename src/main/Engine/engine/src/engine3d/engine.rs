@@ -18,7 +18,7 @@ use crate::engine3d::entity_save_meta::EntitySaveRegistry;
 use crate::engine3d::gizmo::GizmoBuffer;
 use crate::engine3d::ipc::PlayCameraFollowMode;
 use crate::engine3d::mesh::Mesh;
-use crate::engine3d::scripting::ScriptEngine;
+use crate::engine3d::scripting::{EntitySnapshot, ScriptEngine};
 
 pub struct State {
     pub(crate) window: Arc<Window>,
@@ -351,6 +351,10 @@ pub struct State {
     pub(crate) default_animation_by_entity: HashMap<u32, String>,
     pub(crate) entity_facing_right: HashMap<u32, bool>,
     pub(crate) script_engine: ScriptEngine,
+    /// Snapshots de play reutilizados entre ticks (B9).
+    pub(crate) script_snapshots: HashMap<u32, EntitySnapshot>,
+    /// Nombres de clip cacheados por entidad; el `Arc` se reusa si las keys no cambian.
+    pub(crate) script_anim_names: HashMap<u32, Arc<[String]>>,
     pub(crate) control_bindings_by_entity: HashMap<u32, crate::engine3d::ipc::ControlBindingsData>,
     pub(crate) sprite_store: HashMap<String, (String, u32, u32)>,
     /// Modelos 3D precargados: clave de ruta normalizada → nombre + categoría de biblioteca.
@@ -433,6 +437,8 @@ pub struct State {
     /// Último tier emitido por IPC (evita spam).
     pub(crate) probe_capture_cursor: usize,
     pub(crate) probe_capture_burst_all: bool,
+    /// Sondas que faltan por capturar tras un cambio de conjunto (una por frame).
+    pub(crate) probe_capture_catchup: usize,
     pub(crate) probe_entity_slots: std::collections::HashMap<crate::engine3d::ecs::EntityId, usize>,
     pub(crate) last_probe_capture_ids: Option<Vec<crate::engine3d::ecs::EntityId>>,
     /// Frames que faltan para volver a capturar una probe (evita capturar cada frame).

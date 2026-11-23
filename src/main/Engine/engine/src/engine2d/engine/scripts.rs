@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use crate::engine2d::ecs::Transform;
 use crate::engine2d::ipc::{EngineCommand, EngineCommandCommon};
-use crate::engine2d::scripting::{EntitySnapshot, PlayScriptInput, ScriptCmd};
+use crate::engine2d::scripting::{EntitySnapshot, PlayScriptInput, ScriptCmd, cached_clip_names};
 
 use super::State;
 use super::types::PendingSlide;
@@ -116,44 +114,23 @@ impl State {
             return;
         }
 
-        // Build snapshots for entities that have scripts attached
-        let snapshots: HashMap<u32, EntitySnapshot> = {
-            let entity_ids: Vec<u32> = self.script_engine.entity_ids().to_vec();
-            let mut map = HashMap::new();
-            for id in entity_ids {
-                let (x, y, scale_x, scale_y) = if let Some(t) = self.world.get::<Transform>(id) {
-                    (t.position.x, t.position.y, t.scale.x, t.scale.y)
-                } else {
-                    (0.0, 0.0, 1.0, 1.0)
-                };
-                let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
-                let facing_sign = if facing_right { 1.0 } else { -1.0 };
-                let animations: Vec<String> = self
-                    .animations
-                    .get(&id)
-                    .map(|m| m.keys().cloned().collect())
-                    .unwrap_or_default();
-                map.insert(
-                    id,
-                    EntitySnapshot {
-                        id,
-                        x,
-                        y,
-                        scale_x,
-                        scale_y,
-                        facing_right,
-                        facing_sign,
-                        animations,
-                    },
-                );
+        let entity_ids = self.script_engine.entity_ids();
+        self.script_snapshots
+            .retain(|id, _| entity_ids.contains(id));
+        self.script_anim_names
+            .retain(|id, _| entity_ids.contains(id));
+        for id in entity_ids {
+            if let Some(snap) = self.build_script_snapshot(id) {
+                self.script_snapshots.insert(id, snap);
             }
-            map
-        };
+        }
 
         let active_ui = self.player_ui_active_player_screen_id.clone();
-        let commands = self
-            .script_engine
-            .tick(self.delta_time, &snapshots, active_ui.as_deref());
+        let commands = self.script_engine.tick(
+            self.delta_time,
+            &self.script_snapshots,
+            active_ui.as_deref(),
+        );
         self.apply_script_commands(commands);
     }
 
@@ -188,7 +165,7 @@ impl State {
         }
     }
 
-    pub(crate) fn build_script_snapshot(&self, id: u32) -> Option<EntitySnapshot> {
+    pub(crate) fn build_script_snapshot(&mut self, id: u32) -> Option<EntitySnapshot> {
         let (x, y, scale_x, scale_y) = if let Some(t) = self.world.get::<Transform>(id) {
             (t.position.x, t.position.y, t.scale.x, t.scale.y)
         } else {
@@ -196,12 +173,8 @@ impl State {
         };
         let facing_right = self.entity_facing_right.get(&id).copied().unwrap_or(true);
         let facing_sign = if facing_right { 1.0 } else { -1.0 };
-
-        let animations: Vec<String> = self
-            .animations
-            .get(&id)
-            .map(|m| m.keys().cloned().collect())
-            .unwrap_or_default();
+        let animations =
+            cached_clip_names(&mut self.script_anim_names, id, self.animations.get(&id));
 
         Some(EntitySnapshot {
             id,

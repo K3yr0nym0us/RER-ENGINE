@@ -45,7 +45,7 @@ use crate::engine2d::entity_save_meta::EntitySaveRegistry;
 use crate::engine2d::gizmo::GizmoBuffer;
 use crate::engine2d::ipc::{EngineCommand, EngineCommandCommon};
 use crate::engine2d::mesh::Mesh;
-use crate::engine2d::scripting::ScriptEngine;
+use crate::engine2d::scripting::{EntitySnapshot, ScriptEngine};
 
 use crate::engine2d::ecs::EntityId;
 
@@ -232,6 +232,10 @@ pub struct State {
     pub(crate) entity_facing_right: HashMap<u32, bool>,
     /// Sistema de scripting Rhai. Contiene la VM y los scripts adjuntos a entidades.
     pub(crate) script_engine: ScriptEngine,
+    /// Snapshots de play reutilizados entre ticks (B9).
+    pub(crate) script_snapshots: HashMap<u32, EntitySnapshot>,
+    /// Nombres de clip cacheados por entidad; el `Arc` se reusa si las keys no cambian.
+    pub(crate) script_anim_names: HashMap<u32, Arc<[String]>>,
     /// Mapa de bindings de control runtime. El frontend solo sincroniza esta
     /// configuración; el motor resuelve y ejecuta los scripts al detectar input.
     pub(crate) control_bindings_by_entity: HashMap<u32, crate::engine2d::ipc::ControlBindingsData>,

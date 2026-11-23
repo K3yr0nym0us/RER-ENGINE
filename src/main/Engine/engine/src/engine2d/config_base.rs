@@ -46,6 +46,8 @@ impl State {
         self.anim_saved_transforms.clear();
         self.anim_flip_overrides.clear();
         self.entity_facing_right.clear();
+        self.script_snapshots.clear();
+        self.script_anim_names.clear();
         self.visual_offsets.clear();
 
         self.selected_entity = None;

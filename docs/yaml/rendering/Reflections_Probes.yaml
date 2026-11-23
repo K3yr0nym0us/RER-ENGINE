@@ -7,8 +7,8 @@
 #   - docs/yaml/rendering/Reflections_SSR.yaml (miss SSR → probe)
 #   - docs/yaml/rendering/Reflections_RT.yaml (sampleo probe en hits off-screen)
 
-version: 2
-updated: 2026-11-08
+version: 3
+updated: 2026-11-23
 status: implemented
 
 principle:
@@ -28,7 +28,8 @@ principle:
 
 source_of_truth:
   rust:
-    - src/main/Engine/engine/src/engine3d/probe_registry.rs       # detección, ranuras, selección por influencia
+    - src/main/Engine/engine/src/engine3d/probe_registry.rs       # detección, ranuras, selección, next_probe_capture
+    - src/main/Engine/engine/src/engine3d/engine/render/mod.rs        # catch-up de una sonda por frame
     - src/main/Engine/engine/src/engine3d/vulkan/frame/mod.rs         # capture_probe + cubemap array
     - src/main/Engine/engine/src/engine3d/config_3d/reflection_settings.rs
   shaders:
@@ -63,8 +64,9 @@ entities:
 
 capture:
   method: |
-    Burst completo cuando cambia el conjunto de sondas; después refresco de UNA sonda cada ~30
-    frames (`probe_capture_cursor` / `probe_capture_cooldown`), no las 6 caras de todas por frame.
+    Si cambia el conjunto de sondas se encola un catch-up (`probe_capture_catchup`): UNA sonda
+    por frame hasta cubrir el conjunto. En régimen, UNA sonda cada ~30 frames
+    (`probe_capture_cursor` / `probe_capture_cooldown`). Nunca 6×N pases en el mismo frame.
   writes: |
     6 pases de `draw_forward` a 64² contra `probe_color/normal/albedo/world/velocity` +
     `probe_depth`, y `copy_color` a la capa `slot * 6 + cara` del cubemap array. Antes todas las

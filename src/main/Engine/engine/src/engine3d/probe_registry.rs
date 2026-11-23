@@ -152,7 +152,10 @@ where
     out
 }
 
-/// Si el conjunto de probes activos cambió, solicita burst de captura.
+/// Periodo de refresco en régimen: una sonda cada N frames.
+pub const PROBE_CAPTURE_PERIOD_FRAMES: u32 = 30;
+
+/// Si el conjunto de probes activos cambió, solicita catch-up (una sonda por frame).
 pub fn sync_capture_burst_for_entity_set(
     last_ids: &mut Option<Vec<EntityId>>,
     probe_ids: &[EntityId],
@@ -175,6 +178,47 @@ pub fn sync_capture_burst_for_entity_set(
         *last_ids = Some(probe_ids.to_vec());
     }
     changed
+}
+
+/// Elige como máximo una sonda por frame.
+///
+/// Un cambio de conjunto (`burst`) encola `probe_count` capturas consecutivas
+/// (cooldown 0) en vez de 6×N pases en el mismo command buffer.
+pub fn next_probe_capture(
+    burst: bool,
+    probe_count: usize,
+    cursor: &mut usize,
+    cooldown: &mut u32,
+    catchup: &mut usize,
+) -> Option<usize> {
+    if probe_count == 0 {
+        *catchup = 0;
+        *cooldown = 0;
+        return None;
+    }
+    if burst {
+        *catchup = probe_count;
+        *cooldown = 0;
+    }
+    if *catchup > 0 {
+        let index = *cursor % probe_count;
+        *cursor = cursor.wrapping_add(1);
+        *catchup -= 1;
+        *cooldown = if *catchup == 0 {
+            PROBE_CAPTURE_PERIOD_FRAMES
+        } else {
+            0
+        };
+        return Some(index);
+    }
+    if *cooldown > 0 {
+        *cooldown -= 1;
+        return None;
+    }
+    let index = *cursor % probe_count;
+    *cursor = cursor.wrapping_add(1);
+    *cooldown = PROBE_CAPTURE_PERIOD_FRAMES;
+    Some(index)
 }
 
 /// Ranura de la sonda cuyo volumen de influencia contiene el punto; si varias lo contienen, la de
@@ -265,6 +309,45 @@ mod tests {
             select_probe_slot(&fields, Vec3::new(12.0, 0.0, 0.0)),
             Some(7)
         );
+    }
+
+    #[test]
+    fn catchup_captura_una_sonda_por_frame_no_todas() {
+        let mut cursor = 0usize;
+        let mut cooldown = 10u32;
+        let mut catchup = 0usize;
+        let first = next_probe_capture(true, 3, &mut cursor, &mut cooldown, &mut catchup);
+        assert_eq!(first, Some(0));
+        assert_eq!(catchup, 2);
+        assert_eq!(cooldown, 0);
+        assert_eq!(
+            next_probe_capture(false, 3, &mut cursor, &mut cooldown, &mut catchup),
+            Some(1)
+        );
+        assert_eq!(
+            next_probe_capture(false, 3, &mut cursor, &mut cooldown, &mut catchup),
+            Some(2)
+        );
+        assert_eq!(catchup, 0);
+        assert_eq!(cooldown, PROBE_CAPTURE_PERIOD_FRAMES);
+        assert_eq!(
+            next_probe_capture(false, 3, &mut cursor, &mut cooldown, &mut catchup),
+            None
+        );
+        assert_eq!(cooldown, PROBE_CAPTURE_PERIOD_FRAMES - 1);
+    }
+
+    #[test]
+    fn catchup_sin_sondas_no_elige_indice() {
+        let mut cursor = 4;
+        let mut cooldown = 7;
+        let mut catchup = 9;
+        assert_eq!(
+            next_probe_capture(true, 0, &mut cursor, &mut cooldown, &mut catchup),
+            None
+        );
+        assert_eq!(catchup, 0);
+        assert_eq!(cooldown, 0);
     }
 
     #[test]

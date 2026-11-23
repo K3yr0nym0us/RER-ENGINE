@@ -242,6 +242,8 @@ impl State {
             entity_facing_right: HashMap::new(),
             script_engine: ScriptEngine::new(ScriptEngineProfile::Engine2d)
                 .expect("Error al inicializar el motor de scripting Rhai"),
+            script_snapshots: HashMap::new(),
+            script_anim_names: HashMap::new(),
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             sound_store: HashMap::new(),

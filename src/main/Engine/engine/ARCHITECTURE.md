@@ -119,8 +119,8 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   la última del frame ganaba). Cada instancia lleva su ranura en `InstanceData.tex_layer_pad[2]`
   → `v_tex.z`, elegida en CPU por `probe_registry::select_probe_slot` según el radio de
   influencia (`scale.x * 0.5`); `-1` = fuera de todo volumen → el shader cae al cielo
-  procedural. Se captura en burst cuando cambia el conjunto de sondas y luego una sonda cada
-  ~30 frames.
+  procedural. Si cambia el conjunto de sondas se encola un catch-up de una sonda por frame
+  (no 6×N pases en el mismo command buffer) y luego una sonda cada ~30 frames.
 - **Geometría trazable skinned**: las entidades animadas entran en **ambos** caminos, BVH por
   software y TLAS de hardware. Sus triángulos se deforman en CPU con el mismo palette que usa
   `skinned.vert` (`model * (Σ pesos·palette[joint]·posición)`) y se cachean, refrescándose cada

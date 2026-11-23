@@ -8,7 +8,7 @@ pub mod script_engine;
 
 pub use api::ScriptEngineProfile;
 pub use control::ControlScriptDispatch;
-pub use entity_snapshot::EntitySnapshot;
+pub use entity_snapshot::{EntitySnapshot, cached_clip_names};
 pub use interaction::InteractionState;
 pub use play_script_input::PlayScriptInput;
 pub use script_cmd::ScriptCmd;

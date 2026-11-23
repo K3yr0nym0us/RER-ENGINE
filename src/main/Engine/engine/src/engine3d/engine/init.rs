@@ -309,6 +309,8 @@ impl State {
             entity_facing_right: HashMap::new(),
             script_engine: ScriptEngine::new(ScriptEngineProfile::Engine3d)
                 .expect("Error al inicializar el motor de scripting Rhai"),
+            script_snapshots: HashMap::new(),
+            script_anim_names: HashMap::new(),
             control_bindings_by_entity: HashMap::new(),
             sprite_store: HashMap::new(),
             model_store: HashMap::new(),
@@ -354,6 +356,7 @@ impl State {
 
             probe_capture_cursor: 0,
             probe_capture_burst_all: false,
+            probe_capture_catchup: 0,
             probe_entity_slots: std::collections::HashMap::new(),
             last_probe_capture_ids: None,
             probe_capture_cooldown: 0,

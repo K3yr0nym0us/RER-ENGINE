@@ -103,6 +103,8 @@ impl State {
         self.default_animation_by_entity.clear();
         self.anim_saved_transforms.clear();
         self.entity_facing_right.clear();
+        self.script_snapshots.clear();
+        self.script_anim_names.clear();
         self.scenario_entities.clear();
         self.character_entities.clear();
         self.collider_entities.clear();
@@ -166,6 +168,7 @@ impl State {
         self.sun_icon_tex_idx = None;
         self.probe_entity_slots.clear();
         self.last_probe_capture_ids = None;
+        self.probe_capture_catchup = 0;
         self.directional_light_dir =
             crate::engine3d::config_3d::directional_light::DEFAULT_LIGHT_DIR.normalize();
         self.directional_light_color =
@@ -665,6 +668,8 @@ impl State {
         self.default_animation_by_entity.clear();
         self.anim_saved_transforms.clear();
         self.entity_facing_right.clear();
+        self.script_snapshots.clear();
+        self.script_anim_names.clear();
         self.scenario_entities.clear();
         self.character_entities.clear();
         self.collider_entities.clear();
@@ -728,6 +733,7 @@ impl State {
         self.sun_icon_tex_idx = None;
         self.probe_entity_slots.clear();
         self.last_probe_capture_ids = None;
+        self.probe_capture_catchup = 0;
         self.clear_preview_editor_snapshots();
         self.undo_stack.clear();
         self.redo_stack.clear();

@@ -332,40 +332,31 @@ impl State {
             entity_skips_shadow_cast(self, id)
         });
 
-        // ── Probes: ranuras estables + burst/round-robin de captura ──
+        // ── Probes: ranuras estables + catch-up / round-robin (una sonda por frame) ──
         let probe_captures: Vec<crate::engine3d::vulkan::ProbeCapture> = if probes_active {
             let ids: Vec<crate::engine3d::ecs::EntityId> =
                 probe_list.iter().map(|(id, _, _)| *id).collect();
             self.sync_probe_capture_burst_for_entity_set(&ids);
             let burst = self.probe_capture_burst_all;
             self.probe_capture_burst_all = false;
-            if burst {
-                // Cambió el conjunto de probes: refresco completo una sola vez.
-                self.probe_capture_cooldown = 0;
-                probe_list
-                    .iter()
-                    .map(
-                        |(_, position, slot)| crate::engine3d::vulkan::ProbeCapture {
-                            origin: position.to_array(),
-                            slot: *slot,
-                        },
-                    )
-                    .collect()
-            } else if self.probe_capture_cooldown > 0 {
-                self.probe_capture_cooldown -= 1;
-                Vec::new()
-            } else {
-                // Refresco de una probe cada ~30 frames, no las 6 caras por frame.
-                let index = self.probe_capture_cursor % probe_list.len();
-                self.probe_capture_cursor = self.probe_capture_cursor.wrapping_add(1);
-                self.probe_capture_cooldown = 30;
-                let (_, position, slot) = probe_list[index];
-                vec![crate::engine3d::vulkan::ProbeCapture {
-                    origin: position.to_array(),
-                    slot,
-                }]
+            match crate::engine3d::probe_registry::next_probe_capture(
+                burst,
+                probe_list.len(),
+                &mut self.probe_capture_cursor,
+                &mut self.probe_capture_cooldown,
+                &mut self.probe_capture_catchup,
+            ) {
+                Some(index) => {
+                    let (_, position, slot) = probe_list[index];
+                    vec![crate::engine3d::vulkan::ProbeCapture {
+                        origin: position.to_array(),
+                        slot,
+                    }]
+                }
+                None => Vec::new(),
             }
         } else {
+            self.probe_capture_catchup = 0;
             Vec::new()
         };
 
