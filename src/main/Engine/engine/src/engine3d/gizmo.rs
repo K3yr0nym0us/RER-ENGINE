@@ -72,6 +72,8 @@ pub struct GizmoBuffer {
     pub vertex_count: u32,
     /// `true` si los vértices son `LineList`. Los ejes y anillos son triángulos.
     pub lines: bool,
+    /// Clave del último contenido subido; `refresh_*` evita reconstruir si coincide.
+    pub content_hash: u64,
 }
 
 fn push_tri(verts: &mut Vec<GizmoVertex>, a: [f32; 3], b: [f32; 3], c: [f32; 3], color: [f32; 4]) {
@@ -301,6 +303,7 @@ pub fn build_rotation_rings(gpu: &SharedGpu, radius: f32) -> GizmoBuffer {
         vertex_buffer,
         vertex_count: verts.len() as u32,
         lines: false,
+        content_hash: 0,
     }
 }
 
@@ -328,6 +331,7 @@ pub fn build_axes(gpu: &SharedGpu, length: f32) -> GizmoBuffer {
         vertex_buffer,
         vertex_count: verts.len() as u32,
         lines: false,
+        content_hash: 0,
     }
 }
 
@@ -447,7 +451,51 @@ fn build_buffer(gpu: &SharedGpu, verts: &[GizmoVertex], lines: bool) -> GizmoBuf
         vertex_buffer,
         vertex_count: verts.len() as u32,
         lines,
+        content_hash: 0,
     }
+}
+
+const OVERLAY_HASH_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+const OVERLAY_HASH_PRIME: u64 = 0x0100_0000_01b3;
+
+pub fn overlay_hash() -> u64 {
+    OVERLAY_HASH_OFFSET
+}
+
+pub fn mix_u64(hash: &mut u64, value: u64) {
+    *hash ^= value;
+    *hash = hash.wrapping_mul(OVERLAY_HASH_PRIME);
+}
+
+pub fn mix_f32(hash: &mut u64, value: f32) {
+    mix_u64(hash, u64::from(value.to_bits()));
+}
+
+pub fn mix_vec3(hash: &mut u64, value: [f32; 3]) {
+    mix_f32(hash, value[0]);
+    mix_f32(hash, value[1]);
+    mix_f32(hash, value[2]);
+}
+
+pub fn mix_quat(hash: &mut u64, value: [f32; 4]) {
+    mix_f32(hash, value[0]);
+    mix_f32(hash, value[1]);
+    mix_f32(hash, value[2]);
+    mix_f32(hash, value[3]);
+}
+
+/// Reconstruye el overlay solo si `key` cambió respecto al último upload.
+pub fn refresh_lines(
+    gpu: &SharedGpu,
+    buffer: &mut GizmoBuffer,
+    key: u64,
+    build: impl FnOnce() -> Vec<GizmoVertex>,
+) {
+    if buffer.content_hash == key {
+        return;
+    }
+    write_lines(gpu, buffer, &build());
+    buffer.content_hash = key;
 }
 
 /// Escribe vértices en un `GizmoBuffer` reutilizable (line-list).
@@ -510,4 +558,23 @@ pub fn write_triangles(gpu: &SharedGpu, buffer: &mut GizmoBuffer, verts: &[Gizmo
     }
     buffer.vertex_count = verts.len() as u32;
     buffer.lines = false;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(parts: &[u64]) -> u64 {
+        let mut hash = overlay_hash();
+        for part in parts {
+            mix_u64(&mut hash, *part);
+        }
+        hash
+    }
+
+    #[test]
+    fn overlay_hash_is_stable_and_sensitive() {
+        assert_eq!(key(&[1, 2, 3]), key(&[1, 2, 3]));
+        assert_ne!(key(&[1, 2, 3]), key(&[1, 2, 4]));
+    }
 }

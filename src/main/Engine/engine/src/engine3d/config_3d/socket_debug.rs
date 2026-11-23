@@ -5,7 +5,7 @@ use glam::Vec3;
 use crate::engine3d::config_3d::entity_sockets::{bone_world_transform, socket_world_transform};
 use crate::engine3d::ecs::EntityId;
 use crate::engine3d::engine::State;
-use crate::engine3d::gizmo::GizmoVertex;
+use crate::engine3d::gizmo::{self, GizmoVertex};
 
 fn push_line(verts: &mut Vec<GizmoVertex>, a: Vec3, b: Vec3, color: [f32; 4]) {
     verts.push(GizmoVertex {
@@ -40,6 +40,41 @@ pub(crate) fn entity_socket_overlay_verts(state: &State, entity_id: EntityId) ->
         }
     }
     verts
+}
+
+pub(crate) fn selected_socket_overlay_key(state: &State) -> u64 {
+    let mut hash = gizmo::overlay_hash();
+    let Some(id) = state.selected_entity else {
+        return hash;
+    };
+    gizmo::mix_u64(&mut hash, u64::from(id));
+    if let Some(t) = state.world.get::<crate::engine3d::ecs::Transform>(id) {
+        gizmo::mix_vec3(&mut hash, t.position.to_array());
+        gizmo::mix_quat(&mut hash, t.rotation.to_array());
+        gizmo::mix_vec3(&mut hash, t.scale.to_array());
+    }
+    if let Some(clip) = state.active_model_clips.get(&id) {
+        gizmo::mix_u64(&mut hash, clip.playing as u64);
+        gizmo::mix_u64(&mut hash, clip.finished as u64);
+        gizmo::mix_f32(&mut hash, clip.time_s);
+        for byte in clip.clip_name.as_bytes() {
+            gizmo::mix_u64(&mut hash, u64::from(*byte));
+        }
+    }
+    if let Some(sockets) = state.entity_sockets.get(&id) {
+        gizmo::mix_u64(&mut hash, sockets.len() as u64);
+        for socket in sockets {
+            for byte in socket.name.as_bytes() {
+                gizmo::mix_u64(&mut hash, u64::from(*byte));
+            }
+            for byte in socket.bone_name.as_bytes() {
+                gizmo::mix_u64(&mut hash, u64::from(*byte));
+            }
+            gizmo::mix_vec3(&mut hash, socket.local_position.to_array());
+            gizmo::mix_quat(&mut hash, socket.local_rotation.to_array());
+        }
+    }
+    hash
 }
 
 pub(crate) fn selected_socket_overlay_verts(state: &State) -> Vec<GizmoVertex> {

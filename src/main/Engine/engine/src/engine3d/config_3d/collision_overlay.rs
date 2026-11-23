@@ -3,7 +3,7 @@ use glam::Vec3 as GlamVec3;
 use crate::engine3d::ecs::Transform;
 use crate::engine3d::engine::State;
 use crate::engine3d::entity_save_meta::entity_category_uses_character_capsule;
-use crate::engine3d::gizmo::GizmoVertex;
+use crate::engine3d::gizmo::{self, GizmoVertex};
 
 const COLOR_RAPIER: [f32; 4] = [0.2, 0.9, 1.0, 1.0];
 const COLOR_CHARACTER_CAPSULE: [f32; 4] = [1.0, 0.55, 0.1, 1.0];
@@ -218,6 +218,49 @@ fn push_character_capsule_overlay(
         t.position, t.scale, t.rotation, None,
     );
     push_wire_capsule_y(verts, feet, radius, body_h, color);
+}
+
+pub(crate) fn editor_collision_overlay_key(state: &State) -> u64 {
+    let mut hash = gizmo::overlay_hash();
+    gizmo::mix_u64(&mut hash, u64::from(state.preview_playing));
+    for (entity, collider_handle) in state.physics.entity_collider_entries() {
+        if state.editor_camera_entity == Some(entity) {
+            continue;
+        }
+        gizmo::mix_u64(&mut hash, u64::from(entity));
+        gizmo::mix_u64(
+            &mut hash,
+            u64::from(state.play_character_entity == Some(entity)),
+        );
+        if let Some((center, half)) = state.physics.collider_world_aabb(collider_handle) {
+            gizmo::mix_vec3(&mut hash, center.to_array());
+            gizmo::mix_vec3(&mut hash, half.to_array());
+        }
+    }
+    if let Some(id) = state.play_character_entity {
+        gizmo::mix_u64(&mut hash, u64::from(id));
+        gizmo::mix_u64(
+            &mut hash,
+            u64::from(state.play_character_mesh_extents.is_some()),
+        );
+        if let Some(t) = state.world.get::<Transform>(id) {
+            gizmo::mix_vec3(&mut hash, t.position.to_array());
+            gizmo::mix_vec3(&mut hash, t.scale.to_array());
+        }
+        if let Some((feet, radius, total_h)) = state.play_character_capsule_wire_dims() {
+            gizmo::mix_vec3(&mut hash, feet.to_array());
+            gizmo::mix_f32(&mut hash, radius);
+            gizmo::mix_f32(&mut hash, total_h);
+        }
+    }
+    for &id in &state.character_entities {
+        gizmo::mix_u64(&mut hash, u64::from(id));
+        if let Some(t) = state.world.get::<Transform>(id) {
+            gizmo::mix_vec3(&mut hash, t.position.to_array());
+            gizmo::mix_vec3(&mut hash, t.scale.to_array());
+        }
+    }
+    hash
 }
 
 pub(crate) fn editor_collision_overlay_verts(state: &State) -> Vec<GizmoVertex> {

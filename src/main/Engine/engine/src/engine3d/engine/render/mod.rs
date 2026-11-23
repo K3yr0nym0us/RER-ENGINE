@@ -590,13 +590,20 @@ impl State {
         let mut gizmos: Vec<crate::engine3d::vulkan::GizmoBatch> = Vec::new();
 
         if self.debug_mode && !self.preview_playing {
-            let verts =
-                crate::engine3d::config_3d::collision_overlay::editor_collision_overlay_verts(self);
-            crate::engine3d::gizmo::write_lines(
-                &self.vulkan,
-                &mut self.collision_overlay_buffer,
-                &verts,
-            );
+            let key =
+                crate::engine3d::config_3d::collision_overlay::editor_collision_overlay_key(self);
+            if self.collision_overlay_buffer.content_hash != key {
+                let verts =
+                    crate::engine3d::config_3d::collision_overlay::editor_collision_overlay_verts(
+                        self,
+                    );
+                crate::engine3d::gizmo::write_lines(
+                    &self.vulkan,
+                    &mut self.collision_overlay_buffer,
+                    &verts,
+                );
+                self.collision_overlay_buffer.content_hash = key;
+            }
             if self.collision_overlay_buffer.vertex_count > 0 {
                 gizmos.push(crate::engine3d::vulkan::GizmoBatch {
                     vertices: &self.collision_overlay_buffer.vertex_buffer,
@@ -608,8 +615,12 @@ impl State {
         }
 
         if !self.preview_playing || self.debug_mode {
-            let verts = build_probe_gizmo_verts(&probe_list);
-            crate::engine3d::gizmo::write_lines(&self.vulkan, &mut self.probe_gizmo_buffer, &verts);
+            crate::engine3d::gizmo::refresh_lines(
+                &self.vulkan,
+                &mut self.probe_gizmo_buffer,
+                probe_gizmo_key(&probe_list),
+                || build_probe_gizmo_verts(&probe_list),
+            );
             if self.probe_gizmo_buffer.vertex_count > 0 {
                 gizmos.push(crate::engine3d::vulkan::GizmoBatch {
                     vertices: &self.probe_gizmo_buffer.vertex_buffer,
@@ -627,15 +638,20 @@ impl State {
             && self.has_play_character()
             && let Some((eye, yaw, pitch)) = self.play_character_camera_gizmo_pose()
         {
-            let verts = crate::engine3d::gizmo::fps_camera_frustum_verts(
-                eye,
-                yaw,
-                pitch,
-                self.camera.fov_y,
-                aspect,
-                self.fps_editor_frustum_distance,
-            );
-            crate::engine3d::gizmo::write_lines(&self.vulkan, &mut self.fps_frustum_buffer, &verts);
+            let fov_y = self.camera.fov_y;
+            let distance = self.fps_editor_frustum_distance;
+            let key = fps_frustum_key(eye, yaw, pitch, fov_y, aspect, distance);
+            if self.fps_frustum_buffer.content_hash != key {
+                let verts = crate::engine3d::gizmo::fps_camera_frustum_verts(
+                    eye, yaw, pitch, fov_y, aspect, distance,
+                );
+                crate::engine3d::gizmo::write_lines(
+                    &self.vulkan,
+                    &mut self.fps_frustum_buffer,
+                    &verts,
+                );
+                self.fps_frustum_buffer.content_hash = key;
+            }
             if self.fps_frustum_buffer.vertex_count > 0 {
                 gizmos.push(crate::engine3d::vulkan::GizmoBatch {
                     vertices: &self.fps_frustum_buffer.vertex_buffer,
@@ -647,13 +663,20 @@ impl State {
         }
 
         if !self.preview_playing && !self.player_ui_edit_active {
-            let verts =
-                crate::engine3d::config_3d::skeleton_debug::selected_skeleton_overlay_verts(self);
-            crate::engine3d::gizmo::write_lines(
-                &self.vulkan,
-                &mut self.skeleton_overlay_buffer,
-                &verts,
-            );
+            let key =
+                crate::engine3d::config_3d::skeleton_debug::selected_skeleton_overlay_key(self);
+            if self.skeleton_overlay_buffer.content_hash != key {
+                let verts =
+                    crate::engine3d::config_3d::skeleton_debug::selected_skeleton_overlay_verts(
+                        self,
+                    );
+                crate::engine3d::gizmo::write_lines(
+                    &self.vulkan,
+                    &mut self.skeleton_overlay_buffer,
+                    &verts,
+                );
+                self.skeleton_overlay_buffer.content_hash = key;
+            }
             if self.skeleton_overlay_buffer.vertex_count > 0 {
                 gizmos.push(crate::engine3d::vulkan::GizmoBatch {
                     vertices: &self.skeleton_overlay_buffer.vertex_buffer,
@@ -662,13 +685,17 @@ impl State {
                     lines: true,
                 });
             }
-            let verts =
-                crate::engine3d::config_3d::socket_debug::selected_socket_overlay_verts(self);
-            crate::engine3d::gizmo::write_lines(
-                &self.vulkan,
-                &mut self.socket_overlay_buffer,
-                &verts,
-            );
+            let key = crate::engine3d::config_3d::socket_debug::selected_socket_overlay_key(self);
+            if self.socket_overlay_buffer.content_hash != key {
+                let verts =
+                    crate::engine3d::config_3d::socket_debug::selected_socket_overlay_verts(self);
+                crate::engine3d::gizmo::write_lines(
+                    &self.vulkan,
+                    &mut self.socket_overlay_buffer,
+                    &verts,
+                );
+                self.socket_overlay_buffer.content_hash = key;
+            }
             if self.socket_overlay_buffer.vertex_count > 0 {
                 gizmos.push(crate::engine3d::vulkan::GizmoBatch {
                     vertices: &self.socket_overlay_buffer.vertex_buffer,
@@ -691,12 +718,16 @@ impl State {
         // Zona clickeable del sol o del emisor bajo el cursor: disco relleno
         // del azul translúcido de hover, igual que el resaltado de modelos 3D.
         if !self.preview_playing && !self.player_ui_edit_active {
-            let verts = self.hover_highlight_overlay_verts();
-            crate::engine3d::gizmo::write_triangles(
-                &self.vulkan,
-                &mut self.emitter_hover_overlay,
-                &verts,
-            );
+            let key = self.hover_highlight_overlay_key();
+            if self.emitter_hover_overlay.content_hash != key {
+                let verts = self.hover_highlight_overlay_verts();
+                crate::engine3d::gizmo::write_triangles(
+                    &self.vulkan,
+                    &mut self.emitter_hover_overlay,
+                    &verts,
+                );
+                self.emitter_hover_overlay.content_hash = key;
+            }
             if self.emitter_hover_overlay.vertex_count > 0 {
                 gizmos.push(crate::engine3d::vulkan::GizmoBatch {
                     vertices: &self.emitter_hover_overlay.vertex_buffer,
@@ -1019,6 +1050,35 @@ impl State {
             renderer.finish_present(frame);
         }
     }
+}
+
+fn probe_gizmo_key(list: &[(crate::engine3d::ecs::EntityId, GlamVec3, usize)]) -> u64 {
+    let mut hash = crate::engine3d::gizmo::overlay_hash();
+    crate::engine3d::gizmo::mix_u64(&mut hash, list.len() as u64);
+    for (id, position, slot) in list {
+        crate::engine3d::gizmo::mix_u64(&mut hash, u64::from(*id));
+        crate::engine3d::gizmo::mix_vec3(&mut hash, position.to_array());
+        crate::engine3d::gizmo::mix_u64(&mut hash, *slot as u64);
+    }
+    hash
+}
+
+fn fps_frustum_key(
+    eye: GlamVec3,
+    yaw: f32,
+    pitch: f32,
+    fov_y: f32,
+    aspect: f32,
+    distance: f32,
+) -> u64 {
+    let mut hash = crate::engine3d::gizmo::overlay_hash();
+    crate::engine3d::gizmo::mix_vec3(&mut hash, eye.to_array());
+    crate::engine3d::gizmo::mix_f32(&mut hash, yaw);
+    crate::engine3d::gizmo::mix_f32(&mut hash, pitch);
+    crate::engine3d::gizmo::mix_f32(&mut hash, fov_y);
+    crate::engine3d::gizmo::mix_f32(&mut hash, aspect);
+    crate::engine3d::gizmo::mix_f32(&mut hash, distance);
+    hash
 }
 
 /// Draws aproximados del frame: un draw por lote de geometría visible, más

@@ -4,7 +4,7 @@ use glam::{Mat4, Vec3};
 
 use crate::engine3d::config_3d::model_asset::{MAX_JOINTS, ModelAsset};
 use crate::engine3d::engine::State;
-use crate::engine3d::gizmo::GizmoVertex;
+use crate::engine3d::gizmo::{self, GizmoVertex};
 
 const COLOR_BONE: [f32; 4] = [1.0, 1.0, 1.0, 1.0];
 const COLOR_BONE_HOVER: [f32; 4] = [1.0, 0.85, 0.15, 1.0];
@@ -67,6 +67,54 @@ fn joint_positions_mesh_space(asset: &ModelAsset, globals: &[Mat4]) -> Vec<Vec3>
         .iter()
         .map(|g| norm.transform_point3(g.transform_point3(Vec3::ZERO)))
         .collect()
+}
+
+pub(crate) fn selected_skeleton_overlay_key(state: &State) -> u64 {
+    let id = state
+        .socket_bone_pick_entity
+        .or(state.bone_physics_pick_entity)
+        .or(state.bone_physics_editor_entity)
+        .or(state.selected_entity)
+        .unwrap_or(0);
+    let mut hash = gizmo::overlay_hash();
+    gizmo::mix_u64(&mut hash, u64::from(id));
+    if id == 0 {
+        return hash;
+    }
+    let hovered = if state.socket_bone_pick_entity == Some(id) {
+        state.socket_bone_pick_hovered_joint
+    } else if state.bone_physics_pick_entity == Some(id) {
+        state.bone_physics_pick_hovered_joint
+    } else {
+        None
+    };
+    gizmo::mix_u64(&mut hash, hovered.map(|j| j as u64 + 1).unwrap_or(0));
+    for joint in state.bone_physics_joint_indices(id) {
+        gizmo::mix_u64(&mut hash, joint as u64);
+    }
+    if let Some(t) = state.world.get::<crate::engine3d::ecs::Transform>(id) {
+        gizmo::mix_vec3(&mut hash, t.position.to_array());
+        gizmo::mix_quat(&mut hash, t.rotation.to_array());
+        gizmo::mix_vec3(&mut hash, t.scale.to_array());
+    }
+    if let Some(clip) = state.active_model_clips.get(&id) {
+        gizmo::mix_u64(&mut hash, clip.playing as u64);
+        gizmo::mix_u64(&mut hash, clip.finished as u64);
+        gizmo::mix_f32(&mut hash, clip.time_s);
+        gizmo::mix_u64(&mut hash, fxhash_bytes(clip.clip_name.as_bytes()));
+    }
+    if let Some(binding) = state.model_animation_bindings.get(&id) {
+        gizmo::mix_u64(&mut hash, fxhash_bytes(binding.asset_path.as_bytes()));
+    }
+    hash
+}
+
+fn fxhash_bytes(bytes: &[u8]) -> u64 {
+    let mut hash = gizmo::overlay_hash();
+    for byte in bytes {
+        gizmo::mix_u64(&mut hash, u64::from(*byte));
+    }
+    hash
 }
 
 pub(crate) fn selected_skeleton_overlay_verts(state: &State) -> Vec<GizmoVertex> {

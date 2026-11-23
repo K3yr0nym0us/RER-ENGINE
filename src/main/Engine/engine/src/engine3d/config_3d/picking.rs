@@ -257,6 +257,23 @@ impl State {
         self.pick_entity(pixel_x, pixel_y);
     }
 
+    pub(crate) fn hover_highlight_overlay_key(&self) -> u64 {
+        let mut hash = crate::engine3d::gizmo::overlay_hash();
+        crate::engine3d::gizmo::mix_u64(&mut hash, u64::from(self.preview_playing));
+        crate::engine3d::gizmo::mix_u64(&mut hash, u64::from(self.player_ui_edit_active));
+        let view_t = self.camera_view_matrix().transpose();
+        crate::engine3d::gizmo::mix_vec3(&mut hash, view_t.x_axis.truncate().to_array());
+        crate::engine3d::gizmo::mix_vec3(&mut hash, view_t.y_axis.truncate().to_array());
+        crate::engine3d::gizmo::mix_u64(&mut hash, self.hovered_entity.map(u64::from).unwrap_or(0));
+        crate::engine3d::gizmo::mix_u64(&mut hash, self.sun_entity.map(u64::from).unwrap_or(0));
+        crate::engine3d::gizmo::mix_u64(&mut hash, self.hovered_emitter.unwrap_or(0));
+        if let Some((origin, radius)) = self.sun_hover_circle() {
+            crate::engine3d::gizmo::mix_vec3(&mut hash, origin.to_array());
+            crate::engine3d::gizmo::mix_f32(&mut hash, radius);
+        }
+        hash
+    }
+
     /// Zona de hover del sol o del emisor bajo el cursor: un disco relleno y
     /// translúcido del mismo azul que resalta los modelos 3D, no un anillo de
     /// líneas. El radio es exactamente el que usa el pick.
