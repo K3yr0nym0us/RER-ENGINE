@@ -54,53 +54,67 @@ impl FrameRenderer {
         slot: usize,
         input: &FrameInput<'_>,
     ) -> Result<(), VulkanError> {
-        let mut bytes = Vec::new();
-        let mut static_offsets = Vec::new();
-        for batch in input.static_batches {
-            static_offsets.push(align_up(bytes.len() as u32, 256) as u64);
-            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
-            bytes.extend(std::iter::repeat_n(0, pad));
-            bytes.extend_from_slice(batch.instances);
-        }
-        // Los lotes del shadow map son un subconjunto de `static_batches`: sus
-        // instancias se suben por separado para que sus offsets no se mezclen.
-        let mut shadow_offsets = Vec::new();
-        for batch in input.shadow_static_batches {
-            shadow_offsets.push(align_up(bytes.len() as u32, 256) as u64);
-            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
-            bytes.extend(std::iter::repeat_n(0, pad));
-            bytes.extend_from_slice(batch.instances);
-        }
-        let mut static_transparent_offsets = Vec::new();
-        for batch in input.static_transparent_batches {
-            static_transparent_offsets.push(align_up(bytes.len() as u32, 256) as u64);
-            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
-            bytes.extend(std::iter::repeat_n(0, pad));
-            bytes.extend_from_slice(batch.instances);
-        }
-        let mut skinned_offsets = Vec::new();
-        for batch in input.skinned_batches {
-            skinned_offsets.push(align_up(bytes.len() as u32, 256) as u64);
-            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
-            bytes.extend(std::iter::repeat_n(0, pad));
-            bytes.extend_from_slice(batch.instances);
-        }
-        // Casters skinned del shadow map: bloque propio por el mismo motivo que
-        // `shadow_offsets` (sus índices no coinciden con los del forward).
-        let mut shadow_skinned_offsets = Vec::new();
-        for batch in input.shadow_skinned_batches {
-            shadow_skinned_offsets.push(align_up(bytes.len() as u32, 256) as u64);
-            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
-            bytes.extend(std::iter::repeat_n(0, pad));
-            bytes.extend_from_slice(batch.instances);
-        }
-        let mut skinned_transparent_offsets = Vec::new();
-        for batch in input.skinned_transparent_batches {
-            skinned_transparent_offsets.push(align_up(bytes.len() as u32, 256) as u64);
-            let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
-            bytes.extend(std::iter::repeat_n(0, pad));
-            bytes.extend_from_slice(batch.instances);
-        }
+        let instance_slices = input
+            .static_batches
+            .iter()
+            .map(|batch| batch.instances)
+            .chain(
+                input
+                    .shadow_static_batches
+                    .iter()
+                    .map(|batch| batch.instances),
+            )
+            .chain(
+                input
+                    .static_transparent_batches
+                    .iter()
+                    .map(|batch| batch.instances),
+            )
+            .chain(input.skinned_batches.iter().map(|batch| batch.instances))
+            .chain(
+                input
+                    .shadow_skinned_batches
+                    .iter()
+                    .map(|batch| batch.instances),
+            )
+            .chain(
+                input
+                    .skinned_transparent_batches
+                    .iter()
+                    .map(|batch| batch.instances),
+            );
+        let (mut bytes, instance_offsets) = pack_unique_slices(instance_slices);
+        let offset_of = |slice: &[u8]| slice_offset(&instance_offsets, slice);
+        let static_offsets: Vec<u64> = input
+            .static_batches
+            .iter()
+            .map(|batch| offset_of(batch.instances))
+            .collect();
+        let shadow_offsets: Vec<u64> = input
+            .shadow_static_batches
+            .iter()
+            .map(|batch| offset_of(batch.instances))
+            .collect();
+        let static_transparent_offsets: Vec<u64> = input
+            .static_transparent_batches
+            .iter()
+            .map(|batch| offset_of(batch.instances))
+            .collect();
+        let skinned_offsets: Vec<u64> = input
+            .skinned_batches
+            .iter()
+            .map(|batch| offset_of(batch.instances))
+            .collect();
+        let shadow_skinned_offsets: Vec<u64> = input
+            .shadow_skinned_batches
+            .iter()
+            .map(|batch| offset_of(batch.instances))
+            .collect();
+        let skinned_transparent_offsets: Vec<u64> = input
+            .skinned_transparent_batches
+            .iter()
+            .map(|batch| offset_of(batch.instances))
+            .collect();
         self.hud_offset = align_up(bytes.len() as u32, 256) as u64;
         let pad = align_up(bytes.len() as u32, 256) as usize - bytes.len();
         bytes.extend(std::iter::repeat_n(0, pad));
@@ -111,36 +125,48 @@ impl FrameRenderer {
         let gpu = self.gpu.clone();
         Self::grow_host(&gpu, &mut self.instances[slot], bytes.len() as u64, "inst")?;
         self.instances[slot].write(0, &bytes)?;
-        let mut joints = Vec::new();
-        let mut joint_bases = Vec::new();
-        let mut joint_bases_transparent = Vec::new();
-        for batch in input.skinned_batches {
-            joint_bases.push((joints.len() / 64) as u32);
-            for matrix in batch.palette {
-                for column in matrix {
-                    joints.extend_from_slice(bytemuck::cast_slice(column));
-                }
+        let palettes = input
+            .skinned_batches
+            .iter()
+            .map(|batch| batch.palette)
+            .chain(
+                input
+                    .skinned_transparent_batches
+                    .iter()
+                    .map(|batch| batch.palette),
+            )
+            .chain(
+                input
+                    .shadow_skinned_batches
+                    .iter()
+                    .map(|batch| batch.palette),
+            );
+        let (mut joints, palette_bases) = pack_unique_palettes(palettes);
+        let palette_base = |palette: &[[[f32; 4]; 4]]| {
+            if palette.is_empty() {
+                0
+            } else {
+                palette_bases
+                    .get(&(palette.as_ptr() as usize))
+                    .copied()
+                    .unwrap_or(0)
             }
-        }
-        for batch in input.skinned_transparent_batches {
-            joint_bases_transparent.push((joints.len() / 64) as u32);
-            for matrix in batch.palette {
-                for column in matrix {
-                    joints.extend_from_slice(bytemuck::cast_slice(column));
-                }
-            }
-        }
-        // Paletas de los casters skinned, detrás de las del forward. Cada base
-        // apunta a su propio bloque dentro del mismo buffer de joints.
-        let mut shadow_joint_bases = Vec::new();
-        for batch in input.shadow_skinned_batches {
-            shadow_joint_bases.push((joints.len() / 64) as u32);
-            for matrix in batch.palette {
-                for column in matrix {
-                    joints.extend_from_slice(bytemuck::cast_slice(column));
-                }
-            }
-        }
+        };
+        let joint_bases: Vec<u32> = input
+            .skinned_batches
+            .iter()
+            .map(|batch| palette_base(batch.palette))
+            .collect();
+        let joint_bases_transparent: Vec<u32> = input
+            .skinned_transparent_batches
+            .iter()
+            .map(|batch| palette_base(batch.palette))
+            .collect();
+        let shadow_joint_bases: Vec<u32> = input
+            .shadow_skinned_batches
+            .iter()
+            .map(|batch| palette_base(batch.palette))
+            .collect();
         if joints.is_empty() {
             joints.extend_from_slice(&[0, 0, 0, 0]);
         }
@@ -456,5 +482,100 @@ impl FrameRenderer {
                 offset,
             );
         }
+    }
+}
+
+fn pack_unique_slices<'a>(
+    slices: impl IntoIterator<Item = &'a [u8]>,
+) -> (Vec<u8>, std::collections::HashMap<usize, u64>) {
+    let mut longest: std::collections::HashMap<usize, &'a [u8]> = std::collections::HashMap::new();
+    let mut order = Vec::new();
+    for slice in slices {
+        if slice.is_empty() {
+            continue;
+        }
+        let key = slice.as_ptr() as usize;
+        match longest.get(&key) {
+            Some(old) if old.len() >= slice.len() => {}
+            Some(_) => {
+                longest.insert(key, slice);
+            }
+            None => {
+                longest.insert(key, slice);
+                order.push(key);
+            }
+        }
+    }
+    let mut bytes = Vec::new();
+    let mut offsets = std::collections::HashMap::new();
+    for key in order {
+        let Some(slice) = longest.get(&key).copied() else {
+            continue;
+        };
+        let offset = align_up(bytes.len() as u32, 256) as u64;
+        let pad = offset as usize - bytes.len();
+        bytes.extend(std::iter::repeat_n(0, pad));
+        bytes.extend_from_slice(slice);
+        offsets.insert(key, offset);
+    }
+    (bytes, offsets)
+}
+
+fn slice_offset(offsets: &std::collections::HashMap<usize, u64>, slice: &[u8]) -> u64 {
+    if slice.is_empty() {
+        0
+    } else {
+        offsets
+            .get(&(slice.as_ptr() as usize))
+            .copied()
+            .unwrap_or(0)
+    }
+}
+
+fn pack_unique_palettes<'a>(
+    palettes: impl IntoIterator<Item = &'a [[[f32; 4]; 4]]>,
+) -> (Vec<u8>, std::collections::HashMap<usize, u32>) {
+    let mut joints = Vec::new();
+    let mut bases = std::collections::HashMap::new();
+    for palette in palettes {
+        if palette.is_empty() {
+            continue;
+        }
+        let key = palette.as_ptr() as usize;
+        if bases.contains_key(&key) {
+            continue;
+        }
+        let base = (joints.len() / 64) as u32;
+        bases.insert(key, base);
+        for matrix in palette {
+            for column in matrix {
+                joints.extend_from_slice(bytemuck::cast_slice(column));
+            }
+        }
+    }
+    (joints, bases)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pack_unique_slices_reuses_prefix_of_longer_backing() {
+        let data = [1u8, 2, 3, 4, 5, 6];
+        let full = &data[..];
+        let prefix = &data[..2];
+        let (bytes, offsets) = pack_unique_slices([prefix, full]);
+        assert_eq!(slice_offset(&offsets, prefix), slice_offset(&offsets, full));
+        assert!(bytes.windows(6).any(|window| window == full));
+        assert_eq!(offsets.len(), 1);
+    }
+
+    #[test]
+    fn pack_unique_palettes_reuses_same_pointer() {
+        let palette = [[[1.0f32; 4]; 4]; 2];
+        let (joints, bases) = pack_unique_palettes([&palette[..], &palette[..]]);
+        assert_eq!(bases.len(), 1);
+        assert_eq!(joints.len(), 2 * 64);
     }
 }

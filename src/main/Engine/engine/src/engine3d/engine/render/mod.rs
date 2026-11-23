@@ -325,11 +325,12 @@ impl State {
         }
         entities.sort_by_key(|a| a.4);
 
-        // Los lotes se construyen una sola vez con el conjunto ampliado. El forward
-        // filtra por `forward_ids`; el shadow map consume el conjunto completo.
+        // Los lotes se construyen una sola vez con el conjunto ampliado. La
+        // partición deja el forward como prefijo del vec de casters.
         let batches = build_scene_instance_batches(self, &entities, &probe_fields);
-        let forward_batches = filter_batches_by_entity_set(&batches, &forward_ids);
-        let opaque_batches = filter_batches_by_alpha(&forward_batches, false);
+        let partitioned = partition_scene_batches(batches, &forward_ids, |id| {
+            entity_skips_shadow_cast(self, id)
+        });
 
         // ── Probes: ranuras estables + burst/round-robin de captura ──
         let probe_captures: Vec<crate::engine3d::vulkan::ProbeCapture> = if probes_active {
@@ -405,38 +406,43 @@ impl State {
         }
 
         let mut static_batches: Vec<MeshBatch> = Vec::new();
-        let caster_opaque_batches = filter_batches_by_alpha(&batches, false);
-        let shadow_scene_batches = filter_shadow_cast_batches(self, &caster_opaque_batches);
         let mut shadow_static_batches: Vec<MeshBatch> = Vec::new();
-        for b in &shadow_scene_batches {
+        for b in &partitioned.opaque {
             let Some(mesh) = self.meshes.get(b.mesh_idx) else {
                 continue;
             };
-            let instances_bytes = bytemuck::cast_slice(&b.instances);
+            if b.forward_count > 0 {
+                let instances = &b.instances[..b.forward_count];
+                static_batches.push(MeshBatch {
+                    vertex: &mesh.vertex_buffer,
+                    index: &mesh.index_buffer,
+                    index_count: mesh.index_count,
+                    instances: bytemuck::cast_slice(instances),
+                    instance_count: instances.len() as u32,
+                });
+            }
             shadow_static_batches.push(MeshBatch {
                 vertex: &mesh.vertex_buffer,
                 index: &mesh.index_buffer,
                 index_count: mesh.index_count,
-                instances: instances_bytes,
+                instances: bytemuck::cast_slice(&b.instances),
                 instance_count: b.instances.len() as u32,
             });
         }
-        for b in &opaque_batches {
+        for b in &partitioned.opaque_no_shadow {
             let Some(mesh) = self.meshes.get(b.mesh_idx) else {
                 continue;
             };
-            let instances_bytes = bytemuck::cast_slice(&b.instances);
             static_batches.push(MeshBatch {
                 vertex: &mesh.vertex_buffer,
                 index: &mesh.index_buffer,
                 index_count: mesh.index_count,
-                instances: instances_bytes,
+                instances: bytemuck::cast_slice(&b.instances),
                 instance_count: b.instances.len() as u32,
             });
         }
-        let transparent_batches = filter_batches_by_alpha(&forward_batches, true);
         let mut static_transparent_batches: Vec<MeshBatch> = Vec::new();
-        for b in &transparent_batches {
+        for b in &partitioned.transparent {
             let Some(mesh) = self.meshes.get(b.mesh_idx) else {
                 continue;
             };
@@ -464,11 +470,10 @@ impl State {
         }
 
         // ── Instancias skinned (modelos animados por joints) ──
-        // Igual que en estáticos: el forward usa el frustum estricto y el shadow
-        // map el frustum ampliado hacia el sol, con su propio bloque de instancias.
+        // Una sola arena: forward y shadow apuntan al mismo bloque si la
+        // entidad es visible y caster.
         let mut skinned_arena: Vec<u8> = Vec::new();
         let mut skinned_specs: Vec<(usize, usize, usize, bool)> = Vec::new();
-        let mut shadow_skinned_arena: Vec<u8> = Vec::new();
         let mut shadow_skinned_specs: Vec<(usize, usize, usize)> = Vec::new();
         for (&id, binding) in &self.model_animation_bindings {
             let Some(transform) = self.world.get::<crate::engine3d::ecs::Transform>(id) else {
@@ -524,15 +529,17 @@ impl State {
                 let skinned = crate::engine3d::mesh::SkinnedInstanceData::from_instance(&inst);
                 let transparent = inst.flag_pad[1] < 0.98;
                 let bytes = bytemuck::bytes_of(&skinned);
-                if strict {
+                let needs_forward = strict;
+                let needs_shadow = casts_shadow && !transparent;
+                if needs_forward || needs_shadow {
                     let offset = skinned_arena.len();
                     skinned_arena.extend_from_slice(bytes);
-                    skinned_specs.push((gpu_idx, offset, bytes.len(), transparent));
-                }
-                if casts_shadow && !transparent {
-                    let offset = shadow_skinned_arena.len();
-                    shadow_skinned_arena.extend_from_slice(bytes);
-                    shadow_skinned_specs.push((gpu_idx, offset, bytes.len()));
+                    if needs_forward {
+                        skinned_specs.push((gpu_idx, offset, bytes.len(), transparent));
+                    }
+                    if needs_shadow {
+                        shadow_skinned_specs.push((gpu_idx, offset, bytes.len()));
+                    }
                 }
             }
         }
@@ -565,7 +572,7 @@ impl State {
                 vertex: &entry.mesh.vertex_buffer,
                 index: &entry.mesh.index_buffer,
                 index_count: entry.mesh.index_count,
-                instances: &shadow_skinned_arena[*offset..*offset + *len],
+                instances: &skinned_arena[*offset..*offset + *len],
                 instance_count: 1,
                 palette: &entry.joint_palette,
             });
@@ -829,7 +836,7 @@ impl State {
         };
 
         let rt_records = if raytracing {
-            collect_rt_instances(self, &opaque_batches)
+            collect_rt_instances(self, &partitioned.opaque, &partitioned.opaque_no_shadow)
         } else {
             Vec::new()
         };

@@ -27,13 +27,29 @@ pub(crate) fn apply_surface_pbr_to_instance(
     inst.flag_pad[1] = crate::engine3d::config_3d::pbr_presets::instance_visual_alpha(pbr);
 }
 
-/// Lote de instancias de una misma malla/capa/probe para el pase forward.
+/// Lote de instancias de una misma malla/capa/probe.
+///
+/// Tras `partition_scene_batches`, los opacos que proyectan sombra quedan
+/// ordenados `[forward | extra_casters]`: el forward usa el prefijo
+/// `forward_count` y el shadow map el vec entero, sin copiar instancias.
 pub(crate) struct SceneInstanceBatch {
     pub(crate) mesh_idx: usize,
     pub(crate) texture_layer: u32,
     pub(crate) probe_layer: i32,
     pub(crate) instances: Vec<crate::engine3d::mesh::InstanceData>,
     pub(crate) entity_ids: Vec<crate::engine3d::ecs::EntityId>,
+    /// Prefijo de `instances` que entra en el pase forward opaco.
+    pub(crate) forward_count: usize,
+}
+
+/// Resultado de clasificar un conjunto de lotes una sola vez.
+pub(crate) struct PartitionedBatches {
+    /// Opacos que proyectan sombra: `instances` = `[forward | extra_casters]`.
+    pub(crate) opaque: Vec<SceneInstanceBatch>,
+    /// Opacos visibles que no proyectan (sol, suelo, fondo).
+    pub(crate) opaque_no_shadow: Vec<SceneInstanceBatch>,
+    /// Semitransparentes visibles en el forward blend.
+    pub(crate) transparent: Vec<SceneInstanceBatch>,
 }
 
 /// Wireframe de esferas para los reflection probes del editor.
@@ -63,67 +79,92 @@ pub(crate) fn build_probe_gizmo_verts(
     verts
 }
 
-pub(crate) fn filter_batches_by_alpha(
-    batches: &[SceneInstanceBatch],
-    want_transparent: bool,
-) -> Vec<SceneInstanceBatch> {
-    batches
-        .iter()
-        .filter_map(|b| {
-            let mut instances = Vec::new();
-            let mut entity_ids = Vec::new();
-            for (inst, eid) in b.instances.iter().zip(b.entity_ids.iter()) {
-                if instance_is_transparent(inst) == want_transparent {
-                    instances.push(*inst);
-                    entity_ids.push(*eid);
-                }
-            }
-            if instances.is_empty() {
-                return None;
-            }
-            Some(SceneInstanceBatch {
-                mesh_idx: b.mesh_idx,
-                texture_layer: b.texture_layer,
-                probe_layer: b.probe_layer,
-                instances,
-                entity_ids,
-            })
-        })
-        .collect()
-}
-
-/// Deja solo las entidades visibles en el pase forward.
+/// Clasifica cada instancia una sola vez: forward, casters extra y skip-shadow.
 ///
-/// Los lotes se construyen con el conjunto ampliado de casters (frustum de cámara
-/// más margen hacia el sol); el forward necesita el subconjunto estricto. El
-/// shadow map, en cambio, consume los lotes completos.
-pub(crate) fn filter_batches_by_entity_set(
-    batches: &[SceneInstanceBatch],
+/// El lote opaco queda como prefijo + cola para que el upload GPU del shadow
+/// map cubra también el forward (mismo puntero, `instance_count` menor).
+pub(crate) fn partition_scene_batches(
+    batches: Vec<SceneInstanceBatch>,
     visible: &HashSet<crate::engine3d::ecs::EntityId>,
-) -> Vec<SceneInstanceBatch> {
-    batches
-        .iter()
-        .filter_map(|batch| {
-            let mut instances = Vec::new();
-            let mut entity_ids = Vec::new();
-            for (inst, eid) in batch.instances.iter().zip(batch.entity_ids.iter()) {
-                if visible.contains(eid) {
-                    instances.push(*inst);
-                    entity_ids.push(*eid);
+    skip_shadow: impl Fn(crate::engine3d::ecs::EntityId) -> bool,
+) -> PartitionedBatches {
+    let mut opaque = Vec::new();
+    let mut opaque_no_shadow = Vec::new();
+    let mut transparent = Vec::new();
+    for batch in batches {
+        let mut forward_cast = Vec::new();
+        let mut forward_cast_ids = Vec::new();
+        let mut extra_cast = Vec::new();
+        let mut extra_cast_ids = Vec::new();
+        let mut forward_skip = Vec::new();
+        let mut forward_skip_ids = Vec::new();
+        let mut transparent_inst = Vec::new();
+        let mut transparent_ids = Vec::new();
+        for (inst, entity_id) in batch.instances.into_iter().zip(batch.entity_ids) {
+            let in_forward = visible.contains(&entity_id);
+            if instance_is_transparent(&inst) {
+                if in_forward {
+                    transparent_inst.push(inst);
+                    transparent_ids.push(entity_id);
                 }
+                continue;
             }
-            if instances.is_empty() {
-                return None;
+            if skip_shadow(entity_id) {
+                if in_forward {
+                    forward_skip.push(inst);
+                    forward_skip_ids.push(entity_id);
+                }
+                continue;
             }
-            Some(SceneInstanceBatch {
+            if in_forward {
+                forward_cast.push(inst);
+                forward_cast_ids.push(entity_id);
+            } else {
+                extra_cast.push(inst);
+                extra_cast_ids.push(entity_id);
+            }
+        }
+        if !forward_cast.is_empty() || !extra_cast.is_empty() {
+            let forward_count = forward_cast.len();
+            forward_cast.extend(extra_cast);
+            forward_cast_ids.extend(extra_cast_ids);
+            opaque.push(SceneInstanceBatch {
                 mesh_idx: batch.mesh_idx,
                 texture_layer: batch.texture_layer,
                 probe_layer: batch.probe_layer,
-                instances,
-                entity_ids,
-            })
-        })
-        .collect()
+                instances: forward_cast,
+                entity_ids: forward_cast_ids,
+                forward_count,
+            });
+        }
+        if !forward_skip.is_empty() {
+            let forward_count = forward_skip.len();
+            opaque_no_shadow.push(SceneInstanceBatch {
+                mesh_idx: batch.mesh_idx,
+                texture_layer: batch.texture_layer,
+                probe_layer: batch.probe_layer,
+                instances: forward_skip,
+                entity_ids: forward_skip_ids,
+                forward_count,
+            });
+        }
+        if !transparent_inst.is_empty() {
+            let forward_count = transparent_inst.len();
+            transparent.push(SceneInstanceBatch {
+                mesh_idx: batch.mesh_idx,
+                texture_layer: batch.texture_layer,
+                probe_layer: batch.probe_layer,
+                instances: transparent_inst,
+                entity_ids: transparent_ids,
+                forward_count,
+            });
+        }
+    }
+    PartitionedBatches {
+        opaque,
+        opaque_no_shadow,
+        transparent,
+    }
 }
 
 /// Instancias estáticas para escena o captura de probe.
@@ -205,6 +246,7 @@ pub(crate) fn build_scene_instance_batches(
                 probe_layer,
                 instances: vec![inst],
                 entity_ids: vec![*entity_id],
+                forward_count: 0,
             });
         }
     }
@@ -230,38 +272,6 @@ pub(crate) fn entity_skips_shadow_cast(
             })
 }
 
-/// Lotes que escriben el mapa de sombras. El checker no entra (se auto-sombrea);
-/// el terreno sí, para que las montañas proyecten sobre el suelo.
-pub(crate) fn filter_shadow_cast_batches(
-    state: &super::State,
-    batches: &[SceneInstanceBatch],
-) -> Vec<SceneInstanceBatch> {
-    batches
-        .iter()
-        .filter_map(|batch| {
-            let mut instances = Vec::new();
-            let mut entity_ids = Vec::new();
-            for (instance, entity_id) in batch.instances.iter().zip(&batch.entity_ids) {
-                if entity_skips_shadow_cast(state, *entity_id) {
-                    continue;
-                }
-                instances.push(*instance);
-                entity_ids.push(*entity_id);
-            }
-            if instances.is_empty() {
-                return None;
-            }
-            Some(SceneInstanceBatch {
-                mesh_idx: batch.mesh_idx,
-                texture_layer: batch.texture_layer,
-                probe_layer: batch.probe_layer,
-                instances,
-                entity_ids,
-            })
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,23 +285,66 @@ mod tests {
             probe_layer: -1,
             instances: ids.iter().map(|_| inst).collect(),
             entity_ids: ids.to_vec(),
+            forward_count: 0,
+        }
+    }
+
+    fn transparent_batch(ids: &[u32]) -> SceneInstanceBatch {
+        let mut inst = crate::engine3d::mesh::InstanceData::new(Mat4::IDENTITY, 0.0, 0);
+        inst.flag_pad[1] = 0.5;
+        SceneInstanceBatch {
+            mesh_idx: 0,
+            texture_layer: 0,
+            probe_layer: -1,
+            instances: ids.iter().map(|_| inst).collect(),
+            entity_ids: ids.to_vec(),
+            forward_count: 0,
         }
     }
 
     #[test]
-    fn forward_batches_keep_only_strictly_visible_entities() {
-        let batches = vec![batch(&[1, 2, 3])];
-        let forward = filter_batches_by_entity_set(&batches, &HashSet::from([2]));
-        assert_eq!(forward.len(), 1);
-        assert_eq!(forward[0].entity_ids, vec![2]);
-        assert_eq!(forward[0].instances.len(), 1);
-        // El lote completo sigue intacto para el shadow map.
-        assert_eq!(batches[0].entity_ids, vec![1, 2, 3]);
+    fn partition_keeps_forward_as_prefix_of_shadow() {
+        let part = partition_scene_batches(vec![batch(&[1, 2, 3])], &HashSet::from([2]), |_| false);
+        assert_eq!(part.opaque.len(), 1);
+        assert_eq!(part.opaque[0].entity_ids, vec![2, 1, 3]);
+        assert_eq!(part.opaque[0].forward_count, 1);
+        assert_eq!(
+            part.opaque[0].instances[..1].as_ptr(),
+            part.opaque[0].instances.as_ptr()
+        );
+        assert!(part.opaque_no_shadow.is_empty());
+        assert!(part.transparent.is_empty());
     }
 
     #[test]
-    fn forward_batches_drop_empty_results() {
-        let batches = vec![batch(&[7])];
-        assert!(filter_batches_by_entity_set(&batches, &HashSet::new()).is_empty());
+    fn partition_keeps_casters_without_forward() {
+        let part = partition_scene_batches(vec![batch(&[7])], &HashSet::new(), |_| false);
+        assert_eq!(part.opaque.len(), 1);
+        assert_eq!(part.opaque[0].forward_count, 0);
+        assert_eq!(part.opaque[0].entity_ids, vec![7]);
+    }
+
+    #[test]
+    fn partition_drops_batches_with_no_forward_or_shadow() {
+        let part = partition_scene_batches(vec![batch(&[7])], &HashSet::new(), |_| true);
+        assert!(part.opaque.is_empty());
+        assert!(part.opaque_no_shadow.is_empty());
+        assert!(part.transparent.is_empty());
+    }
+
+    #[test]
+    fn partition_splits_skip_shadow_and_transparent() {
+        let part = partition_scene_batches(
+            vec![batch(&[1, 2]), transparent_batch(&[3])],
+            &HashSet::from([1, 2, 3]),
+            |id| id == 1,
+        );
+        assert_eq!(part.opaque.len(), 1);
+        assert_eq!(part.opaque[0].entity_ids, vec![2]);
+        assert_eq!(part.opaque[0].forward_count, 1);
+        assert_eq!(part.opaque_no_shadow.len(), 1);
+        assert_eq!(part.opaque_no_shadow[0].entity_ids, vec![1]);
+        assert_eq!(part.transparent.len(), 1);
+        assert_eq!(part.transparent[0].entity_ids, vec![3]);
     }
 }

@@ -11,26 +11,45 @@ pub(crate) struct RtInstanceRecord {
     pub(crate) probe_layer: i32,
 }
 
+fn push_rt_records(
+    state: &State,
+    batch: &SceneInstanceBatch,
+    instance_count: usize,
+    out: &mut Vec<RtInstanceRecord>,
+) {
+    let Some(mesh) = state.meshes.get(batch.mesh_idx) else {
+        return;
+    };
+    if mesh.rt_indices.len() < 3 {
+        return;
+    }
+    let count = instance_count
+        .min(batch.instances.len())
+        .min(batch.entity_ids.len());
+    for (inst, entity_id) in batch.instances[..count]
+        .iter()
+        .zip(batch.entity_ids[..count].iter())
+    {
+        out.push(RtInstanceRecord {
+            mesh_idx: batch.mesh_idx,
+            entity_id: *entity_id,
+            transform: Mat4::from_cols_array_2d(&inst.model),
+            probe_layer: inst.tex_layer_pad[2] as i32,
+        });
+    }
+}
+
 pub(crate) fn collect_rt_instances(
     state: &State,
-    batches: &[SceneInstanceBatch],
+    opaque: &[SceneInstanceBatch],
+    opaque_no_shadow: &[SceneInstanceBatch],
 ) -> Vec<RtInstanceRecord> {
     let mut out = Vec::new();
-    for batch in batches {
-        let Some(mesh) = state.meshes.get(batch.mesh_idx) else {
-            continue;
-        };
-        if mesh.rt_indices.len() < 3 {
-            continue;
-        }
-        for (inst, entity_id) in batch.instances.iter().zip(batch.entity_ids.iter()) {
-            out.push(RtInstanceRecord {
-                mesh_idx: batch.mesh_idx,
-                entity_id: *entity_id,
-                transform: Mat4::from_cols_array_2d(&inst.model),
-                probe_layer: inst.tex_layer_pad[2] as i32,
-            });
-        }
+    for batch in opaque {
+        push_rt_records(state, batch, batch.forward_count, &mut out);
+    }
+    for batch in opaque_no_shadow {
+        push_rt_records(state, batch, batch.instances.len(), &mut out);
     }
     out
 }

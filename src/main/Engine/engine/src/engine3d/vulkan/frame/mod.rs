@@ -221,11 +221,11 @@ pub struct FrameInput<'a> {
     /// Vista de debug: presenta la imagen de reflejo trazado en crudo.
     pub debug_rt_view: bool,
     pub static_batches: &'a [MeshBatch<'a>],
-    /// Sin terreno ni suelo checker: evitan auto-sombra a escala de mundo.
+    /// Casters opacos. Suele ser el mismo backing que `static_batches` (prefijo
+    /// más extra off-camera); `prepare_uploads` no vuelve a copiar el prefijo.
     pub shadow_static_batches: &'a [MeshBatch<'a>],
-    /// Casters skinned seleccionados con el frustum ampliado hacia el sol. Tienen
-    /// su propio bloque de instancias/paletas: reutilizar los del forward leyera
-    /// matrices de otras entidades, igual que pasó con `shadow_static_batches`.
+    /// Casters skinned (frustum ampliado). Reutilizan bytes/paleta del forward
+    /// cuando la entidad ya está en ese pase.
     pub shadow_skinned_batches: &'a [SkinnedBatch<'a>],
     /// Batches con alpha < 0.98 para el pase blend.
     pub static_transparent_batches: &'a [MeshBatch<'a>],
