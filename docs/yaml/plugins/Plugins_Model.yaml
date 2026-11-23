@@ -36,7 +36,8 @@ catalog:
       atlas de splats 16×16×64 px (no una capa 1024² por columna). Barrido de
       columnas con progreso phase=scan, luego mesh. Voxel size = detalle MC, no
       radio del mundo. Generación en CPU; GPU pinta. No reinstalar el catálogo
-      para una DLL local de desarrollo.
+      para una DLL local de desarrollo. `yarn dev` / `yarn start` copian
+      `rer_worldgen.dll` a install_dir (scripts/install-worldgen-dev.mjs).
 
 persistence:
   path: "{userData}/plugins/state.json"

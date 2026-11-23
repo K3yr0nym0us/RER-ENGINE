@@ -174,7 +174,7 @@ pub struct FeaturePlan {
 /// Multiplicador de intentos por sitio aceptado (dart-throwing con rechazo).
 const ATTEMPTS_PER_SITE: u32 = 12;
 /// Margen mínimo (m) entre el borde de un lago y el pie de una montaña.
-const LAKE_MOUNTAIN_GAP: f32 = 12.0;
+const LAKE_MOUNTAIN_GAP: f32 = 22.0;
 
 impl FeaturePlan {
     /// Genera el plan completo de forma determinista.
@@ -197,8 +197,8 @@ impl FeaturePlan {
                 kind: FeatureKind::Mountain,
                 pos,
                 radius: r,
-                value: config.mountains.max_height * rng.range_f32(0.6, 1.0),
-                ridge: rng.range_f32(0.0, 1.0),
+                value: config.mountains.max_height * rng.range_f32(0.78, 1.0),
+                ridge: rng.range_f32(0.88, 1.0),
             },
             |rng, index, sectors| rng_pos_along_half(rng, extent, grade, true, index, sectors),
         );
@@ -371,6 +371,7 @@ impl FeaturePlan {
                     &plan.lakes,
                     &plan.sites,
                     &plan.caves,
+                    &plan.rivers,
                     grade,
                 ) else {
                     continue;
@@ -380,6 +381,23 @@ impl FeaturePlan {
         }
 
         plan
+    }
+
+    /// Cota Y más baja de túneles y salas (centro menos radio). `+∞` si no hay cuevas.
+    #[must_use]
+    pub fn lowest_carve_y(&self) -> f32 {
+        let mut lowest = f32::MAX;
+        for system in &self.caves {
+            for segment in &system.segments {
+                lowest = lowest
+                    .min(segment.a.y - segment.radius)
+                    .min(segment.b.y - segment.radius);
+            }
+            for room in &system.rooms {
+                lowest = lowest.min(room.center.y - room.radius);
+            }
+        }
+        lowest
     }
 }
 
@@ -674,8 +692,32 @@ fn walk_river(
     if !river_reaches_mouth(end, extent, lakes, sites) || end_h > start_h + 0.5 || !went_downslope {
         river.points.clear();
         river.waterfalls.clear();
+        return river;
     }
+    soften_river_grade(&mut river);
     river
+}
+
+/// Suaviza las cotas del cauce para que las bajadas no sean un escalón a plomo.
+fn soften_river_grade(river: &mut RiverPath) {
+    let n = river.points.len();
+    if n < 3 {
+        return;
+    }
+    let mut heights: Vec<f32> = river.points.iter().map(|point| point.1).collect();
+    let mut next = heights.clone();
+    for _ in 0..2 {
+        next.clone_from(&heights);
+        for i in 1..n - 1 {
+            let avg = (heights[i - 1] + heights[i] * 2.0 + heights[i + 1]) * 0.25;
+            next[i] = avg.min(next[i - 1] - 0.015);
+        }
+        next[n - 1] = next[n - 1].min(next[n - 2] - 0.015);
+        heights.clone_from(&next);
+    }
+    for (point, height) in river.points.iter_mut().zip(heights) {
+        point.1 = height;
+    }
 }
 
 fn in_lake(pos: Vec2, lakes: &[LakeInfo], sites: &[Site]) -> bool {
@@ -891,12 +933,9 @@ fn source_height_floor(lakes: &[LakeInfo]) -> f32 {
         + 4.0
 }
 
-/// Genera un sistema de cuevas: túnel con entrada en superficie + rooms (F4).
-///
-/// La boca nace en una zona alta. El descenso hace un lerp suave hacia el piso
-/// (no un pozo); los primeros 7 tramos se tallan como entrada y el radio crece
-/// hacia el interior.
-/// Se corta antes de asomar por la ladera opuesta.
+/// Genera un sistema de cuevas: descenso casi vertical, poca deriva XZ, y una
+/// sala al fondo. Puede bajar del piso del volumen; el motor ensancha el
+/// límite inferior al terminar.
 fn walk_cave(
     config: &WorldGenConfig,
     height_at: &dyn Fn(f32, f32) -> f32,
@@ -904,13 +943,20 @@ fn walk_cave(
     lakes: &[LakeInfo],
     sites: &[Site],
     existing: &[CaveSystem],
+    rivers: &[RiverPath],
     grade: LandGrade,
 ) -> Option<CaveSystem> {
     let caves = &config.caves;
     let extent = Vec2::new(config.bounds.width, config.bounds.length);
+    let river_gap = caves.radius + 8.0;
 
-    let (mut pos, picked_host) = pick_cave_mouth(rng, extent, height_at, lakes, sites, grade)?;
+    let (mut pos, picked_host) = pick_cave_mouth(
+        rng, extent, height_at, lakes, sites, rivers, river_gap, grade,
+    )?;
     if !cave_mouth_clear(pos, existing) {
+        return None;
+    }
+    if near_rivers(pos, rivers, river_gap) {
         return None;
     }
     let mouth_xz = pos;
@@ -925,10 +971,13 @@ fn walk_cave(
         dir = Vec2::from_angle(rng.range_f32(0.0, std::f32::consts::TAU));
     }
 
-    let target_depth = rng.range_f32(caves.depth_min, caves.depth_max);
+    let cavern_radius = terminal_cavern_radius(config);
+    let want_floor = crate::config::TERRAIN_FLOOR - cavern_radius * 0.45;
+    let target_depth = rng
+        .range_f32(caves.depth_min, caves.depth_max)
+        .max((mouth_surface - want_floor).max(caves.depth_min));
     let base_radius = caves.radius;
-    let floor_y = crate::config::TERRAIN_FLOOR + base_radius + 0.8;
-    let cave_floor_y = (mouth_surface - target_depth).max(floor_y);
+    let cave_floor_y = mouth_surface - target_depth;
     let mut system = CaveSystem {
         target_depth,
         ..CaveSystem::default()
@@ -940,11 +989,12 @@ fn walk_cave(
     let total = caves.segments.max(8);
 
     while segments < total {
-        let opening = segments < 7;
+        let buried = mouth_surface - y;
+        let opening = segments < 4 || buried < 6.5;
         let progress = segments as f32 / (total - 1).max(1) as f32;
-        let step = rng.range_f32(5.0, 8.5);
-        dir = steer_cave_dir(dir, pos, host, rng, step);
-        let next_xz = pos + dir * step;
+        let step = rng.range_f32(1.6, 2.8);
+        dir = steer_cave_dir(dir, pos, host, rng);
+        let mut next_xz = pos + dir * step;
         if !inside_playable_disk(next_xz, extent) {
             break;
         }
@@ -954,22 +1004,28 @@ fn walk_cave(
         {
             break;
         }
-        if segments >= 3 && dist(next_xz, mouth_xz) < 18.0 {
+        if near_rivers(next_xz, rivers, river_gap) {
             break;
         }
         if let Some(site) = host {
-            let mouth_out = dist(mouth_xz, site.pos);
             let next_out = dist(next_xz, site.pos);
-            if segments >= 4 && next_out > mouth_out + 1.5 {
-                break;
+            if next_out > dist(mouth_xz, site.pos) {
+                dir = (site.pos - pos).normalize_or_zero();
+                let redirected = pos + dir * step;
+                if inside_playable_disk(redirected, extent)
+                    && !near_rivers(redirected, rivers, river_gap)
+                    && lakes
+                        .iter()
+                        .all(|lake| dist(lake.pos, redirected) > lake.radius * 1.05)
+                {
+                    next_xz = redirected;
+                } else {
+                    break;
+                }
             }
         }
 
         let local_h = height_at(next_xz.x, next_xz.y);
-        if local_h < crate::config::plains_height() + 2.0 && segments >= 6 {
-            break;
-        }
-
         let radius = cave_segment_radius(base_radius, segments, total, rng);
         let ceiling = if opening {
             local_h - 0.4
@@ -979,24 +1035,14 @@ fn walk_cave(
         let desired_y = lerp(
             mouth_surface - 0.3,
             cave_floor_y,
-            crate::field::smoothstep(0.0, 0.65, progress),
+            crate::field::smoothstep(0.0, 0.42, progress),
         )
         .min(ceiling);
-        let pull = if segments < 2 {
-            0.12
-        } else if opening {
-            0.55
-        } else {
-            0.32
-        };
-        let hillside_drop = ceiling < y - 0.5;
-        let max_pitch = if hillside_drop { 0.45 } else { 0.26 };
+        let pull = if opening { 0.62 } else { 0.9 };
+        let max_pitch = if opening { 0.85 } else { 2.4 };
         let mut next_y = lerp(y, desired_y, pull).clamp(y - step * max_pitch, y);
-        next_y = next_y.max(cave_floor_y);
-        if next_y < floor_y {
-            break;
-        }
-        if segments >= 3 && next_y > ceiling + 0.6 {
+        next_y = next_y.min(ceiling);
+        if !opening && next_y > local_h - radius - 0.8 {
             break;
         }
 
@@ -1008,13 +1054,6 @@ fn walk_cave(
             entrance: opening,
         });
 
-        if segments >= 8 && rng.chance(caves.room_chance) && local_h - next_y >= 8.0 {
-            system.rooms.push(CaveRoom {
-                center: next + Vec3::new(0.0, -0.5, 0.0),
-                radius: rng.range_f32(2.5, 4.5),
-            });
-        }
-
         pos = next_xz;
         y = next_y;
         prev = next;
@@ -1023,6 +1062,17 @@ fn walk_cave(
 
     if system.segments.len() < 5 {
         return None;
+    }
+    let cavern_center = prev + Vec3::new(0.0, -cavern_radius * 0.35, 0.0);
+    if !near_rivers(
+        Vec2::new(cavern_center.x, cavern_center.z),
+        rivers,
+        river_gap,
+    ) {
+        system.rooms.push(CaveRoom {
+            center: cavern_center,
+            radius: cavern_radius,
+        });
     }
     Some(system)
 }
@@ -1034,6 +1084,8 @@ fn pick_cave_mouth(
     height_at: &dyn Fn(f32, f32) -> f32,
     lakes: &[LakeInfo],
     sites: &[Site],
+    rivers: &[RiverPath],
+    river_gap: f32,
     grade: LandGrade,
 ) -> Option<(Vec2, Option<Site>)> {
     let floor = crate::config::plains_height() + 6.0;
@@ -1041,6 +1093,7 @@ fn pick_cave_mouth(
         lakes
             .iter()
             .any(|lake| dist(lake.pos, p) <= lake.radius * 1.1)
+            || near_rivers(p, rivers, river_gap)
     };
     let high: Vec<&Site> = sites
         .iter()
@@ -1129,25 +1182,53 @@ fn cave_mouth_clear(pos: Vec2, existing: &[CaveSystem]) -> bool {
     })
 }
 
-fn steer_cave_dir(dir: Vec2, pos: Vec2, host: Option<Site>, rng: &mut Rng, step: f32) -> Vec2 {
-    let jitter = Vec2::from_angle(rng.gaussian(0.22));
-    let mut heading = (dir + jitter * 0.35).normalize_or_zero();
+fn steer_cave_dir(dir: Vec2, pos: Vec2, host: Option<Site>, rng: &mut Rng) -> Vec2 {
+    let jitter = Vec2::from_angle(rng.gaussian(0.08));
+    let heading = (dir * 0.92 + jitter * 0.08).normalize_or_zero();
     let Some(site) = host else {
         return heading;
     };
     let to_core = site.pos - pos;
     let dist_core = to_core.length();
-    let inward = to_core / dist_core.max(1e-4);
-    if dist_core < site.radius * 0.22 {
-        let tangent = Vec2::new(-inward.y, inward.x);
-        return (heading * 0.25 + tangent * 0.75).normalize_or_zero();
+    if dist_core < 1e-3 {
+        return heading;
     }
-    heading = (heading * 0.5 + inward * 0.5).normalize_or_zero();
-    let next = pos + heading * step;
-    if dist(next, site.pos) > site.radius * 0.9 && dist(next, site.pos) > dist_core {
-        return inward;
+    let inward = to_core / dist_core;
+    (heading * 0.82 + inward * 0.18).normalize_or_zero()
+}
+
+/// Radio de la sala terminal: crece con el mapa, acotado para no vaciar la montaña.
+#[must_use]
+fn terminal_cavern_radius(config: &WorldGenConfig) -> f32 {
+    let span = config.bounds.width.min(config.bounds.length);
+    (span * 0.02).clamp(6.0, 12.0)
+}
+
+fn near_rivers(pos: Vec2, rivers: &[RiverPath], extra: f32) -> bool {
+    rivers
+        .iter()
+        .any(|river| polyline_min_dist(pos, &river.points) <= river.width + extra.max(0.0))
+}
+
+fn polyline_min_dist(pos: Vec2, points: &[(Vec2, f32)]) -> f32 {
+    let mut best = f32::MAX;
+    for pair in points.windows(2) {
+        best = best.min(point_segment_dist(pos, pair[0].0, pair[1].0));
     }
-    heading
+    if points.len() == 1 {
+        best = best.min(dist(pos, points[0].0));
+    }
+    best
+}
+
+fn point_segment_dist(p: Vec2, a: Vec2, b: Vec2) -> f32 {
+    let ab = b - a;
+    let len2 = ab.length_squared();
+    if len2 <= f32::EPSILON {
+        return dist(p, a);
+    }
+    let t = ((p - a).dot(ab) / len2).clamp(0.0, 1.0);
+    dist(p, a + ab * t)
 }
 
 /// Radio del tramo: boca transitable y ensancha hacia el interior (no al revés).

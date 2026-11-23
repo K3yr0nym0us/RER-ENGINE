@@ -19,11 +19,11 @@ fn mesh_geometry_matches_reference() {
         (
             ChunkKey { x: 3, y: 0, z: 2 },
             0u32,
-            0x32ed_fb79_0ebb_93c8u64,
-            2170usize,
+            0xbdb2_70ca_d6e9_6239u64,
+            2228usize,
         ),
         (ChunkKey { x: 7, y: 1, z: 5 }, 0, 0xcbf2_9ce4_8422_2325, 0),
-        (ChunkKey { x: 3, y: 0, z: 2 }, 2, 0x073c_bdb1_1a14_8c49, 192),
+        (ChunkKey { x: 3, y: 0, z: 2 }, 2, 0x6963_0b32_bc19_080a, 240),
     ];
 
     for (chunk, lod, expected_hash, expected_tris) in cases {

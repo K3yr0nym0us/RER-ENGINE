@@ -307,7 +307,7 @@ fn scan_column(
     cx: i32,
     cz: i32,
 ) -> Option<String> {
-    for cy in 0..=scan.max_y {
+    for cy in scan.min_y..=scan.max_y {
         // # Seguridad: handle vivo; el engine no llama a la DLL hasta Cancelled/Finished.
         let status = unsafe { (ffi.chunk_status)(handle, cx, cy, cz) };
         if status == 1 {
@@ -473,6 +473,7 @@ mod tests {
             cx_max,
             cz_min,
             cz_max,
+            min_y: 0,
             max_y: 0,
             cell: 32.0,
             camera: [0.0; 3],

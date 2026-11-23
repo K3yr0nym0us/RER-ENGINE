@@ -169,12 +169,12 @@ fn generation_progress(
 ) {
     let (label, done, total) = match generation.phase {
         worldgen::GenerationPhase::Scan => (
-            t(locale, "Scanning columns…", "Scanning columns…"),
+            t(locale, "Revisando columnas…", "Scanning columns…"),
             generation.completed,
             generation.total,
         ),
         worldgen::GenerationPhase::Mesh => (
-            t(locale, "Generating world…", "Generating world…"),
+            t(locale, "Generando mundo…", "Generating world…"),
             generation.completed,
             generation.total,
         ),
@@ -207,6 +207,18 @@ fn generation_progress(
 
 fn t(locale: crate::editor::cli::Locale, es: &'static str, en: &'static str) -> String {
     tr(locale, es, en).to_string()
+}
+
+fn localize_toast(locale: crate::editor::cli::Locale, message: &str) -> String {
+    match message {
+        "World ready" => t(locale, "Mundo listo", "World ready"),
+        "World generation failed" => t(
+            locale,
+            "Falló la generación del mundo",
+            "World generation failed",
+        ),
+        other => other.to_string(),
+    }
 }
 
 /// Marco con borde y leyenda equivalente a `<fieldset><legend>`.
@@ -346,7 +358,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
 
     fieldset(
         ui,
-        &t(locale, "Terrain configuration", "Terrain configuration"),
+        &t(locale, "Configuración del terreno", "Terrain configuration"),
         true,
         SIDE_PANEL_MIN_HEIGHT,
         |ui| {
@@ -361,12 +373,12 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                     |ui| {
                         fieldset(
                             ui,
-                            &t(locale, "Size settings", "Size settings"),
+                            &t(locale, "Configuración de tamaños", "Size settings"),
                             false,
                             FIELDSET_PAIR_MIN_HEIGHT,
                             |ui| {
                                 ui.label(
-                                    RichText::new(t(locale, "Seed", "Seed"))
+                                    RichText::new(t(locale, "Semilla", "Seed"))
                                         .size(11.0)
                                         .color(theme::TEXT_MUTED),
                                 );
@@ -381,7 +393,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                         .button(icons::ARROWS_CLOCKWISE)
                                         .on_hover_text(t(
                                             locale,
-                                            "New random seed",
+                                            "Nueva semilla aleatoria",
                                             "New random seed",
                                         ))
                                         .clicked()
@@ -395,7 +407,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 let mut size = panel.size as f32;
                                 slider(
                                     ui,
-                                    &t(locale, "World size (m)", "World size (m)"),
+                                    &t(locale, "Tamaño del mundo (m)", "World size (m)"),
                                     &mut size,
                                     worldgen::SIZE_MIN as f32,
                                     worldgen::SIZE_MAX as f32,
@@ -410,7 +422,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 let mut voxel = panel.voxel_size;
                                 slider(
                                     ui,
-                                    &t(locale, "Voxel size (m)", "Voxel size (m)"),
+                                    &t(locale, "Tamaño de voxel (m)", "Voxel size (m)"),
                                     &mut voxel,
                                     0.25,
                                     4.0,
@@ -429,62 +441,62 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                     |ui| {
                         fieldset(
                             ui,
-                            &t(locale, "Terrain elements", "Terrain elements"),
+                            &t(locale, "Elementos del terreno", "Terrain elements"),
                             false,
                             FIELDSET_PAIR_MIN_HEIGHT,
                             |ui| {
                                 let fields: [(&str, &str, &mut u32, u32); 9] = [
                                     (
                                         icons::MOUNTAINS,
-                                        &t(locale, "Mountains", "Mountains"),
+                                        &t(locale, "Montañas", "Mountains"),
                                         &mut panel.mountains,
                                         caps.mountains,
                                     ),
                                     (
                                         icons::TREE_EVERGREEN,
-                                        &t(locale, "Hills", "Hills"),
+                                        &t(locale, "Colinas", "Hills"),
                                         &mut panel.hills,
                                         caps.hills,
                                     ),
                                     (
                                         icons::CHART_LINE_DOWN,
-                                        &t(locale, "Valleys", "Valleys"),
+                                        &t(locale, "Valles", "Valleys"),
                                         &mut panel.valleys,
                                         caps.valleys,
                                     ),
                                     (
                                         icons::SUN_HORIZON,
-                                        &t(locale, "Plains", "Plains"),
+                                        &t(locale, "Llanuras", "Plains"),
                                         &mut panel.plains,
                                         caps.plains,
                                     ),
                                     (
                                         icons::BARRICADE,
-                                        &t(locale, "Cliffs", "Cliffs"),
+                                        &t(locale, "Acantilados", "Cliffs"),
                                         &mut panel.cliffs,
                                         caps.cliffs,
                                     ),
                                     (
                                         icons::DROP_SIMPLE,
-                                        &t(locale, "Lakes", "Lakes"),
+                                        &t(locale, "Lagos", "Lakes"),
                                         &mut panel.lakes,
                                         caps.lakes,
                                     ),
                                     (
                                         icons::WAVES,
-                                        &t(locale, "Rivers", "Rivers"),
+                                        &t(locale, "Ríos", "Rivers"),
                                         &mut panel.rivers,
                                         caps.rivers,
                                     ),
                                     (
                                         icons::FALLOUT_SHELTER,
-                                        &t(locale, "Caves", "Caves"),
+                                        &t(locale, "Cuevas", "Caves"),
                                         &mut panel.caves,
                                         caps.caves,
                                     ),
                                     (
                                         icons::CLOUD_RAIN,
-                                        &t(locale, "Waterfalls", "Waterfalls"),
+                                        &t(locale, "Cascadas", "Waterfalls"),
                                         &mut panel.waterfalls,
                                         caps.waterfalls,
                                     ),
@@ -523,7 +535,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
             let biome_slots = worldgen::max_biome_slots(radius);
             ui.add_space(10.0);
             ui.label(
-                RichText::new(t(locale, "Biomes", "Biomes"))
+                RichText::new(t(locale, "Biomas", "Biomes"))
                     .size(17.5)
                     .strong()
                     .color(theme::TEXT),
@@ -532,7 +544,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                 RichText::new(
                     t(
                         locale,
-                        "This size fits up to {n} biomes",
+                        "Este tamaño admite hasta {n} biomas",
                         "This size fits up to {n} biomes",
                     )
                     .replace("{n}", &biome_slots.to_string()),
@@ -543,11 +555,11 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
             ui.add_space(6.0);
             let enabled_count = panel.biomes.iter().filter(|enabled| **enabled).count();
             let names = [
-                t(locale, "Grassland", "Grassland"),
-                t(locale, "Forest", "Forest"),
-                t(locale, "Snow", "Snow"),
-                t(locale, "Desert", "Desert"),
-                t(locale, "Volcanic", "Volcanic"),
+                t(locale, "Pradera", "Grassland"),
+                t(locale, "Bosque", "Forest"),
+                t(locale, "Nieve", "Snow"),
+                t(locale, "Desierto", "Desert"),
+                t(locale, "Volcánico", "Volcanic"),
             ];
             let mut biomes = panel.biomes;
             let mut shares = panel.biome_shares;
@@ -656,7 +668,7 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
                 RichText::new(
                     t(
                         locale,
-                        "Enabled biomes always add up to 100% of the world, at least {n}% each",
+                        "Los biomas activos siempre suman el 100 % del mundo, con al menos un {n} % cada uno",
                         "Enabled biomes always add up to 100% of the world, at least {n}% each",
                     )
                     .replace("{n}", &worldgen::MIN_BIOME_SHARE.to_string()),
@@ -673,9 +685,13 @@ fn terrain_configuration(ui: &mut egui::Ui, app: &mut EditorApp) {
             widgets::top_row(ui, |ui| {
                 widgets::switch_value(ui, &mut panel.replace_world, "");
                 ui.label(
-                    RichText::new(t(locale, "Replace current world", "Replace current world"))
-                        .size(12.0)
-                        .color(theme::TEXT),
+                    RichText::new(t(
+                        locale,
+                        "Reemplazar mundo actual",
+                        "Replace current world",
+                    ))
+                    .size(12.0)
+                    .color(theme::TEXT),
                 );
             });
         },
@@ -697,7 +713,7 @@ fn scatter_fields(
             |ui| {
                 uint_field(
                     ui,
-                    &t(locale, "Max instances", "Max instances"),
+                    &t(locale, "Máx. instancias", "Max instances"),
                     &mut rules.max_instances,
                     0,
                     u32::MAX,
@@ -710,7 +726,7 @@ fn scatter_fields(
             |ui| {
                 float_field(
                     ui,
-                    &t(locale, "Min distance (m)", "Min distance (m)"),
+                    &t(locale, "Distancia mín. (m)", "Min distance (m)"),
                     &mut rules.min_distance,
                     0.0,
                     1000.0,
@@ -724,7 +740,7 @@ fn scatter_fields(
             |ui| {
                 uint_field(
                     ui,
-                    &t(locale, "Density %", "Density %"),
+                    &t(locale, "Densidad %", "Density %"),
                     &mut rules.density,
                     0,
                     100,
@@ -742,7 +758,7 @@ fn scatter_fields(
             |ui| {
                 float_field(
                     ui,
-                    &t(locale, "Max slope (°)", "Max slope (°)"),
+                    &t(locale, "Pendiente máx. (°)", "Max slope (°)"),
                     &mut rules.max_slope_deg,
                     0.0,
                     90.0,
@@ -756,7 +772,7 @@ fn scatter_fields(
             |ui| {
                 float_field(
                     ui,
-                    &t(locale, "Min altitude (m)", "Min altitude (m)"),
+                    &t(locale, "Altitud mín. (m)", "Min altitude (m)"),
                     &mut rules.altitude_min,
                     -1000.0,
                     10000.0,
@@ -770,7 +786,7 @@ fn scatter_fields(
             |ui| {
                 float_field(
                     ui,
-                    &t(locale, "Max altitude (m)", "Max altitude (m)"),
+                    &t(locale, "Altitud máx. (m)", "Max altitude (m)"),
                     &mut rules.altitude_max,
                     -1000.0,
                     10000.0,
@@ -789,7 +805,7 @@ fn scatter_fields(
             |ui| {
                 uint_field(
                     ui,
-                    &t(locale, "Min scale %", "Min scale %"),
+                    &t(locale, "Escala mín. %", "Min scale %"),
                     &mut rules.scale_min,
                     0,
                     1000,
@@ -802,7 +818,7 @@ fn scatter_fields(
             |ui| {
                 uint_field(
                     ui,
-                    &t(locale, "Max scale %", "Max scale %"),
+                    &t(locale, "Escala máx. %", "Max scale %"),
                     &mut rules.scale_max,
                     0,
                     1000,
@@ -814,14 +830,14 @@ fn scatter_fields(
     widgets::top_row(ui, |ui| {
         widgets::switch_value(ui, &mut rules.random_rotation, "");
         ui.label(
-            RichText::new(t(locale, "Random rotation", "Random rotation"))
+            RichText::new(t(locale, "Rotación aleatoria", "Random rotation"))
                 .size(12.0)
                 .color(theme::TEXT),
         );
         ui.add_space(8.0);
         widgets::switch_value(ui, &mut rules.cluster_enabled, "");
         ui.label(
-            RichText::new(t(locale, "Clusters", "Clusters"))
+            RichText::new(t(locale, "Clústeres", "Clusters"))
                 .size(12.0)
                 .color(theme::TEXT),
         );
@@ -830,7 +846,7 @@ fn scatter_fields(
         ui.add_space(6.0);
         widgets::top_row(ui, |ui| {
             ui.label(
-                RichText::new(t(locale, "Cluster size", "Cluster size"))
+                RichText::new(t(locale, "Tamaño de clúster", "Cluster size"))
                     .size(11.0)
                     .color(theme::TEXT_MUTED),
             );
@@ -847,7 +863,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
     let locale = app.cli.locale;
     fieldset(
         ui,
-        &t(locale, "Distribute blueprints", "Distribute blueprints"),
+        &t(locale, "Distribuir blueprints", "Distribute blueprints"),
         false,
         SIDE_PANEL_MIN_HEIGHT,
         |ui| {
@@ -855,7 +871,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                 ui.label(
                     RichText::new(t(
                         locale,
-                        "No models in the project yet",
+                        "Aún no hay modelos en el proyecto",
                         "No models in the project yet",
                     ))
                     .size(11.0)
@@ -867,7 +883,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                     egui::ComboBox::from_id_salt("worldgen_model_combo")
                         .width(combo_width.max(120.0))
                         .selected_text(if app.worldgen.selected_model_path.is_empty() {
-                            t(locale, "Select model…", "Select model…")
+                            t(locale, "Selecciona modelo…", "Select model…")
                         } else {
                             app.assets
                                 .models
@@ -880,7 +896,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                             ui.selectable_value(
                                 &mut app.worldgen.selected_model_path,
                                 String::new(),
-                                t(locale, "Select model…", "Select model…"),
+                                t(locale, "Selecciona modelo…", "Select model…"),
                             );
                             for model in &app.assets.models {
                                 ui.selectable_value(
@@ -894,7 +910,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                     if bootstrap_button(
                         ui,
                         icons::PLUS,
-                        &t(locale, "Add model", "Add model"),
+                        &t(locale, "Agregar modelo", "Add model"),
                         Btn::OutlineInfo,
                         100.0,
                         can_add,
@@ -960,7 +976,7 @@ fn distribute_blueprints(ui: &mut egui::Ui, app: &mut EditorApp) {
                                     icons::TRASH,
                                     20.0,
                                     theme::DANGER,
-                                    &t(locale, "Remove model", "Remove model"),
+                                    &t(locale, "Quitar modelo", "Remove model"),
                                 ) {
                                     remove = true;
                                 }
@@ -1013,7 +1029,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             .corner_radius(4)
                             .inner_margin(egui::Margin::symmetric(10, 6))
                             .show(ui, |ui| {
-                                ui.label(RichText::new(t(locale, "Install the World Generator plugin first",
+                                ui.label(RichText::new(t(locale, "Instala primero el plugin Generador de mundos",
                                     "Install the World Generator plugin first")).size(12.0).color(DANGER_TEXT));
                             });
                         ui.add_space(8.0);
@@ -1045,21 +1061,21 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                     ui.add_space(10.0);
                     widgets::top_row(ui, |ui| {
                         let label = if app.worldgen.distributing {
-                            t(locale, "Distributing blueprints…", "Distributing blueprints…")
+                            t(locale, "Distribuyendo blueprints…", "Distributing blueprints…")
                         } else if let Some(generation) = app.worldgen.generation {
                             match generation.phase {
                                 worldgen::GenerationPhase::Scan => {
                                     if generation.total > 0 {
-                                        format!("{} {}/{}", t(locale, "Scanning columns…", "Scanning columns…"), generation.completed, generation.total)
+                                        format!("{} {}/{}", t(locale, "Revisando columnas…", "Scanning columns…"), generation.completed, generation.total)
                                     } else {
-                                        t(locale, "Scanning columns…", "Scanning columns…")
+                                        t(locale, "Revisando columnas…", "Scanning columns…")
                                     }
                                 }
                                 worldgen::GenerationPhase::Mesh => format!(
-                                    "{} {}/{}", t(locale, "Generating world…", "Generating world…"), generation.completed, generation.total),
+                                    "{} {}/{}", t(locale, "Generando mundo…", "Generating world…"), generation.completed, generation.total),
                             }
                         } else {
-                            t(locale, "Generate world and distribute blueprints", "Generate world and distribute blueprints")
+                            t(locale, "Generar mundo y distribuir blueprints", "Generate world and distribute blueprints")
                         };
                         let busy = app.worldgen.inputs_locked();
                         // React: `btn-primary btn-sm flex-grow-1` + Stop/Clear fijos.
@@ -1072,7 +1088,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             match app.worldgen.library_path.clone() {
                                 None => app.worldgen.show_toast(
                                     worldgen::WorldGenToastKind::Error,
-                                    t(locale, "Install the World Generator plugin first",
+                                    t(locale, "Instala primero el plugin Generador de mundos",
                                         "Install the World Generator plugin first"),
                                 ),
                                 Some(path) => {
@@ -1093,7 +1109,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                                 }
                             }
                         }
-                        if bootstrap_button(ui, icons::STOP, &t(locale, "Stop", "Stop"),
+                        if bootstrap_button(ui, icons::STOP, &t(locale, "Detener", "Stop"),
                             Btn::OutlineSecondary, side_width, busy, false)
                         {
                             app.worldgen.finish_handled = true;
@@ -1102,18 +1118,18 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                             app.worldgen.generation = None;
                             app.worldgen.show_toast(
                                 worldgen::WorldGenToastKind::Info,
-                                t(locale, "Generation cancelled", "Generation cancelled"),
+                                t(locale, "Generación cancelada", "Generation cancelled"),
                             );
                             app.send_engine(json!({ "cmd": "world_gen_stop" }));
                         }
-                        if bootstrap_button(ui, icons::TRASH, &t(locale, "Clear", "Clear"),
+                        if bootstrap_button(ui, icons::TRASH, &t(locale, "Limpiar", "Clear"),
                             Btn::OutlineDanger, side_width,
                             app.worldgen.world_generated && !busy, false)
                         {
                             app.worldgen.world_generated = false;
                             app.worldgen.show_toast(
                                 worldgen::WorldGenToastKind::Info,
-                                t(locale, "World cleared", "World cleared"),
+                                t(locale, "Mundo eliminado", "World cleared"),
                             );
                             app.send_engine(json!({ "cmd": "world_gen_reset" }));
                         }
@@ -1127,7 +1143,7 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
             worldgen::WorldGenToastKind::Error => widgets::ToastKind::Error,
             worldgen::WorldGenToastKind::Info => widgets::ToastKind::Info,
         };
-        let message = toast.message.clone();
+        let message = localize_toast(locale, &toast.message);
         !widgets::floating_toast(ui, kind, &message, &mut toast.start_time)
     } else {
         false

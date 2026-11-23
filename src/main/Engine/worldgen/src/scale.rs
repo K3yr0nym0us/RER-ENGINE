@@ -8,9 +8,7 @@
 //! dominio y una cuadrícula de chunks por capas Y. Créditos y referencias de
 //! diseño en `THIRD_PARTY_NOTICES.md` en la raíz del repositorio.
 
-use crate::config::{
-    BiomesConfig, FeatureConfig, TERRAIN_FLOOR, WorldBounds, WorldGenConfig, plains_height,
-};
+use crate::config::{BiomesConfig, FeatureConfig, WorldBounds, WorldGenConfig, plains_height};
 
 /// Radio mínimo del disco generado (metros). Coincide con un mundo jugable.
 ///
@@ -26,7 +24,8 @@ pub const DEFAULT_WORLDGEN_RADIUS: f32 = 128.0;
 /// Altura mínima del volumen (cuevas + relieve). Espejo de `MIN_WORLD_HEIGHT_3D`.
 pub const MIN_WORLDGEN_HEIGHT: f32 = 48.0;
 /// Altura máxima del volumen. Espejo de `MAX_WORLD_HEIGHT_3D`.
-pub const MAX_WORLDGEN_HEIGHT: f32 = 256.0;
+/// Cabe una montaña de ~1/4 del lado máximo (2000 m → ~500 m de pico).
+pub const MAX_WORLDGEN_HEIGHT: f32 = 640.0;
 /// Margen al borde del disco para no plantar sitios en el recorte.
 pub const SITE_EDGE_MARGIN: f32 = 24.0;
 
@@ -143,12 +142,25 @@ pub fn land_grade_amplitude(radius: f32) -> f32 {
     low + (high - low) * t
 }
 
+/// Altura de montaña objetivo: al menos un cuarto del lado visible del mapa.
+#[inline]
+#[must_use]
+pub fn mountain_target_height(radius: f32) -> f32 {
+    (radius * 0.5).clamp(16.0, MAX_WORLDGEN_HEIGHT - 64.0)
+}
+
 /// Altura de montaña **sobre el terreno local** (la rampa ya ocupó `grade` metros).
 #[must_use]
 pub fn mountain_relief(config: &WorldGenConfig) -> f32 {
-    let grade = land_grade_amplitude(world_radius(&config.bounds));
+    let radius = world_radius(&config.bounds);
+    let grade = land_grade_amplitude(radius);
     let cap = (config.bounds.height - plains_height() - grade - 12.0).max(8.0);
-    config.mountains.max_height.max(8.0).min(cap)
+    let want = config
+        .mountains
+        .max_height
+        .max(8.0)
+        .max(mountain_target_height(radius));
+    want.min(cap)
 }
 
 /// Ajusta cotas, tamaños y biomas al rectángulo de generación. Idempotente.
@@ -175,14 +187,24 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
     config.hills.max_height = config
         .hills
         .max_height
-        .clamp(6.0, (radius * 0.04).clamp(8.0, 16.0));
+        .clamp(4.0, (radius * 0.028).clamp(5.0, 12.0));
+    // Ladera suave (~25°): la rampa ocupa ~0.6 del radio, así que radio ≥ 3.3 × altura.
+    let climb_radius = (config.hills.max_height * 3.3).max(14.0).min(radius * 0.14);
+    config.hills.base.max_size = config.hills.base.max_size.max(climb_radius);
+    config.hills.base.min_size = config
+        .hills
+        .base
+        .min_size
+        .max(climb_radius * 0.65)
+        .min(config.hills.base.max_size * 0.85);
 
     let grade = land_grade_amplitude(radius);
     let mountain_want = config
         .mountains
         .max_height
         .max(8.0)
-        .max(config.hills.max_height * 3.0);
+        .max(config.hills.max_height * 3.0)
+        .max(mountain_target_height(radius));
     let need = plains_height() + grade + mountain_want + 18.0;
     config.bounds.height = config
         .bounds
@@ -209,7 +231,16 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
         .max_height
         .max(config.hills.max_height * 3.0);
     config.mountains.max_height = mountain_relief(config);
-    config.mountains.sharpness = config.mountains.sharpness.clamp(0.8, 1.4);
+    // Base ancha respecto a la cota: si no, un pico de 1/4 del mapa es una aguja.
+    let mountain_foot = (config.mountains.max_height * 1.25).min(radius * 0.55);
+    config.mountains.base.max_size = config.mountains.base.max_size.max(mountain_foot);
+    config.mountains.base.min_size = config
+        .mountains
+        .base
+        .min_size
+        .min(config.mountains.base.max_size * 0.75)
+        .max(10.0);
+    config.mountains.sharpness = config.mountains.sharpness.clamp(1.4, 2.2);
     fit_feature(
         &mut config.valleys.base,
         radius,
@@ -256,11 +287,15 @@ pub fn fit_config_to_world(config: &mut WorldGenConfig) {
 
     let cave_cap = ((area_radius / 22.0).floor() as u32).clamp(1, 16);
     config.caves.max_count = config.caves.max_count.min(cave_cap);
-    config.caves.depth_max = config
+    // La cueva puede bajar del volumen actual: el motor ensancha el piso
+    // al terminar si el tallado queda por debajo de y = 0.
+    let span = radius * 2.0;
+    config.caves.depth_max = config.caves.depth_max.max((span * 0.08).clamp(16.0, 160.0));
+    config.caves.depth_min = config
         .caves
-        .depth_max
-        .min((config.bounds.height - TERRAIN_FLOOR - 16.0).max(8.0));
-    config.caves.depth_min = config.caves.depth_min.min(config.caves.depth_max).max(4.0);
+        .depth_min
+        .min(config.caves.depth_max * 0.5)
+        .max(8.0);
 
     let fall_cap = max_sites_in_disk(area_radius, radius * 0.7).max(1);
     config.waterfalls.max_count = config.waterfalls.max_count.min(fall_cap);
@@ -374,6 +409,28 @@ mod tests {
     }
 
     #[test]
+    fn mountains_are_at_least_a_quarter_of_the_map() {
+        for side in [256.0, 512.0, 1000.0, 2000.0] {
+            let mut config = WorldGenConfig::default();
+            config.bounds.width = side;
+            config.bounds.length = side;
+            config.bounds.height = 128.0;
+            fit_config_to_world(&mut config);
+            let want = mountain_target_height(side * 0.5);
+            assert!(
+                config.mountains.max_height + 0.5 >= want,
+                "montaña {} m, objetivo {want} m (lado {side})",
+                config.mountains.max_height
+            );
+            assert!(
+                config.mountains.max_height + 0.5 >= side * 0.25,
+                "montaña {} m no llega a 1/4 de {side}",
+                config.mountains.max_height
+            );
+        }
+    }
+
+    #[test]
     fn mountains_are_at_least_three_times_the_hills() {
         for side in [256.0, 512.0, 1000.0] {
             let mut config = WorldGenConfig::default();
@@ -397,12 +454,12 @@ mod tests {
     }
 
     #[test]
-    fn sharpness_is_clamped_to_broad_ridges() {
+    fn sharpness_is_clamped_to_pointed_peaks() {
         let mut config = WorldGenConfig::default();
         config.mountains.sharpness = 3.0;
         fit_config_to_world(&mut config);
-        assert!(config.mountains.sharpness <= 1.4);
-        assert!(config.mountains.sharpness >= 0.8);
+        assert!(config.mountains.sharpness <= 2.2);
+        assert!(config.mountains.sharpness >= 1.4);
     }
 
     #[test]
@@ -422,9 +479,9 @@ mod tests {
         config.bounds.visible_width = 256.0;
         config.bounds.visible_length = 256.0;
         fit_config_to_world(&mut config);
-        // Radio visible 128: una montaña no debe superar 0.32 * 128 ≈ 41 m,
+        // Radio visible 128: la base sigue acotada a 0.55 * radio visible,
         // aunque el área generada tenga radio 256.
-        assert!(config.mountains.base.max_size <= 42.0);
+        assert!(config.mountains.base.max_size <= 71.0);
         assert!((world_radius(&config.bounds) - 128.0).abs() < 0.5);
         assert!((generation_radius(&config.bounds) - 256.0).abs() < 0.5);
     }

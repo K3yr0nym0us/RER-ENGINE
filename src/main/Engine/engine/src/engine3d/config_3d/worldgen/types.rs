@@ -135,6 +135,8 @@ pub(crate) struct ScanCursor {
     pub cz_min: i32,
     /// Columna Z final del barrido (exclusiva).
     pub cz_max: i32,
+    /// Capa Y mínima inclusive (puede ser negativa: cuevas bajo el piso).
+    pub min_y: i32,
     /// Capa Y máxima inclusive.
     pub max_y: i32,
     /// Tamaño de chunk en metros.
@@ -296,6 +298,10 @@ pub(crate) struct WorldgenState {
     pub job_tx: Option<Sender<WorldgenJob>>,
     pub result_rx: Option<Receiver<WorldgenWorkerMsg>>,
     pub worker: Option<JoinHandle<()>>,
+    /// Y mundial mínima de las mallas subidas (para ensanchar el piso).
+    pub lowest_mesh_y: f32,
+    /// Y mundial máxima de las mallas subidas (picos de montaña).
+    pub highest_mesh_y: f32,
 }
 
 impl Default for WorldgenState {
@@ -332,6 +338,8 @@ impl Default for WorldgenState {
             job_tx: None,
             result_rx: None,
             worker: None,
+            lowest_mesh_y: f32::MAX,
+            highest_mesh_y: f32::MIN,
         }
     }
 }

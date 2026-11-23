@@ -128,6 +128,8 @@ pub(crate) struct ModalWindow {
     kind: NativeModal,
     /// Idioma con el que se calculó el título; se refresca si cambia en el editor.
     locale: Locale,
+    /// `WindowEvent::Occluded`: DWM no va a completar un present FIFO de esta surface.
+    occluded: bool,
 }
 
 impl ModalWindow {
@@ -282,6 +284,7 @@ impl ModalWindow {
             base_width: width,
             kind,
             locale: Locale::En,
+            occluded: false,
         })
     }
 
@@ -310,7 +313,23 @@ impl ModalWindow {
     }
 
     pub(crate) fn request_redraw(&self) {
+        if !self.can_present() {
+            return;
+        }
         self.window.request_redraw();
+    }
+
+    pub(crate) fn set_occluded(&mut self, occluded: bool) {
+        self.occluded = occluded;
+    }
+
+    /// Minimizada, ocluida o con swapchain 0×0: presentar bloquearía la cola del motor.
+    pub(crate) fn can_present(&self) -> bool {
+        if self.occluded || self.window.is_minimized().unwrap_or(false) {
+            return false;
+        }
+        let size = self.window.inner_size();
+        size.width > 0 && size.height > 0
     }
 
     pub(crate) fn inner_size(&self) -> PhysicalSize<u32> {
@@ -328,6 +347,9 @@ impl ModalWindow {
     }
 
     pub(crate) fn render(&mut self, app: &mut EditorApp) -> Result<(), String> {
+        if !self.can_present() {
+            return Ok(());
+        }
         let kind = self.kind;
         let raw_input = self.egui_state.take_egui_input(self.window.as_ref());
         let mut full_output = self.egui_ctx.run_ui(raw_input, |ui| match kind {

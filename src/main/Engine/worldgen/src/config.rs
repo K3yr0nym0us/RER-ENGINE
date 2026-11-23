@@ -87,7 +87,7 @@ impl WorldBounds {
         const MIN_DIM: f32 = 30.0;
         const MAX_DIM: f32 = 2000.0;
         const MIN_HEIGHT: f32 = 48.0;
-        const MAX_HEIGHT: f32 = 256.0;
+        const MAX_HEIGHT: f32 = 640.0;
         for (name, value) in [("width", self.width), ("length", self.length)] {
             if !value.is_finite() || !(MIN_DIM..=MAX_DIM).contains(&value) {
                 return Err(ConfigError::InvalidField {
@@ -228,7 +228,7 @@ impl Default for MountainsConfig {
                 min_separation: 140.0,
             },
             max_height: 72.0,
-            sharpness: 1.2,
+            sharpness: 1.8,
         }
     }
 }
@@ -249,11 +249,11 @@ impl Default for HillsConfig {
             base: FeatureConfig {
                 enabled: true,
                 max_count: 10,
-                min_size: 14.0,
-                max_size: 32.0,
+                min_size: 16.0,
+                max_size: 28.0,
                 min_separation: 50.0,
             },
-            max_height: 12.0,
+            max_height: 8.0,
         }
     }
 }

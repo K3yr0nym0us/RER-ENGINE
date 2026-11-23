@@ -27,6 +27,10 @@ pub const ISO_LEVEL: f32 = 0.0;
 
 /// Ranura todavía no asignada en la tabla de vértices compartidos.
 const NULL_SLOT: u32 = u32::MAX;
+/// Offset de UV.x que marca un vértice de interior de cueva. El shader
+/// (`forward.frag`) trata `uv.x >= 1.5` como `Stone.jpg`. La boca y el
+/// túnel visto desde fuera se quedan en `[0, 1]` y usan el splat de superficie.
+pub const CAVE_INTERIOR_UV_OFFSET: f32 = 2.0;
 
 /// Buffer de geometría de un chunk (posiciones/normales/UV separados + índices).
 ///
@@ -198,6 +202,7 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
     }
 
     let pad = grid.pad;
+    let buried_chunk = chunk_top_is_solid(grid);
     // Celdas a meshear por eje: los CHUNK_POINTS puntos interiores forman
     // CHUNK_SIZE = dim - 2*pad - 1 celdas (los 2*pad puntos de padding no meshean).
     let cells = grid.dim - 2 * pad - 1; // celdas por eje (== CHUNK_SIZE)
@@ -340,7 +345,7 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                         sa,
                         va,
                         na,
-                        chunk_uv(grid, va.into()),
+                        chunk_uv(grid, va.into(), buried_chunk),
                     );
                     let ib = vertex_index(
                         out,
@@ -348,7 +353,7 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                         sb,
                         vb,
                         nb,
-                        chunk_uv(grid, vb.into()),
+                        chunk_uv(grid, vb.into(), buried_chunk),
                     );
                     let ic = vertex_index(
                         out,
@@ -356,7 +361,7 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
                         sc,
                         vc,
                         nc,
-                        chunk_uv(grid, vc.into()),
+                        chunk_uv(grid, vc.into(), buried_chunk),
                     );
                     if ia != ib && ib != ic && ia != ic {
                         out.indices.push(ia);
@@ -369,7 +374,7 @@ pub fn mesh_chunk_into(grid: &DensityGrid, out: &mut MeshBuffer) {
     }
 
     if grid.lod > 0 {
-        add_lod_skirt(grid, out);
+        add_lod_skirt(grid, out, buried_chunk);
     }
 }
 
@@ -412,19 +417,76 @@ fn vertex_index(
 }
 
 /// UV de la columna XZ (sin el padding del grid), en `[0, 1]`.
-fn chunk_uv(grid: &DensityGrid, pos: Vec3) -> [f32; 2] {
+/// Si el vértice está bajo un techo de sólido, `uv.x` lleva
+/// [`CAVE_INTERIOR_UV_OFFSET`] para que el shader pinte piedra.
+fn chunk_uv(grid: &DensityGrid, pos: Vec3, buried_chunk: bool) -> [f32; 2] {
     let cells = grid.dim.saturating_sub(2 * grid.pad + 1).max(1) as f32;
     let origin = grid.origin + Vec3::splat(grid.pad as f32 * grid.voxel_size);
     let size = (cells * grid.voxel_size).max(1.0e-4);
-    [
+    let mut uv = [
         ((pos.x - origin.x) / size).clamp(0.0, 1.0),
         ((pos.z - origin.z) / size).clamp(0.0, 1.0),
-    ]
+    ];
+    if is_cave_interior(grid, pos, buried_chunk) {
+        uv[0] += CAVE_INTERIOR_UV_OFFSET;
+    }
+    uv
+}
+
+/// Hay un caparazón de sólido encima: techo de cueva, o chunk enteramente
+/// enterrado (el suelo de la sala está en un chunk Y inferior).
+fn is_cave_interior(grid: &DensityGrid, pos: Vec3, buried_chunk: bool) -> bool {
+    let dim = grid.dim as i32;
+    if dim < 3 {
+        return false;
+    }
+    let inv = 1.0 / grid.voxel_size.max(1.0e-4);
+    let gx = ((pos.x - grid.origin.x) * inv).round() as i32;
+    let gy = ((pos.y - grid.origin.y) * inv).floor() as i32;
+    let gz = ((pos.z - grid.origin.z) * inv).round() as i32;
+    let gx = gx.clamp(0, dim - 1) as u32;
+    let gz = gz.clamp(0, dim - 1) as u32;
+    let mut solid_m = 0.0f32;
+    for y in (gy + 1).max(0)..dim {
+        if grid.value(gx, y as u32, gz) > ISO_LEVEL {
+            solid_m += grid.voxel_size;
+            if solid_m >= 2.4 {
+                return true;
+            }
+        } else {
+            solid_m = 0.0;
+        }
+    }
+    if buried_chunk {
+        let top_y = grid.origin.y + (dim as f32 - 1.0) * grid.voxel_size;
+        return top_y - pos.y >= 3.0;
+    }
+    false
+}
+
+fn chunk_top_is_solid(grid: &DensityGrid) -> bool {
+    let dim = grid.dim;
+    if dim < 3 {
+        return false;
+    }
+    let pad = grid.pad;
+    let y = dim.saturating_sub(1 + pad).max(pad);
+    let mut solid = 0u32;
+    let mut total = 0u32;
+    for z in pad..dim.saturating_sub(pad) {
+        for x in pad..dim.saturating_sub(pad) {
+            total += 1;
+            if grid.value(x, y, z) > ISO_LEVEL {
+                solid += 1;
+            }
+        }
+    }
+    total > 0 && solid * 4 >= total * 3
 }
 
 /// Falda vertical de un voxel en el perímetro XZ. Cierra el hueco entre un
 /// chunk de LOD grueso y el vecino más fino sin cambiar la ABI.
-fn add_lod_skirt(grid: &DensityGrid, out: &mut MeshBuffer) {
+fn add_lod_skirt(grid: &DensityGrid, out: &mut MeshBuffer, buried_chunk: bool) {
     if out.positions.is_empty() {
         return;
     }
@@ -477,8 +539,8 @@ fn add_lod_skirt(grid: &DensityGrid, out: &mut MeshBuffer) {
         let da = [pa[0], pa[1] - drop, pa[2]];
         let db = [pb[0], pb[1] - drop, pb[2]];
         let base = out.positions.len() as u32;
-        let uva = chunk_uv(grid, Vec3::from_array(pa));
-        let uvb = chunk_uv(grid, Vec3::from_array(pb));
+        let uva = chunk_uv(grid, Vec3::from_array(pa), buried_chunk);
+        let uvb = chunk_uv(grid, Vec3::from_array(pb), buried_chunk);
         out.positions.extend([pa, pb, db, da]);
         out.normals.extend([outward, outward, outward, outward]);
         out.uvs.extend([uva, uvb, uvb, uva]);

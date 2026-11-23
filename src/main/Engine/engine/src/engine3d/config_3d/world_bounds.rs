@@ -30,7 +30,7 @@ pub(crate) const DEFAULT_WORLD_HEIGHT_3D: f32 = 100.0;
 /// Altura mínima del volumen: `worldgen::MIN_WORLDGEN_HEIGHT` / `MIN_HEIGHT` del plugin.
 pub(crate) const MIN_WORLD_HEIGHT_3D: f32 = 48.0;
 /// Altura máxima del volumen: `worldgen::MAX_WORLDGEN_HEIGHT` / `MAX_HEIGHT` del plugin.
-pub(crate) const MAX_WORLD_HEIGHT_3D: f32 = 256.0;
+pub(crate) const MAX_WORLD_HEIGHT_3D: f32 = 640.0;
 
 const WORLD_BOUNDS_COLOR: [f32; 4] = [1.0, 0.35, 0.35, 0.55];
 
@@ -49,7 +49,7 @@ const SKY_SUN_TINT: [f32; 3] = [0.62, 0.84, 1.0];
 const SKY_SUN_GLOW: f32 = 0.6;
 /// Radio FIJO de la esfera del cielo, independiente del tamaño del mundo.
 /// Debe ser mayor que la semidiagonal del mundo máximo permitido:
-/// sqrt(1000² + 128² + 1000²) ≈ 1420 m; ×1.06 ≈ 1505 m → 1600 m deja margen.
+/// sqrt(1000² + 640² + 1000²) ≈ 1554 m; 1600 m deja margen con el piso expandido.
 /// Referencia Cruzada: `MIN/MAX_WORLD_FACE_3D` y `MIN/MAX_WORLD_HEIGHT_3D`.
 pub(crate) const SKY_SPHERE_RADIUS: f32 = 1600.0;
 
@@ -84,6 +84,9 @@ pub(crate) struct WorldBounds3D {
     pub(crate) east: f32,
     pub(crate) west: f32,
     pub(crate) height: f32,
+    /// Límite inferior del volumen (m). 0 = llanuras; negativo si una cueva
+    /// baja del suelo y el generador ensancha la caja al terminar.
+    pub(crate) floor: f32,
 }
 
 impl Default for WorldBounds3D {
@@ -125,6 +128,7 @@ impl WorldBounds3D {
             east: half,
             west: half,
             height: DEFAULT_WORLD_HEIGHT_3D,
+            floor: 0.0,
         }
     }
 
@@ -136,6 +140,7 @@ impl WorldBounds3D {
             east: clamp_face(width * 0.5),
             west: clamp_face(width * 0.5),
             height: height.clamp(MIN_WORLD_HEIGHT_3D, MAX_WORLD_HEIGHT_3D),
+            floor: 0.0,
         }
     }
 
@@ -147,6 +152,7 @@ impl WorldBounds3D {
             east: clamp_face(east),
             west: clamp_face(west),
             height: height.clamp(MIN_WORLD_HEIGHT_3D, MAX_WORLD_HEIGHT_3D),
+            floor: 0.0,
         }
     }
 
@@ -176,7 +182,7 @@ impl WorldBounds3D {
     /// La usa el shader de fondo del renderer.
     pub(crate) fn sky_uniform(&self) -> SkyUniform {
         let footprint = self.center();
-        let center = Vec3::new(footprint.x, self.height * 0.5, footprint.z);
+        let center = Vec3::new(footprint.x, (self.floor + self.height) * 0.5, footprint.z);
         let radius = SKY_SPHERE_RADIUS;
         SkyUniform {
             center_radius: [center.x, center.y, center.z, radius],
@@ -208,8 +214,12 @@ impl WorldBounds3D {
         self.south
     }
 
+    pub(crate) fn min_y(&self) -> f32 {
+        self.floor.min(0.0)
+    }
+
     pub(crate) fn min_corner(&self) -> Vec3 {
-        Vec3::new(self.min_x(), 0.0, self.min_z())
+        Vec3::new(self.min_x(), self.min_y(), self.min_z())
     }
 
     pub(crate) fn max_corner(&self) -> Vec3 {
@@ -238,7 +248,7 @@ impl WorldBounds3D {
         } else {
             (self.min_z() + self.max_z()) * 0.5
         };
-        out.y = out.y.max(0.0);
+        out.y = out.y.max(self.min_y());
         out
     }
 
@@ -249,7 +259,7 @@ impl WorldBounds3D {
             && entity_min.x <= self.max_x()
             && entity_max.z >= self.min_z()
             && entity_min.z <= self.max_z()
-            && entity_max.y >= 0.0
+            && entity_max.y >= self.min_y()
             && entity_min.y <= self.height
     }
 
@@ -258,7 +268,7 @@ impl WorldBounds3D {
         let mut verts = Vec::new();
         let (x0, x1) = (self.min_x(), self.max_x());
         let (z0, z1) = (self.min_z(), self.max_z());
-        let (y0, y1) = (0.0, self.height);
+        let (y0, y1) = (self.min_y(), self.height);
 
         let corners = |y: f32| {
             [
@@ -326,7 +336,9 @@ impl State {
         west: f32,
     ) {
         let height = self.world_bounds_3d.height;
+        let floor = self.world_bounds_3d.floor;
         self.world_bounds_3d = WorldBounds3D::with_faces(north, south, east, west, height);
+        self.world_bounds_3d.floor = floor;
         self.sync_world_bounds_3d_runtime();
         self.sync_ground_plane_to_world_bounds();
         self.keep_sun_inside_sky();
@@ -365,7 +377,7 @@ mod tests {
         assert_eq!(MIN_WORLD_RADIUS_3D, 15.0);
         assert_eq!(MAX_WORLD_RADIUS_3D, 1000.0);
         assert_eq!(MIN_WORLD_HEIGHT_3D, 48.0);
-        assert_eq!(MAX_WORLD_HEIGHT_3D, 256.0);
+        assert_eq!(MAX_WORLD_HEIGHT_3D, 640.0);
         // El cielo es fijo y mayor que la semidiagonal del mundo máximo (~1420 m).
         const { assert!(SKY_SPHERE_RADIUS > 1500.0) };
     }

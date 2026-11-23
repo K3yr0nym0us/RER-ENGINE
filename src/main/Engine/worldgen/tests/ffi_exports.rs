@@ -102,9 +102,9 @@ fn mesh_chunk_produces_geometry_and_frees_cleanly() {
 
     unsafe { wg_free_mesh_buffers(&out) };
 
-    // Un chunk muy por encima del mundo: fuera de rango, nunca pánico.
+    // Un chunk fuera de la huella XZ: fuera de rango, nunca pánico.
     let mut out = WgMeshBuffers::empty();
-    let code = unsafe { wg_mesh_chunk(handle, 0, 900, 0, 0, &mut out) };
+    let code = unsafe { wg_mesh_chunk(handle, 999, 0, 999, 0, &mut out) };
     assert_eq!(code, Status::ChunkOutOfRange as i32);
 
     unsafe { wg_world_free(handle) };
@@ -122,8 +122,8 @@ fn chunk_status_reflects_column_bands() {
     );
     assert_eq!(
         unsafe { wg_chunk_status(handle, 999, 0, 999) },
-        -1,
-        "chunk fuera de rango"
+        0,
+        "chunk fuera de la huella XZ se trata como vacío"
     );
     unsafe { wg_world_free(handle) };
 }

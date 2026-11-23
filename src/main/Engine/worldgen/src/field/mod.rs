@@ -377,8 +377,8 @@ impl Terrain {
                 }
                 crate::planner::FeatureKind::Hill => {
                     let pad = self.base.raw_base(site.pos.x, site.pos.y);
-                    let bump = self.base.hill_pattern(x, z);
-                    high_relief = high_relief.max(pad + fallback * w * site.value * bump);
+                    high_relief =
+                        high_relief.max(pad + hill_rise(&self.base, site, x, z, t, fallback));
                 }
                 crate::planner::FeatureKind::Valley => {
                     let bowl = (1.0 - t).max(0.0);
@@ -418,7 +418,7 @@ impl Terrain {
     }
 }
 
-/// Relieve de una montaña sobre la cota de **su centro** (la parte alta local).
+/// Relieve de una montaña: un solo cono puntiagudo sobre la cota de su centro.
 fn mountain_rise(
     base: &HeightField,
     site: &crate::planner::Site,
@@ -427,16 +427,23 @@ fn mountain_rise(
     t: f32,
     fallback: f32,
 ) -> f32 {
-    let ridge = site.ridge.clamp(0.0, 1.0);
-    let mesa = 1.0 - smoothstep(0.38, 0.98, t);
-    let spike = (1.0 - t).max(0.0).powf(1.35 + 1.7 * ridge);
-    let envelope = mesa * (1.0 - ridge) + spike * ridge;
-    let mass = smoothstep(0.18, 0.88, base.hill_pattern(x, z));
-    let foothills = smoothstep(0.18, 0.88, base.macro_value(x, z) * 0.5 + 0.5);
-    let ridges = base.mountain_pattern(x, z);
-    let shape =
-        0.78 + mass * 0.10 * (1.0 - ridge) + foothills * 0.04 + ridges * (0.04 + 0.14 * ridge);
-    fallback * envelope * shape * site.value
+    let envelope = (1.0 - t).max(0.0).powf(1.85);
+    let grain = 0.94 + 0.06 * base.mountain_pattern(x, z);
+    fallback * envelope * grain * site.value
+}
+
+/// Colina: cima relativamente plana y ladera suave (escalable).
+fn hill_rise(
+    base: &HeightField,
+    site: &crate::planner::Site,
+    x: f32,
+    z: f32,
+    t: f32,
+    fallback: f32,
+) -> f32 {
+    let plateau = 1.0 - smoothstep(0.38, 0.96, t);
+    let grain = 0.97 + 0.03 * base.hill_pattern(x, z);
+    fallback * plateau * grain * site.value
 }
 
 /// Campo de densidad completo del mundo (terreno con plan + carving).

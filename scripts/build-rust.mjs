@@ -10,6 +10,10 @@
  * Compilarlo aparte (sin `vulkan`) era un build redundante que además se
  * recompilaba de nuevo al cambiar de features.
  *
+ * Tras el editor, instala el plugin `rer-worldgen` (DLL + terrain) en
+ * `%APPDATA%\rer-engine\plugins\world-gen` para que `yarn dev` / `yarn start`
+ * usen la versión local. Ver `scripts/install-worldgen-dev.mjs`.
+ *
  * Uso:
  *   node ./scripts/build-rust.mjs <debug|release> <editor|all>
  */
@@ -75,4 +79,22 @@ for (const [binary, feature] of targets) {
   }
 }
 
+installWorldgenDev(profile)
 console.log(`\n[build-rust] ${scope} (${profile}) OK`)
+
+function installWorldgenDev(buildProfile) {
+  const script = path.join(root, 'scripts', 'install-worldgen-dev.mjs')
+  const result = spawnSync(process.execPath, [script, buildProfile], {
+    cwd: root,
+    stdio: 'inherit',
+    env: process.env,
+  })
+  if (result.error) {
+    console.error(`[build-rust] worldgen-dev: ${result.error.message}`)
+    process.exit(1)
+  }
+  if (result.status !== 0) {
+    console.error(`[build-rust] worldgen-dev falló con exit ${result.status ?? 1}`)
+    process.exit(result.status ?? 1)
+  }
+}

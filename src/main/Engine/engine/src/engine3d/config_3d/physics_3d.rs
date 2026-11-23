@@ -520,7 +520,11 @@ impl PhysicsWorld {
             FLOOR_THICKNESS,
             (bounds.depth() * 0.5).max(0.5),
         )
-        .translation(Vector::new(center.x, -FLOOR_THICKNESS, center.z))
+        .translation(Vector::new(
+            center.x,
+            bounds.min_y() - FLOOR_THICKNESS,
+            center.z,
+        ))
         .build();
         self.world_bounds_colliders
             .push(self.colliders.insert(floor));

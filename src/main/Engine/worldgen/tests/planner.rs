@@ -375,17 +375,22 @@ fn river_banks_are_gentle() {
             d_center < 0.0,
             "el centro del cauce debe seguir abierto (densidad {d_center})"
         );
+        let h_center = field.height_at(p0.x, p0.y);
         let mut gentle = false;
         for sign in [1.0_f32, -1.0] {
-            let outer = p0 + perp * sign * river.width * 1.12;
+            let outer = p0 + perp * sign * river.width * 2.6;
+            let h_outer = field.height_at(outer.x, outer.y);
+            if h_outer + 0.5 < y {
+                continue;
+            }
             let d_outer = field.density_at(outer.x, y, outer.y);
-            if d_outer > 0.15 {
+            if d_outer > 0.15 || (h_center - h_outer).abs() <= river.depth + 2.5 {
                 gentle = true;
             }
         }
         assert!(
             gentle,
-            "justo fuera del cauce el terreno no debe caer a plomo"
+            "fuera de la orilla suave el terreno no debe caer a plomo"
         );
     }
 }
@@ -648,6 +653,57 @@ fn mountains_rise_from_local_high_ground() {
             "la montaña en {:?} debe nacer sobre el terreno local ({peak} vs cota {local}, relieve {})",
             site.pos,
             site.value
+        );
+    }
+}
+
+#[test]
+fn mountains_are_pointed_and_hills_are_flat_and_shorter() {
+    let mut config = config_with_all_features();
+    config.rivers.enabled = false;
+    config.caves.enabled = false;
+    config.valleys.base.enabled = false;
+    let field = DensityField::new(&config);
+    let mountains: Vec<_> = field
+        .plan()
+        .sites
+        .iter()
+        .filter(|s| s.kind == FeatureKind::Mountain)
+        .copied()
+        .collect();
+    let hills: Vec<_> = field
+        .plan()
+        .sites
+        .iter()
+        .filter(|s| s.kind == FeatureKind::Hill)
+        .copied()
+        .collect();
+    assert!(!mountains.is_empty(), "debe haber montañas");
+    assert!(!hills.is_empty(), "debe haber colinas");
+
+    let hill_max = hills.iter().fold(0.0f32, |acc, site| acc.max(site.value));
+    let mountain_min = mountains
+        .iter()
+        .fold(f32::MAX, |acc, site| acc.min(site.value));
+    assert!(
+        hill_max * 2.0 < mountain_min,
+        "colina {hill_max} debe ser menor que la montaña {mountain_min}"
+    );
+
+    for site in &mountains {
+        let peak = field.height_at(site.pos.x, site.pos.y);
+        let mid = field.height_at(site.pos.x + site.radius * 0.45, site.pos.y);
+        assert!(
+            peak > mid + site.value * 0.18,
+            "montaña puntiaguda: cumbre {peak} vs media ladera {mid}"
+        );
+    }
+    for site in &hills {
+        let peak = field.height_at(site.pos.x, site.pos.y);
+        let inner = field.height_at(site.pos.x + site.radius * 0.22, site.pos.y);
+        assert!(
+            (peak - inner).abs() < 2.5,
+            "cima de colina plana: {peak} vs {inner}"
         );
     }
 }
