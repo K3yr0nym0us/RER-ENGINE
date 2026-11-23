@@ -424,13 +424,7 @@ impl Targets {
             | vk::ImageUsageFlags::STORAGE
             | vk::ImageUsageFlags::TRANSFER_SRC
             | vk::ImageUsageFlags::TRANSFER_DST;
-        self.ssr = gpu.create_image(
-            extent,
-            COLOR,
-            usage,
-            vk::ImageAspectFlags::COLOR,
-            "ssr",
-        )?;
+        self.ssr = gpu.create_image(extent, COLOR, usage, vk::ImageAspectFlags::COLOR, "ssr")?;
         Ok(())
     }
 }

@@ -62,13 +62,14 @@ impl SocketConfigState {
                     .unwrap_or_default();
             }
             "socket_bone_picked"
-                if event.get("entity_id").and_then(Value::as_u64) == self.target_id => {
-                    self.picked_bone = event
-                        .get("bone_name")
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
-                    self.bone_pick_active = false;
-                }
+                if event.get("entity_id").and_then(Value::as_u64) == self.target_id =>
+            {
+                self.picked_bone = event
+                    .get("bone_name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
+                self.bone_pick_active = false;
+            }
             _ => {}
         }
     }

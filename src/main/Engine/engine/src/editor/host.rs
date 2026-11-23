@@ -849,11 +849,11 @@ impl EditorWindow {
         if wanted == self.modal_window.as_ref().map(ModalWindow::kind) {
             // El idioma puede cambiar desde el sidebar con la modal abierta:
             // refresca el título (se calculó al crear la ventana) y repinta.
-            if let (Some(kind), Some(modal)) = (wanted, self.modal_window.as_mut()) {
-                if modal.locale() != self.app.cli.locale {
-                    let title = Self::modal_title(kind, &self.app);
-                    modal.set_locale(self.app.cli.locale, title);
-                }
+            if let (Some(kind), Some(modal)) = (wanted, self.modal_window.as_mut())
+                && modal.locale() != self.app.cli.locale
+            {
+                let title = Self::modal_title(kind, &self.app);
+                modal.set_locale(self.app.cli.locale, title);
             }
             return;
         }

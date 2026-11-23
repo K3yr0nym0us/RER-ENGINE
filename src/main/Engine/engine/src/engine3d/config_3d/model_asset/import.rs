@@ -62,7 +62,9 @@ pub fn gltf_image_data_to_rgba(img: &gltf::image::Data) -> (Vec<u8>, u32, u32) {
     let pixels = match img.format {
         Format::R8G8B8 => img
             .pixels
-            .as_chunks::<3>().0.iter()
+            .as_chunks::<3>()
+            .0
+            .iter()
             .flat_map(|p| [p[0], p[1], p[2], 255u8])
             .collect(),
         Format::R8G8B8A8 => img.pixels.clone(),

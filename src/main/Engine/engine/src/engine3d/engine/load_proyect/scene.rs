@@ -595,7 +595,14 @@ pub(crate) fn apply_loaded_proyect_3d_with_scene(
             _ if is_parkour_cylinder_path(&entity.model) => {
                 state.spawn_parkour_cylinder(&entity.name, entity.position, entity.scale);
                 if let Some(id) = state.scenario_entities.last().copied() {
-                    apply_full_entity_restore(state, id, &pending, "[ParkourCylinder]", true, false);
+                    apply_full_entity_restore(
+                        state,
+                        id,
+                        &pending,
+                        "[ParkourCylinder]",
+                        true,
+                        false,
+                    );
                 }
             }
             _ if is_parkour_wall_path(&entity.model) => {

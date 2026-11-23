@@ -105,7 +105,11 @@ pub(crate) fn send_project_loaded_3d(
                 "off".to_string()
             })
         }),
-        rtTier: view.world.rtTier.clone().or_else(|| Some("low".to_string())),
+        rtTier: view
+            .world
+            .rtTier
+            .clone()
+            .or_else(|| Some("low".to_string())),
         reflectionRaytracing: view.world.reflectionRaytracing,
         reflectionProbes: view.world.reflectionProbes,
         shadowTier: view.world.shadowTier.clone().or_else(|| {

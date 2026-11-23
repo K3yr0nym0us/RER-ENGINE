@@ -738,12 +738,7 @@ impl ParticleSystem {
 
     /// Mantiene la corona del sol pegada al icono y al tamaño de su esfera. Si el
     /// emisor no existe (escena recién cargada o `clear`), lo recrea.
-    pub(crate) fn sync_sun_emitter(
-        &mut self,
-        origin: [f32; 3],
-        radius: f32,
-        color: [f32; 4],
-    ) {
+    pub(crate) fn sync_sun_emitter(&mut self, origin: [f32; 3], radius: f32, color: [f32; 4]) {
         if let Some(emitter) = self
             .emitters
             .iter_mut()

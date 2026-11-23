@@ -1,9 +1,9 @@
-//! Controles visuales reutilizables de las sidebars.
+//! Implementación de los controles visuales del editor.
 //!
-//! Todos están deshabilitados salvo el selector de idioma: la funcionalidad
-//! del motor llega en la Fase 5. Los botones anchos se pintan a mano para
-//! centrar icono + texto, como hace Bootstrap con `.btn` (egui alinea a la
-//! izquierda cuando el botón se estira).
+//! **No copies estos estilos a mano ni uses `egui::Button` / `Slider` / `Checkbox`.**
+//! El índice de qué función usar está en `crate::editor::ui::components`.
+//! Los botones anchos se pintan a mano para centrar icono + texto, como Bootstrap
+//! `.btn` (egui alinea a la izquierda cuando el botón se estira).
 
 use egui::{Align, Align2, Color32, FontId, RichText, Sense, Stroke, StrokeKind};
 use egui_phosphor::regular as icons;
@@ -813,10 +813,61 @@ pub fn viewport_notification(
     }
 }
 
+/// Marco de cuerpo de modal nativa: fondo `PANEL_BG` y padding 16.
+pub fn modal_panel<R>(
+    ui: &mut egui::Ui,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::InnerResponse<R> {
+    egui::Frame::new()
+        .fill(crate::editor::theme::PANEL_BG)
+        .inner_margin(egui::Margin::same(16))
+        .show(ui, add_contents)
+}
+
+/// Título de modal (15 px, strong, `TEXT`). No uses `ui.heading`.
+pub fn modal_title(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        RichText::new(text)
+            .size(15.0)
+            .strong()
+            .color(crate::editor::theme::TEXT),
+    );
+}
+
+/// Párrafo de cuerpo de modal (13 px, `TEXT`).
+pub fn body_text(ui: &mut egui::Ui, text: &str) {
+    ui.label(
+        RichText::new(text)
+            .size(13.0)
+            .color(crate::editor::theme::TEXT),
+    );
+}
+
+/// Campo de texto de una línea con fondo `INPUT_BG`. Altura 26 px.
+pub fn text_field(ui: &mut egui::Ui, text: &mut String, hint: &str) -> egui::Response {
+    text_field_sized(ui, ui.available_width(), text, hint)
+}
+
+/// Igual que `text_field` con ancho explícito.
+pub fn text_field_sized(
+    ui: &mut egui::Ui,
+    width: f32,
+    text: &mut String,
+    hint: &str,
+) -> egui::Response {
+    let mut edit = egui::TextEdit::singleline(text)
+        .desired_width(width)
+        .background_color(crate::editor::theme::INPUT_BG)
+        .margin(egui::Margin::symmetric(8, 4));
+    if !hint.is_empty() {
+        edit = edit.hint_text(hint.to_owned());
+    }
+    ui.add_sized([width, 26.0], edit)
+}
+
 /// Input numérico. Devuelve `true` al confirmar con Enter o al perder el foco.
 pub fn number_input(ui: &mut egui::Ui, width: f32, text: &mut String) -> bool {
-    let response = ui.add(egui::TextEdit::singleline(text).desired_width(width));
-    response.lost_focus()
+    text_field_sized(ui, width, text, "").lost_focus()
 }
 
 /// Icono de acción compacto (filas de escenas). Devuelve `true` si se pulsó.

@@ -236,11 +236,7 @@ impl State {
     pub(crate) fn emitter_at_pixel(&self, pixel_x: f32, pixel_y: f32) -> Option<u64> {
         let radius2 = EMITTER_PICK_RADIUS_PX * EMITTER_PICK_RADIUS_PX;
         let mut best: Option<(f32, u64)> = None;
-        for (id, origin) in self
-            .particles
-            .pickable()
-            .chain(self.water.pickable())
-        {
+        for (id, origin) in self.particles.pickable().chain(self.water.pickable()) {
             let Some((sx, sy)) = self.project_to_screen(GlamVec3::from(origin)) else {
                 continue;
             };

@@ -12,7 +12,7 @@ use crate::editor::app::{EditorApp, ExitAction};
 use crate::editor::i18n::tr;
 use crate::editor::theme;
 
-use super::widgets;
+use super::components::{self as ui_kit, ModalButtonStyle};
 
 /// Dibuja el cuerpo en la ventana modal externa y registra la acción elegida.
 pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
@@ -22,72 +22,62 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
     let locale = app.cli.locale;
     let mut action = None;
 
-    egui::Frame::new()
-        .fill(theme::PANEL_BG)
-        .inner_margin(egui::Margin::same(16))
-        .show(ui, |ui| {
-            ui.vertical_centered(|ui| {
-                ui.label(
-                    RichText::new(icons::WARNING)
-                        .size(40.0)
-                        .color(theme::WARNING),
-                );
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(tr(locale, "Salir de RER-ENGINE", "Exit RER-ENGINE"))
-                        .size(15.0)
-                        .strong()
-                        .color(theme::TEXT),
-                );
-                ui.add_space(8.0);
-                ui.label(
-                    RichText::new(tr(
-                        locale,
-                        "¿Quieres guardar tu progreso antes de salir?",
-                        "Do you want to save your progress before exiting?",
-                    ))
-                    .size(13.0)
-                    .color(theme::TEXT),
-                );
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new(tr(
-                        locale,
-                        "Los cambios sin guardar se perderán.",
-                        "Unsaved changes will be lost.",
-                    ))
-                    .size(12.0)
-                    .color(theme::TEXT_MUTED),
-                );
-            });
-            ui.add_space(14.0);
-            ui.separator();
+    ui_kit::modal_panel(ui, |ui| {
+        ui.vertical_centered(|ui| {
+            ui.label(
+                RichText::new(icons::WARNING)
+                    .size(40.0)
+                    .color(theme::WARNING),
+            );
             ui.add_space(8.0);
-
-            // Igual que la modal React: tres botones apilados a lo ancho.
-            let width = ui.available_width();
-            if widgets::modal_button(
+            ui_kit::modal_title(ui, tr(locale, "Salir de RER-ENGINE", "Exit RER-ENGINE"));
+            ui.add_space(8.0);
+            ui_kit::body_text(
                 ui,
-                icons::FLOPPY_DISK,
-                tr(locale, "Guardar y salir", "Save and exit"),
-                widgets::ModalButtonStyle::Primary,
-                width,
-                true,
-            ) {
-                action = Some(ExitAction::Save);
-            }
-            ui.add_space(6.0);
-            if widgets::modal_button(
+                tr(
+                    locale,
+                    "¿Quieres guardar tu progreso antes de salir?",
+                    "Do you want to save your progress before exiting?",
+                ),
+            );
+            ui.add_space(4.0);
+            ui_kit::note(
                 ui,
-                icons::SIGN_OUT,
-                tr(locale, "Salir sin guardar", "Exit without saving"),
-                widgets::ModalButtonStyle::Danger,
-                width,
-                true,
-            ) {
-                action = Some(ExitAction::Discard);
-            }
+                tr(
+                    locale,
+                    "Los cambios sin guardar se perderán.",
+                    "Unsaved changes will be lost.",
+                ),
+            );
         });
+        ui.add_space(14.0);
+        ui.separator();
+        ui.add_space(8.0);
+
+        // Igual que la modal React: tres botones apilados a lo ancho.
+        let width = ui.available_width();
+        if ui_kit::modal_button(
+            ui,
+            icons::FLOPPY_DISK,
+            tr(locale, "Guardar y salir", "Save and exit"),
+            ModalButtonStyle::Primary,
+            width,
+            true,
+        ) {
+            action = Some(ExitAction::Save);
+        }
+        ui.add_space(6.0);
+        if ui_kit::modal_button(
+            ui,
+            icons::SIGN_OUT,
+            tr(locale, "Salir sin guardar", "Exit without saving"),
+            ModalButtonStyle::Danger,
+            width,
+            true,
+        ) {
+            action = Some(ExitAction::Discard);
+        }
+    });
 
     if let Some(action) = action {
         app.exit_confirm_open = false;

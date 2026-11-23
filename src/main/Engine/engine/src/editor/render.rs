@@ -14,30 +14,23 @@ use rer_engine_core::vulkan::{FRAMES_IN_FLIGHT, FrameAcquire, SharedGpu, VulkanO
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
 
+use super::egui_textures::{EguiTextureSync, PendingTextureOp};
 use super::theme;
 
 pub struct EditorGpu {
-    // Orden de destrucción: egui → command pool (en `Drop`) → device (dentro de `gpu`).
+    // Orden de destrucción: egui → texturas (en `Drop` tras wait idle) → device.
     egui_renderer: Renderer<DefaultAllocator>,
-    ui_pool: vk::CommandPool,
+    textures: EguiTextureSync,
     gpu: SharedGpu,
     clear: vk::ClearValue,
+    pending_texture_ops: Vec<PendingTextureOp>,
 }
 
 impl EditorGpu {
     pub fn new(window: &Window, options: VulkanOptions) -> Result<Self, String> {
         let gpu = SharedGpu::new(window, &options).map_err(|error| error.to_string())?;
         let format = gpu.swapchain_format();
-
-        let ui_pool = unsafe {
-            gpu.device().create_command_pool(
-                &vk::CommandPoolCreateInfo::default()
-                    .queue_family_index(gpu.queue_family_index())
-                    .flags(vk::CommandPoolCreateFlags::TRANSIENT),
-                None,
-            )
-        }
-        .map_err(|error| format!("No se pudo crear el command pool del editor: {error:?}"))?;
+        let textures = EguiTextureSync::new(gpu.clone())?;
 
         let egui_renderer = Renderer::with_default_allocator(
             gpu.instance(),
@@ -59,13 +52,14 @@ impl EditorGpu {
 
         Ok(Self {
             egui_renderer,
-            ui_pool,
+            textures,
             gpu,
             clear: vk::ClearValue {
                 color: vk::ClearColorValue {
                     float32: theme::clear_color(),
                 },
             },
+            pending_texture_ops: Vec::new(),
         })
     }
 
@@ -114,33 +108,48 @@ impl EditorGpu {
             window.set_cursor_visible(false);
         }
 
-        let primitives = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
+        let mut primitives = egui_ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
         let repaint_now = full_output
             .viewport_output
             .get(&egui::ViewportId::ROOT)
             .map(|output| output.repaint_delay.is_zero())
             .unwrap_or(true);
 
-        // `set_textures` graba, envía y espera en la cola. Se hace antes de abrir el frame
-        // para no invalidar el command buffer que devuelve `begin_frame`.
-        // egui 0.36 agrupa varias actualizaciones por TextureId; el renderer 0.13
-        // expone `set_texture` (set_textures quedó obsoleto).
-        for (id, deltas) in &texture_sets {
-            for delta in deltas {
-                self.egui_renderer
-                    .set_texture(self.gpu.queue(), self.ui_pool, *id, delta)
-                    .map_err(|error| format!("No se pudieron subir texturas egui: {error}"))?;
-            }
-        }
-
         let frame = match self.gpu.begin_frame() {
             Ok(frame) => frame,
             Err(FrameAcquire::Outdated | FrameAcquire::Skip) => {
+                EguiTextureSync::stash_skipped(
+                    &mut self.pending_texture_ops,
+                    texture_sets,
+                    texture_frees,
+                );
                 self.reconfigure(window)?;
                 return Ok(true);
             }
-            Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
+            Err(FrameAcquire::Fail(error)) => {
+                EguiTextureSync::stash_skipped(
+                    &mut self.pending_texture_ops,
+                    texture_sets,
+                    texture_frees,
+                );
+                return Err(error.to_string());
+            }
         };
+
+        let current_sets = texture_sets
+            .into_iter()
+            .map(|(id, deltas)| (id, deltas.into_iter().collect()))
+            .collect::<Vec<_>>();
+        self.textures
+            .apply(
+                &mut self.egui_renderer,
+                frame.command,
+                frame.slot,
+                &mut self.pending_texture_ops,
+                current_sets,
+            )
+            .map_err(|error| format!("No se pudieron subir texturas egui: {error}"))?;
+        self.textures.remap(&mut primitives);
 
         let command = frame.command;
         let extent = frame.extent;
@@ -245,11 +254,8 @@ impl EditorGpu {
             Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
         }
 
-        for id in &texture_frees {
-            self.egui_renderer
-                .free_texture(*id)
-                .map_err(|error| format!("No se pudieron liberar texturas egui: {error}"))?;
-        }
+        let frees: Vec<_> = texture_frees.into_iter().collect();
+        self.textures.queue_frees(frame.slot, &frees);
 
         Ok(repaint_now)
     }
@@ -287,7 +293,7 @@ fn scene_rect(rect: egui::Rect, pixels_per_point: f32, extent: vk::Extent2D) -> 
 impl Drop for EditorGpu {
     fn drop(&mut self) {
         unsafe {
-            self.gpu.device().destroy_command_pool(self.ui_pool, None);
+            let _ = self.gpu.device().device_wait_idle();
         }
     }
 }

@@ -360,7 +360,6 @@ impl State {
         self.spawn_parkour_cylinder("ParkourCylinder · 2", [0.25, 1.25, 11.4], [2.0, 2.5, 2.0]);
         self.spawn_parkour_cylinder("ParkourCylinder · 3", [-4.25, 2.5, 9.9], [1.8, 5.0, 1.8]);
 
-
         // Límites lógicos del mundo: mínimo del motor, 30 m de lado (cara 15 m),
         // sincronizado con el generador y con la rosa de los vientos del editor.
         self.set_world_bounds_3d_radius(crate::engine3d::MIN_WORLD_RADIUS_3D);
@@ -862,13 +861,7 @@ impl State {
         let mesh_idx = self.ensure_parkour_cylinder_mesh();
         let tex_idx = self.ensure_editor_box_gpu_assets().1;
         let id = self.world.spawn(Some(&label));
-        self.world.insert(
-            id,
-            MeshComponent {
-                mesh_idx,
-                tex_idx,
-            },
-        );
+        self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = glam::Vec3::from_array(position);
             t.scale = glam::Vec3::from_array(scale);
@@ -907,13 +900,7 @@ impl State {
             self.ensure_editor_box_gpu_assets().1
         });
         let id = self.world.spawn(Some(&label));
-        self.world.insert(
-            id,
-            MeshComponent {
-                mesh_idx,
-                tex_idx,
-            },
-        );
+        self.world.insert(id, MeshComponent { mesh_idx, tex_idx });
         if let Some(t) = self.world.get_mut::<Transform>(id) {
             t.position = glam::Vec3::from_array(position);
             t.scale = glam::Vec3::from_array(scale);

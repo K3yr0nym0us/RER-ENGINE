@@ -9,6 +9,7 @@ mod bridge;
 mod cli;
 mod context;
 pub(crate) mod control_bindings;
+mod egui_textures;
 mod entity_properties;
 pub(crate) mod hud_editor;
 mod i18n;

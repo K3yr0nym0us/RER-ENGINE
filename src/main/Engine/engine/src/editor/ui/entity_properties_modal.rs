@@ -192,10 +192,16 @@ fn transform_number_field(ui: &mut egui::Ui, draft: &mut String, width: f32) -> 
     let step = if value.fract().abs() > 1e-4 { 0.1 } else { 1.0 };
     let mut delta = 0.0;
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    if ui.add_sized([BUTTON_W, HEIGHT], egui::Button::new("−")).clicked() {
+    if ui
+        .add_sized([BUTTON_W, HEIGHT], egui::Button::new("−"))
+        .clicked()
+    {
         delta = -step;
     }
-    if ui.add_sized([BUTTON_W, HEIGHT], egui::Button::new("+")).clicked() {
+    if ui
+        .add_sized([BUTTON_W, HEIGHT], egui::Button::new("+"))
+        .clicked()
+    {
         delta = step;
     }
     if delta != 0.0 {
@@ -326,16 +332,15 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
     // los snapshots y del próximo click derecho) refleja los valores editados.
     if app.entity_properties.particle_applied {
         app.entity_properties.particle_applied = false;
-        if let Some(draft) = app.entity_properties.particle_draft.clone() {
-            if let Some(row) = app
+        if let Some(draft) = app.entity_properties.particle_draft.clone()
+            && let Some(row) = app
                 .right_sidebar
                 .particles
                 .emitters
                 .iter_mut()
                 .find(|row| row.id == draft.id)
-            {
-                *row = draft;
-            }
+        {
+            *row = draft;
         }
     }
 }
@@ -590,7 +595,9 @@ fn model_picker_for(
         key(&m.path) == current_key
             || base(&m.path) == current_base
             || key(&label) == current_base
-            || m.model_id.as_deref().is_some_and(|id| key(id) == current_key)
+            || m.model_id
+                .as_deref()
+                .is_some_and(|id| key(id) == current_key)
     };
 
     // Nombre del modelo asignado, para mostrarlo encima del select.
@@ -604,7 +611,13 @@ fn model_picker_for(
                 m.name.clone()
             }
         })
-        .unwrap_or_else(|| if current.is_empty() { "-".to_string() } else { base(current) });
+        .unwrap_or_else(|| {
+            if current.is_empty() {
+                "-".to_string()
+            } else {
+                base(current)
+            }
+        });
 
     let mut choices: Vec<crate::editor::entity_properties::ModelChoice> = models
         .iter()
@@ -652,7 +665,11 @@ fn model_actions(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
         let half = (ui.available_width() - ui.spacing().item_spacing.x) * 0.5;
-        let action_width = if show_replace { half } else { ui.available_width() };
+        let action_width = if show_replace {
+            half
+        } else {
+            ui.available_width()
+        };
         if show_replace {
             let label = t(locale, "Reemplazar modelo", "Replace model");
             if outline_button(ui, icons::CUBE, &label, theme::INFO, true, Some(half)) {
@@ -667,12 +684,8 @@ fn model_actions(
                     state.entity_category.as_deref().unwrap_or("object")
                 };
                 let current = state.current_model_path.clone().unwrap_or_default();
-                state.model_picker = Some(model_picker_for(
-                    models,
-                    active_scene_id,
-                    intent,
-                    &current,
-                ));
+                state.model_picker =
+                    Some(model_picker_for(models, active_scene_id, intent, &current));
                 // El inspector se cierra mientras el selector está abierto. Si se
                 // cancela (X de la ventana) se reabrirá; si se confirma, no.
                 state.open = false;
@@ -700,7 +713,14 @@ fn model_actions(
             ui.label(RichText::new("").size(1.0)).on_hover_text(tooltip);
         } else {
             let label = t(locale, "Convertir a Blueprint", "Convert to Blueprint");
-            if outline_button(ui, icons::SQUARE, &label, theme::ACCENT, true, Some(action_width)) {
+            if outline_button(
+                ui,
+                icons::SQUARE,
+                &label,
+                theme::ACCENT,
+                true,
+                Some(action_width),
+            ) {
                 state.confirm = Some(crate::editor::entity_properties::ConfirmDialog {
                     title: t(locale, "Convertir a Blueprint", "Convert to Blueprint"),
                     message: format!(
@@ -748,11 +768,7 @@ pub(crate) fn model_picker_window(ui: &mut egui::Ui, app: &mut EditorApp) {
             .find(|choice| choice.path == path)
             .is_some_and(|choice| choice.state == "ready")
     };
-    if previous
-        .selected
-        .as_deref()
-        .is_some_and(is_ready)
-    {
+    if previous.selected.as_deref().is_some_and(is_ready) {
         picker.selected = previous.selected;
     } else if !is_ready(picker.selected.as_deref().unwrap_or("")) {
         // Nunca preseleccionar un modelo en carga: el actual ya viene marcado
@@ -836,9 +852,7 @@ pub(crate) fn model_picker_window(ui: &mut egui::Ui, app: &mut EditorApp) {
                     .choices
                     .iter()
                     .find(|choice| choice.path == path)
-                    .is_some_and(|choice| {
-                        !matches!(choice.state.as_str(), "importing" | "failed")
-                    })
+                    .is_some_and(|choice| !matches!(choice.state.as_str(), "importing" | "failed"))
             {
                 let id = app.entity_properties.entity().map(|e| e.id).unwrap_or(0);
                 commands.push(json!({
@@ -1080,7 +1094,7 @@ fn particles_tab(
         .find(|(wire, _, _)| *wire == draft.material)
         .map(|option| tr(locale, option.1, option.2))
         .unwrap_or_else(|| draft.material);
-    section_label(ui, &material);
+    section_label(ui, material);
     ui.add_space(6.0);
     particle_properties_fields(ui, locale, &mut draft);
 
@@ -1132,20 +1146,20 @@ fn transform_tab(
             // reenvía el comando de upsert del emisor con la nueva posición.
             let mut row = state.particle_draft.clone().expect("is_particle");
             let mut changed = false;
-            for axis in 0..3 {
+            for (axis, draft) in row.position.iter_mut().enumerate() {
                 ui.allocate_ui_with_layout(
                     Vec2::new(w, 26.0),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         axis_label(ui, axis);
-                        let mut text = row.position[axis].text.clone();
+                        let mut text = draft.text.clone();
                         if transform_number_field(ui, &mut text, w - 22.0).changed()
                             && let Some(value) = parse_f32(&text)
                         {
-                            row.position[axis].force(value);
+                            draft.force(value);
                             changed = true;
                         } else {
-                            row.position[axis].text = text;
+                            draft.text = text;
                         }
                     },
                 );
@@ -2393,12 +2407,7 @@ mod tests {
         }
     }
 
-    fn model_with_state(
-        path: &str,
-        name: &str,
-        category: Option<&str>,
-        state: &str,
-    ) -> AssetEntry {
+    fn model_with_state(path: &str, name: &str, category: Option<&str>, state: &str) -> AssetEntry {
         let mut entry = model(path, name, category, None);
         entry.state = Some(state.to_string());
         entry

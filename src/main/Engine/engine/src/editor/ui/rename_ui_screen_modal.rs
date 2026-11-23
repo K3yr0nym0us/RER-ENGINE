@@ -76,13 +76,13 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
             .menu
             .iter_mut()
             .find(|screen| screen.id == id)
-        {
-            screen.name = name.clone();
-            app.push_log(
-                format!("[Interfaz de usuario] Menú renombrado a «{name}»"),
-                false,
-            );
-        }
+    {
+        screen.name = name.clone();
+        app.push_log(
+            format!("[Interfaz de usuario] Menú renombrado a «{name}»"),
+            false,
+        );
+    }
     if confirm {
         app.left_sidebar.pending_rename_ui_screen = None;
     }

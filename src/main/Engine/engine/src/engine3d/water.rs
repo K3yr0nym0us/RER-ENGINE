@@ -1401,7 +1401,10 @@ mod tests {
         let rgba = liquid_rgba(DEFAULT_LIQUID_COLOR, 0);
         assert_eq!(rgba, [20, 71, 107, 255]);
         // La superficie aplica además el tinte del preset `water` de la demo.
-        assert_eq!(liquid_surface_rgba(DEFAULT_LIQUID_COLOR), [20, 77, 120, 255]);
+        assert_eq!(
+            liquid_surface_rgba(DEFAULT_LIQUID_COLOR),
+            [20, 77, 120, 255]
+        );
         let rose = liquid_rgba([0.9, 0.2, 0.4], 0);
         assert_eq!(rose, [230, 51, 102, 255]);
         // El boost solo aclara las gotas; con 255 la superficie siempre salía blanca.

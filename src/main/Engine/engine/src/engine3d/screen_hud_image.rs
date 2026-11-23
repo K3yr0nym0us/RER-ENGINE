@@ -113,4 +113,3 @@ pub fn build_screen_hud_instance(
     inst.flag_pad[1] = alpha;
     inst
 }
-

@@ -836,9 +836,10 @@ pub(crate) fn scene_entities(app: &crate::editor::app::EditorApp) -> Vec<SceneEn
                 }
             }
             if let Some(player) = scene.get("player")
-                && !player.is_null() {
-                    out.push(entity_from_value(player, app));
-                }
+                && !player.is_null()
+            {
+                out.push(entity_from_value(player, app));
+            }
             break;
         }
     }

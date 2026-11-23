@@ -3,6 +3,8 @@
 mod accordion;
 mod bottom_bar;
 mod clear_scene_modal;
+/// Catálogo de widgets del editor. Cualquier vista nueva importa de aquí.
+pub(crate) mod components;
 /// Cuerpo de la ventana nativa de configuración de controles.
 pub(crate) mod control_bindings_modal;
 /// Cuerpo de la ventana nativa de creación de escena.

@@ -8,8 +8,8 @@
 #   - docs/yaml/rendering/Reflections_SSR.yaml (SSR en pantalla y composite final)
 #   - docs/yaml/rendering/Shadows_3D.yaml (no hay shadow rays en RT)
 
-version: 5
-updated: 2026-11-20
+version: 6
+updated: 2026-11-22
 status: implemented
 validated: 2026-11-08  # RTX 3060, capa de validación sin errores de API en el camino RT
 
@@ -71,8 +71,10 @@ tier_table:
 
 pipeline:
   order_in_frame: |
-    1. `rebuild_tlas` desde los `RtInstanceRecord` visibles (cache de BLAS por malla; `rebuild`
-       invalida la entrada).
+    1. `rebuild_tlas` desde los `RtBatch` visibles (cache de BLAS por malla; `rebuild`
+       invalida la entrada). El TLAS se actualiza (`UPDATE`) o se reconstruye (`BUILD`)
+       según la topología; no se reserva scratch ni buffer de instancias por frame en régimen
+       estable. Con HW RT el BVH software no se reconstruye.
     2. `trace_background` → `primary.rgen` (o `trace.comp` en modo 0) escribe `targets.background`,
        que el forward toma como cielo.
     3. Tras el forward, `reflection_pass` → `reflect.rgen` (o `trace.comp` modo 1) escribe
@@ -83,9 +85,16 @@ pipeline:
     actualizar un set ya enlazado por un command buffer invalida el buffer completo y el driver
     ignora TODO el frame (VUID "destroyed or updated without UPDATE_AFTER_BIND").
   scratch: |
-    El scratch de `build_blas`/`build_tlas` y el buffer de índices de instancia se reutilizan entre
-    frames en un único `Vec<u8>` para no reservar memoria nueva por frame ni dejar un device
-    address de un buffer ya liberado.
+    Cada slot en vuelo (`FRAMES=2`) tiene su propio `TlasSlot`: buffer de instancias host-visible,
+    scratch GPU y storage del TLAS, todos con capacidad creciente y device address estable.
+    `record_tlas` escribe las instancias y graba el build en el command buffer del frame
+    (ya no hay `one_shot` + `wait_for_fences` por fotograma).
+    Si solo cambian transforms (misma topología: count, orden, BLAS address, custom_index) se usa
+    `MODE_UPDATE` in-place. Entrada/salida de instancias, rebuild de BLAS, cambio de `fast_trace`
+    o storage insuficiente fuerzan `MODE_BUILD` con `ALLOW_UPDATE` para el siguiente UPDATE.
+    El fence del slot ya esperó en `begin_frame`, así el TLAS del slot no está en uso por un
+    frame anterior. Tras el build hay barrera `AS_BUILD` → `RAY_TRACING_SHADER`.
+    El BLAS de geometría estática sigue en `blas_cache` (one_shot solo al crear/invalidar).
 
 denoise:
   shader: src/main/Engine/engine/shaders/raster/denoise.frag
@@ -119,16 +128,17 @@ sampling:
 
 geometry:
   static: |
-    Lotes estáticos visibles con ≥ 3 índices: posiciones bind-pose en CPU + transform de entidad
-    (mismo blob alimenta BVH y TLAS; se reutiliza solo si el hash de la escena no cambió).
+    Lotes estáticos visibles con ≥ 3 índices. Con HW RT solo se empaquetan materiales
+    (`pack_rt_materials`) y el TLAS usa el BLAS de la malla; el BVH software no se reconstruye.
+    Sin HW RT el blob de triángulos + BVH se reutiliza si el hash de la escena no cambió.
   skinned: |
-    Las entidades animadas entran a ambos caminos con triángulos deformados en CPU usando el mismo
-    palette que `skinned.vert`, cacheados y refrescados cada 4 frames (tope 24 000 triángulos).
-    Para el TLAS, `refresh_skinned_rt_geometry` sube un buffer de sólo posiciones poseadas (stride
-    12 bytes, mismo orden de vértices que el VBO skinned, así se reutiliza su índice) y arma una
-    `RtBatch` por entidad y pieza con clave `(gpu_mesh_idx) | (1 << 63)`; el BLAS se reconstruye
-    solo en el frame en que cambió la pose (`State::rt_skinned_rebuild`). Las poses son las
-    mismas que alimentan el BVH, así HW y SW ven la misma silueta.
+    Cada 4 frames (tope 24 000 triángulos) se refresca la silueta trazable.
+    HW RT: materiales + `refresh_skinned_rt_geometry` (buffer de posiciones poseadas, stride 12,
+    mismo índice que el VBO skinned). No se deforman triángulos CPU ni se arma BVH.
+    Software: `build_skinned_trace` deforma triángulos con el mismo palette que `skinned.vert`.
+    `RtBatch` por entidad/pieza con clave `(gpu_mesh_idx) | (1 << 63)`; el BLAS se reconstruye
+    solo el frame en que cambió la pose (`State::rt_skinned_rebuild`). Orden de objetivos
+    (entidad, pieza) alinea `mats` y geometría.
 
 ipc:
   commands:

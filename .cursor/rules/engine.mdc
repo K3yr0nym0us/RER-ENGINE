@@ -74,3 +74,7 @@ Do not reintroduce:
 Development and runtime are **Windows only**.
 
 Do not add Linux, macOS, or WSL compatibility branches.
+
+## Editor UI (egui)
+
+New sidebars, modals and forms must use `crate::editor::ui::components` (see that module's table). Do not drop in stock `egui::Button` / `Slider` / `Checkbox` / `CollapsingHeader` / `ui.heading`. Colors from `crate::editor::theme`. Details: `.cursor/rules/editor-egui.mdc`.

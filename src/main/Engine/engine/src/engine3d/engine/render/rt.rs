@@ -149,6 +149,14 @@ pub(crate) fn build_rt_scene(state: &State, records: &[RtInstanceRecord]) -> RtS
     RtSceneBlob::from_parts(&nodes, &gpu_triangles, &materials)
 }
 
+/// Materiales HW RT en el mismo orden que `build_rt_scene`, sin deformar triángulos ni BVH.
+pub(crate) fn pack_rt_materials(state: &State, records: &[RtInstanceRecord]) -> Vec<RtMaterialGpu> {
+    let mut materials: Vec<RtMaterialGpu> =
+        records.iter().map(|rec| rt_material(state, rec)).collect();
+    materials.extend(state.rt_skinned_materials.iter().copied());
+    materials
+}
+
 /// Mat4 (column-major) → transform 3×4 row-major que espera el TLAS.
 pub(crate) fn mat4_to_tlas_transform(matrix: Mat4) -> [f32; 12] {
     let c = matrix.to_cols_array();

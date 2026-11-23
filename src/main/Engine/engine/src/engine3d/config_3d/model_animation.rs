@@ -193,7 +193,7 @@ impl State {
             path: path.to_string(),
             clips: clip_meta,
         });
-        self.write_joint_matrices_all_parts(id, &binding, &asset, None, 0.0);
+        self.write_joint_matrices_all_parts(id, &binding.part_gpu_indices, &asset, None, 0.0);
     }
 
     /// Re-emite metadatos de clips ya enlazados (p. ej. tras cargar `.save` en el renderer).
@@ -298,7 +298,10 @@ impl State {
         if asset.clips.is_empty() {
             return;
         }
-        let current = self.active_model_clips.get(&id).map(|a| a.clip_name.as_str());
+        let current = self
+            .active_model_clips
+            .get(&id)
+            .map(|a| a.clip_name.as_str());
         let next = current
             .and_then(|name| asset.clips.iter().position(|c| c.name == name))
             .map(|i| (i + 1) % asset.clips.len())
@@ -329,36 +332,37 @@ impl State {
 
         let ids: Vec<EntityId> = self.model_animation_bindings.keys().copied().collect();
         for id in ids {
-            let binding = match self.model_animation_bindings.get(&id) {
-                Some(b) => b.clone(),
+            let (asset_path, part_gpu_indices) = match self.model_animation_bindings.get(&id) {
+                Some(binding) => (binding.asset_path.clone(), binding.part_gpu_indices.clone()),
                 None => continue,
             };
-            let asset = match self.get_model_asset_for_entity(&binding.asset_path, id) {
+            let asset = match self.get_model_asset_for_entity(&asset_path, id) {
                 Some(a) => a,
                 None => continue,
             };
 
-            let (clip_name, time_s, loop_, _playing) = {
+            let (clip_index, time_s, loop_) = {
                 let active = match self.active_model_clips.get(&id) {
                     Some(a) if a.playing && !a.finished => a,
                     _ => {
                         // Pose bind: tiempo 0, sin clip activo
-                        self.write_joint_matrices_all_parts(id, &binding, &asset, None, 0.0);
+                        self.write_joint_matrices_all_parts(
+                            id,
+                            &part_gpu_indices,
+                            &asset,
+                            None,
+                            0.0,
+                        );
                         continue;
                     }
                 };
-                (
-                    active.clip_name.clone(),
-                    active.time_s,
-                    active.loop_,
-                    active.playing,
-                )
+                let Some(clip_index) = asset.clips.iter().position(|c| c.name == active.clip_name)
+                else {
+                    continue;
+                };
+                (clip_index, active.time_s, active.loop_)
             };
-
-            let clip = match asset.clips.iter().find(|c| c.name == clip_name) {
-                Some(c) => c,
-                None => continue,
-            };
+            let clip = &asset.clips[clip_index];
 
             let mut new_time = time_s + dt;
             if new_time >= clip.duration_s {
@@ -374,7 +378,13 @@ impl State {
                 active.time_s = new_time;
             }
 
-            self.write_joint_matrices_all_parts(id, &binding, &asset, Some(clip), new_time);
+            self.write_joint_matrices_all_parts(
+                id,
+                &part_gpu_indices,
+                &asset,
+                Some(clip),
+                new_time,
+            );
         }
 
         for id in finished_ids {
@@ -390,7 +400,7 @@ impl State {
     fn write_joint_matrices_all_parts(
         &mut self,
         entity_id: EntityId,
-        binding: &ModelAnimationBinding,
+        part_gpu_indices: &[usize],
         asset: &ModelAsset,
         clip: Option<&AnimationClip>,
         time_s: f32,
@@ -414,18 +424,23 @@ impl State {
         let norm = asset.mesh_normalize;
         let inv_norm = norm.inverse();
 
-        for (pi, &gpu_idx) in binding.part_gpu_indices.iter().enumerate() {
+        for (pi, &gpu_idx) in part_gpu_indices.iter().enumerate() {
             let Some(part) = asset.parts.get(pi) else {
                 continue;
             };
-            let global = if use_per_part_ibm {
-                gltf_bind_globals_from_ibm(
+            let per_part_global = if use_per_part_ibm {
+                Some(gltf_bind_globals_from_ibm(
                     &part.inverse_bind,
                     &asset.bind_local[..joint_count],
                     &local_transforms,
-                )
+                ))
             } else {
-                shared_global.as_ref().expect("shared_global").clone()
+                None
+            };
+            let global: &[Mat4] = if let Some(ref globals) = per_part_global {
+                globals
+            } else {
+                shared_global.as_ref().expect("shared_global")
             };
             let inv_mesh = part.mesh_bind_world.inverse();
             let gltf_skin = !asset.joint_gltf_nodes.is_empty();
@@ -441,7 +456,7 @@ impl State {
             let flat: Vec<[[f32; 4]; 4]> =
                 joint_palette.iter().map(|m| m.to_cols_array_2d()).collect();
             if let Some(entry) = self.skinned_gpu_meshes.get_mut(gpu_idx) {
-                entry.joint_palette = flat.clone();
+                entry.joint_palette = flat;
             }
         }
     }
@@ -690,7 +705,10 @@ fn root_joint_index(asset: &ModelAsset, clip: &AnimationClip) -> Option<usize> {
     for ji in 0..asset.joint_parents.len().min(MAX_JOINTS) {
         let has_motion = clip.channels.iter().any(|ch| {
             ch.joint_index == ji
-                && matches!(ch.property, AnimProperty::Translation | AnimProperty::Rotation)
+                && matches!(
+                    ch.property,
+                    AnimProperty::Translation | AnimProperty::Rotation
+                )
         });
         if !has_motion {
             continue;

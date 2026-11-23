@@ -174,22 +174,14 @@ impl MaterialKind {
         match self {
             // Sol y fuego suman luz: el blanco cálido del sol se compone con HDR.
             Self::Fire | Self::Sun => 0,
-            Self::Smoke
-            | Self::Fog
-            | Self::Rain
-            | Self::Snow
-            | Self::Sand
-            | Self::Water => 1,
+            Self::Smoke | Self::Fog | Self::Rain | Self::Snow | Self::Sand | Self::Water => 1,
         }
     }
 
     /// Materiales que renderizan por WBOIT (F3): sin ordenar en CPU, con acumulación
     /// ponderada y revealage multiplicativo.
     pub(crate) fn uses_wboit(self) -> bool {
-        matches!(
-            self,
-            Self::Smoke | Self::Fog | Self::Water
-        )
+        matches!(self, Self::Smoke | Self::Fog | Self::Water)
     }
 }
 
@@ -219,15 +211,7 @@ mod tests {
 
     #[test]
     fn material_kind_round_trips_through_wire() {
-        for name in [
-            "fire",
-            "smoke",
-            "fog",
-            "rain",
-            "snow",
-            "sand",
-            "water",
-        ] {
+        for name in ["fire", "smoke", "fog", "rain", "snow", "sand", "water"] {
             let kind = MaterialKind::from_wire(name).expect("material reconocido");
             assert_eq!(kind, MaterialKind::from_wire(name).unwrap());
         }

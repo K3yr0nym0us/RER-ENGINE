@@ -218,20 +218,8 @@ pub(super) fn graphics_with_depth_test(
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
     graphics_with_gbuffer_blend(
-        device,
-        layout,
-        vert,
-        frag,
-        vertex,
-        colors,
-        depth,
-        blend,
-        true,
-        !blend,
-        depth_bias,
-        topology,
-        depth_test,
-        keep,
+        device, layout, vert, frag, vertex, colors, depth, blend, true, !blend, depth_bias,
+        topology, depth_test, keep,
     )
 }
 

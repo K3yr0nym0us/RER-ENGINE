@@ -80,6 +80,26 @@ pub(crate) fn collect_skinned_trace_targets(
 /// (`model * (Σ pesos·palette[joint] · posición)`), así la silueta que trazan el BVH y el RT
 /// coincide con la rasterizada. Los materiales se numeran desde 0: `build_rt_scene` les suma el
 /// desplazamiento de los lotes estáticos.
+pub(crate) fn skinned_trace_materials(
+    state: &State,
+    targets: &[SkinnedTraceTarget],
+) -> Vec<RtMaterialGpu> {
+    targets
+        .iter()
+        .map(|target| {
+            rt_material(
+                state,
+                &RtInstanceRecord {
+                    mesh_idx: 0,
+                    entity_id: target.entity_id,
+                    transform: target.model_matrix,
+                    probe_layer: target.probe_layer,
+                },
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn build_skinned_trace(
     state: &State,
     targets: &[SkinnedTraceTarget],

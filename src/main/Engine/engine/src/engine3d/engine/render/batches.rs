@@ -223,8 +223,10 @@ pub(crate) fn entity_skips_shadow_cast(
             .world
             .get::<crate::engine3d::ecs::NameComponent>(entity_id)
             .is_some_and(|name| {
-                let lower = name.name.to_ascii_lowercase();
-                lower == "sun" || lower.starts_with("sun_") || lower == "ground"
+                let n = name.name.as_str();
+                n.eq_ignore_ascii_case("sun")
+                    || n.eq_ignore_ascii_case("ground")
+                    || (n.len() >= 4 && n[..4].eq_ignore_ascii_case("sun_"))
             })
 }
 

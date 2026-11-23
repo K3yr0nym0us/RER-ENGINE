@@ -45,7 +45,10 @@ fn is_demo_manifest_entity(entity: &Value) -> bool {
 /// `true` si un emisor serializado pertenece a la fila demo de partículas.
 fn is_demo_manifest_emitter(emitter: &Value) -> bool {
     let id = emitter.get("id").and_then(Value::as_u64).unwrap_or(0);
-    let material = emitter.get("material").and_then(Value::as_str).unwrap_or("");
+    let material = emitter
+        .get("material")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let position = emitter.get("position").and_then(Value::as_array);
     let at = |i: usize| {
         position
@@ -1370,8 +1373,15 @@ mod tests {
     fn demo_entities_never_reach_the_manifest() {
         let mut scene = engine_scene();
         let demo_paths = [
-            "[EditorBox]", "[Ball]", "[MatComparison]", "[MatVal]", "[MatValLabel]",
-            "[ReflectionProbe]", "[ParticleDemoLabel]", "[InteractDemo]", "[InteractDemoLabel]",
+            "[EditorBox]",
+            "[Ball]",
+            "[MatComparison]",
+            "[MatVal]",
+            "[MatValLabel]",
+            "[ReflectionProbe]",
+            "[ParticleDemoLabel]",
+            "[InteractDemo]",
+            "[InteractDemoLabel]",
         ];
         let mut entities = Vec::new();
         for (index, path) in demo_paths.iter().enumerate() {
@@ -1401,7 +1411,11 @@ mod tests {
             game_style: "first-person",
         });
         let saved = manifest["scenes"][0]["entities"].as_array().unwrap();
-        assert_eq!(saved.len(), 1, "solo la entidad del usuario debe persistirse");
+        assert_eq!(
+            saved.len(),
+            1,
+            "solo la entidad del usuario debe persistirse"
+        );
         assert_eq!(saved[0]["model"], json!("model_rock"));
     }
 
@@ -1440,7 +1454,11 @@ mod tests {
         });
         let particles = &manifest["scenes"][0]["world"]["particles"];
         let saved = particles["emitters"].as_array().unwrap();
-        assert_eq!(saved.len(), 1, "solo el emisor del usuario debe persistirse");
+        assert_eq!(
+            saved.len(),
+            1,
+            "solo el emisor del usuario debe persistirse"
+        );
         assert_eq!(saved[0]["id"], json!(9001));
         assert!(particles["weather"].is_object());
     }
@@ -1489,7 +1507,11 @@ mod tests {
             game_style: "first-person",
         });
         let saved = manifest["interactionTooltips"].as_array().unwrap();
-        assert_eq!(saved.len(), 1, "solo el tooltip del usuario debe persistirse");
+        assert_eq!(
+            saved.len(),
+            1,
+            "solo el tooltip del usuario debe persistirse"
+        );
         assert_eq!(saved[0]["id"], json!("my_tooltip"));
     }
 }

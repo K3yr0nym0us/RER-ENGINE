@@ -196,13 +196,7 @@ impl EmitterGpu {
             seen: 0,
         };
         entry.reset_host_state()?;
-        entry.write_sets(
-            device,
-            depth_view,
-            depth_sampler,
-            volume_ubos,
-            atomic_views,
-        )?;
+        entry.write_sets(device, depth_view, depth_sampler, volume_ubos, atomic_views)?;
         Ok(entry)
     }
 
@@ -1646,10 +1640,7 @@ mod budget_tests {
     fn descriptor_pool_covers_volumetric_bindings() {
         let emitters = MAX_SETS / 2;
         assert!(MAX_SETS * 2 >= emitters * 2 * 2, "UBOs insuficientes");
-        assert!(
-            MAX_SETS + 6 >= emitters * 2 + 6,
-            "samplers insuficientes"
-        );
+        assert!(MAX_SETS + 6 >= emitters * 2 + 6, "samplers insuficientes");
         assert!(MAX_SETS >= emitters * 2, "storage images insuficientes");
     }
 

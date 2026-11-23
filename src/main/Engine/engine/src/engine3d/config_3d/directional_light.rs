@@ -185,10 +185,7 @@ pub(crate) fn sun_color_for_phase(phase: f32, bounds: &WorldBounds3D) -> Vec3 {
 /// Fase [0,1) correspondiente a una dirección orbital (inversa de `sun_cycle_direction`).
 fn sun_phase_from_direction(dir: Vec3, cardinal: SunRiseCardinal) -> f32 {
     let local = rotate_y(dir, -cardinal.yaw_radians());
-    local.y
-        .atan2(local.x)
-        .rem_euclid(std::f32::consts::TAU)
-        / std::f32::consts::TAU
+    local.y.atan2(local.x).rem_euclid(std::f32::consts::TAU) / std::f32::consts::TAU
 }
 
 /// Posición del sol en su órbita para unos límites y una fase dados.
@@ -234,14 +231,7 @@ fn light_view_proj_from(
     let dir = dir.normalize();
     let eye = center + dir * extent * 2.5;
     let view = Mat4::look_at_rh(eye, center, up);
-    let proj = Mat4::orthographic_rh(
-        -extent,
-        extent,
-        -extent,
-        extent,
-        0.5,
-        extent * 8.0,
-    );
+    let proj = Mat4::orthographic_rh(-extent, extent, -extent, extent, 0.5, extent * 8.0);
     let mut m = (proj * view).to_cols_array_2d();
 
     // Texel snapping: anclar el centro del SUELO (donde se ven las sombras) a un
@@ -430,7 +420,8 @@ impl State {
     }
 
     pub(crate) fn scene_light_color(&self) -> [f32; 4] {
-        let shadows_enabled = if self.shadow_tier == crate::engine3d::config_3d::shadow_graphics::ShadowTier::Off
+        let shadows_enabled = if self.shadow_tier
+            == crate::engine3d::config_3d::shadow_graphics::ShadowTier::Off
             || !self.sun_above_horizon()
         {
             0.0
@@ -497,11 +488,7 @@ impl State {
     pub(crate) fn day_factor(&self) -> f32 {
         let distance = self.sun_orbit_distance();
         day_factor(
-            sun_world_y(
-                &self.world_bounds_3d,
-                self.directional_light_dir,
-                distance,
-            ),
+            sun_world_y(&self.world_bounds_3d, self.directional_light_dir, distance),
             distance,
         )
     }
@@ -756,7 +743,9 @@ impl State {
         self.apply_sun_icon_visual(id);
         // La pelota usa la misma esfera, pero con su propia textura de balón.
         if let Some(tex_idx) = self.ensure_football_texture()
-            && let Some(mc) = self.world.get_mut::<crate::engine3d::ecs::MeshComponent>(id)
+            && let Some(mc) = self
+                .world
+                .get_mut::<crate::engine3d::ecs::MeshComponent>(id)
         {
             mc.tex_idx = tex_idx;
         }
@@ -1013,8 +1002,7 @@ mod tests {
                 (bounds.south - bounds.north) * 0.5,
             );
             let distance = sun_orbit_distance_from(&bounds);
-            let lowest_y = center.y
-                + sun_cycle_direction(0.75, SunRiseCardinal::East).y * distance;
+            let lowest_y = center.y + sun_cycle_direction(0.75, SunRiseCardinal::East).y * distance;
             assert!(
                 lowest_y < 0.0,
                 "el sol debe ponerse bajo el suelo (y={lowest_y:.1})"

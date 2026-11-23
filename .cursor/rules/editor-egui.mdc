@@ -1,0 +1,29 @@
+---
+description: UI del editor egui — usar el catálogo de componentes, no widgets crudos
+globs: src/main/Engine/engine/src/editor/**/*.rs
+alwaysApply: false
+---
+
+# Editor egui — componentes del proyecto
+
+Antes de pintar una vista nueva, lee `src/main/Engine/engine/src/editor/ui/components/mod.rs`.
+
+```rust
+use crate::editor::ui::components::{self as ui_kit, ModalButtonStyle};
+use crate::editor::theme;
+use egui_phosphor::regular as icons;
+```
+
+## Obligatorio
+
+- Botones: `ui_kit::modal_button` / `wide_button_click_sized` / `small_icon_button_click` / `icon_action` / `pill_button_click`.
+- Switch: `ui_kit::switch_value`. Slider: `ui_kit::range_slider`. Combo: `ui_kit::combo_text` / `combo_u32` / `combo_string`.
+- Texto: `ui_kit::text_field`, `modal_title`, `body_text`, `caption`, `hint`, `tiny`.
+- Acordeón: `ui_kit::accordion_item` + `accordion_header`. Modal nativa: `ui_kit::modal_panel`.
+- Colores: `theme::*`. Iconos: `egui_phosphor::regular`.
+
+## Prohibido en vistas nuevas
+
+`ui.button`, `egui::Button`, `Checkbox`, `Slider`, `RadioButton`, `CollapsingHeader`, `ui.heading`, `Color32::from_rgb` nuevo, `egui::Window` anidado (usa `NativeModal` o `egui::Modal`).
+
+Si falta un control, **añádelo en `widgets.rs` y expórtalo en `components`**. No copies el estilo a la vista.

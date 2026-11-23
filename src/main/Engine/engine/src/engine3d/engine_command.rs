@@ -576,5 +576,4 @@ mod tests {
             other => panic!("expected Only3d SetReflectionDebugView, got {other:?}"),
         }
     }
-
 }

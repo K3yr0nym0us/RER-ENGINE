@@ -4,15 +4,13 @@
 //! por defecto (`HUD-N` / `UI Menu-N`); esta ventana lo deja editar. El editor
 //! nativo genera el id, registra la pantalla y sincroniza el motor sin React.
 
-use egui::RichText;
 use egui_phosphor::regular as icons;
 
 use crate::editor::app::EditorApp;
 use crate::editor::i18n::tr;
-use crate::editor::theme;
 use crate::editor::ui_screens::UiScreenEntry;
 
-use super::widgets;
+use super::components::{self as ui_kit, ModalButtonStyle};
 
 /// Dibuja el cuerpo en la ventana modal externa y aplica la creación.
 pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
@@ -25,42 +23,34 @@ pub(crate) fn show_in_window(ui: &mut egui::Ui, app: &mut EditorApp) {
     let is_player = scope == "player";
     let mut confirm = false;
 
-    egui::Frame::new()
-        .fill(theme::PANEL_BG)
-        .inner_margin(egui::Margin::same(16))
-        .show(ui, |ui| {
-            ui.label(
-                RichText::new(tr(locale, "Nombre de la pantalla", "Screen name"))
-                    .size(12.0)
-                    .strong()
-                    .color(theme::TEXT_MUTED),
-            );
-            ui.add_space(4.0);
-            ui.add(
-                egui::TextEdit::singleline(&mut draft.name)
-                    .desired_width(f32::INFINITY)
-                    .hint_text(tr(locale, "Nombre de la pantalla", "Screen name")),
-            );
-            ui.add_space(10.0);
-            ui.separator();
-            ui.add_space(8.0);
+    ui_kit::modal_panel(ui, |ui| {
+        ui_kit::caption(ui, tr(locale, "Nombre de la pantalla", "Screen name"));
+        ui.add_space(4.0);
+        ui_kit::text_field(
+            ui,
+            &mut draft.name,
+            tr(locale, "Nombre de la pantalla", "Screen name"),
+        );
+        ui.add_space(10.0);
+        ui.separator();
+        ui.add_space(8.0);
 
-            ui.horizontal(|ui| {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let can_create = !draft.name.trim().is_empty();
-                    if widgets::modal_button(
-                        ui,
-                        icons::PLUS,
-                        tr(locale, "Crear pantalla", "Create screen"),
-                        widgets::ModalButtonStyle::Primary,
-                        140.0,
-                        can_create,
-                    ) {
-                        confirm = true;
-                    }
-                });
+        ui.horizontal(|ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let can_create = !draft.name.trim().is_empty();
+                if ui_kit::modal_button(
+                    ui,
+                    icons::PLUS,
+                    tr(locale, "Crear pantalla", "Create screen"),
+                    ModalButtonStyle::Primary,
+                    140.0,
+                    can_create,
+                ) {
+                    confirm = true;
+                }
             });
         });
+    });
 
     let submitted = if confirm {
         let trimmed = draft.name.trim();

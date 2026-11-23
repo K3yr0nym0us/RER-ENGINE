@@ -382,12 +382,19 @@ impl State {
             let refresh_now = self
                 .rt_skinned_tick
                 .is_multiple_of(SKINNED_TRACE_REFRESH_FRAMES)
-                || self.rt_skinned_triangles.is_empty();
+                || (self.vulkan.hw_rt() && self.rt_skinned_materials.is_empty())
+                || (!self.vulkan.hw_rt() && self.rt_skinned_triangles.is_empty());
             if refresh_now {
                 let targets = collect_skinned_trace_targets(self, &frustum_vp, &probe_fields);
-                let (triangles, materials) = build_skinned_trace(self, &targets);
-                self.rt_skinned_triangles = triangles;
-                self.rt_skinned_materials = materials;
+                if self.vulkan.hw_rt() {
+                    // HW RT usa el BLAS de posiciones poseadas; no deforma triángulos para el BVH.
+                    self.rt_skinned_triangles.clear();
+                    self.rt_skinned_materials = skinned_trace_materials(self, &targets);
+                } else {
+                    let (triangles, materials) = build_skinned_trace(self, &targets);
+                    self.rt_skinned_triangles = triangles;
+                    self.rt_skinned_materials = materials;
+                }
                 let rebuilt = refresh_skinned_rt_geometry(self, &targets);
                 self.rt_skinned_rebuild = rebuilt;
             }
@@ -792,12 +799,22 @@ impl State {
             });
         }
 
-        let mut hud_scratch = self.player_ui_glyph_instances.clone();
-        // El prompt de interacción se ancla a la entidad mirada y se reconstruye cada frame.
-        hud_scratch.extend_from_slice(&self.interaction_prompt_glyph_instances);
-        let hud_instance_count = hud_scratch.len() as u32;
-        let hud_ready = hud_instance_count > 0;
-        let hud_instances: &[u8] = bytemuck::cast_slice(&hud_scratch);
+        let prompt_glyphs = &self.interaction_prompt_glyph_instances;
+        let hud_ready = !self.player_ui_glyph_instances.is_empty() || !prompt_glyphs.is_empty();
+        let mut hud_scratch = Vec::new();
+        let hud_instances: &[u8] = if prompt_glyphs.is_empty() {
+            bytemuck::cast_slice(&self.player_ui_glyph_instances)
+        } else {
+            hud_scratch.reserve(self.player_ui_glyph_instances.len() + prompt_glyphs.len());
+            hud_scratch.extend_from_slice(&self.player_ui_glyph_instances);
+            hud_scratch.extend_from_slice(prompt_glyphs);
+            bytemuck::cast_slice(&hud_scratch)
+        };
+        let hud_instance_count = if prompt_glyphs.is_empty() {
+            self.player_ui_glyph_instances.len() as u32
+        } else {
+            hud_scratch.len() as u32
+        };
         let hud_vertex = hud_ready.then_some(&self.hud_quad_mesh.vertex_buffer);
         let hud_index = hud_ready.then_some(&self.hud_quad_mesh.index_buffer);
         let hud_index_count = if hud_ready {
@@ -816,7 +833,16 @@ impl State {
         } else {
             Vec::new()
         };
-        let rt_blob: Option<Arc<RtSceneBlob>> = if raytracing {
+        // Con RT por hardware el TLAS ya tiene las instancias: no hace falta deformar
+        // todos los triángulos ni reconstruir el BVH software cada vez que algo se mueve.
+        let hw_rt = raytracing && self.vulkan.hw_rt();
+        let packed_materials: Vec<RtMaterialGpu> = if hw_rt {
+            self.rt_scene_cache = None;
+            pack_rt_materials(self, &rt_records)
+        } else {
+            Vec::new()
+        };
+        let rt_blob: Option<Arc<RtSceneBlob>> = if raytracing && !hw_rt {
             let hash = rt_scene_hash(self, &rt_records);
             let cached = self
                 .rt_scene_cache
@@ -830,8 +856,10 @@ impl State {
                     Some(blob)
                 }
             }
-        } else {
+        } else if !raytracing {
             self.rt_scene_cache = None;
+            None
+        } else {
             None
         };
 
@@ -883,6 +911,7 @@ impl State {
         }
 
         let empty: &[u8] = &[];
+        let packed_material_bytes: &[u8] = bytemuck::cast_slice(&packed_materials);
         let (bvh_nodes, bvh_node_count, bvh_tris, bvh_tri_count, materials, material_count) =
             match rt_blob.as_ref() {
                 Some(blob) => (
@@ -892,6 +921,14 @@ impl State {
                     blob.tri_count,
                     blob.materials.as_slice(),
                     blob.material_count,
+                ),
+                None if hw_rt => (
+                    empty,
+                    0,
+                    empty,
+                    0,
+                    packed_material_bytes,
+                    packed_materials.len() as u32,
                 ),
                 None => (empty, 0, empty, 0, empty, 0),
             };

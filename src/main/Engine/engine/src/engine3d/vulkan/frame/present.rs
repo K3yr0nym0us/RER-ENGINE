@@ -45,7 +45,11 @@ impl FrameRenderer {
             input.ssr_preset.binary_search_steps as f32,
             input.ssr_preset.max_distance,
             input.ssr_preset.thickness,
-            if input.ssr_preset.adaptive_thickness { 1.0 } else { 0.0 },
+            if input.ssr_preset.adaptive_thickness {
+                1.0
+            } else {
+                0.0
+            },
             input.ssr_preset.roughness_support,
             input.ssr_preset.edge_fade,
             0.0f32,

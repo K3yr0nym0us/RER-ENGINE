@@ -110,13 +110,11 @@ pub(crate) struct PropEntity {
 }
 
 /// Config de interacción (tooltip) leída del meta guardado.
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct PropInteractable {
     pub enabled: bool,
     pub tooltip_id: Option<String>,
 }
-
 
 impl PropInteractable {
     pub(crate) fn from_value(value: &Value) -> Self {

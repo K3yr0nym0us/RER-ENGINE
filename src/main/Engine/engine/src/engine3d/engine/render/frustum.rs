@@ -102,11 +102,8 @@ mod tests {
         let margin = 30.0;
 
         // Cámara A: mira al caster; entra en el conjunto de casters.
-        let cam_looking_at_it = proj * glam::Mat4::look_at_rh(
-            GlamVec3::ZERO,
-            GlamVec3::NEG_Z,
-            GlamVec3::Y,
-        );
+        let cam_looking_at_it =
+            proj * glam::Mat4::look_at_rh(GlamVec3::ZERO, GlamVec3::NEG_Z, GlamVec3::Y);
         assert!(is_shadow_caster_visible(
             &cam_looking_at_it,
             center,
@@ -117,11 +114,12 @@ mod tests {
 
         // Cámara B: mismo sol y mismo objeto, pero mirando hacia el lado contrario.
         // El caster queda fuera del frustum incluso expandido → sale del shadow map.
-        let cam_looking_away = proj * glam::Mat4::look_at_rh(
-            GlamVec3::new(0.0, 0.0, 200.0),
-            GlamVec3::new(0.0, 0.0, 201.0),
-            GlamVec3::Y,
-        );
+        let cam_looking_away = proj
+            * glam::Mat4::look_at_rh(
+                GlamVec3::new(0.0, 0.0, 200.0),
+                GlamVec3::new(0.0, 0.0, 201.0),
+                GlamVec3::Y,
+            );
         assert!(!is_shadow_caster_visible(
             &cam_looking_away,
             center,

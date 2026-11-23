@@ -84,7 +84,7 @@ impl FrameRenderer {
             let view = self.targets.background.view;
             self.dispatch_bvh(slot, input, 0, view, device, cmd)?;
         } else if self.gpu.hw_rt() {
-            self.rebuild_tlas(input)?;
+            self.rebuild_tlas(slot, input, cmd)?;
             let view = self.targets.background.view;
             self.dispatch_rays(slot, input, 0, view, device, cmd)?;
         } else {
@@ -94,23 +94,33 @@ impl FrameRenderer {
         Ok(())
     }
 
-    pub(super) fn rebuild_tlas(&mut self, input: &FrameInput<'_>) -> Result<(), VulkanError> {
+    pub(super) fn rebuild_tlas(
+        &mut self,
+        slot: usize,
+        input: &FrameInput<'_>,
+        cmd: vk::CommandBuffer,
+    ) -> Result<(), VulkanError> {
         if !self.gpu.hw_rt() {
             return Ok(());
         }
         let fast_trace = input.rtx.fast_trace;
         if self.blas_fast_trace != fast_trace {
-            // Los BLAS se reconstruyen con los flags del nuevo tier.
+            // Los BLAS se reconstruyen con los flags del nuevo tier; el TLAS también.
             self.blas_cache.clear();
+            for tlas in &mut self.tlas {
+                tlas.invalidate();
+            }
             self.blas_fast_trace = fast_trace;
         }
         let mut instances = Vec::with_capacity(input.rt.len());
         let mut geos = Vec::with_capacity(input.rt.len());
         let mut materials = Vec::with_capacity(input.rt.len());
         let stride = std::mem::size_of::<RtMaterialGpu>();
+        let mut force_build = false;
         for batch in input.rt.iter() {
             if batch.rebuild {
                 self.blas_cache.remove(&batch.key);
+                force_build = true;
             }
             if !self.blas_cache.contains_key(&batch.key) && batch.index_count >= 3 {
                 let blas = accel::build_blas(
@@ -125,6 +135,7 @@ impl FrameRenderer {
                     fast_trace,
                 )?;
                 self.blas_cache.insert(batch.key, blas);
+                force_build = true;
             }
             if let Some(blas) = self.blas_cache.get(&batch.key) {
                 instances.push(TlasInstance {
@@ -154,8 +165,15 @@ impl FrameRenderer {
         )?;
         self.geos.write(0, &geos)?;
         self.materials.write(0, &materials)?;
-        self.tlas = Some(accel::build_tlas(&self.gpu, &instances, fast_trace)?);
-        Ok(())
+        let tlas_slot = slot.min(FRAMES - 1);
+        accel::record_tlas(
+            &self.gpu,
+            &mut self.tlas[tlas_slot],
+            &instances,
+            fast_trace,
+            force_build,
+            cmd,
+        )
     }
 
     pub(super) fn dispatch_rays(
@@ -167,7 +185,7 @@ impl FrameRenderer {
         device: &ash::Device,
         cmd: vk::CommandBuffer,
     ) -> Result<(), VulkanError> {
-        let Some(tlas_handle) = self.tlas.as_ref().map(|tlas| tlas.handle) else {
+        let Some(tlas_handle) = self.tlas[slot.min(FRAMES - 1)].handle() else {
             return Ok(());
         };
         let Some(rt) = self.gpu.rt_pipeline().cloned() else {

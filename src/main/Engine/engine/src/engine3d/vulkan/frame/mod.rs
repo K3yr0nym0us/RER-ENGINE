@@ -9,7 +9,7 @@ use gpu_allocator::MemoryLocation;
 use crate::engine3d::bvh::RtMaterialGpu;
 use crate::engine3d::config_3d::world_bounds::SkyUniform;
 
-use super::accel::{self, Accel, BlasInput, TlasInstance};
+use super::accel::{self, Accel, BlasInput, TlasInstance, TlasSlot};
 use super::error::{VulkanError, vk_error};
 use super::select::align_up;
 use crate::engine3d::vulkan::gpu::{FrameTarget, GpuBuffer, GpuImage, SharedGpu};
@@ -302,7 +302,8 @@ pub struct FrameRenderer {
     sbt_stride: u32,
     sbt_address: u64,
     blas_cache: HashMap<u64, Accel>,
-    tlas: Option<Accel>,
+    /// Un TLAS por slot en vuelo: el fence del slot ya esperó, así se puede UPDATE in-place.
+    tlas: [TlasSlot; FRAMES],
     history_slot: usize,
     taa_frame: u32,
     taa_history_valid: bool,
@@ -934,7 +935,7 @@ impl FrameRenderer {
             sbt_stride,
             sbt_address,
             blas_cache: HashMap::new(),
-            tlas: None,
+            tlas: [TlasSlot::new(), TlasSlot::new()],
             history_slot: 0,
             taa_frame: 0,
             taa_history_valid: false,
@@ -1103,7 +1104,7 @@ impl FrameRenderer {
         }
         // Sombras volumétricas: la calidad la fija el tier de sombras y el pase sigue el
         // mismo interruptor que el shadow map (`shadows && sun_above_horizon`).
-        let volume_active =
+        let volume_wanted =
             input.volumetric_resolution > 0 && input.shadows && input.sun_above_horizon;
         let volume_rebound = self.volumetric.ensure(
             &self.gpu,
@@ -1122,11 +1123,13 @@ impl FrameRenderer {
             self.rewrite_scene_volume_descriptors(sampler, light_views, ubos)?;
         }
         let volume = &mut self.volumetric;
-        let casters: Vec<(u32, vk::DescriptorSet, u32)> = if volume_active {
+        let casters: Vec<(u32, vk::DescriptorSet, u32)> = if volume_wanted {
             self.particle_pool.volumetric_casters(input.particles, slot)
         } else {
             Vec::new()
         };
+        // Sin emisores de humo/niebla el compute 32³ no aporta sombra y se omite.
+        let volume_active = volume_wanted && !casters.is_empty();
         volume.update(
             slot,
             input,

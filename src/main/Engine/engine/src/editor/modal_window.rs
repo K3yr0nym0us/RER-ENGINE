@@ -22,6 +22,7 @@ use winit::window::{Window, WindowButtons, WindowId};
 
 use super::app::EditorApp;
 use super::cli::Locale;
+use super::egui_textures::{EguiTextureSync, PendingTextureOp};
 use super::theme;
 
 /// Modal mostrada en la ventana externa.
@@ -110,7 +111,8 @@ pub(crate) struct ModalWindow {
     window: Arc<Window>,
     present: PresentTarget,
     egui_renderer: Option<Renderer<DefaultAllocator>>,
-    ui_pool: vk::CommandPool,
+    textures: EguiTextureSync,
+    pending_texture_ops: Vec<PendingTextureOp>,
     egui_ctx: egui::Context,
     egui_state: egui_winit::State,
     clear: vk::ClearValue,
@@ -155,7 +157,7 @@ impl ModalWindow {
         // Windows ignora `request_inner_size` en ventanas no redimensionables,
         // así que el ancho inicial es el definitivo: se limita al 90 % del
         // editor para que la modal nunca se corte en el costado de la pantalla.
-        let scale = beside.scale_factor() as f64;
+        let scale = beside.scale_factor();
         let max_initial_width = (f64::from(beside.outer_size().width) / scale) * 0.9;
         let width = width.min(max_initial_width).max(320.0);
         // Propiedades también debe poder crecer: con `resizable=false` Windows
@@ -204,16 +206,7 @@ impl ModalWindow {
         let present =
             PresentTarget::new(gpu, window.as_ref()).map_err(|error| error.to_string())?;
         let format = present.swapchain_format();
-
-        let ui_pool = unsafe {
-            present.gpu().device().create_command_pool(
-                &vk::CommandPoolCreateInfo::default()
-                    .queue_family_index(present.gpu().queue_family_index())
-                    .flags(vk::CommandPoolCreateFlags::TRANSIENT),
-                None,
-            )
-        }
-        .map_err(|error| format!("No se pudo crear el command pool de la modal: {error:?}"))?;
+        let textures = EguiTextureSync::new(present.gpu().clone())?;
 
         let egui_renderer = Renderer::with_default_allocator(
             present.gpu().instance(),
@@ -251,7 +244,8 @@ impl ModalWindow {
             window,
             present,
             egui_renderer: Some(egui_renderer),
-            ui_pool,
+            textures,
+            pending_texture_ops: Vec::new(),
             egui_ctx,
             egui_state,
             clear: vk::ClearValue {
@@ -401,34 +395,52 @@ impl ModalWindow {
             .handle_platform_output(self.window.as_ref(), full_output.platform_output);
         self.fit_to_content(app);
 
-        let primitives = self
+        let mut primitives = self
             .egui_ctx
             .tessellate(full_output.shapes, full_output.pixels_per_point);
 
         let Some(egui_renderer) = self.egui_renderer.as_mut() else {
             return Ok(());
         };
-        for (id, deltas) in &texture_sets {
-            for delta in deltas {
-                egui_renderer
-                    .set_texture(self.present.gpu().queue(), self.ui_pool, *id, delta)
-                    .map_err(|error| {
-                        format!("No se pudieron subir texturas de la modal: {error}")
-                    })?;
-            }
-        }
 
         let frame = match self.present.begin_frame() {
             Ok(frame) => frame,
             Err(FrameAcquire::Outdated | FrameAcquire::Skip) => {
+                EguiTextureSync::stash_skipped(
+                    &mut self.pending_texture_ops,
+                    texture_sets,
+                    texture_frees,
+                );
                 let size = self.window.inner_size();
                 self.present
                     .resize(size.width, size.height)
                     .map_err(|error| error.to_string())?;
                 return Ok(());
             }
-            Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
+            Err(FrameAcquire::Fail(error)) => {
+                EguiTextureSync::stash_skipped(
+                    &mut self.pending_texture_ops,
+                    texture_sets,
+                    texture_frees,
+                );
+                return Err(error.to_string());
+            }
         };
+
+        let current_sets = texture_sets
+            .into_iter()
+            .map(|(id, deltas)| (id, deltas.into_iter().collect()))
+            .collect::<Vec<_>>();
+        self.textures
+            .apply(
+                egui_renderer,
+                frame.command,
+                frame.slot,
+                &mut self.pending_texture_ops,
+                current_sets,
+            )
+            .map_err(|error| format!("No se pudieron subir texturas de la modal: {error}"))?;
+        self.textures.remap(&mut primitives);
 
         let command = frame.command;
         let extent = frame.extent;
@@ -498,11 +510,8 @@ impl ModalWindow {
             Err(FrameAcquire::Fail(error)) => return Err(error.to_string()),
         }
 
-        for id in &texture_frees {
-            egui_renderer
-                .free_texture(*id)
-                .map_err(|error| format!("No se pudieron liberar texturas de la modal: {error}"))?;
-        }
+        let frees: Vec<_> = texture_frees.into_iter().collect();
+        self.textures.queue_frees(frame.slot, &frees);
 
         Ok(())
     }
@@ -612,11 +621,5 @@ impl Drop for ModalWindow {
             let _ = self.present.gpu().device().device_wait_idle();
         }
         self.egui_renderer.take();
-        unsafe {
-            self.present
-                .gpu()
-                .device()
-                .destroy_command_pool(self.ui_pool, None);
-        }
     }
 }

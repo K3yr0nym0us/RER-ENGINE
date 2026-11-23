@@ -319,12 +319,11 @@ impl EditorApp {
                     prev.as_ref()
                         .and_then(|meta| meta.get("animations").and_then(Value::as_array))
                         .and_then(|list| {
-                            list.iter()
-                                .find(|a| {
-                                    a.get("is_default")
-                                        .and_then(Value::as_bool)
-                                        .unwrap_or(false)
-                                })
+                            list.iter().find(|a| {
+                                a.get("is_default")
+                                    .and_then(Value::as_bool)
+                                    .unwrap_or(false)
+                            })
                         })
                         .and_then(|a| a.get("name").and_then(Value::as_str).map(str::to_string))
                 };
@@ -381,16 +380,21 @@ impl EditorApp {
                         })
                     })
                     .collect();
-                if !animations
-                    .iter()
-                    .any(|a| a.get("is_default").and_then(Value::as_bool).unwrap_or(false))
-                    && let Some(first) = animations.first_mut()
+                if !animations.iter().any(|a| {
+                    a.get("is_default")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                }) && let Some(first) = animations.first_mut()
                 {
                     first["is_default"] = json!(true);
                 }
                 let default_clip = animations
                     .iter()
-                    .find(|a| a.get("is_default").and_then(Value::as_bool).unwrap_or(false))
+                    .find(|a| {
+                        a.get("is_default")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false)
+                    })
                     .and_then(|a| a.get("name").and_then(Value::as_str).map(str::to_string));
 
                 let mut meta = prev.unwrap_or_else(|| {
@@ -414,9 +418,7 @@ impl EditorApp {
                 }
                 // El motor limpia el mapa al reenlazar el modelo: reenviamos los
                 // flags que sobrevivieron por nombre.
-                for (name, enabled) in prev_root_motion
-                    .into_iter()
-                    .filter(|(_, enabled)| *enabled)
+                for (name, enabled) in prev_root_motion.into_iter().filter(|(_, enabled)| *enabled)
                 {
                     self.send_engine(json!({
                         "cmd": "set_animation_root_motion",
@@ -647,7 +649,10 @@ mod tests {
         assert_eq!(modal.position[2].parsed(), Some(2.0));
         // El suelo lo detectó el ghost: viaja en el borrador y en el comando.
         assert_eq!(modal.ground_y.parsed(), Some(1.25));
-        assert_eq!(app.pending_engine.borrow()[0]["ground_y"].as_f64(), Some(1.25));
+        assert_eq!(
+            app.pending_engine.borrow()[0]["ground_y"].as_f64(),
+            Some(1.25)
+        );
         // El elemento ya existe en el motor y en la lista; la modal es solo
         // para ajustar sus propiedades con «Aplicar».
         assert_eq!(app.right_sidebar.particles.emitters.len(), 1);

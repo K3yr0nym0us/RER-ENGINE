@@ -182,38 +182,31 @@ pub(super) fn asset_section(
             for (category, id, cat_icon, title_es, title_en) in MODEL_CATEGORIES {
                 let cat_title = crate::editor::i18n::tr(locale, title_es, title_en);
                 sub_at(ui, open_model_category, id, cat_icon, cat_title, |ui| {
-                        if widgets::wide_button_click_sized(
-                            ui,
-                            ui.available_width(),
-                            icons::PLUS,
-                            cat_title,
-                            "",
-                            crate::editor::theme::ACCENT,
-                        ) {
-                            actions.push(LeftAction::ImportModelCategory(category));
-                        }
-                        ui.add_space(4.0);
+                    if widgets::wide_button_click_sized(
+                        ui,
+                        ui.available_width(),
+                        icons::PLUS,
+                        cat_title,
+                        "",
+                        crate::editor::theme::ACCENT,
+                    ) {
+                        actions.push(LeftAction::ImportModelCategory(category));
+                    }
+                    ui.add_space(4.0);
 
-                        let list: Vec<&crate::editor::assets::AssetEntry> = assets
-                            .assets(kind)
-                            .iter()
-                            .filter(|asset| asset.is_visible_in_scene(active_scene_id))
-                            .filter(|asset| {
-                                crate::engine3d::ipc::normalize_model_library_category(
-                                    asset.category.as_deref(),
-                                )
-                                .unwrap_or_else(|| "object".to_string())
-                                    == category
-                            })
-                            .collect();
-                        asset_rows(
-                            ui,
-                            list,
-                            kind,
-                            locale,
-                            active_scene_id,
-                            actions,
-                        );
+                    let list: Vec<&crate::editor::assets::AssetEntry> = assets
+                        .assets(kind)
+                        .iter()
+                        .filter(|asset| asset.is_visible_in_scene(active_scene_id))
+                        .filter(|asset| {
+                            crate::engine3d::ipc::normalize_model_library_category(
+                                asset.category.as_deref(),
+                            )
+                            .unwrap_or_else(|| "object".to_string())
+                                == category
+                        })
+                        .collect();
+                    asset_rows(ui, list, kind, locale, active_scene_id, actions);
                 });
             }
             return;
@@ -321,11 +314,7 @@ fn asset_rows(
                                 icons::TRASH,
                                 18.0,
                                 crate::editor::theme::DANGER,
-                                crate::editor::i18n::tr(
-                                    locale,
-                                    "Quitar recurso",
-                                    "Remove asset",
-                                ),
+                                crate::editor::i18n::tr(locale, "Quitar recurso", "Remove asset"),
                             ) {
                                 actions.push(LeftAction::OpenRemoveAsset {
                                     kind,
@@ -369,9 +358,6 @@ pub(super) fn import_label(kind: AssetKind, locale: Locale) -> &'static str {
         AssetKind::Sound => crate::editor::i18n::tr(locale, "Cargar sonido", "Load sound"),
         AssetKind::Font => crate::editor::i18n::tr(locale, "Cargar fuente", "Load font"),
         AssetKind::HudImage => crate::editor::i18n::tr(locale, "Cargar imagen", "Load image"),
-        AssetKind::Background => {
-            crate::editor::i18n::tr(locale, "Cargar fondo", "Load background")
-        }
+        AssetKind::Background => crate::editor::i18n::tr(locale, "Cargar fondo", "Load background"),
     }
 }
-
