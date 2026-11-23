@@ -73,6 +73,7 @@ arrastra ambos motores). Por eso `--all-features` **no** basta: oculta errores d
 | `yarn rust:test:engine3d` | fmt + clippy/test/build de `engine3d` + clippy/test/build del editor (motor 3D y editor) |
 | `yarn rust:test:engine2d` | fmt + clippy/test/build de `engine2d` + clippy/test/build del editor (motor 2D y editor) |
 | `yarn rust:test:worldgen` | fmt + clippy/test/build del plugin `rer-worldgen` |
+| `yarn rust:build:worldgen` / `:release` | build de `rer-worldgen` y copia a `%APPDATA%\rer-engine\plugins\world-gen` (también lo hacen `yarn dev` / `yarn start`) |
 | `yarn rust:test:all` | las tres suites completas |
 | `yarn quality:rust` | quality Rust general (`--all-features`, audit) + `rust:test:all` |
 

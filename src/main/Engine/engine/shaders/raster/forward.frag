@@ -141,7 +141,11 @@ float value_noise(vec2 p) {
 vec3 terrain_materials(vec3 n) {
     // Atlas 16×16 tiles de 64 px en una capa 1024². `v_tex.y` es el índice
     // local (0..255); inset de 0.5 px para no sangrar al tile vecino.
-    vec2 tile_uv = clamp(v_uv, 0.0, 1.0);
+    // uv.x >= 1.5: interior de cueva (mesher suma 2.0). La boca y el túnel
+    // visto desde fuera se quedan en [0, 1] y usan el splat de superficie.
+    bool cave_rock = v_uv.x >= 1.5;
+    vec2 tile_uv = cave_rock ? vec2(v_uv.x - 2.0, v_uv.y) : v_uv;
+    tile_uv = clamp(tile_uv, 0.0, 1.0);
     float tiles = 16.0;
     float tile = floor(v_tex.y + 0.5);
     float tx = mod(tile, tiles);
@@ -168,6 +172,9 @@ vec3 terrain_materials(vec3 n) {
     vec3 stone = terrain_layer(tuv, base + 4.0, vec3(0.48, 0.46, 0.44));
     vec3 snow = terrain_layer(tuv, base + 5.0, vec3(0.90, 0.92, 0.94));
     vec3 mud = terrain_layer(tuv, base + 6.0, vec3(0.10, 0.08, 0.06));
+    if (cave_rock) {
+        return stone;
+    }
 
     float slope = clamp(1.0 - n.y, 0.0, 1.0);
     float dirt_k = smoothstep(0.12, 0.38, slope);

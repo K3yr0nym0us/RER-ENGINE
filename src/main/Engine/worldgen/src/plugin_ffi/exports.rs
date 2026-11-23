@@ -131,8 +131,8 @@ pub unsafe extern "C" fn wg_chunk_status(world: *const WgWorld, cx: i32, cy: i32
         return -1;
     };
     let result = catch_unwind(AssertUnwindSafe(|| {
-        if !chunk_in_range(&world.config, cx, cy, cz) {
-            return -1;
+        if !chunk_in_range(&world.config, cx, cz) {
+            return 0;
         }
         let active = cached_active_y(world, cx, cz);
         if active.contains(&cy) { 1 } else { 0 }
@@ -166,7 +166,7 @@ pub unsafe extern "C" fn wg_mesh_chunk(
         let out = unsafe { out.as_mut() }.ok_or(Status::NullArgument)?;
         *out = WgMeshBuffers::empty();
 
-        if !chunk_in_range(&world.config, cx, cy, cz) {
+        if !chunk_in_range(&world.config, cx, cz) {
             return Err(Status::ChunkOutOfRange);
         }
 
@@ -278,7 +278,7 @@ pub unsafe extern "C" fn wg_chunk_textures(
         let out = unsafe { out.as_mut() }.ok_or(Status::NullArgument)?;
         *out = WgChunkTextures::empty();
 
-        if !chunk_in_range(&world.config, cx, 0, cz) {
+        if !chunk_in_range(&world.config, cx, cz) {
             return Err(Status::ChunkOutOfRange);
         }
 
@@ -444,14 +444,9 @@ fn cached_active_y(world: &WgWorld, cx: i32, cz: i32) -> Vec<i32> {
     active
 }
 
-fn chunk_in_range(config: &WorldGenConfig, cx: i32, cy: i32, cz: i32) -> bool {
+fn chunk_in_range(config: &WorldGenConfig, cx: i32, cz: i32) -> bool {
     let (chunks_x, chunks_z) = config.chunk_count_xz(CHUNK_SIZE);
-    cx >= 0
-        && cz >= 0
-        && (cx as u32) < chunks_x
-        && (cz as u32) < chunks_z
-        && cy >= 0
-        && (cy as u32) <= config.max_chunk_y(CHUNK_SIZE)
+    cx >= 0 && cz >= 0 && (cx as u32) < chunks_x && (cz as u32) < chunks_z
 }
 
 fn panic_message(panic: &Box<dyn std::any::Any + Send>) -> String {

@@ -24,7 +24,7 @@ pub fn size_to_radius(size: u32) -> f64 {
 }
 
 pub fn height_for_radius(radius: f64) -> u32 {
-    (radius * 0.55).clamp(48.0, 256.0).round() as u32
+    (radius * 0.55).clamp(48.0, 640.0).round() as u32
 }
 
 pub fn max_biome_slots(radius: f64) -> usize {
@@ -87,15 +87,15 @@ fn feature_sizes(radius: f64) -> serde_json::Map<String, Value> {
         json!({
             "minSize": round(radius * 0.10), "maxSize": round(radius * 0.22),
             "minSeparation": round(radius * 0.62),
-            "maxHeight": round((radius * 0.22).min(64.0)), "sharpness": 1.2,
+            "maxHeight": round((radius * 0.22).min(64.0)), "sharpness": 1.8,
         }),
     );
     map.insert(
         "hills".into(),
         json!({
-            "minSize": round(radius * 0.08), "maxSize": round(radius * 0.22),
+            "minSize": round(radius * 0.06), "maxSize": round(radius * 0.12),
             "minSeparation": round(radius * 0.28),
-            "maxHeight": round((radius * 0.12).min(24.0)),
+            "maxHeight": round((radius * 0.035).min(12.0)),
         }),
     );
     map.insert(
@@ -132,7 +132,7 @@ fn feature_sizes(radius: f64) -> serde_json::Map<String, Value> {
         json!({
             "lengthMin": round((radius * 0.45 * 0.45).max(20.0)),
             "lengthMax": round((radius * 1.5).max(40.0)),
-            "width": 4, "depth": 3,
+            "width": 8, "depth": 1.8,
         }),
     );
     map

@@ -1362,6 +1362,12 @@ impl EditorApplication {
             return;
         }
         match event {
+            WindowEvent::Occluded(occluded) => {
+                window.set_occluded(occluded);
+                if !occluded {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::Resized(size) => {
                 if let Err(error) = window.resize(size) {
                     log::error!("[editor] ventana selector modelos: {error}");
@@ -1420,6 +1426,12 @@ impl EditorApplication {
             }
 
             match event {
+                WindowEvent::Occluded(occluded) => {
+                    modal.set_occluded(occluded);
+                    if !occluded {
+                        modal.request_redraw();
+                    }
+                }
                 WindowEvent::Resized(size) => {
                     if let Err(error) = modal.resize(size) {
                         log::error!("[editor] ventana modal: {error}");

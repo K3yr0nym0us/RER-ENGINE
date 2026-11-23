@@ -101,10 +101,12 @@ pesos RGBA). Capa 0 del array = checker del editor; Grass no puede usarla.
    y un mundo ya generado: el motor 3D normal no genera ni recorta terreno.
 
 Instalación local: `%APPDATA%\rer-engine\plugins\world-gen\` con
-`rer_worldgen.dll` y la carpeta `terrain/`. Tras cambiar el crate,
-`cargo build --release -p rer-worldgen` y copiar DLL + texturas (el editor
-no debe tener la DLL cargada). Un cambio de shader/host GPU pide reiniciar
-`yarn dev`. No reinstalar el plugin desde el catálogo para una DLL local.
+`rer_worldgen.dll` y la carpeta `terrain/`. `yarn dev` y `yarn start`
+reconstruyen el crate y copian DLL + texturas ahí (debug / release según
+el perfil). A mano: `yarn rust:build:worldgen` o
+`yarn rust:build:worldgen:release`. El editor no debe tener la DLL cargada
+durante la copia. Un cambio de shader/host GPU pide reiniciar `yarn dev`.
+No reinstalar el plugin desde el catálogo para una DLL local.
 
 Generar el mundo es **CPU** (densidad, mesh, splat) en el hilo `rer-worldgen`.
 El tick del engine solo sube GPU. Eso es normal.

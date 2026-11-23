@@ -20,6 +20,8 @@ const SITE_QUERY_PAD: f32 = 6.0;
 const CARVE_CELL: i32 = 8;
 /// Cota mínima del lecho de un río (metros). El volumen empieza en y = 0.
 const RIVER_BED_MIN_Y: f32 = 0.25;
+/// Las orillas se tallan más anchas que el agua para no dejar un foso a plomo.
+const RIVER_BANK_SCALE: f32 = 2.45;
 
 /// Índice espacial de sitios de features (montañas, colinas, valles, llanuras,
 /// acantilados, lagos).
@@ -77,13 +79,12 @@ pub(crate) enum CarveShape {
     },
     /// Sala subterránea (esfera con achatamiento vertical 1.25).
     Room { center: Vec3, radius: f32 },
-    /// Cauce de río: cápsula XZ con superficie de referencia.
+    /// Cauce de río: cápsula XZ; la superficie se interpola entre `a.y` y `b.y`.
     River {
         a: Vec3,
         b: Vec3,
         width: f32,
         depth: f32,
-        surface_y: f32,
     },
     /// Formación rocosa (bulto aditivo: overhangs de acantilados).
     Rock {
@@ -211,24 +212,20 @@ impl CarveIndex {
                         carve = strength;
                     }
                 }
-                CarveShape::River {
-                    a,
-                    b,
-                    width,
-                    depth,
-                    surface_y,
-                } => {
+                CarveShape::River { a, b, width, depth } => {
                     let d = horizontal_segment_distance(p, *a, *b);
-                    if d >= *width {
+                    let bank = *width * RIVER_BANK_SCALE;
+                    if d >= bank {
                         continue;
                     }
-                    // Hermite: pendiente 0 en el centro y en la orilla. El
-                    // perfil √ dejaba un acantilado en el banco incluso con
-                    // voxel pequeño.
-                    let u = (d / width).clamp(0.0, 1.0);
-                    let profile = 1.0 - smoothstep(0.0, 1.0, u);
-                    // Solo talla cerca de la superficie del propio cauce.
-                    let gate = 1.0 - smoothstep(surface_y - 0.5, surface_y + 0.6, y);
+                    // Valle en V suavizado sobre un banco más ancho que el agua.
+                    // El Hermite anterior dejaba un foso de pala (fondo plano
+                    // y bajada a plomo). La superficie sigue la pendiente del
+                    // tramo, no el mínimo de los extremos.
+                    let u = (d / bank).clamp(0.0, 1.0);
+                    let profile = (1.0 - u).powf(1.35);
+                    let surface_y = segment_point_y(p, *a, *b);
+                    let gate = 1.0 - smoothstep(surface_y - 0.35, surface_y + 0.85, y);
                     // El lecho no llega a y = 0: un río sobre un lago ya
                     // rebajado abriría el fondo del volumen (sin chunk debajo).
                     let max_cut = (surface_h - RIVER_BED_MIN_Y).max(0.0);
@@ -301,7 +298,6 @@ fn push_river(shapes: &mut Vec<CarveShape>, river: &RiverPath) {
             b: Vec3::new(b_xz.x, b_h, b_xz.y),
             width: river.width,
             depth: river.depth,
-            surface_y: a_h.min(b_h),
         });
     }
 }
@@ -342,7 +338,7 @@ fn insert_shape(buckets: &mut HashMap<(i32, i32), Vec<u32>>, shape: &CarveShape,
             (*center, *radius)
         }
         CarveShape::River { a, b, width, .. } => {
-            let reach = a.distance(*b) * 0.5 + width.max(4.0);
+            let reach = a.distance(*b) * 0.5 + (*width * RIVER_BANK_SCALE).max(4.0);
             (
                 Vec3::new((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5),
                 reach,

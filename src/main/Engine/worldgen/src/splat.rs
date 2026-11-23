@@ -5,18 +5,19 @@
 //!   el shader de terreno mezcla con Grass, Stone, Sand y Snow.
 //!   Tierra y arcilla salen de la hierba según la pendiente y parches.
 //!   El vaso de un lago y el cauce de un río dejan el resto (`1 - RGBAsuma`)
-//!   para `Mud.jpg`. El recorrido de una cueva pinta `Stone.jpg` (canal G).
+//!   para `Mud.jpg`. El interior de una cueva no se pinta aquí (el splat es
+//!   2D por columna): el mesher marca esos vértices y el shader usa `Stone.jpg`.
 //! - **Albedo de preview** (RGBA): color plano sintetizado de los pesos con la
 //!   paleta, para que el engine lo suba hoy como capa de textura del chunk y el
 //!   terreno se vea por biomas sin esperar el shader de splat.
 
-use glam::{Vec2, Vec3};
+use glam::Vec2;
 
 use crate::biomes::{Biome, BiomeMap};
 use crate::chunks::CHUNK_SIZE;
 use crate::field::spatial::SiteIndex;
 use crate::field::{DensityField, smoothstep};
-use crate::planner::{CaveSystem, FeatureKind, RiverPath};
+use crate::planner::{FeatureKind, RiverPath};
 
 /// Resolución del splat por chunk (texels por lado, lod 0).
 pub const SPLAT_DIM: u32 = 64;
@@ -66,7 +67,6 @@ pub struct SplatContext<'a> {
     biomes: &'a BiomeMap,
     sites: &'a SiteIndex,
     rivers: &'a [RiverPath],
-    caves: &'a [CaveSystem],
     /// Altura del mundo (para líneas de nieve/roca por altitud).
     world_max_y: f32,
     /// Tamaño de voxel del mundo (ancho real de chunk = CHUNK_SIZE * voxel).
@@ -88,7 +88,6 @@ impl<'a> SplatContext<'a> {
             biomes,
             sites: field.sites(),
             rivers: field.plan().rivers.as_slice(),
-            caves: field.plan().caves.as_slice(),
             world_max_y,
             voxel_size,
         }
@@ -142,20 +141,16 @@ impl<'a> SplatContext<'a> {
             }
         }
         mud = mud.max(river_bed_mud(self.rivers, x, z));
-        let cave = cave_stone(self.caves, x, z);
         // Volcánico: roca oscura (roca + algo de arena, ya sumada arriba).
-        rock = rock.max(volcanic * 0.75).max(cave);
+        // La boca y el túnel visto desde fuera conservan el bioma de superficie;
+        // el interior de la cueva se marca en el mesher, no en este splat 2D.
+        rock = rock.max(volcanic * 0.75);
         // Sobre la línea de nieve la nieve cubre la roca; solo resbala en
         // paredes casi verticales. Las cimas de los mundos pequeños pasan de
         // 24°, y con el umbral de la roca quedaban sin nieve.
         snow *= 1.0 - smoothstep(48.0, 64.0, slope_deg) * 0.85;
-        if cave < 0.5 {
-            rock *= 1.0 - snow * 0.8;
-        }
-        snow *= 1.0 - cave;
+        rock *= 1.0 - snow * 0.8;
         sand *= 1.0 - rock;
-        // El recorrido de cueva es piedra (`Stone.jpg`), no lodo.
-        mud *= 1.0 - cave;
 
         let keep = (1.0 - mud).max(0.0);
         let mut grass = (1.0 - rock - snow - sand).max(0.0);
@@ -234,37 +229,6 @@ pub fn chunk_splat(
         }
     }
     (splat, albedo, dim)
-}
-
-fn cave_stone(caves: &[CaveSystem], x: f32, z: f32) -> f32 {
-    let point = Vec2::new(x, z);
-    let mut stone = 0.0f32;
-    for cave in caves {
-        for segment in &cave.segments {
-            let dist = segment_xz_distance(point, segment.a, segment.b);
-            let reach = segment.radius.max(1.2) + 0.8;
-            stone = stone.max(1.0 - smoothstep(reach * 0.45, reach, dist));
-        }
-        for room in &cave.rooms {
-            let dist = (point - Vec2::new(room.center.x, room.center.z)).length();
-            let reach = room.radius.max(1.5) + 0.6;
-            stone = stone.max(1.0 - smoothstep(reach * 0.4, reach, dist));
-        }
-    }
-    stone
-}
-
-fn segment_xz_distance(point: Vec2, a: Vec3, b: Vec3) -> f32 {
-    let a2 = Vec2::new(a.x, a.z);
-    let b2 = Vec2::new(b.x, b.z);
-    let ab = b2 - a2;
-    let len2 = ab.length_squared();
-    let t = if len2 <= f32::EPSILON {
-        0.0
-    } else {
-        ((point - a2).dot(ab) / len2).clamp(0.0, 1.0)
-    };
-    (a2 + ab * t - point).length()
 }
 
 fn river_bed_mud(rivers: &[RiverPath], x: f32, z: f32) -> f32 {

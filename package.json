@@ -31,6 +31,8 @@
     "rust:build:editor": "node ./scripts/build-rust.mjs debug editor",
     "rust:build:release": "node ./scripts/build-rust.mjs release all",
     "rust:build:editor:release": "node ./scripts/build-rust.mjs release editor",
+    "rust:build:worldgen": "node ./scripts/install-worldgen-dev.mjs debug",
+    "rust:build:worldgen:release": "node ./scripts/install-worldgen-dev.mjs release",
     "rust:clean": "cargo clean --manifest-path src/main/Engine/Cargo.toml",
     "rust:clean:dev": "cargo clean --manifest-path src/main/Engine/Cargo.toml --profile dev",
     "rust:clean:release": "cargo clean --manifest-path src/main/Engine/Cargo.toml --profile release",

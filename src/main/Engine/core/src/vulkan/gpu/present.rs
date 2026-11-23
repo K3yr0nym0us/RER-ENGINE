@@ -1,7 +1,9 @@
 //! Superficie y swapchain extra sobre el mismo `SharedGpu`.
 //!
-//! El editor usa esto para ventanas nativas secundarias (p. ej. el editor de
-//! emisores): no se crea otro device. El `Drop` destruye solo esta superficie.
+//! El editor usa esto para ventanas nativas secundarias (modales): no se crea
+//! otro device. El present no usa FIFO ni `device_wait_idle`: esa combinación
+//! congelaba el motor al minimizar o desenfocar la modal. El `Drop` destruye
+//! solo esta superficie.
 
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -11,10 +13,14 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle};
 use winit::window::Window;
 
 use super::super::error::{VulkanError, vk_error};
-use super::context::serialise_frames;
 use super::frame::{FrameSync, create_frames};
 use super::swapchain::{SwapchainState, create_swapchain};
 use super::{FRAMES_IN_FLIGHT, FrameAcquire, FrameTarget, SharedGpu};
+
+/// Tiempo máximo para el fence / `acquire` de una ventana extra. `u64::MAX` bloquea el
+/// event loop entero (editor + motor) si DWM no completa el present de una surface
+/// minimizada u ocluida.
+const AUX_WAIT_TIMEOUT_NS: u64 = 8_000_000;
 
 pub struct PresentTarget {
     gpu: SharedGpu,
@@ -70,7 +76,9 @@ impl PresentTarget {
             surface,
             size.width.max(1),
             size.height.max(1),
-            true,
+            // MAILBOX/IMMEDIATE: un FIFO extra en la misma cola que el editor se
+            // queda esperando el vblank de una surface en segundo plano y congela el motor.
+            false,
             vk::SwapchainKHR::null(),
         )?;
         let command_pool = unsafe {
@@ -150,33 +158,27 @@ impl PresentTarget {
     }
 
     pub fn begin_frame(&self) -> Result<FrameTarget, FrameAcquire> {
-        let slot = self.frame_slot.fetch_add(1, Ordering::Relaxed) % FRAMES_IN_FLIGHT;
+        let slot = self.frame_slot.load(Ordering::Relaxed) % FRAMES_IN_FLIGHT;
         let mut frames = self
             .frames
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
         let frame = &mut frames[slot];
         unsafe {
-            if serialise_frames() {
-                self.gpu.device().device_wait_idle().map_err(|error| {
-                    FrameAcquire::Fail(vk_error("esperar a la GPU (ventana secundaria)", error))
-                })?;
-            }
-            self.gpu
+            match self
+                .gpu
                 .device()
-                .wait_for_fences(&[frame.fence], true, u64::MAX)
-                .map_err(|error| {
-                    FrameAcquire::Fail(vk_error(
+                .wait_for_fences(&[frame.fence], true, AUX_WAIT_TIMEOUT_NS)
+            {
+                Ok(()) => {}
+                Err(vk::Result::TIMEOUT) => return Err(FrameAcquire::Skip),
+                Err(error) => {
+                    return Err(FrameAcquire::Fail(vk_error(
                         "esperar el frame anterior de la ventana extra",
                         error,
-                    ))
-                })?;
-            self.gpu
-                .device()
-                .reset_fences(&[frame.fence])
-                .map_err(|error| {
-                    FrameAcquire::Fail(vk_error("reiniciar el fence de la ventana extra", error))
-                })?;
+                    )));
+                }
+            }
         }
         let swapchain = self
             .swapchain
@@ -188,7 +190,7 @@ impl PresentTarget {
         let acquired = unsafe {
             self.swapchain_loader.acquire_next_image(
                 swapchain.handle,
-                u64::MAX,
+                AUX_WAIT_TIMEOUT_NS,
                 frame.acquire,
                 vk::Fence::null(),
             )
@@ -209,6 +211,12 @@ impl PresentTarget {
         unsafe {
             self.gpu
                 .device()
+                .reset_fences(&[frame.fence])
+                .map_err(|error| {
+                    FrameAcquire::Fail(vk_error("reiniciar el fence de la ventana extra", error))
+                })?;
+            self.gpu
+                .device()
                 .reset_command_buffer(frame.command, vk::CommandBufferResetFlags::empty())
                 .map_err(|error| {
                     FrameAcquire::Fail(vk_error("reiniciar el command buffer extra", error))
@@ -220,6 +228,7 @@ impl PresentTarget {
                     FrameAcquire::Fail(vk_error("abrir el command buffer extra", error))
                 })?;
         }
+        self.frame_slot.fetch_add(1, Ordering::Relaxed);
         Ok(FrameTarget {
             slot,
             image_index,
@@ -274,7 +283,7 @@ impl PresentTarget {
             .image_indices(&indices);
         let presented = unsafe { self.swapchain_loader.queue_present(*queue, &present) };
         drop(queue);
-        let result = match presented {
+        match presented {
             Ok(false) => Ok(()),
             Ok(true) | Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => Err(FrameAcquire::Outdated),
             Err(vk::Result::ERROR_SURFACE_LOST_KHR) => Err(FrameAcquire::Outdated),
@@ -282,15 +291,7 @@ impl PresentTarget {
                 "presentar el frame extra",
                 error,
             ))),
-        };
-        if serialise_frames() {
-            unsafe {
-                self.gpu.device().device_wait_idle().map_err(|error| {
-                    FrameAcquire::Fail(vk_error("esperar a la GPU (ventana extra)", error))
-                })?;
-            }
         }
-        result
     }
 }
 

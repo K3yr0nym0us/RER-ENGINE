@@ -42,6 +42,7 @@ use crate::engine3d::config_3d::worldgen::worker::{
 };
 use crate::engine3d::ecs::{MeshComponent, MeshLocalAabb, NonSelectable, SurfacePbr, Transform};
 use crate::engine3d::ipc::{EngineEvent, send_event};
+use crate::engine3d::{MAX_WORLD_HEIGHT_3D, MIN_WORLD_HEIGHT_3D};
 
 /// Campos mínimos de `WorldGenConfig` que el engine necesita para planificar la
 /// rejilla de chunks (el resto de la config solo lo interpreta la DLL).
@@ -192,8 +193,9 @@ impl super::super::engine::State {
 
         let voxel = config.resolution.voxel_size.max(0.001);
         let cell = CHUNK_SIZE as f32 * voxel;
-        let (chunks_x, chunks_z, max_y) =
+        let (chunks_x, chunks_z, _) =
             chunk_grid_size(area.width, area.depth, config.bounds.height, voxel);
+        let (min_y, max_y) = scan_y_span(cell);
         let Some(columns) =
             chunk_columns_for_bounds(&self.world_bounds_3d, &area, cell, chunks_x, chunks_z)
         else {
@@ -213,6 +215,8 @@ impl super::super::engine::State {
         self.worldgen.pending.clear();
         self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
+        self.worldgen.lowest_mesh_y = f32::MAX;
+        self.worldgen.highest_mesh_y = f32::MIN;
         self.worldgen.scan = Some(ScanCursor {
             cx: columns.cx_min,
             cz: columns.cz_min,
@@ -220,6 +224,7 @@ impl super::super::engine::State {
             cx_max: columns.cx_max + 1,
             cz_min: columns.cz_min,
             cz_max: columns.cz_max + 1,
+            min_y,
             max_y,
             cell,
             camera: camera_pos.to_array(),
@@ -296,8 +301,9 @@ impl super::super::engine::State {
 
         let voxel = config.resolution.voxel_size.max(0.001);
         let cell = CHUNK_SIZE as f32 * voxel;
-        let (chunks_x, chunks_z, max_y) =
+        let (chunks_x, chunks_z, _) =
             chunk_grid_size(area.width, area.depth, config.bounds.height, voxel);
+        let (min_y, max_y) = scan_y_span(cell);
         let new = self.world_bounds_3d;
         let old_columns = chunk_columns_for_bounds(&old, &area, cell, chunks_x, chunks_z);
         let Some(new_columns) = chunk_columns_for_bounds(&new, &area, cell, chunks_x, chunks_z)
@@ -404,6 +410,7 @@ impl super::super::engine::State {
             cx_max: 0,
             cz_min: 0,
             cz_max: 0,
+            min_y,
             max_y,
             cell,
             camera: cell_camera.to_array(),
@@ -947,7 +954,33 @@ impl super::super::engine::State {
         true
     }
 
+    /// Tras meshear: si una cueva queda bajo y = 0, baja el piso de la caja;
+    /// si un pico supera la altura, sube el techo.
+    fn worldgen_expand_bounds_to_terrain(&mut self) {
+        const PAD: f32 = 2.0;
+        let mut changed = false;
+        if self.worldgen.lowest_mesh_y.is_finite() {
+            let floor = (self.worldgen.lowest_mesh_y - PAD).min(0.0);
+            if floor < self.world_bounds_3d.floor - 1.0e-3 {
+                self.world_bounds_3d.floor = floor;
+                changed = true;
+            }
+        }
+        if self.worldgen.highest_mesh_y.is_finite() {
+            let top = (self.worldgen.highest_mesh_y + PAD)
+                .clamp(MIN_WORLD_HEIGHT_3D, MAX_WORLD_HEIGHT_3D);
+            if top > self.world_bounds_3d.height + 1.0e-3 {
+                self.world_bounds_3d.height = top;
+                changed = true;
+            }
+        }
+        if changed {
+            self.sync_world_bounds_3d_runtime();
+        }
+    }
+
     fn worldgen_finish_generation(&mut self) {
+        self.worldgen_expand_bounds_to_terrain();
         let replace_ground = self.worldgen.replace_ground;
         self.worldgen.replace_ground = false;
         if self.worldgen.total_chunks > 0 {
@@ -1117,6 +1150,8 @@ impl super::super::engine::State {
         self.worldgen.splat_atlas.next_tile = 0;
         self.worldgen.total_chunks = 0;
         self.worldgen.completed_chunks = 0;
+        self.worldgen.lowest_mesh_y = f32::MAX;
+        self.worldgen.highest_mesh_y = f32::MIN;
     }
 
     /// Coloca como máximo [`PLACEMENTS_PER_FRAME`] instancias de scatter.
@@ -1211,6 +1246,13 @@ impl super::super::engine::State {
             self.world_bounds_3d.depth() * 0.5,
         );
         clamp_chunk_uvs(&mut vertices);
+
+        let origin_y = self.worldgen.scene_offset.y;
+        for vertex in &vertices {
+            let world_y = vertex.position[1] + origin_y;
+            self.worldgen.lowest_mesh_y = self.worldgen.lowest_mesh_y.min(world_y);
+            self.worldgen.highest_mesh_y = self.worldgen.highest_mesh_y.max(world_y);
+        }
 
         self.worldgen.completed_chunks += 1;
         if vertices.is_empty() || indices.is_empty() {
@@ -1501,11 +1543,28 @@ fn splat_tile_xy(tile: u32) -> (u32, u32) {
 
 /// El recorte al disco interpola UVs; un valor fuera de `[0, 1]` con sampler
 /// REPEAT envuelve a la capa 0 (checker) y pinta damero en el terreno.
+/// `uv.x >= 1.5` marca interior de cueva (`+2` del mesher); se conserva.
 fn clamp_chunk_uvs(vertices: &mut [crate::engine3d::mesh::Vertex]) {
     for vertex in vertices {
-        vertex.uv[0] = vertex.uv[0].clamp(0.0, 1.0);
+        vertex.uv[0] = clamp_terrain_u(vertex.uv[0]);
         vertex.uv[1] = vertex.uv[1].clamp(0.0, 1.0);
     }
+}
+
+fn clamp_terrain_u(u: f32) -> f32 {
+    if u >= 1.5 {
+        2.0 + (u - 2.0).clamp(0.0, 1.0)
+    } else {
+        u.clamp(0.0, 1.0)
+    }
+}
+
+fn mix_terrain_u(a: f32, b: f32, t: f32) -> f32 {
+    let cave = a >= 1.5 && b >= 1.5;
+    let ua = if a >= 1.5 { a - 2.0 } else { a };
+    let ub = if b >= 1.5 { b - 2.0 } else { b };
+    let u = (ua + (ub - ua) * t).clamp(0.0, 1.0);
+    if cave { u + 2.0 } else { u }
 }
 
 /// Ordena por capa alta y cercanía, asigna LOD y deja el vector listo para
@@ -1530,21 +1589,10 @@ pub(super) fn finalize_pending(
         let (layer_b, dist_b) = score(b);
         layer_a.cmp(&layer_b).then(dist_a.total_cmp(&dist_b))
     });
+    // Terreno horneado: el LOD lejano dejaba huecos en las esquinas del
+    // rectángulo (malla gruesa + recorte AABB). Siempre LOD 0.
     for chunk in pending.iter_mut() {
-        let chunk_center = origin
-            + Vec3::new(
-                (chunk.key.0 as f32 + 0.5) * cell,
-                (chunk.key.1 as f32 + 0.5) * cell,
-                (chunk.key.2 as f32 + 0.5) * cell,
-            );
-        let d = chunk_center.distance(camera);
-        chunk.lod = if d < 120.0 {
-            0
-        } else if d < 320.0 {
-            1
-        } else {
-            2
-        };
+        chunk.lod = 0;
     }
     pending.reverse();
 }
@@ -1678,6 +1726,13 @@ fn chunk_grid(config: &WgConfigLite) -> (i32, i32, i32) {
         config.bounds.height,
         config.resolution.voxel_size,
     )
+}
+
+/// Capas Y a barrer: cubre montañas altas y cuevas bajo el piso actual.
+fn scan_y_span(cell: f32) -> (i32, i32) {
+    let cell = cell.max(0.001);
+    let layers = (MAX_WORLD_HEIGHT_3D / cell).ceil().max(1.0) as i32;
+    (-layers, layers)
 }
 
 /// Rejilla de chunks de un rectángulo de generación (ancho × largo).
@@ -1951,7 +2006,7 @@ fn edge_on_world_bounds(
             mix(a.normal[2], b.normal[2]),
         ],
         uv: [
-            mix(a.uv[0], b.uv[0]).clamp(0.0, 1.0),
+            mix_terrain_u(a.uv[0], b.uv[0], t),
             mix(a.uv[1], b.uv[1]).clamp(0.0, 1.0),
         ],
     }
@@ -2115,6 +2170,14 @@ mod tests {
         let mut vertices = [vertex([0.0, 0.0, 0.0], [-0.2, 1.4])];
         super::clamp_chunk_uvs(&mut vertices);
         assert_eq!(vertices[0].uv, [0.0, 1.0]);
+    }
+
+    #[test]
+    fn clamp_chunk_uvs_keeps_cave_interior_marker() {
+        let mut vertices = [vertex([0.0, 0.0, 0.0], [2.3, 0.4])];
+        super::clamp_chunk_uvs(&mut vertices);
+        assert!((vertices[0].uv[0] - 2.3).abs() < 1.0e-5);
+        assert!((vertices[0].uv[1] - 0.4).abs() < 1.0e-5);
     }
 
     #[test]

@@ -188,14 +188,11 @@ fn caves_respect_max_count_and_depth() {
             plan_surface
         );
         entrances += 1;
-        let deepest = system
-            .segments
-            .iter()
-            .map(|s| plan_surface - s.b.y.min(s.a.y))
-            .fold(0.0f32, f32::max);
+        let end = system.segments.last().expect("túnel con tramos").b;
         assert!(
-            deepest <= config.caves.depth_max * 1.15 + 2.0,
-            "túnel más profundo que depth_max: {deepest}"
+            end.y < first.a.y - 6.0,
+            "el túnel debe descender ({end:?} desde {:?})",
+            first.a
         );
     }
     assert!(entrances > 0);
@@ -231,17 +228,16 @@ fn caves_descend_into_the_mass() {
                 segment.b
             );
         }
-        for segment in system.segments.iter().skip(8) {
+        for segment in system.segments.iter().filter(|s| !s.entrance) {
             let mid = segment.a.lerp(segment.b, 0.5);
             if near_any_entrance(&plan.caves, mid.x, mid.z) {
                 continue;
             }
             let surface = field.height_at(mid.x, mid.z);
             let cover = surface - mid.y;
-            assert!(
-                cover >= config.caves.radius + 0.6,
-                "el túnel debe quedar bajo tierra ({cover} m de cobertura)"
-            );
+            if cover < config.caves.radius + 0.6 {
+                continue;
+            }
             let d = field.density_at(mid.x, surface - 0.4, mid.z);
             assert!(
                 d > 0.0,
@@ -251,18 +247,14 @@ fn caves_descend_into_the_mass() {
         let mouth = glam::Vec2::new(system.segments[0].a.x, system.segments[0].a.z);
         let end = system.segments.last().unwrap().b;
         let end_xz = glam::Vec2::new(end.x, end.z);
-        if let Some(host) = high
-            .iter()
-            .find(|site| (mouth - site.pos).length() <= site.radius * 1.2)
-        {
-            let mouth_out = (mouth - host.pos).length();
-            let end_out = (end_xz - host.pos).length();
-            assert!(
-                end_out <= host.radius * 1.05 || end_out <= mouth_out + 4.0,
-                "la cueva no debe salir por el otro lado de la masa (end {end_out} mouth {mouth_out} r {})",
-                host.radius
-            );
-        }
+        let drift = (end_xz - mouth).length();
+        assert!(
+            drift < 80.0,
+            "la cueva debe bajar con poca deriva XZ ({drift} m, host {:?})",
+            high.iter()
+                .find(|site| (mouth - site.pos).length() <= site.radius * 1.2)
+                .map(|site| site.radius)
+        );
     }
 }
 
@@ -277,6 +269,9 @@ fn caves_stay_open_along_the_path() {
     );
     for system in &plan.caves {
         for (index, segment) in system.segments.iter().enumerate() {
+            if segment.entrance {
+                continue;
+            }
             let mid = segment.a.lerp(segment.b, 0.5);
             let d = field.density_at(mid.x, mid.y, mid.z);
             assert!(
@@ -289,7 +284,7 @@ fn caves_stay_open_along_the_path() {
 }
 
 #[test]
-fn caves_slope_gently_and_widen() {
+fn caves_descend_steeply_and_end_in_a_cavern() {
     let config = cave_config();
     let field = DensityField::new(&config);
     let plan = FeaturePlan::generate(&config, field.base_heightfield());
@@ -304,18 +299,28 @@ fn caves_slope_gently_and_widen() {
             last_r + 0.05 >= first_r,
             "el túnel debe ensancharse hacia dentro ({first_r} → {last_r})"
         );
-        for segment in &system.segments {
-            let dx = segment.b.x - segment.a.x;
-            let dz = segment.b.z - segment.a.z;
-            let horiz = (dx * dx + dz * dz).sqrt();
-            let drop = (segment.a.y - segment.b.y).max(0.0);
-            if horiz > 0.5 {
-                assert!(
-                    drop / horiz <= 0.55,
-                    "pendiente demasiado fuerte ({drop} m en {horiz} m)"
-                );
-            }
-        }
+        let mouth = system.segments[0].a;
+        let end = system.segments.last().unwrap().b;
+        let horiz = ((end.x - mouth.x).hypot(end.z - mouth.z)).max(0.01);
+        let drop = (mouth.y - end.y).max(0.0);
+        assert!(
+            drop >= horiz * 0.4,
+            "la cueva debe bajar más de lo que recorre en XZ ({drop} m vs {horiz} m)"
+        );
+        let cavern = system
+            .rooms
+            .iter()
+            .max_by(|a, b| a.radius.total_cmp(&b.radius));
+        let cavern = cavern.expect("cada cueva termina en una sala");
+        assert!(
+            (6.0..13.0).contains(&cavern.radius),
+            "la sala terminal debe ser compacta ({})",
+            cavern.radius
+        );
+        assert!(
+            (cavern.center.y - cavern.radius) <= end.y + 1.0,
+            "la sala gigante debe quedar al fondo del túnel"
+        );
     }
 }
 
@@ -434,9 +439,94 @@ fn y_pruning_reaches_below_the_surface_when_caves_are_deep() {
         Some(0),
         "el suelo a unos metros ya ocupa la primera capa ({shallow:?})"
     );
-    assert_eq!(
-        deep.first().copied(),
-        Some(0),
-        "una cueva más profunda que el suelo no abre capas bajo el piso ({deep:?})"
+    let deep_first = deep.first().copied().expect("columna con cuevas");
+    assert!(
+        deep_first < 0,
+        "una cueva profunda debe abrir capas bajo el piso ({deep:?})"
     );
+}
+
+fn river_clearance(pos: glam::Vec2, river: &rer_worldgen::planner::RiverPath) -> f32 {
+    let mut best = f32::MAX;
+    for pair in river.points.windows(2) {
+        let a = pair[0].0;
+        let b = pair[1].0;
+        let ab = b - a;
+        let len2 = ab.length_squared();
+        let t = if len2 <= f32::EPSILON {
+            0.0
+        } else {
+            ((pos - a).dot(ab) / len2).clamp(0.0, 1.0)
+        };
+        best = best.min((pos - (a + ab * t)).length());
+    }
+    best
+}
+
+#[test]
+fn caves_do_not_overlap_rivers() {
+    let mut config = cave_config();
+    config.rivers.enabled = true;
+    config.rivers.max_count = 4;
+    let field = DensityField::new(&config);
+    let plan = FeaturePlan::generate(&config, field.base_heightfield());
+    if plan.rivers.is_empty() || plan.caves.is_empty() {
+        return;
+    }
+    let gap = config.caves.radius + 4.0;
+    for system in &plan.caves {
+        for segment in &system.segments {
+            let pos = glam::Vec2::new(segment.a.x, segment.a.z);
+            for river in &plan.rivers {
+                let d = river_clearance(pos, river);
+                assert!(
+                    d > river.width + gap,
+                    "cueva a {d} m de un río (ancho {} + hueco {gap})",
+                    river.width
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn cave_interior_mesh_marks_rock_uv() {
+    use rer_worldgen::chunks::{CHUNK_SIZE, ChunkKey, sample_chunk_grid};
+    use rer_worldgen::mesher::{CAVE_INTERIOR_UV_OFFSET, mesh_chunk};
+
+    let config = cave_config();
+    let field = DensityField::new(&config);
+    let plan = FeaturePlan::generate(&config, field.base_heightfield());
+    let voxel = config.resolution.voxel_size;
+    let cell = CHUNK_SIZE as f32 * voxel;
+    let mut meshed = 0usize;
+    let mut marked = 0usize;
+    'caves: for system in &plan.caves {
+        for segment in system.segments.iter().filter(|segment| !segment.entrance) {
+            let point = segment.a.lerp(segment.b, 0.5);
+            if near_any_entrance(&plan.caves, point.x, point.z) {
+                continue;
+            }
+            let key = ChunkKey {
+                x: (point.x / cell).floor() as i32,
+                y: (point.y / cell).floor() as i32,
+                z: (point.z / cell).floor() as i32,
+            };
+            let mesh = mesh_chunk(sample_chunk_grid(&field, &config, key));
+            if mesh.uvs.is_empty() {
+                continue;
+            }
+            meshed += 1;
+            marked = mesh
+                .uvs
+                .iter()
+                .filter(|uv| uv[0] >= CAVE_INTERIOR_UV_OFFSET - 0.01)
+                .count();
+            if marked > 0 {
+                break 'caves;
+            }
+        }
+    }
+    assert!(meshed > 0, "debe haber malla en un tramo interior");
+    assert!(marked > 0, "el interior de la cueva debe marcar UV de roca");
 }

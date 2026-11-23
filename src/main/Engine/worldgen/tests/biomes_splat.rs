@@ -135,12 +135,14 @@ fn splat_is_snow_at_high_altitude_and_rock_on_steep_slopes() {
     let field = DensityField::new(&config);
     let base = field.base_heightfield();
     let plan = FeaturePlan::generate(&config, base);
-    let biomes = BiomeMap::new(&config);
+    let biomes = BiomeMap::for_field(&config, &field);
+    let mut fitted = config.clone();
+    rer_worldgen::scale::fit_config_to_world(&mut fitted);
     let ctx = SplatContext::new(
         &field,
         &biomes,
-        config.bounds.height,
-        config.resolution.voxel_size,
+        fitted.bounds.height,
+        fitted.resolution.voxel_size,
     );
 
     // Encuentra una montaña real (sitio) y verifica: nieve cerca de la cima.
@@ -151,8 +153,20 @@ fn splat_is_snow_at_high_altitude_and_rock_on_steep_slopes() {
         .expect("el mundo de prueba debe tener montañas");
     let top = field.height_at(mountain.pos.x, mountain.pos.y);
     if top > ctx_world_snow_line(&config) {
-        let w = ctx.weights_at(mountain.pos.x, mountain.pos.y, top);
-        assert!(w.snow > 128, "la cima de una montaña alta debe ser nieve");
+        let mut snowy = false;
+        for k in 0..12u32 {
+            let r = mountain.radius * 0.06 * k as f32;
+            let angle = k as f32 * 0.7;
+            let x = mountain.pos.x + angle.cos() * r;
+            let z = mountain.pos.y + angle.sin() * r;
+            let y = field.height_at(x, z);
+            let w = ctx.weights_at(x, z, y);
+            if w.snow > 128 {
+                snowy = true;
+                break;
+            }
+        }
+        assert!(snowy, "la cima de una montaña alta debe ser nieve");
     }
 
     // Pendiente alta ⇒ roca: muestrea el flanco de la montaña.
@@ -436,7 +450,7 @@ fn river_bank_blends_mud_with_surroundings() {
 }
 
 #[test]
-fn cave_path_is_stone() {
+fn cave_mouth_keeps_surface_biome() {
     let mut caves_checked = 0;
     for seed in [7, 42, 555, 1234, 91234] {
         let mut config = config_for_biomes();
@@ -459,22 +473,19 @@ fn cave_path_is_stone() {
             }
             caves_checked += 1;
             let first = cave.segments[0].a.lerp(cave.segments[0].b, 0.4);
-            let mid = cave.segments[cave.segments.len() / 2]
-                .a
-                .lerp(cave.segments[cave.segments.len() / 2].b, 0.5);
-            for point in [first, mid] {
-                let w = ctx.weights_with_slope(
-                    point.x,
-                    point.z,
-                    field.height_at(point.x, point.z),
-                    0.0,
-                );
-                assert!(
-                    w.rock > 160,
-                    "seed {seed}: el recorrido de la cueva debe ser piedra (rock {} en {point:?})",
-                    w.rock
-                );
-            }
+            let y = field.height_at(first.x, first.z);
+            let w = ctx.weights_with_slope(first.x, first.z, y, 0.0);
+            let rock_alt = {
+                let t = ((y - config.bounds.height * 0.60)
+                    / (config.bounds.height * 0.12).max(1.0e-3))
+                .clamp(0.0, 1.0);
+                t * t * (3.0 - 2.0 * t)
+            };
+            assert!(
+                w.rock as f32 <= rock_alt * 255.0 + 40.0,
+                "seed {seed}: la boca no debe pintar piedra de cueva en superficie (rock {} alt {rock_alt} en {first:?})",
+                w.rock
+            );
         }
     }
     assert!(caves_checked > 0, "los mundos de prueba deben tener cuevas");

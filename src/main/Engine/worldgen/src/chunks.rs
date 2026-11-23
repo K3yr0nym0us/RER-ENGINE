@@ -81,7 +81,12 @@ pub fn active_y_chunks(
     } else {
         0.0
     };
-    let first = (((min_y - cave_drop) / cell).floor() - 1.0).max(0.0) as i32;
+    let carve_floor = field.plan().lowest_carve_y();
+    let floor_y = (min_y - cave_drop).min(carve_floor);
+    let mut first = ((floor_y / cell).floor() - 1.0) as i32;
+    if floor_y >= 0.0 {
+        first = first.max(0);
+    }
     let last = ((max_y / cell).floor() + 1.0) as i32;
     let max_layer = config.max_chunk_y(CHUNK_SIZE) as i32;
     (first..=last.min(max_layer)).collect()
