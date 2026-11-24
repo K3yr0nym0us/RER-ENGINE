@@ -1,0 +1,66 @@
+# Array de texturas compartido del motor 3D (editor)
+#
+# Implementado en `engine/src/engine3d/texture.rs` (`TextureArray`) y en
+# `core/src/vulkan/gpu/memory.rs` (`SharedGpu::copy_image_layers`). Todas las capas viven en un
+# único `VkImage` de tipo `TYPE_2D_ARRAY` (group 1 del shader, `sampler2DArray`). El formato es
+# fijo `R8G8B8A8_UNORM`, 1024x1024 por capa, con la cadena completa de mips generada en GPU.
+#
+# Relacionado con:
+#   - docs/yaml/assets/Rerasset_Format.yaml
+#   - docs/yaml/rendering/MSAA_3D.yaml
+#   - docs/yaml/engine/Engine_Runtime_Foundation.yaml
+
+version: 1
+updated: 2026-11-23
+status: implementado
+
+principle:
+  owner: motor_3d
+  pipeline: |
+    1. Cada material/textura importada se empaqueta en una capa del array. `pack` y
+       `pack_prepared_mips` suben solo el mip 0 (redimensionado a 1024²) y `record_mip_chain`
+       genera el resto con `vkCmdBlitImage`, dejando la imagen en `GENERAL`.
+    2. `MeshComponent.tex_idx` indice en `State.tex_layers`, y `tex_layers[i]` es la capa GPU.
+       Las capas NUNCA se compactan: cualquier crecimiento copia la capa `i` a la capa `i`.
+    3. La capa 0 es el fallback (pixel blanco). `splat_atlas` usa paginas de 256 columnas por
+       capa y escribe tiles RGBA en LOD 0 con `blit_layer_tile`.
+    4. `FrameRenderer::record` detecta un handle de imagen distinto en `input.albedo` y vuelve a
+       enlazarlo en los FRAMES slots con `albedo_set_image`. No hace falta tocar frame/*.rs.
+
+vram:
+  texture_size_px: 1024
+  mip_levels: 11
+  format: R8G8B8A8_UNORM
+  initial_layers: 32
+  initial_budget_mib: ~171
+  hard_cap_layers: 256
+  full_budget_mib: ~1365
+  note: |
+    Antes se reservaban 256 capas desde el arranque (~1,33 GiB) estuviera o no cargada la escena.
+    Ahora el coste inicial es ~8x menor y la memoria se va comprometiendo solo cuando hace falta.
+
+growth:
+  trigger: next_layer >= max_layers y max_layers < MAX_LAYERS
+  capacities: [32, 64, 128, 256]
+  algorithm: |
+    1. `unsafe { gpu.device().device_wait_idle() }` para que ningun frame en vuelo muestre la vista vieja.
+    2. `create_image_layers` con la nueva capacidad, mismo extent, formato, mips y flags de uso
+       (SAMPLED | TRANSFER_DST | TRANSFER_SRC).
+    3. `copy_image_layers(src, dst, next_layer, mips)`: un `vk::ImageCopy` por nivel de mip con
+       `layer_count = next_layer`, barreras GENERAL->GENERAL de MEMORY_WRITE/READ a TRANSFER_READ/WRITE
+       y despues a SHADER_READ. Copia 100% en GPU; no se re-suben pixeles desde CPU.
+    4. `mem::replace` de la imagen, actualizacion de `max_layers` y `drop` de la imagen retirada.
+    5. Se reintenta la subida de la capa que disparo el crecimiento.
+  invariants:
+    - 'Capacidades potencias de 2: nunca multiplos de 6, evitan que `create_image_layers` elija una vista CUBE_ARRAY en vez de TYPE_2D_ARRAY.'
+    - 'Copia 1:1 sin compactacion: `tex_idx`, `tex_layers`, `part_tex_layers` y el atlas de splats siguen apuntando a la misma capa.'
+    - '`reset()` solo rebobina `next_layer = 0` y conserva la capacidad ya alcanzada.'
+    - 'En 256 se mantiene el comportamiento anterior: log de error y `fallback_layer()`; el evento `TextureArrayExhausted` sigue disparandose en el mismo limite.'
+
+validation:
+  automated: |
+    `next_capacity` (32->64->128->256->256) cubierto por tests unitarios.
+    `yarn rust:check`, `cargo fmt --all -- --check` y `yarn rust:test`: verde.
+  pending: |
+    La ruta de crecimiento real (vkCmdCopyImage + rebind de descriptores) requiere GPU: ejecutar el
+    editor con RER_VK_VALIDATION=1 y cargar suficientes texturas para forzar 32->64.

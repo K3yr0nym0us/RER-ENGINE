@@ -803,6 +803,150 @@ impl SharedGpu {
         Ok(())
     }
 
+    /// Copia `layers` capas (desde la capa 0) y los niveles de mip `0..mips` de `src` a `dst`.
+    ///
+    /// Ambas imágenes deben permanecer en `GENERAL` (invariante de `transition_initial`) y
+    /// haberse creado con `TRANSFER_SRC` en `src` y `TRANSFER_DST` en `dst`.
+    pub fn copy_image_layers(
+        &self,
+        src: &GpuImage,
+        dst: &GpuImage,
+        layers: u32,
+        mips: u32,
+    ) -> Result<(), VulkanError> {
+        if layers == 0 || mips == 0 {
+            return Ok(());
+        }
+        if src.layers < layers {
+            return Err(VulkanError::new(format!(
+                "la imagen origen tiene {} capas, se pidieron {layers}",
+                src.layers
+            )));
+        }
+        if dst.layers < layers {
+            return Err(VulkanError::new(format!(
+                "la imagen destino tiene {} capas, se pidieron {layers}",
+                dst.layers
+            )));
+        }
+        if src.mips < mips {
+            return Err(VulkanError::new(format!(
+                "la imagen origen tiene {} mips, se pidieron {mips}",
+                src.mips
+            )));
+        }
+        if dst.mips < mips {
+            return Err(VulkanError::new(format!(
+                "la imagen destino tiene {} mips, se pidieron {mips}",
+                dst.mips
+            )));
+        }
+        if src.extent != dst.extent {
+            return Err(VulkanError::new(format!(
+                "extent distinto al copiar capas: origen {:?}, destino {:?}",
+                src.extent, dst.extent
+            )));
+        }
+        if src.format != dst.format {
+            return Err(VulkanError::new(format!(
+                "format distinto al copiar capas: origen {:?}, destino {:?}",
+                src.format, dst.format
+            )));
+        }
+        if src.aspect != dst.aspect || !src.aspect.contains(vk::ImageAspectFlags::COLOR) {
+            return Err(VulkanError::new(format!(
+                "aspect incompatible al copiar capas: origen {:?}, destino {:?}",
+                src.aspect, dst.aspect
+            )));
+        }
+
+        let src_handle = src.image;
+        let dst_handle = dst.image;
+        let src_aspect = src.aspect;
+        let dst_aspect = dst.aspect;
+        let base_extent = src.extent;
+
+        self.one_shot(move |device, command| {
+            cmd_image_barrier(
+                device,
+                command,
+                src_handle,
+                src_aspect,
+                mips,
+                layers,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::GENERAL,
+                vk::PipelineStageFlags::ALL_COMMANDS,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::AccessFlags::MEMORY_WRITE,
+                vk::AccessFlags::TRANSFER_READ,
+            );
+            cmd_image_barrier(
+                device,
+                command,
+                dst_handle,
+                dst_aspect,
+                mips,
+                layers,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::GENERAL,
+                vk::PipelineStageFlags::ALL_COMMANDS,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::AccessFlags::MEMORY_READ | vk::AccessFlags::MEMORY_WRITE,
+                vk::AccessFlags::TRANSFER_WRITE,
+            );
+
+            let regions: Vec<vk::ImageCopy> = (0..mips)
+                .map(|mip| vk::ImageCopy {
+                    src_subresource: vk::ImageSubresourceLayers {
+                        aspect_mask: src_aspect,
+                        mip_level: mip,
+                        base_array_layer: 0,
+                        layer_count: layers,
+                    },
+                    src_offset: vk::Offset3D::default(),
+                    dst_subresource: vk::ImageSubresourceLayers {
+                        aspect_mask: dst_aspect,
+                        mip_level: mip,
+                        base_array_layer: 0,
+                        layer_count: layers,
+                    },
+                    dst_offset: vk::Offset3D::default(),
+                    extent: vk::Extent3D {
+                        width: (base_extent.width >> mip).max(1),
+                        height: (base_extent.height >> mip).max(1),
+                        depth: 1,
+                    },
+                })
+                .collect();
+            unsafe {
+                device.cmd_copy_image(
+                    command,
+                    src_handle,
+                    vk::ImageLayout::GENERAL,
+                    dst_handle,
+                    vk::ImageLayout::GENERAL,
+                    &regions,
+                );
+            }
+
+            cmd_image_barrier(
+                device,
+                command,
+                dst_handle,
+                dst_aspect,
+                mips,
+                layers,
+                vk::ImageLayout::GENERAL,
+                vk::ImageLayout::GENERAL,
+                vk::PipelineStageFlags::TRANSFER,
+                vk::PipelineStageFlags::FRAGMENT_SHADER,
+                vk::AccessFlags::TRANSFER_WRITE,
+                vk::AccessFlags::SHADER_READ,
+            );
+        })
+    }
+
     /// Graba, envía y espera un command buffer de un solo uso (uploads y builds).
     ///
     /// Reutiliza el fence y el command buffer del device: `one_shot_lock` serializa su uso y

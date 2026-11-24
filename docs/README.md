@@ -2,14 +2,14 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`). Revisión anterior: 14 nov 2026 (World Generator). Antes: noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
+**Última revisión:** 23 nov 2026 (array de texturas 3D con crecimiento bajo demanda: `Texture_Array_3D.yaml`). Revisión anterior: 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`). Antes: 14 nov 2026 (World Generator); noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
 
 ## Estructura
 
 - `yaml/engine/`: runtime, contexto del editor, IPC y política de plataforma.
 - `yaml/persistence/`: `.save`, carga de proyecto y multi-escena.
 - `yaml/assets/`: formato `.rerasset`.
-- `yaml/rendering/`: reflejos, RT, sondas, TAA, MSAA y sombras.
+- `yaml/rendering/`: reflejos, RT, sondas, TAA, MSAA, sombras y array de texturas.
 - `yaml/gameplay/`: entidades, blueprints, física, animación, controles y proyectiles.
 - `yaml/scripting/`: API Rhai y programación visual.
 - `yaml/editor/`: modales, propiedades, UI del jugador, sockets y física de huesos.
@@ -60,6 +60,7 @@
 | [MSAA_3D.yaml](./yaml/rendering/MSAA_3D.yaml) | MSAA forward 3D por tier, resolve a G-buffers 1×, IPC |
 | [Shadows_3D.yaml](./yaml/rendering/Shadows_3D.yaml) | Shadow map único, tiers de resolución, IPC |
 | [Model_LOD_3D.yaml](./yaml/rendering/Model_LOD_3D.yaml) | LOD de mallas GLB estáticas por distancia (vertex clustering, `set_model_lod`) |
+| [Texture_Array_3D.yaml](./yaml/rendering/Texture_Array_3D.yaml) | Array de texturas compartido: crecimiento 32→256 bajo demanda, copia GPU 1:1, presupuesto VRAM |
 
 ---
 

@@ -22,6 +22,9 @@ pub struct TextureArray {
 
 impl TextureArray {
     pub const TEXTURE_SIZE: u32 = 1024;
+    /// Capacidad inicial: el array crece bajo demanda hasta `MAX_LAYERS`.
+    pub const INITIAL_LAYERS: u32 = 32;
+    /// Tope duro: el evento `TextureArrayExhausted` sigue disparándose aquí.
     pub const MAX_LAYERS: u32 = 256;
 
     pub const FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
@@ -33,7 +36,7 @@ impl TextureArray {
                 width: Self::TEXTURE_SIZE,
                 height: Self::TEXTURE_SIZE,
             },
-            Self::MAX_LAYERS,
+            Self::INITIAL_LAYERS,
             mip_levels,
             Self::FORMAT,
             vk::ImageUsageFlags::SAMPLED
@@ -47,7 +50,7 @@ impl TextureArray {
             image,
             width: Self::TEXTURE_SIZE,
             height: Self::TEXTURE_SIZE,
-            max_layers: Self::MAX_LAYERS,
+            max_layers: Self::INITIAL_LAYERS,
             next_layer: 0,
         };
         array.reset(gpu)?;
@@ -131,12 +134,15 @@ impl TextureArray {
         gpu: &SharedGpu,
         mips: &[Vec<u8>],
     ) -> Result<TextureLayer, VulkanError> {
-        if self.next_layer >= self.max_layers {
-            log::error!(
-                "[TextureArray] array lleno ({} capas) — usando fallback",
-                self.max_layers
-            );
-            return Ok(Self::fallback_layer());
+        while self.next_layer >= self.max_layers {
+            if self.max_layers >= Self::MAX_LAYERS {
+                log::error!(
+                    "[TextureArray] array lleno ({} capas) — usando fallback",
+                    self.max_layers
+                );
+                return Ok(Self::fallback_layer());
+            }
+            self.ensure_capacity(gpu)?;
         }
         let layer = self.next_layer;
         let regions: Vec<_> = mips
@@ -154,6 +160,45 @@ impl TextureArray {
         record_mip_chain(gpu, &self.image, layer)?;
         self.next_layer += 1;
         Ok(layer)
+    }
+
+    /// Duplica la capacidad conservando todas las capas ya empaquetadas.
+    /// La copia es 1:1 (capa `i` → capa `i`), así que los `tex_idx` del ECS siguen vigentes.
+    fn ensure_capacity(&mut self, gpu: &SharedGpu) -> Result<(), VulkanError> {
+        let new_capacity = next_capacity(self.max_layers);
+        let mip_levels = self.image.mips;
+        let extent = self.image.extent;
+
+        unsafe { gpu.device().device_wait_idle() }.map_err(|error| {
+            VulkanError::new(format!(
+                "esperar a la GPU para agrandar el array de texturas (Vulkan {error:?})"
+            ))
+        })?;
+
+        let new_image = gpu.create_image_layers(
+            vk::Extent2D {
+                width: extent.width,
+                height: extent.height,
+            },
+            new_capacity,
+            mip_levels,
+            Self::FORMAT,
+            vk::ImageUsageFlags::SAMPLED
+                | vk::ImageUsageFlags::TRANSFER_DST
+                | vk::ImageUsageFlags::TRANSFER_SRC,
+            vk::ImageAspectFlags::COLOR,
+            "texture-array",
+        )?;
+        gpu.copy_image_layers(&self.image, &new_image, self.next_layer, mip_levels)?;
+
+        let old = std::mem::replace(&mut self.image, new_image);
+        self.max_layers = new_capacity;
+        drop(old);
+        log::info!(
+            "[TextureArray] array ampliado a {new_capacity} capas ({} copiadas)",
+            self.next_layer
+        );
+        Ok(())
     }
 
     fn upload_layer(
@@ -392,6 +437,16 @@ fn mip_level_count(size: u32) -> u32 {
     (u32::BITS - size.leading_zeros()).max(1)
 }
 
+/// Siguiente capacidad del array (potencias de 2, tope duro `MAX_LAYERS`).
+fn next_capacity(current: u32) -> u32 {
+    match current {
+        32 => 64,
+        64 => 128,
+        128 => 256,
+        _ => TextureArray::MAX_LAYERS,
+    }
+}
+
 fn resize_rgba_vec_to_layer(rgba: Vec<u8>, w: u32, h: u32, tw: u32, th: u32) -> Vec<u8> {
     let expected = (tw * th * 4) as usize;
     if w == tw && h == th && rgba.len() == expected {
@@ -447,4 +502,26 @@ pub fn rgba_mip0_average_linear(mip0: &[u8]) -> [f32; 3] {
         (g as f64 / n / 255.0) as f32,
         (b as f64 / n / 255.0) as f32,
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_capacity_doubles_until_hard_cap() {
+        assert_eq!(next_capacity(TextureArray::INITIAL_LAYERS), 64);
+        assert_eq!(next_capacity(64), 128);
+        assert_eq!(next_capacity(128), TextureArray::MAX_LAYERS);
+    }
+
+    #[test]
+    fn next_capacity_never_exceeds_max_layers() {
+        assert_eq!(
+            next_capacity(TextureArray::MAX_LAYERS),
+            TextureArray::MAX_LAYERS
+        );
+        assert_eq!(next_capacity(256), 256);
+        assert_eq!(next_capacity(300), TextureArray::MAX_LAYERS);
+    }
 }
