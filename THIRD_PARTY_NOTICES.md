@@ -149,3 +149,18 @@ Las ecuaciones del solver de fluidos
   licencia: https://github.com/georust/rstar
 - **Retirada:** cuando `parry3d` pase a usar `rstar >= 0.14` (que ya depende de
   `heapless 0.9`), eliminar el directorio `vendor/rstar` y la entrada `[patch.crates-io]`.
+
+---
+
+## Inter (fuentes del editor y del HUD)
+
+- **Uso en RER-ENGINE:** `src/main/Engine/assets/fonts/` contiene
+  `Inter_18pt-Regular.ttf` e `Inter_18pt-Bold.ttf`, enlazadas dentro del binario
+  del motor con `include_bytes!` (`src/main/Engine/engine/src/embedded_fonts.rs`).
+  Son las fuentes fijas de la UI egui y del HUD del jugador; no se leen fuentes
+  del sistema operativo. A los TTF embebidos se les han retirado los mapeos del
+  Área de Uso Privado (U+E000..U+F8FF) para que no sustituyan a los iconos
+  Phosphor; el resto de la fuente es la Inter original.
+- **Licencia:** SIL Open Font License 1.1 — Copyright 2020 The Inter Project
+  Authors (https://github.com/rsms/inter). El texto completo se conserva en
+  `src/main/Engine/assets/fonts/OFL.txt`.

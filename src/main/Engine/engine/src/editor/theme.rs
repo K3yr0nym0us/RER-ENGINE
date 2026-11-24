@@ -128,108 +128,80 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
-/// Carga una fuente de sistema si existe y añade la fuente de iconos.
+/// Instala las fuentes fijas del editor: Inter empaquetada en el binario.
 ///
-/// La fuente de sistema hace que Windows y Linux se vean parecido; los iconos
-/// vienen incluidos en el binario vía `egui-phosphor`.
+/// No se consulta ninguna fuente del sistema operativo y no existe ajuste que
+/// permita cambiarlas: los TTF se enlazan con `include_bytes!` (ver
+/// `crate::embedded_fonts`). Se conservan únicamente las fuentes que ya vienen
+/// empaquetadas dentro de egui para los casos que Inter no cubre: Hack
+/// (monoespaciada, la fuerza el editor de código) y las de emoji; Phosphor
+/// aporta los iconos.
 fn install_fonts(ctx: &egui::Context) {
-    let candidates: &[&str] = if cfg!(target_os = "windows") {
-        &["C:/Windows/Fonts/segoeui.ttf"]
-    } else if cfg!(target_os = "linux") {
-        &[
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        ]
-    } else {
-        &[]
-    };
-
     let mut fonts = egui::FontDefinitions::default();
-    let mut system_font_loaded = false;
 
-    for path in candidates {
-        let Ok(bytes) = std::fs::read(path) else {
-            continue;
-        };
+    fonts.font_data.insert(
+        "inter-regular".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            crate::embedded_fonts::INTER_REGULAR,
+        )),
+    );
+    fonts.font_data.insert(
+        "inter-bold".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            crate::embedded_fonts::INTER_BOLD,
+        )),
+    );
 
-        fonts.font_data.insert(
-            "rer-system".to_owned(),
-            Arc::new(egui::FontData::from_owned(bytes)),
-        );
-
-        if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-            family.insert(0, "rer-system".to_owned());
-        }
-        // La familia Monospace se deja intacta: el editor de código (egui_code_editor)
-        // fuerza FontId::monospace y Segoe UI no es monoespaciada.
-
-        log::info!("[editor] fuente cargada desde {path}");
-        system_font_loaded = true;
-        break;
+    // Inter es la única fuente de texto proporcional: se descarta Ubuntu-Light,
+    // que era la fuente por defecto incluida en egui.
+    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
+        family.clear();
+        family.push("inter-regular".to_owned());
+        family.push("NotoEmoji-Regular".to_owned());
+        family.push("emoji-icon-font".to_owned());
     }
 
     // Familia en negrita para `<strong>` y etiquetas de propiedades.
-    let bold_candidates: &[&str] = if cfg!(target_os = "windows") {
-        &["C:/Windows/Fonts/segoeuib.ttf"]
-    } else if cfg!(target_os = "linux") {
-        &[
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
-        ]
-    } else {
-        &[]
-    };
-    for path in bold_candidates {
-        let Ok(bytes) = std::fs::read(path) else {
-            continue;
-        };
-        fonts.font_data.insert(
-            "rer-bold".to_owned(),
-            Arc::new(egui::FontData::from_owned(bytes)),
-        );
-        let mut family = vec!["rer-bold".to_owned()];
-        if system_font_loaded {
-            family.push("rer-system".to_owned());
-        }
-        fonts
-            .families
-            .insert(egui::FontFamily::Name("rer-bold".into()), family);
-        log::info!("[editor] fuente bold cargada desde {path}");
-        break;
-    }
-    if !fonts
-        .families
-        .contains_key(&egui::FontFamily::Name("rer-bold".into()))
-    {
-        let fallback = fonts
-            .families
-            .get(&egui::FontFamily::Proportional)
-            .cloned()
-            .unwrap_or_default();
-        fonts
-            .families
-            .insert(egui::FontFamily::Name("rer-bold".into()), fallback);
+    fonts.families.insert(
+        egui::FontFamily::Name("rer-bold".into()),
+        vec![
+            "inter-bold".to_owned(),
+            "inter-regular".to_owned(),
+            "NotoEmoji-Regular".to_owned(),
+            "emoji-icon-font".to_owned(),
+        ],
+    );
+
+    // Monoespaciada: Hack (empaquetada en egui) para el editor de código; Inter
+    // queda solo como respaldo de los glifos que Hack no contiene.
+    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+        family.clear();
+        family.push("Hack".to_owned());
+        family.push("inter-regular".to_owned());
+        family.push("NotoEmoji-Regular".to_owned());
+        family.push("emoji-icon-font".to_owned());
     }
 
     egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
-    // La familia bold también necesita el fallback de iconos: si no, los
-    // glifos de Phosphor (p. ej. el disquete de guardar) salen como cuadrado.
+
+    // Los glifos de Phosphor (área de uso privado) deben resolverse también en
+    // la familia bold y en la monoespaciada, o salen como cuadrado.
     if let Some(family) = fonts
         .families
         .get_mut(&egui::FontFamily::Name("rer-bold".into()))
         && !family.iter().any(|name| name == "phosphor")
     {
-        family.push("phosphor".to_owned());
+        // Antes de las fuentes de emoji: `emoji-icon-font` también usa el área
+        // privada y podría capturar algún código de Phosphor.
+        family.insert(1, "phosphor".to_owned());
     }
-    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
+    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace)
+        && !family.iter().any(|name| name == "phosphor")
+    {
         family.insert(1, "phosphor".to_owned());
     }
 
     ctx.set_fonts(fonts);
 
-    if !system_font_loaded {
-        log::warn!("[editor] no se encontró una fuente de sistema; se usan las de egui");
-    }
+    log::info!("[editor] fuentes Inter empaquetadas instaladas (sin fuentes del SO)");
 }

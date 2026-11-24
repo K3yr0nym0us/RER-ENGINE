@@ -8,6 +8,8 @@
 //! `editor`: los binarios se compilan con `--no-default-features --features
 //! <motor>` para no enlazar el motor ajeno.
 
+mod embedded_fonts;
+
 #[cfg(feature = "engine3d")]
 pub mod engine3d;
 

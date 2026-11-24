@@ -16,32 +16,11 @@ pub(crate) fn load_font_arc(path: &str) -> Option<Arc<FontArc>> {
     FontArc::try_from_vec(bytes).ok().map(Arc::new)
 }
 
-/// Fuente de respaldo para textos del motor cuando el proyecto no registra ninguna
-/// (la plantilla 3D solo trae el crosshair). En el editor se reutiliza la fuente
-/// monospace integrada de egui (Hack); en binarios standalone se prueba una fuente
-/// del sistema.
+/// Fuente fija para los textos del motor cuando el proyecto no registra ninguna
+/// (la plantilla 3D solo trae el crosshair): Inter empaquetada en el binario.
+/// No se consultan fuentes del sistema operativo.
 pub(crate) fn load_builtin_font_arc() -> Option<Arc<FontArc>> {
-    #[cfg(feature = "editor")]
-    {
-        let definitions = egui::FontDefinitions::default();
-        if let Some(data) = definitions.font_data.get("Hack")
-            && let Ok(font) = FontArc::try_from_vec(data.font.to_vec())
-        {
-            return Some(Arc::new(font));
-        }
-    }
-    for path in [
-        "C:/Windows/Fonts/consola.ttf",
-        "C:/Windows/Fonts/cour.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-        "/System/Library/Fonts/Menlo.ttc",
-    ] {
-        if let Some(font) = load_font_arc(path) {
-            return Some(font);
-        }
-    }
-    None
+    crate::embedded_fonts::inter_regular_font_arc()
 }
 
 /// Segmento vertical del cursor en NDC (z = 0).
