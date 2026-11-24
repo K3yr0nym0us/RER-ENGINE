@@ -3,7 +3,7 @@
 
 use glam::{Mat4, Vec3};
 
-use crate::engine3d::config_3d::world_bounds::WorldBounds3D;
+use crate::engine3d::config_3d::world_bounds::{SKY_SPHERE_RADIUS, WorldBounds3D};
 use crate::engine3d::ecs::{EntityId, MeshComponent, Transform};
 use crate::engine3d::engine::State;
 use crate::engine3d::entity_save_meta::EntitySaveMeta;
@@ -74,10 +74,14 @@ fn shadow_caster_margin_from(
 /// Margen sobre el suelo (m) para considerar que el sol proyecta sombras.
 /// Debajo, el shadow map se capturaría desde el subsuelo y sería inválido.
 pub const SUN_SHADOW_HORIZON_MARGIN_M: f32 = 0.5;
-/// El icono queda justo FUERA de la caja de límites (más allá de su semidiagonal).
-const SUN_OUTSIDE_BOUNDS_FACTOR: f32 = 1.02;
-/// Y dentro de la esfera de cielo, con un pequeño margen respecto a su superficie.
-const SUN_INSIDE_SKY_FACTOR: f32 = 0.96;
+/// Radio orbital fijo como fracción de la esfera de cielo: 1600 × 0.85 = 1360 m.
+/// El sol queda lejos de cualquier mundo permitido; la diagonal de la caja ya
+/// no acorta la órbita cuando cambia la altura o el tamaño del terreno.
+const SUN_ORBIT_INSIDE_SKY_FACTOR: f32 = 0.85;
+/// Distancia orbital con la que se calibró el tamaño del halo (semidiagonal del
+/// mundo por defecto × el factor histórico ≈ 88 m). Solo sirve de referencia
+/// para conservar el tamaño ANGULAR del sol con la órbita fija actual.
+const SUN_HALO_REFERENCE_DISTANCE_M: f32 = 88.0;
 
 /// Un valor de la UI (1000 por tramo) equivale a 1 hora → 1 unidad = 3.6 s.
 pub const SUN_CYCLE_SECONDS_PER_UNIT: f32 = 3.6;
@@ -143,11 +147,19 @@ fn sun_cycle_direction(phase: f32, cardinal: SunRiseCardinal) -> Vec3 {
     rotate_y(sun_local_direction(phase), cardinal.yaw_radians())
 }
 
+/// Centro del terreno sobre el suelo: punto al que mira la cámara de luz y
+/// centro de la órbita del sol. La altura de la caja no desplaza el ancla:
+/// las sombras y el horizonte se miden desde `y = 0`.
+pub(crate) fn sun_orbit_center(bounds: &WorldBounds3D) -> Vec3 {
+    Vec3::new(bounds.center().x, 0.0, bounds.center().z)
+}
+
 /// Altura real (m) del icono del sol sobre el suelo (`y = 0`).
 /// Es la referencia del horizonte: no depende del radio de la esfera del cielo,
-/// que es fijo y mucho mayor que la órbita del sol.
+/// que es fijo y mucho mayor que la órbita del sol. Con `dir.y = 0` el sol
+/// está exactamente en el horizonte del suelo.
 pub(crate) fn sun_world_y(bounds: &WorldBounds3D, dir: Vec3, orbit_distance: f32) -> f32 {
-    bounds.height * 0.5 + dir.y * orbit_distance
+    sun_orbit_center(bounds).y + dir.y * orbit_distance
 }
 
 /// Factor de luz diurna [0,1] según la altura real del sol: 1 de día, 0 de
@@ -163,7 +175,10 @@ pub fn day_factor(sun_y: f32, orbit_distance: f32) -> f32 {
 /// Se tiñe solo cerca del horizonte: blanco al salir (`local.x > 0`, subiendo)
 /// y rojizo al ponerse (`local.x < 0`, bajando).
 pub fn sun_color_for_sun_height(sun_y: f32, orbit_distance: f32, local_dir: Vec3) -> Vec3 {
-    let band = (orbit_distance * 0.30).max(1.0);
+    // Banda estrecha: con el radio fijo de 1360 m, el 0.30 anterior teñía de
+    // rojo desde ~400 m de altura (varios grados antes del horizonte).
+    // 0.08 ≈ 109 m deja el color neutro casi hasta tocar el suelo.
+    let band = (orbit_distance * 0.08).max(1.0);
     let proximity = 1.0 - (sun_y.max(0.0) / band).clamp(0.0, 1.0);
     let warmth = proximity * proximity;
     let sunrise = (local_dir.x > 0.0) as u8 as f32;
@@ -195,23 +210,27 @@ pub(crate) fn sun_position_from_bounds(
     phase: f32,
     cardinal: SunRiseCardinal,
 ) -> Vec3 {
-    let center = Vec3::new(bounds.center().x, bounds.height * 0.5, bounds.center().z);
-    center + sun_cycle_direction(phase, cardinal) * sun_orbit_distance_from(bounds)
+    sun_orbit_center(bounds)
+        + sun_cycle_direction(phase, cardinal) * sun_orbit_distance_from(bounds)
 }
 
-/// Distancia del sol al centro de la escena: fuera de la caja, dentro del cielo.
-/// Se calcula aparte de `State` para poder comprobarlo sin Vulkan.
-pub(crate) fn sun_orbit_distance_from(bounds: &WorldBounds3D) -> f32 {
-    let half = Vec3::new(
-        bounds.width() * 0.5,
-        bounds.height * 0.5,
-        bounds.depth() * 0.5,
-    );
-    let diagonal = half.length();
-    let sky_radius = bounds.sky_uniform().center_radius[3];
-    (diagonal * SUN_OUTSIDE_BOUNDS_FACTOR)
-        .max(diagonal + 1.0)
-        .min(sky_radius * SUN_INSIDE_SKY_FACTOR)
+/// Radio de la órbita del sol: fijo, dentro de la esfera de cielo. Ya no depende
+/// del tamaño ni de la diagonal de la caja; `_bounds` se conserva en la firma
+/// para no tocar a los callers. Se calcula aparte de `State` para poder
+/// comprobarlo sin Vulkan.
+pub(crate) fn sun_orbit_distance_from(_bounds: &WorldBounds3D) -> f32 {
+    SKY_SPHERE_RADIUS * SUN_ORBIT_INSIDE_SKY_FACTOR
+}
+
+/// Radio del emisor de halo (m) según la escala del icono y la distancia
+/// orbital. Crece con la distancia para conservar el tamaño angular de siempre:
+/// a 1360 m un halo de 0.56 m medía apenas unos píxeles y el sol desaparecía
+/// aunque estuviera dentro del far plane. La escala del transform sigue
+/// pudiendo agrandarlo a voluntad.
+pub(crate) fn sun_halo_radius_m(scale: f32, orbit_distance: f32) -> f32 {
+    let base = (scale.abs() * 0.5 + 0.06).max(0.1);
+    let distance = orbit_distance.max(SUN_HALO_REFERENCE_DISTANCE_M);
+    base * (distance / SUN_HALO_REFERENCE_DISTANCE_M)
 }
 
 /// Matriz vista-proyección de la luz. Separada de [`State`] para poder comprobar
@@ -254,6 +273,45 @@ fn light_view_proj_from(
     m
 }
 
+/// Semi-lado mínimo de la ortho para que, con el ancla en el suelo, la cámara
+/// de luz llegue desde el centro del terreno hasta las 8 esquinas de la caja.
+fn shadow_ground_corner_extent_m(bounds: &WorldBounds3D) -> f32 {
+    let ground = sun_orbit_center(bounds);
+    let min = bounds.min_corner();
+    let max = bounds.max_corner();
+    let mut needed = 0.0_f32;
+    for x in [min.x, max.x] {
+        for y in [min.y, max.y] {
+            for z in [min.z, max.z] {
+                needed = needed.max(ground.distance(Vec3::new(x, y, z)));
+            }
+        }
+    }
+    needed
+}
+
+/// Semi-lado de la ortho de la luz para unos límites y una altura del sol.
+fn light_shadow_extent_for(bounds: &WorldBounds3D, dir_y: f32) -> f32 {
+    shadow_ortho_extent_m(bounds.radius()).max(shadow_ground_corner_extent_m(bounds))
+        * shadow_grazing_scale(dir_y)
+}
+
+/// Matriz de luz para unos límites: usa siempre el suelo como centro, igual que
+/// `State::build_light_view_proj`. Separada de `State` para probarla sin Vulkan.
+fn light_view_proj_for_bounds(
+    bounds: &WorldBounds3D,
+    dir: Vec3,
+    extent: f32,
+    map_size: u32,
+    cardinal: SunRiseCardinal,
+) -> [[f32; 4]; 4] {
+    let up = match cardinal {
+        SunRiseCardinal::East | SunRiseCardinal::West => Vec3::Z,
+        SunRiseCardinal::North | SunRiseCardinal::South => Vec3::X,
+    };
+    light_view_proj_from(sun_orbit_center(bounds), dir, extent, map_size, up)
+}
+
 impl State {
     /// Distancia del icono: fuera del cuadro de límites pero dentro de la esfera de cielo.
     pub(crate) fn sun_orbit_distance(&self) -> f32 {
@@ -268,11 +326,10 @@ impl State {
         )
     }
 
-    /// Centro de la escena para calcular la dirección del sol (luz direccional).
+    /// Centro del terreno en el suelo: punto al que mira la cámara de luz y
+    /// centro de la órbita del sol (misma ancla que el snapping de sombras).
     pub(crate) fn directional_light_scene_center(&self) -> Vec3 {
-        let min = self.world_bounds_3d.min_corner();
-        let max = self.world_bounds_3d.max_corner();
-        (min + max) * 0.5
+        sun_orbit_center(&self.world_bounds_3d)
     }
 
     /// Actualiza la dirección de luz: del centro de la escena hacia el icono del sol.
@@ -503,10 +560,10 @@ impl State {
     }
 
     /// Semi-lado de la ortho de la luz (misma fórmula que `build_light_view_proj`).
-    /// Crece con el ángulo rasante para que las sombras largas no se corten.
+    /// Crece con el ángulo rasante y, con el centro en el suelo, con la distancia
+    /// hasta las esquinas altas de la caja para que el techo no quede cortado.
     pub(crate) fn light_shadow_extent_m(&self) -> f32 {
-        shadow_ortho_extent_m(self.world_bounds_3d.radius())
-            * shadow_grazing_scale(self.directional_light_dir.y)
+        light_shadow_extent_for(&self.world_bounds_3d, self.directional_light_dir.y)
     }
 
     /// Metros por texel del mapa de sombras. El shader del terreno usa esto de bias.
@@ -528,18 +585,12 @@ impl State {
 
     /// Proyección ortográfica de la luz que cubre los bounds del mundo.
     pub(crate) fn build_light_view_proj(&self) -> [[f32; 4]; 4] {
-        // Normal del plano de órbita: estable para todo el ciclo (Este/Oeste → Z,
-        // Norte/Sur → X). Nunca se conmuta según dir.y, que reflejaba la sombra.
-        let up = match self.sun_rise_cardinal {
-            SunRiseCardinal::East | SunRiseCardinal::West => Vec3::Z,
-            SunRiseCardinal::North | SunRiseCardinal::South => Vec3::X,
-        };
-        light_view_proj_from(
-            self.directional_light_scene_center(),
+        light_view_proj_for_bounds(
+            &self.world_bounds_3d,
             self.directional_light_dir,
             self.light_shadow_extent_m(),
             self.active_shadow_map_size(),
-            up,
+            self.sun_rise_cardinal,
         )
     }
 
@@ -717,7 +768,9 @@ impl State {
             .abs()
             .min(transform.scale.y.abs())
             .min(transform.scale.z.abs());
-        let radius = (scale * 0.5 + 0.06).max(0.1);
+        // El halo escala con la órbita fija: a 1360 m conserva el tamaño
+        // angular que tenía con el radio derivado del mundo (~88 m).
+        let radius = sun_halo_radius_m(scale, self.sun_orbit_distance());
         let light = self.directional_light_color;
         let halo_color = [light.x, light.y, light.z, 1.0];
         self.particles
@@ -849,13 +902,15 @@ impl State {
 mod tests {
     use super::{
         DEFAULT_LIGHT_COLOR, SHADOW_CASTER_MARGIN_MIN_M, SUN_CYCLE_SECONDS_PER_UNIT,
-        SunRiseCardinal, day_factor, light_view_proj_from, shadow_caster_margin_from,
+        SUN_HALO_REFERENCE_DISTANCE_M, SunRiseCardinal, day_factor, light_shadow_extent_for,
+        light_view_proj_for_bounds, light_view_proj_from, shadow_caster_margin_from,
         shadow_grazing_scale, shadow_ortho_extent_m, shadow_world_texel_from,
-        sun_color_for_sun_height, sun_cycle_direction, sun_local_direction,
-        sun_orbit_distance_from, sun_phase_from_direction, sun_world_y,
+        sun_color_for_sun_height, sun_cycle_direction, sun_halo_radius_m, sun_local_direction,
+        sun_orbit_center, sun_orbit_distance_from, sun_phase_from_direction,
+        sun_position_from_bounds, sun_world_y,
     };
-    use crate::engine3d::config_3d::world_bounds::WorldBounds3D;
-    use glam::Vec3;
+    use crate::engine3d::config_3d::world_bounds::{SKY_SPHERE_RADIUS, WorldBounds3D};
+    use glam::{Mat4, Vec3};
 
     #[test]
     fn shadow_ortho_matches_world_aabb_diagonal() {
@@ -904,28 +959,136 @@ mod tests {
     }
 
     #[test]
-    fn sun_orbit_is_outside_the_box_but_inside_the_sky_sphere() {
-        for bounds in [
-            WorldBounds3D::default(),
-            WorldBounds3D::with_faces(200.0, 120.0, 80.0, 40.0, 300.0),
-            WorldBounds3D::with_faces(5.0, 5.0, 5.0, 5.0, 10.0),
-        ] {
-            let half = Vec3::new(
-                bounds.width() * 0.5,
-                bounds.height * 0.5,
-                bounds.depth() * 0.5,
-            );
-            let diagonal = half.length();
-            let sky_radius = bounds.sky_uniform().center_radius[3];
+    fn sun_orbit_radius_is_fixed_to_the_sky_sphere_for_every_world() {
+        // El radio ya NO se calcula con la diagonal de la caja: un mundo con
+        // techo alto y laterales bajos no debe acercar el sol.
+        let worlds = [
+            ("por defecto", WorldBounds3D::default()),
+            ("pequeño", WorldBounds3D::new_square(30.0)),
+            ("grande", WorldBounds3D::new_square(2000.0)),
+            (
+                "techo alto",
+                WorldBounds3D::with_faces(20.0, 20.0, 20.0, 20.0, 640.0),
+            ),
+        ];
+        for (name, bounds) in worlds {
             let distance = sun_orbit_distance_from(&bounds);
+            let sky_radius = bounds.sky_uniform().center_radius[3];
             assert!(
-                distance > diagonal,
-                "el sol debe quedar fuera de la caja ({distance} > {diagonal})"
+                (distance - SKY_SPHERE_RADIUS * 0.85).abs() < 1e-3,
+                "{name}: radio {distance} != 1360"
             );
             assert!(
                 distance < sky_radius,
-                "el sol debe quedar dentro de la esfera ({distance} < {sky_radius})"
+                "{name}: el sol debe quedar dentro de la esfera ({distance} < {sky_radius})"
             );
+        }
+    }
+
+    #[test]
+    fn sun_orbit_radius_is_constant_for_every_phase() {
+        // Si el sol pareciera acercarse al bajar sería perspectiva, no geometría.
+        let bounds = WorldBounds3D::default();
+        let center = sun_orbit_center(&bounds);
+        let distance = sun_orbit_distance_from(&bounds);
+        for phase in [0.0, 0.1, 0.25, 0.5, 0.75] {
+            let position = sun_position_from_bounds(&bounds, phase, SunRiseCardinal::East);
+            let radius = (position - center).length();
+            assert!(
+                (radius - distance).abs() < 1e-3,
+                "fase {phase}: radio {radius} != {distance}"
+            );
+        }
+    }
+
+    #[test]
+    fn sun_halo_keeps_its_angular_size_at_the_fixed_orbit() {
+        let orbit = sun_orbit_distance_from(&WorldBounds3D::default());
+        let reference = sun_halo_radius_m(1.0, SUN_HALO_REFERENCE_DISTANCE_M);
+        let current = sun_halo_radius_m(1.0, orbit);
+
+        // Misma relación radio/distancia: el tamaño aparente no cambia aunque
+        // la órbita pase de ~88 m a 1360 m.
+        let ratio_ref = reference / SUN_HALO_REFERENCE_DISTANCE_M;
+        let ratio_now = current / orbit;
+        assert!(
+            (ratio_now - ratio_ref).abs() < 1e-6,
+            "tamaño angular {ratio_now} != {ratio_ref}"
+        );
+        assert!(
+            current > reference * 10.0,
+            "halo {current} no escaló con la órbita {orbit}"
+        );
+        // La escala del transform sigue pudiendo agrandar el halo.
+        assert!(sun_halo_radius_m(2.0, orbit) > current);
+    }
+
+    #[test]
+    fn sun_orbit_center_is_on_the_ground_with_a_tall_world() {
+        // 1000 m de altura pedida (el constructor la limita a 640) no debe
+        // desplazar el ancla: el sol orbita alrededor del suelo.
+        let bounds = WorldBounds3D::with_faces(80.0, 30.0, 60.0, 20.0, 1000.0);
+        let center = sun_orbit_center(&bounds);
+        assert!(
+            center.y.abs() < 1e-6,
+            "el centro debe estar en y=0: {center}"
+        );
+        assert!((center.x - bounds.center().x).abs() < 1e-6);
+        assert!((center.z - bounds.center().z).abs() < 1e-6);
+        // El centro de la CAJA sí está a media altura: no es el que buscamos.
+        let box_center = (bounds.min_corner() + bounds.max_corner()) * 0.5;
+        assert!(box_center.y > 0.0);
+        assert!((box_center.y - center.y).abs() > 1.0);
+    }
+
+    #[test]
+    fn light_camera_looks_at_ground_center() {
+        let bounds = WorldBounds3D::with_faces(50.0, 50.0, 50.0, 50.0, 1000.0);
+        let ground = sun_orbit_center(&bounds);
+        let dir = sun_cycle_direction(0.0, SunRiseCardinal::East); // sol en el horizonte
+        let extent = light_shadow_extent_for(&bounds, dir.y);
+        let m = light_view_proj_for_bounds(&bounds, dir, extent, 1024, SunRiseCardinal::East);
+
+        // Reconstruimos un punto del centro de la imagen: el eje de la cámara
+        // de luz debe pasar por el suelo, no por media altura.
+        let inv = Mat4::from_cols_array_2d(&m).inverse();
+        let p = inv * glam::Vec4::new(0.0, 0.0, 0.0, 1.0);
+        let p = Vec3::new(p.x / p.w, p.y / p.w, p.z / p.w);
+        assert!(
+            p.y.abs() < 1e-3,
+            "la cámara de luz mira a y={}, no al suelo",
+            p.y
+        );
+        assert!((p.z - ground.z).abs() < 1e-3);
+        assert!((p.y - bounds.height * 0.5).abs() > 1.0);
+    }
+
+    #[test]
+    fn shadow_extent_covers_the_world_from_the_ground_center() {
+        // Con el ancla en el suelo la tapa alta queda más lejos: la ortho debe
+        // seguir conteniendo las 8 esquinas para cualquier altura del sol.
+        let bounds = WorldBounds3D::with_faces(50.0, 50.0, 50.0, 50.0, 640.0);
+        let min = bounds.min_corner();
+        let max = bounds.max_corner();
+        for dy in [0.0_f32, 0.5, 1.0] {
+            let dir = Vec3::new((1.0 - dy * dy).sqrt(), dy, 0.0);
+            let extent = light_shadow_extent_for(&bounds, dir.y);
+            let m = light_view_proj_for_bounds(&bounds, dir, extent, 1024, SunRiseCardinal::East);
+            let proj = Mat4::from_cols_array_2d(&m);
+            for x in [min.x, max.x] {
+                for y in [min.y, max.y] {
+                    for z in [min.z, max.z] {
+                        let c = proj * glam::Vec4::new(x, y, z, 1.0);
+                        let (nx, ny, nz) = (c.x / c.w, c.y / c.w, c.z / c.w);
+                        assert!(nx.abs() <= 1.0 + 1e-4, "x={nx} fuera de la ortho");
+                        assert!(ny.abs() <= 1.0 + 1e-4, "y={ny} fuera de la ortho");
+                        assert!(
+                            (-1.0..=1.0).contains(&nz),
+                            "z={nz} fuera del rango de profundidad"
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -951,7 +1114,7 @@ mod tests {
     #[test]
     fn sun_reaches_the_bottom_of_the_world_without_sideways_drift() {
         let bounds = WorldBounds3D::default();
-        let center = Vec3::new(bounds.center().x, bounds.height * 0.5, bounds.center().z);
+        let center = sun_orbit_center(&bounds);
         let distance = sun_orbit_distance_from(&bounds);
 
         for cardinal in [
@@ -989,18 +1152,14 @@ mod tests {
 
     #[test]
     fn sun_goes_below_the_world_at_night() {
-        // Con la órbita centrada a media altura, el punto más bajo debe quedar
-        // por debajo del suelo (y = 0) para cualquier tamaño de mundo.
+        // Con la órbita centrada en el suelo, el punto más bajo queda por
+        // debajo de y = 0 para cualquier tamaño de mundo.
         for bounds in [
             WorldBounds3D::default(),
             WorldBounds3D::with_faces(5.0, 5.0, 5.0, 5.0, 10.0),
             WorldBounds3D::with_faces(1000.0, 1000.0, 1000.0, 1000.0, 2000.0),
         ] {
-            let center = Vec3::new(
-                (bounds.east - bounds.west) * 0.5,
-                bounds.height * 0.5,
-                (bounds.south - bounds.north) * 0.5,
-            );
+            let center = sun_orbit_center(&bounds);
             let distance = sun_orbit_distance_from(&bounds);
             let lowest_y = center.y + sun_cycle_direction(0.75, SunRiseCardinal::East).y * distance;
             assert!(
@@ -1023,17 +1182,58 @@ mod tests {
         let bounds = WorldBounds3D::default();
         let distance = sun_orbit_distance_from(&bounds);
 
-        // A fase 0.5 el sol está a 50 m de altura: sigue siendo de día pleno.
-        let mid = sun_cycle_direction(0.5, SunRiseCardinal::East);
-        let mid_y = sun_world_y(&bounds, mid, distance);
-        assert!(mid_y > 0.0);
-        assert!((day_factor(mid_y, distance) - 1.0).abs() < 1e-5);
+        // Fase 0.25: mediodía, sol en lo alto → día pleno.
+        let noon = sun_cycle_direction(0.25, SunRiseCardinal::East);
+        let noon_y = sun_world_y(&bounds, noon, distance);
+        assert!(noon_y > 0.0);
+        assert!((day_factor(noon_y, distance) - 1.0).abs() < 1e-5);
 
-        // Solo se oscurece cuando el sol baja al suelo (puesta real).
+        // Fase 0.5: puesta exacta en el suelo → crepúsculo (0.5).
+        let horizon = sun_cycle_direction(0.5, SunRiseCardinal::East);
+        let horizon_y = sun_world_y(&bounds, horizon, distance);
+        // f32 redondea π, así que sin(π) no es exactamente 0 (≈1e-4 m a 1360 m).
+        assert!(horizon_y.abs() < 1e-2);
+        assert!((day_factor(horizon_y, distance) - 0.5).abs() < 1e-5);
+
+        // Solo se oscurece del todo cuando el sol baja bajo el suelo.
         let dusk = sun_cycle_direction(0.62, SunRiseCardinal::East);
         let dusk_y = sun_world_y(&bounds, dusk, distance);
         assert!(dusk_y < 0.0);
-        assert!(day_factor(dusk_y, distance) < 0.5);
+        assert!(day_factor(dusk_y, distance) < 1e-5);
+    }
+
+    #[test]
+    fn sun_sets_at_the_horizon_when_dir_y_is_zero() {
+        let bounds = WorldBounds3D::with_faces(1000.0, 1000.0, 1000.0, 1000.0, 1000.0);
+        let distance = sun_orbit_distance_from(&bounds);
+
+        let y = sun_world_y(&bounds, Vec3::X, distance);
+        assert!(
+            y.abs() < 1e-6,
+            "con dir.y = 0 el sol debe estar en el suelo (y={y})"
+        );
+        // La posición orbital confirma la misma altura en el amanecer.
+        let pos = sun_position_from_bounds(&bounds, 0.0, SunRiseCardinal::East);
+        assert!((pos.y - y).abs() < 1e-5);
+        // Y no depende de la altura del mundo.
+        assert!(sun_world_y(&WorldBounds3D::default(), Vec3::X, distance).abs() < 1e-6);
+    }
+
+    #[test]
+    fn twilight_bands_scale_with_the_fixed_orbit() {
+        let bounds = WorldBounds3D::default();
+        let distance = sun_orbit_distance_from(&bounds);
+        let band = distance * 0.08;
+        assert!((band - 108.8).abs() < 1e-3);
+        assert!((day_factor(0.0, distance) - 0.5).abs() < 1e-6);
+        assert!(day_factor(-band, distance) < 1e-5);
+        assert!(day_factor(band, distance) > 1.0 - 1e-5);
+
+        // El tinte solo aparece cerca del suelo (~109 m), no desde 400 m.
+        let tint = |y: f32| sun_color_for_sun_height(y, distance, Vec3::NEG_X).z;
+        assert!((tint(band) - DEFAULT_LIGHT_COLOR.z).abs() < 1e-3);
+        assert!(tint(0.0) < DEFAULT_LIGHT_COLOR.z);
+        assert!((tint(band * 5.0) - DEFAULT_LIGHT_COLOR.z).abs() < 1e-6);
     }
 
     #[test]
@@ -1054,9 +1254,10 @@ mod tests {
         // Puesta: rojizo (cae el azul, sube el rojo).
         assert!(dusk.z < DEFAULT_LIGHT_COLOR.z);
         assert!(dusk.x >= dawn.x);
-        // Mediodía (y fase 0.5, sol aún alto): color neutro histórico.
+        // Mediodía (fase 0.25): color neutro histórico.
         assert!((noon - DEFAULT_LIGHT_COLOR).length() < 1e-5);
-        assert!((color_at(0.5) - DEFAULT_LIGHT_COLOR).length() < 1e-5);
+        // Fase 0.5 ya es la puesta (sol en el suelo): rojizo, no neutro.
+        assert!(color_at(0.5).z < DEFAULT_LIGHT_COLOR.z);
     }
 
     #[test]

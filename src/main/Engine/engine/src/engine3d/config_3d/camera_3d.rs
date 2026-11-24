@@ -6,6 +6,14 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat4, Vec3};
 
 use super::character_anchor::EDITOR_DEFAULT_ORBIT_PITCH;
+use super::world_bounds::SKY_SPHERE_RADIUS;
+
+/// `far` de una cámara recién creada: cubre la esfera de cielo con el mismo
+/// margen que `sync_world_bounds_3d_runtime`. Las plantillas 3D recrean la
+/// cámara con `Camera::new()` DESPUÉS de ese sync (config_base.rs), así que si
+/// aquí se deja 1000 m el sol (a 1360 m) queda más allá del far plane y su halo
+/// se recorta aunque el sync haya calculado 1760 m.
+pub(crate) const DEFAULT_CAMERA_FAR: f32 = SKY_SPHERE_RADIUS * 1.1;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -38,7 +46,7 @@ impl Camera {
             pitch: EDITOR_DEFAULT_ORBIT_PITCH,
             fov_y: 45_f32.to_radians(),
             near: 0.1,
-            far: 1000.0,
+            far: DEFAULT_CAMERA_FAR,
             eye_height_offset: 0.0,
             eye_offset_local: Vec3::ZERO,
             orbit_pivot_offset: Vec3::ZERO,
@@ -120,5 +128,33 @@ impl Camera {
 
     pub(crate) fn proj_matrix(&self, aspect: f32) -> Mat4 {
         Mat4::perspective_rh(self.fov_y, aspect, self.near, self.far)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Camera, DEFAULT_CAMERA_FAR};
+    use crate::engine3d::config_3d::directional_light::sun_orbit_distance_from;
+    use crate::engine3d::config_3d::world_bounds::WorldBounds3D;
+
+    #[test]
+    fn a_fresh_camera_reaches_the_fixed_sun_orbit() {
+        let camera = Camera::new();
+        let orbit = sun_orbit_distance_from(&WorldBounds3D::default());
+
+        // El sol debe quedar dentro del far plane incluso en la cámara que
+        // crean las plantillas, que no vuelve a pasar por el sync del mundo.
+        assert!(
+            camera.far > orbit,
+            "far {} no alcanza la órbita del sol {}",
+            camera.far,
+            orbit
+        );
+        assert!(
+            (camera.far - DEFAULT_CAMERA_FAR).abs() < 1e-3,
+            "far por defecto {} != {}",
+            camera.far,
+            DEFAULT_CAMERA_FAR
+        );
     }
 }
