@@ -1,0 +1,14 @@
+# Los runners de Windows tienen core.autocrlf=true y convierten los .rs a CRLF al
+# hacer checkout. rustfmt.toml fija newline_style = "Unix", asi que eso hace fallar
+# `cargo fmt --all -- --check` en CI aunque en local pase. Forzar LF en el checkout
+# mantiene el formato identico en todas las plataformas.
+*.rs text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.frag text eol=lf
+*.vert text eol=lf
+*.comp text eol=lf
+*.rgen text eol=lf
+*.rchit text eol=lf
+*.rmiss text eol=lf
