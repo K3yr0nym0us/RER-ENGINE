@@ -15,12 +15,15 @@ use std::sync::Arc;
 use ab_glyph::FontArc;
 
 /// Inter regular (optical size 18 pt): fuente de texto por defecto del editor.
+#[cfg_attr(not(any(feature = "editor", feature = "engine3d")), allow(dead_code))]
 pub(crate) const INTER_REGULAR: &[u8] = include_bytes!("../../assets/fonts/Inter_18pt-Regular.ttf");
 
 /// Inter bold: familia `rer-bold` del editor (`<strong>` y etiquetas).
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
 pub(crate) const INTER_BOLD: &[u8] = include_bytes!("../../assets/fonts/Inter_18pt-Bold.ttf");
 
 /// La misma Inter regular para el rasterizador del HUD del jugador (`ab_glyph`).
+#[cfg_attr(not(feature = "engine3d"), allow(dead_code))]
 pub(crate) fn inter_regular_font_arc() -> Option<Arc<FontArc>> {
     FontArc::try_from_vec(INTER_REGULAR.to_vec())
         .ok()

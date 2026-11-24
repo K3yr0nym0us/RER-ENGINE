@@ -86,6 +86,7 @@ const SUN_HALO_REFERENCE_DISTANCE_M: f32 = 88.0;
 /// Un valor de la UI (1000 por tramo) equivale a 1 hora → 1 unidad = 3.6 s.
 pub const SUN_CYCLE_SECONDS_PER_UNIT: f32 = 3.6;
 /// Valor por defecto de CADA input: 1000 ms de día + 1000 ms de noche = 2000.
+#[cfg_attr(not(feature = "editor"), allow(dead_code))]
 pub const SUN_CYCLE_DEFAULT_UI_VALUE: f32 = 1000.0;
 /// Duración por defecto de cada tramo en segundos (1 h cada uno → 2 h la vuelta).
 pub const DEFAULT_SUN_CYCLE_SEGMENT_SECS: f32 = 3600.0;

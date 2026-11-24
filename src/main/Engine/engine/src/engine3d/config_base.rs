@@ -369,7 +369,9 @@ impl State {
 
         // Límites lógicos del mundo: mínimo del motor, 30 m de lado (cara 15 m),
         // sincronizado con el generador y con la rosa de los vientos del editor.
-        self.set_world_bounds_3d_radius(crate::engine3d::MIN_WORLD_RADIUS_3D);
+        self.set_world_bounds_3d_radius(
+            crate::engine3d::config_3d::world_bounds::MIN_WORLD_RADIUS_3D,
+        );
 
         self.camera = Camera::new();
         // Jugador y cámara en el centro del mapa, con el mismo rumbo de siempre
@@ -409,7 +411,9 @@ impl State {
     }
 
     pub(crate) fn apply_empty_3d_editor_defaults(&mut self) {
-        self.set_world_bounds_3d_radius(crate::engine3d::MIN_WORLD_RADIUS_3D);
+        self.set_world_bounds_3d_radius(
+            crate::engine3d::config_3d::world_bounds::MIN_WORLD_RADIUS_3D,
+        );
         self.camera = Camera::new();
         let spawn_xz = (0.0_f32, 5.0_f32);
         let ground_y = self
