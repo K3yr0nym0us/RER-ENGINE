@@ -18,12 +18,22 @@ pub(crate) const INTERACTION_DEMO_X: f32 = -14.5;
 pub(crate) const INTERACTION_DEMO_Z0: f32 = -4.8;
 pub(crate) const INTERACTION_DEMO_Z_STEP: f32 = 2.4;
 
-/// Modelo animado de la demo (ruta relativa a la raíz del repositorio).
-pub(crate) const DEMO_RAPTOR_MODEL_REL: &str =
-    "dev/3D Models/GLB/Animals/pbr_velociraptor_animated.glb";
+/// Modelo animado de la demo (ruta relativa a la carpeta `Models` del motor,
+/// versionada en `src/main/Engine/Models` y empaquetada en `resources/engine/Models`).
+pub(crate) const DEMO_RAPTOR_MODEL_REL: &str = "pbr_velociraptor_animated.glb";
 pub(crate) fn demo_raptor_model_path() -> String {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../..")
+    // Misma resolución que los modelos empaquetados: junto al binario en
+    // producción y `Engine/Models` en desarrollo. En tests (binario en
+    // `target/debug/deps`) no hay carpeta `Models` junto al ejecutable, así que
+    // se usa la ruta del workspace para que el archivo exista también en CI.
+    let models_dir =
+        crate::engine3d::assets::bundled::resolve_engine_models_dir().unwrap_or_else(|| {
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .expect("engine_3d parent")
+                .join("Models")
+        });
+    models_dir
         .join(DEMO_RAPTOR_MODEL_REL)
         .to_string_lossy()
         .into_owned()
