@@ -54,6 +54,17 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # build.rs compila los shaders con glslc (incluido en el Vulkan SDK), que
+      # no viene instalado en windows-latest. La acción exporta VULKAN_SDK y
+      # añade su Bin al PATH, tal como espera find_glslc() en engine/build.rs.
+      - name: Install Vulkan SDK (glslc)
+        uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: 1.4.363.1
+          install_runtime: false
+          cache: true
+          stripdown: true
+
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
         with:
