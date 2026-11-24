@@ -126,6 +126,8 @@ impl State {
             vsync_enabled: false,
             prev_view_proj: identity_vp,
             texture_array,
+            model_texture_array: None,
+            hi_res_tex_indices: HashSet::new(),
             tex_layers,
             tex_layer_albedo: vec![[0.75, 0.75, 0.75]],
             fallback_layer,

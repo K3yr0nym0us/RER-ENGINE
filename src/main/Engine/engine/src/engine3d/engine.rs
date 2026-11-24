@@ -58,6 +58,10 @@ pub struct State {
     pub(crate) taa_frame: u32,
 
     pub(crate) texture_array: crate::engine3d::texture::TextureArray,
+    /// Array 4K creado bajo demanda para albedos de modelo que superan 1024².
+    pub(crate) model_texture_array: Option<crate::engine3d::texture::TextureArray>,
+    /// Índices planos en `tex_layers` cuyo albedo vive en `model_texture_array`.
+    pub(crate) hi_res_tex_indices: HashSet<usize>,
     /// `tex_idx` de `MeshComponent` → capa en `texture_array`.
     pub(crate) tex_layers: Vec<crate::engine3d::texture::TextureLayer>,
     /// Albedo promedio por `tex_idx` (paralelo a `tex_layers`).
@@ -541,8 +545,48 @@ impl State {
         {
             return layer;
         }
-        let layer = self.texture_array.pack(&self.vulkan, rgba, w, h).unwrap();
-        if layer >= crate::engine3d::texture::TextureArray::MAX_LAYERS - 1 {
+        let tex_idx = self.tex_layers.len();
+        let hi_res = w.max(h) > crate::engine3d::texture::TextureArray::TEXTURE_SIZE;
+        let layer = if hi_res {
+            if self.model_texture_array.is_none() {
+                match crate::engine3d::texture::TextureArray::new_sized(
+                    &self.vulkan,
+                    crate::engine3d::texture::MODEL_TEXTURE_SIZE,
+                    4,
+                ) {
+                    Ok(array) => {
+                        log::info!(
+                            "[textura] array de modelos 4K creado ({}×{})",
+                            crate::engine3d::texture::MODEL_TEXTURE_SIZE,
+                            crate::engine3d::texture::MODEL_TEXTURE_SIZE
+                        );
+                        self.model_texture_array = Some(array);
+                    }
+                    Err(error) => {
+                        log::error!(
+                            "[textura] no se pudo crear el array 4K ({error}); se usa el array estándar"
+                        );
+                    }
+                }
+            }
+            if let Some(array) = self.model_texture_array.as_mut() {
+                let layer = array.pack(&self.vulkan, rgba, w, h).unwrap();
+                self.hi_res_tex_indices.insert(tex_idx);
+                // Se devuelve la capa MARCADA: viaja por `tex_layers`,
+                // `texture_path_layers` y `part_tex_layers`, donde debe ser única
+                // frente a las capas legacy con el mismo número real.
+                crate::engine3d::texture::tag_hi_res_layer(layer)
+            } else {
+                // Si el array 4K no está disponible, se mantiene el camino anterior.
+                self.texture_array.pack(&self.vulkan, rgba, w, h).unwrap()
+            }
+        } else {
+            self.texture_array.pack(&self.vulkan, rgba, w, h).unwrap()
+        };
+        // La marca no cuenta como capa Vulkan: se desenmascara para el chequeo.
+        if crate::engine3d::texture::untag_layer(layer)
+            >= crate::engine3d::texture::TextureArray::MAX_LAYERS - 1
+        {
             crate::engine3d::ipc::send_event(
                 &crate::engine3d::ipc::EngineEvent::TextureArrayExhausted {
                     max_layers: crate::engine3d::texture::TextureArray::MAX_LAYERS,

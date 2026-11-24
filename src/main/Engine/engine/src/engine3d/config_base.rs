@@ -90,6 +90,10 @@ impl State {
         self.pending_load_models.clear();
         self.pending_entity_model_replaces.clear();
         let _ = self.texture_array.reset(&self.vulkan);
+        if let Some(array) = self.model_texture_array.as_mut() {
+            let _ = array.reset(&self.vulkan);
+        }
+        self.hi_res_tex_indices.clear();
         self.worldgen.material_base = None;
         self.worldgen.fallback_tex_idx = None;
         self.worldgen.columns.clear();

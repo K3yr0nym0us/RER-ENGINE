@@ -5,6 +5,27 @@ use crate::engine3d::vulkan::{GpuImage, SharedGpu, VulkanError};
 /// Índice de capa en el array de texturas compartido (group 1 del shader).
 pub type TextureLayer = u32;
 
+/// Lado del array GPU reservado para albedos de modelo que superan el tamaño estándar.
+/// El shader sigue leyendo la capa directa (`v_tex.x`): se enlaza un segundo set de
+/// descriptores con esta imagen, sin cambiar el shader ni el índice de capa.
+pub const MODEL_TEXTURE_SIZE: u32 = 4096;
+
+/// Bit alto usado como MARCA en los valores de capa que viajan por `tex_layers`,
+/// `texture_path_layers` y `part_tex_layers`. Los números de capa Vulkan reales
+/// caben en 8 bits (`MAX_LAYERS = 256`), así que marcar los del array 4K evita
+/// que colisionen con los legacy en búsquedas por valor (`iter().position()`).
+pub(crate) const HI_RES_LAYER_TAG: u32 = 0x8000_0000;
+
+/// Etiqueta una capa del array 4K para que sea distinta de cualquier capa legacy.
+pub(crate) fn tag_hi_res_layer(layer: u32) -> u32 {
+    layer | HI_RES_LAYER_TAG
+}
+
+/// Recupera el número de capa Vulkan real (sin marca).
+pub(crate) fn untag_layer(layer: u32) -> u32 {
+    layer & !HI_RES_LAYER_TAG
+}
+
 /// Resultado de resize + mips en CPU (precarga de modelos).
 pub(crate) struct LayerMipChain {
     pub mips: Vec<Vec<u8>>,
@@ -30,13 +51,16 @@ impl TextureArray {
     pub const FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
 
     pub fn new(gpu: &SharedGpu) -> Result<Self, VulkanError> {
-        let mip_levels = mip_level_count(Self::TEXTURE_SIZE);
+        Self::new_sized(gpu, Self::TEXTURE_SIZE, Self::INITIAL_LAYERS)
+    }
+
+    /// Crea un array con lado y capacidad inicial arbitrarios. `new()` corresponde
+    /// a `(TEXTURE_SIZE, INITIAL_LAYERS)`; los modelos >1024 usan `MODEL_TEXTURE_SIZE`.
+    pub fn new_sized(gpu: &SharedGpu, size: u32, initial_layers: u32) -> Result<Self, VulkanError> {
+        let (extent, mip_levels) = array_geometry(size);
         let image = gpu.create_image_layers(
-            vk::Extent2D {
-                width: Self::TEXTURE_SIZE,
-                height: Self::TEXTURE_SIZE,
-            },
-            Self::INITIAL_LAYERS,
+            extent,
+            initial_layers,
             mip_levels,
             Self::FORMAT,
             vk::ImageUsageFlags::SAMPLED
@@ -48,9 +72,9 @@ impl TextureArray {
 
         let mut array = Self {
             image,
-            width: Self::TEXTURE_SIZE,
-            height: Self::TEXTURE_SIZE,
-            max_layers: Self::INITIAL_LAYERS,
+            width: size,
+            height: size,
+            max_layers: initial_layers,
             next_layer: 0,
         };
         array.reset(gpu)?;
@@ -63,7 +87,10 @@ impl TextureArray {
 
     pub fn reset(&mut self, gpu: &SharedGpu) -> Result<(), VulkanError> {
         self.next_layer = 0;
-        self.upload_layer(gpu, &solid_white_rgba(), 0)?;
+        // El fallback debe tener el lado de ESTE array: `upload_layer` sube el buffer
+        // con `self.width`/`self.height`, y un blanco de 1024 en un array 4K dejaría
+        // la capa 0 a medias.
+        self.upload_layer(gpu, &solid_white_rgba(self.width), 0)?;
         Ok(())
     }
 
@@ -437,6 +464,18 @@ fn mip_level_count(size: u32) -> u32 {
     (u32::BITS - size.leading_zeros()).max(1)
 }
 
+/// Geometría pura (sin GPU) de un array cuadrado: extent y niveles de mip.
+/// La usa `new_sized` para crear la imagen y los tests para comprobar el tamaño.
+fn array_geometry(size: u32) -> (vk::Extent2D, u32) {
+    (
+        vk::Extent2D {
+            width: size,
+            height: size,
+        },
+        mip_level_count(size),
+    )
+}
+
 /// Siguiente capacidad del array (potencias de 2, tope duro `MAX_LAYERS`).
 fn next_capacity(current: u32) -> u32 {
     match current {
@@ -468,14 +507,8 @@ pub(crate) fn build_layer_mip_chain_timed(rgba: Vec<u8>, w: u32, h: u32) -> Laye
     LayerMipChain { mips }
 }
 
-fn solid_white_rgba() -> Vec<u8> {
-    resize_rgba_vec_to_layer(
-        vec![255, 255, 255, 255],
-        1,
-        1,
-        TextureArray::TEXTURE_SIZE,
-        TextureArray::TEXTURE_SIZE,
-    )
+fn solid_white_rgba(size: u32) -> Vec<u8> {
+    resize_rgba_vec_to_layer(vec![255, 255, 255, 255], 1, 1, size, size)
 }
 
 /// Promedio RGB mip0 (sRGB bytes → linear aproximado).
@@ -523,5 +556,61 @@ mod tests {
         );
         assert_eq!(next_capacity(256), 256);
         assert_eq!(next_capacity(300), TextureArray::MAX_LAYERS);
+    }
+
+    #[test]
+    fn new_sized_model_array_geometry_is_4k_with_13_mips() {
+        let (extent, mips) = array_geometry(MODEL_TEXTURE_SIZE);
+        assert_eq!(MODEL_TEXTURE_SIZE, 4096);
+        assert_eq!(extent.width, 4096);
+        assert_eq!(extent.height, 4096);
+        assert_eq!(mips, 13);
+    }
+
+    #[test]
+    fn reset_white_pixel_uses_the_array_size() {
+        let white = solid_white_rgba(MODEL_TEXTURE_SIZE);
+        assert_eq!(
+            white.len(),
+            (MODEL_TEXTURE_SIZE * MODEL_TEXTURE_SIZE * 4) as usize
+        );
+        assert!(white.iter().all(|&b| b == 255));
+
+        // El array por defecto sigue generando un blanco de 1024².
+        let white = solid_white_rgba(TextureArray::TEXTURE_SIZE);
+        assert_eq!(
+            white.len(),
+            (TextureArray::TEXTURE_SIZE * TextureArray::TEXTURE_SIZE * 4) as usize
+        );
+        assert!(white.iter().all(|&b| b == 255));
+    }
+
+    #[test]
+    fn hi_res_layer_tag_is_inverse_and_unique() {
+        let legacy_layer = 1u32;
+        let tagged = tag_hi_res_layer(legacy_layer);
+        assert_eq!(untag_layer(tagged), legacy_layer);
+        assert_eq!(untag_layer(legacy_layer), legacy_layer);
+        assert!(tagged & HI_RES_LAYER_TAG != 0);
+        assert_eq!(legacy_layer & HI_RES_LAYER_TAG, 0);
+        // Una capa 4K etiquetada nunca compara igual que una legacy con el mismo
+        // número de capa real: los dos arrays empiezan a contar en 0.
+        assert_ne!(tagged, legacy_layer);
+        assert_ne!(tagged, 0);
+        assert!(
+            untag_layer(tagged) < TextureArray::MAX_LAYERS,
+            "la capa desenmascarada debe seguir siendo un índice Vulkan válido"
+        );
+    }
+
+    #[test]
+    fn default_new_keeps_1024_geometry() {
+        // `new()` delega en `new_sized` con estos dos valores.
+        assert_eq!(TextureArray::TEXTURE_SIZE, 1024);
+        assert_eq!(TextureArray::INITIAL_LAYERS, 32);
+        let (extent, mips) = array_geometry(TextureArray::TEXTURE_SIZE);
+        assert_eq!(extent.width, 1024);
+        assert_eq!(extent.height, 1024);
+        assert_eq!(mips, 11);
     }
 }

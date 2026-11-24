@@ -101,6 +101,9 @@ pub struct MeshBatch<'a> {
     pub index_count: u32,
     pub instances: &'a [u8],
     pub instance_count: u32,
+    /// El albedo de este lote vive en el array 4K: enlazar el set de descriptores
+    /// de modelo en vez del estándar.
+    pub hi_res: bool,
 }
 
 /// Lote de partículas de un emisor para este frame. `read_is_a` ya viene decidido por el
@@ -152,6 +155,8 @@ pub struct SkinnedBatch<'a> {
     pub instances: &'a [u8],
     pub instance_count: u32,
     pub palette: &'a [[[f32; 4]; 4]],
+    /// Ver `MeshBatch::hi_res`.
+    pub hi_res: bool,
 }
 
 pub struct GizmoBatch<'a> {
@@ -239,6 +244,9 @@ pub struct FrameInput<'a> {
     pub hud_instance_count: u32,
     pub hud_atlas: Option<&'a GpuImage>,
     pub albedo: &'a GpuImage,
+    /// Array 4K de modelos, cuando ya se creó. Se enlaza en un set propio para
+    /// los lotes con `hi_res = true`; el shader sigue usando `v_tex.x` directo.
+    pub model_albedo: Option<&'a GpuImage>,
     pub rt: &'a [RtBatch<'a>],
     pub materials: &'a [u8],
     pub material_count: u32,
@@ -299,6 +307,9 @@ pub struct FrameRenderer {
     sbt: Option<GpuBuffer>,
     /// Imagen de albedo con la que está enlazado el descriptor set; evita reescribirlo cada frame.
     albedo_image: vk::Image,
+    /// Imagen enlazada en el set 4K. Arranca apuntando al álbum estándar para que el
+    /// set siempre sea válido (el array de modelos es lazy).
+    model_albedo_image: vk::Image,
     /// Imagen del atlas HUD enlazada a `sets.hud` (se escribe una sola vez por atlas).
     hud_image: vk::Image,
     rt_pipeline: vk::Pipeline,
@@ -383,6 +394,8 @@ pub struct FrameRenderer {
 struct DescriptorSets {
     scene: [vk::DescriptorSet; FRAMES],
     albedo: [vk::DescriptorSet; FRAMES],
+    /// Segundo juego con la MISMA layout que `albedo`, para el array 4K de modelos.
+    model_albedo: [vk::DescriptorSet; FRAMES],
     probe: [vk::DescriptorSet; FRAMES],
     joints: [vk::DescriptorSet; FRAMES],
     empty: vk::DescriptorSet,
@@ -500,6 +513,16 @@ impl FrameRenderer {
             write_combined(
                 device,
                 sets.albedo[slot],
+                0,
+                albedo.view,
+                linear,
+                vk::ImageLayout::GENERAL,
+            )?;
+            // El array 4K aún no existe: el set arranca enlazado al álbum estándar
+            // para no dejar descriptores nulos si nunca se crea.
+            write_combined(
+                device,
+                sets.model_albedo[slot],
                 0,
                 albedo.view,
                 linear,
@@ -1077,6 +1100,7 @@ impl FrameRenderer {
             tris,
             sbt,
             albedo_image: albedo.image,
+            model_albedo_image: albedo.image,
             hud_image: vk::Image::null(),
             rt_pipeline,
             bvh_pipeline: bvh_pipe,
@@ -1231,6 +1255,14 @@ impl FrameRenderer {
         if self.albedo_image != input.albedo.image {
             self.albedo_set_image(input.albedo)?;
             self.albedo_image = input.albedo.image;
+        }
+        // Igual que el álbum estándar: antes de grabar ningún CB de este frame, para
+        // no reescribir un set ya enlazado en un command buffer en vuelo.
+        if let Some(model_albedo) = input.model_albedo
+            && self.model_albedo_image != model_albedo.image
+        {
+            self.model_albedo_set_image(model_albedo)?;
+            self.model_albedo_image = model_albedo.image;
         }
         if let Some(atlas) = input.hud_atlas
             && self.hud_image != atlas.image
@@ -1442,6 +1474,21 @@ impl FrameRenderer {
             write_combined(
                 self.gpu.device(),
                 self.sets.albedo[slot],
+                0,
+                albedo.view,
+                self.samplers[0],
+                vk::ImageLayout::GENERAL,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Enlaza el array 4K de modelos en TODOS los slots del segundo juego de sets.
+    pub fn model_albedo_set_image(&self, albedo: &GpuImage) -> Result<(), VulkanError> {
+        for slot in 0..FRAMES {
+            write_combined(
+                self.gpu.device(),
+                self.sets.model_albedo[slot],
                 0,
                 albedo.view,
                 self.samplers[0],

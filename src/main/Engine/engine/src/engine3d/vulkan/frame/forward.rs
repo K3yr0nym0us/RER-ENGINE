@@ -360,19 +360,6 @@ impl FrameRenderer {
         };
         unsafe {
             device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, pipeline);
-            device.cmd_bind_descriptor_sets(
-                cmd,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.layouts[0],
-                0,
-                &[
-                    self.sets.scene[slot],
-                    self.sets.albedo[slot],
-                    self.sets.empty,
-                    self.sets.probe[slot],
-                ],
-                &[],
-            );
             device.cmd_push_constants(
                 cmd,
                 self.layouts[0],
@@ -386,35 +373,53 @@ impl FrameRenderer {
         } else {
             &self.static_transparent_offsets
         };
-        self.draw_indexed(
-            slot,
-            static_batches.iter().map(|batch| {
-                (
-                    batch.vertex,
-                    batch.index,
-                    batch.index_count,
-                    batch.instance_count,
-                )
-            }),
-            offsets,
-            device,
-            cmd,
-        );
+        // El set de albedo se enlaza por tramos consecutivos de `hi_res`: los lotes
+        // estándar siguen usando `sets.albedo` y solo los 4K cambian al segundo juego.
+        let mut start = 0;
+        while start < static_batches.len() {
+            let hi_res = static_batches[start].hi_res;
+            let mut end = start + 1;
+            while end < static_batches.len() && static_batches[end].hi_res == hi_res {
+                end += 1;
+            }
+            let albedo = if hi_res {
+                self.sets.model_albedo[slot]
+            } else {
+                self.sets.albedo[slot]
+            };
+            unsafe {
+                device.cmd_bind_descriptor_sets(
+                    cmd,
+                    vk::PipelineBindPoint::GRAPHICS,
+                    self.layouts[0],
+                    0,
+                    &[
+                        self.sets.scene[slot],
+                        albedo,
+                        self.sets.empty,
+                        self.sets.probe[slot],
+                    ],
+                    &[],
+                );
+            }
+            self.draw_indexed(
+                slot,
+                static_batches[start..end].iter().map(|batch| {
+                    (
+                        batch.vertex,
+                        batch.index,
+                        batch.index_count,
+                        batch.instance_count,
+                    )
+                }),
+                &offsets[start..end],
+                device,
+                cmd,
+            );
+            start = end;
+        }
         unsafe {
             device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, skinned);
-            device.cmd_bind_descriptor_sets(
-                cmd,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.layouts[1],
-                0,
-                &[
-                    self.sets.scene[slot],
-                    self.sets.albedo[slot],
-                    self.sets.joints[slot],
-                    self.sets.probe[slot],
-                ],
-                &[],
-            );
         }
         let joint_bases = if pass_kind < 0.5 {
             &self.joint_bases
@@ -426,7 +431,31 @@ impl FrameRenderer {
         } else {
             &self.skinned_transparent_offsets
         };
+        let mut bound_hi_res: Option<bool> = None;
         for (index, batch) in skinned_batches.iter().enumerate() {
+            if bound_hi_res != Some(batch.hi_res) {
+                let albedo = if batch.hi_res {
+                    self.sets.model_albedo[slot]
+                } else {
+                    self.sets.albedo[slot]
+                };
+                unsafe {
+                    device.cmd_bind_descriptor_sets(
+                        cmd,
+                        vk::PipelineBindPoint::GRAPHICS,
+                        self.layouts[1],
+                        0,
+                        &[
+                            self.sets.scene[slot],
+                            albedo,
+                            self.sets.joints[slot],
+                            self.sets.probe[slot],
+                        ],
+                        &[],
+                    );
+                }
+                bound_hi_res = Some(batch.hi_res);
+            }
             let push = push_bytes(joint_bases.get(index).copied().unwrap_or(0), pass_kind);
             unsafe {
                 device.cmd_push_constants(

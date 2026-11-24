@@ -411,6 +411,7 @@ impl State {
                     index_count: mesh.index_count,
                     instances: bytemuck::cast_slice(instances),
                     instance_count: instances.len() as u32,
+                    hi_res: b.hi_res,
                 });
             }
             shadow_static_batches.push(MeshBatch {
@@ -419,6 +420,7 @@ impl State {
                 index_count: mesh.index_count,
                 instances: bytemuck::cast_slice(&b.instances),
                 instance_count: b.instances.len() as u32,
+                hi_res: b.hi_res,
             });
         }
         for b in &partitioned.opaque_no_shadow {
@@ -431,6 +433,7 @@ impl State {
                 index_count: mesh.index_count,
                 instances: bytemuck::cast_slice(&b.instances),
                 instance_count: b.instances.len() as u32,
+                hi_res: b.hi_res,
             });
         }
         let mut static_transparent_batches: Vec<MeshBatch> = Vec::new();
@@ -445,6 +448,7 @@ impl State {
                 index_count: mesh.index_count,
                 instances: instances_bytes,
                 instance_count: b.instances.len() as u32,
+                hi_res: b.hi_res,
             });
         }
         // Fantasma de colocación (quick build / plano): entra por el pase blend.
@@ -458,6 +462,7 @@ impl State {
                 index_count: mesh.index_count,
                 instances: bytemuck::cast_slice(std::slice::from_ref(ghost)),
                 instance_count: 1,
+                hi_res: false,
             });
         }
 
@@ -465,8 +470,9 @@ impl State {
         // Una sola arena: forward y shadow apuntan al mismo bloque si la
         // entidad es visible y caster.
         let mut skinned_arena: Vec<u8> = Vec::new();
-        let mut skinned_specs: Vec<(usize, usize, usize, bool)> = Vec::new();
-        let mut shadow_skinned_specs: Vec<(usize, usize, usize)> = Vec::new();
+        // (gpu_idx, offset, len, transparent, hi_res)
+        let mut skinned_specs: Vec<(usize, usize, usize, bool, bool)> = Vec::new();
+        let mut shadow_skinned_specs: Vec<(usize, usize, usize, bool)> = Vec::new();
         for (&id, binding) in &self.model_animation_bindings {
             let Some(transform) = self.world.get::<crate::engine3d::ecs::Transform>(id) else {
                 continue;
@@ -513,6 +519,13 @@ impl State {
                     .get(part)
                     .copied()
                     .unwrap_or(binding.tex_layer);
+                // El número de capa se repite entre el array 1024 y el 4K: resolverlo
+                // por búsqueda en `tex_layers` daría el primer índice (legacy) y
+                // enlazaría el set equivocado. El `tex_idx` de la entidad es la clave real.
+                let hi_res = self
+                    .world
+                    .get::<crate::engine3d::ecs::MeshComponent>(id)
+                    .is_some_and(|mc| self.hi_res_tex_indices.contains(&mc.tex_idx));
                 let mut inst =
                     crate::engine3d::mesh::InstanceData::new(transform.to_matrix(), flag, layer);
                 if let Some(pbr) = self.world.get::<SurfacePbr>(id) {
@@ -527,17 +540,17 @@ impl State {
                     let offset = skinned_arena.len();
                     skinned_arena.extend_from_slice(bytes);
                     if needs_forward {
-                        skinned_specs.push((gpu_idx, offset, bytes.len(), transparent));
+                        skinned_specs.push((gpu_idx, offset, bytes.len(), transparent, hi_res));
                     }
                     if needs_shadow {
-                        shadow_skinned_specs.push((gpu_idx, offset, bytes.len()));
+                        shadow_skinned_specs.push((gpu_idx, offset, bytes.len(), hi_res));
                     }
                 }
             }
         }
         let mut skinned_batches: Vec<SkinnedBatch> = Vec::new();
         let mut skinned_transparent_batches: Vec<SkinnedBatch> = Vec::new();
-        for (gpu_idx, offset, len, transparent) in &skinned_specs {
+        for (gpu_idx, offset, len, transparent, hi_res) in &skinned_specs {
             let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
                 continue;
             };
@@ -548,6 +561,7 @@ impl State {
                 instances: &skinned_arena[*offset..*offset + *len],
                 instance_count: 1,
                 palette: &entry.joint_palette,
+                hi_res: *hi_res,
             };
             if *transparent {
                 skinned_transparent_batches.push(batch);
@@ -556,7 +570,7 @@ impl State {
             }
         }
         let mut shadow_skinned_batches: Vec<SkinnedBatch> = Vec::new();
-        for (gpu_idx, offset, len) in &shadow_skinned_specs {
+        for (gpu_idx, offset, len, hi_res) in &shadow_skinned_specs {
             let Some(entry) = self.skinned_gpu_meshes.get(*gpu_idx) else {
                 continue;
             };
@@ -567,6 +581,7 @@ impl State {
                 instances: &skinned_arena[*offset..*offset + *len],
                 instance_count: 1,
                 palette: &entry.joint_palette,
+                hi_res: *hi_res,
             });
         }
 
@@ -965,6 +980,7 @@ impl State {
             };
 
         let albedo = self.texture_array.image();
+        let model_albedo = self.model_texture_array.as_ref().map(|array| array.image());
 
         let input = crate::engine3d::vulkan::FrameInput {
             scene: scene_bytes,
@@ -999,6 +1015,7 @@ impl State {
             hud_instance_count,
             hud_atlas,
             albedo,
+            model_albedo,
             rt: &rt,
             materials,
             material_count,

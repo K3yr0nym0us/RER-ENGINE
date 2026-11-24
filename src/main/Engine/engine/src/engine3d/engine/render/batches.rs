@@ -36,6 +36,8 @@ pub(crate) struct SceneInstanceBatch {
     pub(crate) mesh_idx: usize,
     pub(crate) texture_layer: u32,
     pub(crate) probe_layer: i32,
+    /// Índice plano en `State::tex_layers` marcado en `State::hi_res_tex_indices`.
+    pub(crate) hi_res: bool,
     pub(crate) instances: Vec<crate::engine3d::mesh::InstanceData>,
     pub(crate) entity_ids: Vec<crate::engine3d::ecs::EntityId>,
     /// Prefijo de `instances` que entra en el pase forward opaco.
@@ -132,6 +134,7 @@ pub(crate) fn partition_scene_batches(
                 mesh_idx: batch.mesh_idx,
                 texture_layer: batch.texture_layer,
                 probe_layer: batch.probe_layer,
+                hi_res: batch.hi_res,
                 instances: forward_cast,
                 entity_ids: forward_cast_ids,
                 forward_count,
@@ -143,6 +146,7 @@ pub(crate) fn partition_scene_batches(
                 mesh_idx: batch.mesh_idx,
                 texture_layer: batch.texture_layer,
                 probe_layer: batch.probe_layer,
+                hi_res: batch.hi_res,
                 instances: forward_skip,
                 entity_ids: forward_skip_ids,
                 forward_count,
@@ -154,6 +158,7 @@ pub(crate) fn partition_scene_batches(
                 mesh_idx: batch.mesh_idx,
                 texture_layer: batch.texture_layer,
                 probe_layer: batch.probe_layer,
+                hi_res: batch.hi_res,
                 instances: transparent_inst,
                 entity_ids: transparent_ids,
                 forward_count,
@@ -192,6 +197,7 @@ pub(crate) fn build_scene_instance_batches(
         let is_hovered = state.hovered_entity == Some(*entity_id);
         let flag = state.editor_selection_flag(*entity_id, is_selected, is_hovered);
         let layer = state.texture_layer_for(*tex_idx);
+        let hi_res = state.hi_res_tex_indices.contains(tex_idx);
         let mut inst = crate::engine3d::mesh::InstanceData::new(*model_matrix, flag, layer);
         let is_terrain = state
             .world
@@ -234,7 +240,10 @@ pub(crate) fn build_scene_instance_batches(
             }
         }
         let can_extend = batches.last().is_some_and(|b| {
-            b.mesh_idx == *mesh_idx && b.texture_layer == layer && b.probe_layer == probe_layer
+            b.mesh_idx == *mesh_idx
+                && b.texture_layer == layer
+                && b.probe_layer == probe_layer
+                && b.hi_res == hi_res
         });
         if can_extend {
             batches.last_mut().unwrap().instances.push(inst);
@@ -244,6 +253,7 @@ pub(crate) fn build_scene_instance_batches(
                 mesh_idx: *mesh_idx,
                 texture_layer: layer,
                 probe_layer,
+                hi_res,
                 instances: vec![inst],
                 entity_ids: vec![*entity_id],
                 forward_count: 0,
@@ -283,6 +293,7 @@ mod tests {
             mesh_idx: 0,
             texture_layer: 0,
             probe_layer: -1,
+            hi_res: false,
             instances: ids.iter().map(|_| inst).collect(),
             entity_ids: ids.to_vec(),
             forward_count: 0,
@@ -296,6 +307,7 @@ mod tests {
             mesh_idx: 0,
             texture_layer: 0,
             probe_layer: -1,
+            hi_res: false,
             instances: ids.iter().map(|_| inst).collect(),
             entity_ids: ids.to_vec(),
             forward_count: 0,

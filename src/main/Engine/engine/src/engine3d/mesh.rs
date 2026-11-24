@@ -1,6 +1,7 @@
 use ash::vk;
 use bytemuck::{Pod, Zeroable};
 
+use crate::engine3d::texture::untag_layer;
 use crate::engine3d::vulkan::{GpuBuffer, SharedGpu};
 
 const VERTEX_USAGE_RAW: vk::BufferUsageFlags = vk::BufferUsageFlags::from_raw(
@@ -325,7 +326,9 @@ impl InstanceData {
             model: model.to_cols_array_2d(),
             flag_pad: [flag, 1.0, 0.0, -1.0],
             // z = índice de reflection probe (-1 = sin probe → entorno procedural).
-            tex_layer_pad: [tex_layer as f32, 0.0, -1.0, 0.0],
+            // La capa puede venir marcada del array 4K: el shader recibe solo el
+            // índice Vulkan real, dentro de la imagen enlazada en el set correcto.
+            tex_layer_pad: [untag_layer(tex_layer) as f32, 0.0, -1.0, 0.0],
         }
     }
 }

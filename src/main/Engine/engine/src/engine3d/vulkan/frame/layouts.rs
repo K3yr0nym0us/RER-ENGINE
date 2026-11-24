@@ -313,6 +313,11 @@ pub(super) fn create_sets(
             alloc_set(device, pool, albedo)?,
             alloc_set(device, pool, albedo)?,
         ],
+        // Misma layout que `albedo`: el shader no cambia, solo se enlaza otra imagen.
+        model_albedo: [
+            alloc_set(device, pool, albedo)?,
+            alloc_set(device, pool, albedo)?,
+        ],
         probe: [
             alloc_set(device, pool, probe)?,
             alloc_set(device, pool, probe)?,
