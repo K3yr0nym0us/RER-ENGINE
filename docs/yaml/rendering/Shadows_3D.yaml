@@ -296,7 +296,7 @@ csm_attempt:
 
 # Debug del ciclo día/noche (2026-11-19). Bitácora completa: SHADOW_DEBUG_LOG.yaml (raíz).
 day_night_shadow_debug:
-  status: sin-resolver
+  status: aceptado-como-compromiso
   resumen: >
     Se perdieron varias horas intentando eliminar el temblor/retroceso de las sombras al mover el sol:
     se restauró el bias (a125635 lo había reducido 10-70x), se retiró el texel snapping del CSM, se
@@ -315,3 +315,23 @@ day_night_shadow_debug:
     Quien intente arreglarlo que lo haga BAJO SU PROPIO RIESGO: casi todos los parches "obvios"
     (bias, PCF, LOD, up, snapping alternativo) empeoraron el resultado o lo dejaron igual. Leer la
     bitácora completa antes de tocar nada.
+
+# Estado final (2026-11-24): CSM implementado y salto del sol ACEPTADO como compromiso
+csm_implementado_y_saltos_aceptados:
+  status: implementado-y-validado
+  resumen: |
+    El CSM de cascadas está IMPLEMENTADO y validado: la sombra es correcta en todos los tiers
+    (Off 0, Low 2, Medium 3, High/Ultra 4; 1024/1024/2048/2048 px por cascada, Ultra x1.45).
+    El crecimiento ESCALONADO de la sombra conforme baja el sol se da por VALIDO: no es un bug
+    de casters, del UBO ni de sincronización (con el sol quieto UBO y mapa son byte-idénticos),
+    sino el compromiso conocido del texel snapping con round() explicado en
+    day_night_shadow_debug.error_actual.
+  por_que_se_ve_mas_en_la_demo: |
+    Es el MISMO cálculo para todos los modelos: un único shadow_pcf, un único bias y la misma
+    matriz de cascada (static y skinned). No hay rama por tipo de modelo. Se nota más en muros y
+    cubos porque son aristas rectas, largas y estáticas: un salto de un texel desplaza toda la
+    línea a la vez (0,1-0,3 m amplificados por 1/sin(elevación)). Los modelos importados tienen
+    muchas aristas de silueta y suelen estar animados, lo que enmascara la cuantización.
+  decision: |
+    NO modificar bias, PCF, LOD ni el snapping: la bitácora indica que casi todos esos parches
+    empeoraron el vuelco o el temblor. El comportamiento actual (saltos sin retroceso) se acepta.
