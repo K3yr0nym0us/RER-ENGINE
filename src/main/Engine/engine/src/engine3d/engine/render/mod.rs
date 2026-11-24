@@ -299,7 +299,16 @@ impl State {
             depth_plane: [
                 self.camera.near,
                 self.camera.far,
-                if reflections { 1.0 } else { 0.0 },
+                // Modo de reflejos: 0 = Off, 1 = SSR, 2 = RT. RT sigue siendo "activo" con
+                // >= 0.5 (igual que antes); SSR se distingue con ~= 1.0 para que el forward
+                // recupere spec directo y sondas como fallback sin tocar el camino RT.
+                if raytracing {
+                    2.0
+                } else if ssr {
+                    1.0
+                } else {
+                    0.0
+                },
                 // La capa de Grass va en el uniforme: `tex_layer_pad.w` también es el IOR
                 // y, si queda en 0, el shader lee el checker del editor.
                 self.worldgen.material_base.unwrap_or(0) as f32,

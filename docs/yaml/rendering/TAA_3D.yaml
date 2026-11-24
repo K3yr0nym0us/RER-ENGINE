@@ -8,8 +8,8 @@
 #   - docs/yaml/rendering/Shadows_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 4
-updated: 2026-11-23
+version: 5
+updated: 2026-11-24
 
 principle:
   owner: motor_3d
@@ -18,11 +18,12 @@ principle:
        (RGBA8), albedo (RGBA8) y world (RGBA16F) solo con SSR/RT; velocity (RG16F) solo con
        TAA; depth D32F. Ranuras apagadas: `Format::UNDEFINED` + `RenderingAttachmentInfo::default()`.
     2. Array de cascadas de sombras (depth compare, hasta 4 capas; lado por capa según el tier).
-    3. TAA de escena: `shaders/raster/taa.frag` reproyecta con la velocidad del G-buffer,
-       recorta el historial con el min/max de la vecindad 3×3 del frame actual y mezcla
-       `mix(current, history, blend)`. `blend` es el peso del historial (0 = frame actual,
-       1 = historial completo).
-    4. Composite/present leen el resultado; los overlays del editor se dibujan después.
+    3. Con reflejos, `composite.frag` mezcla escena + SSR/RT y escribe el historial de entrada
+       del TAA. Sin reflejos, el TAA consume directamente la escena.
+    4. TAA (`shaders/raster/taa.frag`) reproyecta con la velocidad del G-buffer, recorta el
+       historial con el min/max de la vecindad 3×3 y mezcla `mix(current, history, blend)`.
+       `blend` es el peso del historial (0 = frame actual, 1 = historial completo).
+    5. Present lee el resultado; los overlays del editor se dibujan después.
   note: |
     En Ash hay UN solo TAA (escena). El TAA de máscara de sombra (`SHADOW_HISTORY_BLEND`,
     lit-composite por separado) era de la era wgpu y se retiró con `src/taa/`.
@@ -34,6 +35,10 @@ principle:
     evitar ghosting del primer frame. Dummy 1×1 RG16F cubre el descriptor si el pase no corre.
     Con MSAA encendido, `taa.frag` muestrea en `1.0 - v_uv.y` (copia neutra bajo el viewport de
     altura negativa) e invierte `velocity.y`, que viene en el espacio del G-buffer.
+    El push constant es `vec4 params`: `x=blend`, `y=modo/enabled` (0 off, 1 RT/escena,
+    2 SSR), `z=near`, `w=far`. Solo el modo SSR (`y=2`) linealiza profundidad y rechaza historial
+    por disoclusión/normal; RT y escena conservan el comportamiento anterior. En SSR el blend
+    procede del TAA de escena, no del preset SSR; en RT sigue procediendo de `RtxPreset`.
 
 jitter:
   status: implemented

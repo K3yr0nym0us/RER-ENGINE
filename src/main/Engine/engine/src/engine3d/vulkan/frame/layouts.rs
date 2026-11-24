@@ -14,6 +14,8 @@ pub(super) struct SetLayouts {
     pub(super) rt: vk::DescriptorSetLayout,
     pub(super) bvh: vk::DescriptorSetLayout,
     pub(super) sky_bg: vk::DescriptorSetLayout,
+    /// SSR dedicado: depth/normal/color + prefijo de cámara del UBO de escena.
+    pub(super) ssr: vk::DescriptorSetLayout,
 }
 
 impl SetLayouts {
@@ -36,8 +38,9 @@ impl SetLayouts {
             self.rt,
             self.bvh,
             self.sky_bg,
+            self.ssr,
         ];
-        // Hay que deduplicar: 13 campos no son 13 objetos. `create_sets` hace `let taa = full;`
+        // Hay que deduplicar: 14 campos no son 14 objetos. `create_sets` hace `let taa = full;`
         // (los dos comparten layout), así que sin esto se destruía el mismo handle dos veces y la
         // validación lo devolvía como `vkDestroyDescriptorSetLayout(): ... Invalid Object`.
         let mut seen: Vec<u64> = Vec::with_capacity(all.len());
@@ -50,6 +53,19 @@ impl SetLayouts {
             unsafe { device.destroy_descriptor_set_layout(layout, None) };
         }
     }
+}
+
+/// Contrato del set dedicado de SSR (espejo de `ssr.frag`). El UBO es el `scene_ubo` existente;
+/// el shader solo declara su prefijo de cámara, por lo que no se modifica ningún layout de RT.
+fn ssr_bindings() -> [vk::DescriptorSetLayoutBinding<'static>; 5] {
+    let fragment = vk::ShaderStageFlags::FRAGMENT;
+    [
+        binding(0, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, fragment),
+        binding(1, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, fragment),
+        binding(2, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, fragment),
+        binding(3, vk::DescriptorType::UNIFORM_BUFFER, fragment),
+        binding(4, vk::DescriptorType::COMBINED_IMAGE_SAMPLER, fragment),
+    ]
 }
 
 pub(super) fn create_sets(
@@ -158,7 +174,7 @@ pub(super) fn create_sets(
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
                 vk::ShaderStageFlags::FRAGMENT,
             ),
-            // ssr: albedo.a = flag de material reflectivo (mismo gate que el RT).
+            // composite: albedo.a = flag/Fresnel de material reflectivo.
             binding(
                 5,
                 vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
@@ -197,6 +213,7 @@ pub(super) fn create_sets(
             ),
         ],
     )?;
+    let ssr = set_layout(device, &ssr_bindings())?;
     let rt_stages = vk::ShaderStageFlags::RAYGEN_KHR
         | vk::ShaderStageFlags::MISS_KHR
         | vk::ShaderStageFlags::CLOSEST_HIT_KHR;
@@ -303,6 +320,7 @@ pub(super) fn create_sets(
         rt,
         bvh,
         sky_bg,
+        ssr,
     };
     let sets = DescriptorSets {
         scene: [
@@ -341,10 +359,7 @@ pub(super) fn create_sets(
             [alloc_set(device, pool, bvh)?, alloc_set(device, pool, bvh)?],
         ],
         taa: [alloc_set(device, pool, taa)?, alloc_set(device, pool, taa)?],
-        ssr: [
-            alloc_set(device, pool, full)?,
-            alloc_set(device, pool, full)?,
-        ],
+        ssr: [alloc_set(device, pool, ssr)?, alloc_set(device, pool, ssr)?],
         denoise: [
             alloc_set(device, pool, denoise)?,
             alloc_set(device, pool, denoise)?,
@@ -511,6 +526,23 @@ pub(super) fn sampler(
     .map_err(|error| vk_error("crear un sampler", error))
 }
 
+pub(super) fn nearest_sampler(device: &ash::Device) -> Result<vk::Sampler, VulkanError> {
+    unsafe {
+        device.create_sampler(
+            &vk::SamplerCreateInfo::default()
+                .mag_filter(vk::Filter::NEAREST)
+                .min_filter(vk::Filter::NEAREST)
+                .mipmap_mode(vk::SamplerMipmapMode::NEAREST)
+                .address_mode_u(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_v(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .address_mode_w(vk::SamplerAddressMode::CLAMP_TO_EDGE)
+                .max_lod(0.0),
+            None,
+        )
+    }
+    .map_err(|error| vk_error("crear el sampler nearest de profundidad", error))
+}
+
 pub(super) fn compare_sampler(device: &ash::Device) -> Result<vk::Sampler, VulkanError> {
     unsafe {
         device.create_sampler(
@@ -627,4 +659,37 @@ pub(super) fn write_acceleration(
     write.descriptor_count = 1;
     unsafe { device.update_descriptor_sets(&[write], &[]) };
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ssr_descriptor_bindings_match_shader_contract() {
+        let bindings = ssr_bindings();
+        assert_eq!(
+            bindings
+                .iter()
+                .map(|binding| binding.binding)
+                .collect::<Vec<_>>(),
+            vec![0, 1, 2, 3, 4]
+        );
+        assert_eq!(
+            bindings
+                .iter()
+                .map(|binding| binding.descriptor_type)
+                .collect::<Vec<_>>(),
+            vec![
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+                vk::DescriptorType::UNIFORM_BUFFER,
+                vk::DescriptorType::COMBINED_IMAGE_SAMPLER,
+            ]
+        );
+        assert!(bindings.iter().all(|binding| {
+            binding.stage_flags == vk::ShaderStageFlags::FRAGMENT && binding.descriptor_count == 1
+        }));
+    }
 }

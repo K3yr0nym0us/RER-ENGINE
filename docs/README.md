@@ -2,7 +2,7 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
-**Última revisión:** 23 nov 2026 (array de texturas 3D con crecimiento bajo demanda: `Texture_Array_3D.yaml`). Revisión anterior: 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`). Antes: 14 nov 2026 (World Generator); noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
+**Última revisión:** 24 nov 2026 (SSR 3D: marcha tradicional, sincronización Vulkan, fallback de sondas y aislamiento RT). Revisión anterior: 23 nov 2026 (array de texturas 3D con crecimiento bajo demanda: `Texture_Array_3D.yaml`). Antes: 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`); 14 nov 2026 (World Generator); noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
 
 ## Estructura
 

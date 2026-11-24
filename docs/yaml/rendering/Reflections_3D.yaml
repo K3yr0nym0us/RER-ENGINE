@@ -13,8 +13,8 @@
 #   - docs/yaml/rendering/Shadows_3D.yaml
 #   - docs/yaml/rendering/Reflections_Diagnostics.yaml
 
-version: 10
-updated: 2026-11-23
+version: 11
+updated: 2026-11-24
 
 principle:
   owner: motor_3d
@@ -30,7 +30,9 @@ principle:
   pipeline_layers:
     A_forward_ibl: shaders/raster/forward.frag — samplerCubeArray por instancia (ver docs/yaml/rendering/Reflections_Probes.yaml)
     B_ssr_rt: shaders/raster/ssr.frag + shaders/rt/* + shaders/bvh/trace.comp — detalle on-screen
-    C_composite: composite.frag — F0 por material (metallic del G-buffer): dieléctricos ~0.10, metales ~0.95 teñidos del color propio; la roughness solo modula
+    C_composite: |
+      composite.frag — modo explícito por push constant: SSR usa F0 físico, tinte metálico y
+      confianza; RT conserva su fórmula histórica. `depth_plane.z` codifica 0 Off / 1 SSR / 2 RT.
     capture: capture_probe en vulkan/frame/mod.rs — alimenta A; no es recepción en pantalla
 
 subsystems:
@@ -54,7 +56,9 @@ graphics_tiers:
 quality_preset:
   status: |
     El tier SSR también tiene preset real (`SsrPreset`: resolución, marcha, búsqueda binaria,
-    distancia, grosor, roughness, denoise, TAA y edge fade). El tier RTX sí
+    distancia/grosor en metros, roughness, denoise y edge fade). El TAA de escena se reutiliza
+    para SSR con rechazo por disoclusión; el antiguo `temporal_blend` SSR no controla el TAA.
+    El tier RTX sí
     tiene preset real en `config_3d/reflection_graphics.rs::RtxPreset`, aplicado en:
     - `Targets::resize_rt` (resolución 50/67/85/100%)
     - `rt/reflect.rgen` y `bvh/trace.comp` (rayos/píxel, rebotes, distancia, roughness)
@@ -62,18 +66,19 @@ quality_preset:
     - `accel.rs` / `bvh.rs` (calidad de BVH)
 
 editor_toggles:
-  reflectionMode: off | ssr | rt (persistido .save, default off). Los checks son radio:
-    activar uno desactiva el otro.
+  reflectionMode: |
+    off | ssr | rt (persistido .save, default off). Los checks son radio: activar uno desactiva
+    el otro.
   reflectionTier: tier de SSR (persistido .save como reflectionTier)
   rtTier: tier de RTX (persistido .save como rtTier)
-  reflectionProbes: probes ON/OFF (persistido .save; comportamiento sin cambios)
+  reflectionProbes: probes ON/OFF (persistido .save; selección por volumen/radio sin cambios)
   reflectionDebugView: final | ssr_debug | rt_debug
   reflectionRaytracing: alias legacy de `reflectionMode == rt` (solo lectura/migración)
 
 internal_settings:
   description: |
-    El `ReflectionSettings` derivado del tier ya no existe; los parámetros están fijos en los
-    shaders GLSL y en `vulkan/frame/mod.rs`.
+    El `ReflectionSettings` derivado del tier ya no existe; los parámetros viven en
+    `SsrPreset`/`RtxPreset`, los shaders GLSL y `vulkan/frame/{mod,present}.rs`.
   live_inputs:
     - reflection_mode (off | ssr | rt)
     - ssr (reflectionMode == ssr)
@@ -86,7 +91,7 @@ g_buffer:
   scene_mrt: |
     location 0  out_color        R8G8B8A8_UNORM   (escena iluminada)
     location 1  out_normal_rough R8G8B8A8_UNORM   (.xyz = normal * 0.5 + 0.5, .w = roughness)
-    location 2  out_albedo       R8G8B8A8_UNORM
+    location 2  out_albedo       R8G8B8A8_UNORM (.rgb = albedo; .a = flag reflectivo/Fresnel, NO opacidad)
     location 3  out_world        R16G16B16A16_SFLOAT (.xyz = posición mundo, .w = metallic)
     location 4  out_velocity     R16G16_SFLOAT
   depth: D32_SFLOAT (adjunto; se muestrea en DEPTH_STENCIL_READ_ONLY_OPTIMAL)
@@ -102,7 +107,9 @@ frame_order:
     - capture_probe por sonda refrescada
     - forward_pass (MRT + resolución MSAA + segundo pase de profundidad)
     - reflection_pass (RT o BVH) si reflections && raytracing
-    - resolve_present (ssr → denoise → composite → TAA → present; gizmos y HUD después)
+    - >-
+      resolve_present (SSR: barreras → ssr → denoise → composite → TAA → present; RT: trazado →
+      denoise → composite → TAA → present; gizmos y HUD después)
 
 commands:
   set_reflection_mode:

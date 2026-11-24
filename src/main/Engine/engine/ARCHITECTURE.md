@@ -115,10 +115,11 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   descriptores de ranuras apagadas. Al cambiar la máscara: `device_wait_idle`, recrear adjuntos,
   reescribir sets y soltar las imágenes viejas; si se enciende Velocity se llama
   `reset_taa_history()` y el adjunto nuevo se limpia con `LOAD_OP_CLEAR`.
-- **Reflejos** (`set_reflection_tier`): `Off` (por defecto) deja solo el forward+TAA; cualquier
-  otro tier activa la cadena SSR → denoise → composite. El switch adicional de ray tracing
-  (`set_reflection_raytracing`) hace que el trazado use `VK_KHR_ray_tracing_pipeline` si el
-  device lo expone, o el BVH por software en caso contrario.
+- **Reflejos** (`set_reflection_mode`): `Off` (por defecto) deja solo el forward+TAA. `SSR` y `RT`
+  son mutuamente excluyentes: SSR reconstruye posición, refleja el vector de vista y marcha en
+  espacio de pantalla con profundidad lineal/grosor; RT conserva su trazado HW/BVH y sus rebotes.
+  Ambos pasan por denoise/composite/TAA, pero los shaders seleccionan la rama por modo explícito
+  para que las mejoras SSR no alteren RT. `depth_plane.z` codifica 0 Off / 1 SSR / 2 RT.
 - **Sondas de reflejo**: un `texture_cube_array` con 6 caras por ranura
   (`probe_registry::MAX_PROBES` = 8, caras de `PROBE_FACE_SIZE` px). `capture_probe` escribe en
   la capa `slot * 6 + cara`, así varias sondas conviven (antes todas pisaban las caras 0..5 y
@@ -126,7 +127,9 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   → `v_tex.z`, elegida en CPU por `probe_registry::select_probe_slot` según el radio de
   influencia (`scale.x * 0.5`); `-1` = fuera de todo volumen → el shader cae al cielo
   procedural. Si cambia el conjunto de sondas se encola un catch-up de una sonda por frame
-  (no 6×N pases en el mismo command buffer) y luego una sonda cada ~30 frames.
+  (no 6×N pases en el mismo command buffer) y luego una sonda cada ~30 frames. En SSR las sondas
+  y el especular directo se conservan como fallback de los misses; en RT se mantiene la
+  supresión histórica para evitar doble aporte.
 - **Geometría trazable skinned**: las entidades animadas entran en **ambos** caminos, BVH por
   software y TLAS de hardware. Sus triángulos se deforman en CPU con el mismo palette que usa
   `skinned.vert` (`model * (Σ pesos·palette[joint]·posición)`) y se cachean, refrescándose cada
@@ -139,10 +142,11 @@ el adaptador, y el recorte se registra en el log (nada de números que no afecta
   `(gpu_mesh_idx) | (1 << 63)` para no colisionar con las mallas estáticas; el BLAS sólo se
   reconstruye en el frame en que cambió la pose. Las poses las calcula el mismo bucle que alimenta
   el BVH, así que HW y SW trazan exactamente la misma silueta.
-- **Vista de debug** (`set_reflection_debug_view`): solo hay `final` y `ssr_debug`. `ssr_debug`
-  presenta la imagen SSR/trazada en crudo como fuente del `present`, saltando el composite y el TAA,
-  para ver qué devuelve el pase. Los nombres de la era wgpu (`trace_strength`, `probe_layers`,
-  `metallic`) ya no existen: cayeron con `src/engine3d/reflections/`.
+- **Vista de debug** (`set_reflection_debug_view`): `final`, `ssr_debug` y `rt_debug`.
+  `ssr_debug` presenta `targets.ssr` en crudo; `rt_debug` presenta `targets.reflection` en crudo.
+  Ambas saltan composite/TAA para separar un artefacto del marchado/trazado de uno de la
+  composición. Los nombres de la era wgpu (`trace_strength`, `probe_layers`, `metallic`) ya no
+  existen: cayeron con `src/engine3d/reflections/`.
 
 ## Ventana standalone
 

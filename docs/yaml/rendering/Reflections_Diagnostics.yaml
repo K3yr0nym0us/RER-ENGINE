@@ -7,8 +7,72 @@
 #
 # FASE Ash (2026-11): ver `ash_validation_audit`. Validación visual manual sigue pendiente.
 
-version: 5
-updated: 2026-11-09
+version: 6
+updated: 2026-11-24
+
+ssr_logic_audit_2026_11_24:
+  status: static-and-build-validation
+  scope: |
+    Auditoría y corrección del SSR Ash comparado con SSR tradicional. RT permanece separado y
+    sus shaders/lógica no se modificaron.
+  fixed:
+    - id: ssr-direction-was-world-normal-xy
+      symptom: suelos sin reflejo, esferas solo por corona y dirección incorrecta al orbitar
+      fix: |
+        Reconstrucción de posición con depth + inv_view_proj, reflect(viewDir, normal) y proyección
+        del rayo. La roughness ya no modifica la dirección.
+      files: [shaders/raster/ssr.frag]
+    - id: ssr-depth-false-hits-and-self-intersection
+      symptom: impacto de cualquier geometría delante, autoimpactos y búsqueda binaria inconsistente
+      fix: |
+        Profundidad lineal [0,1], sesgo de origen, sampler NEAREST, detección de cruce monótona
+        para marcha/búsqueda y validación 3D final con grosor máximo.
+      files: [shaders/raster/ssr.frag, src/engine3d/vulkan/frame/present.rs]
+    - id: ssr-missing-vulkan-barriers
+      symptom: resultados indefinidos/intermitentes entre pases fullscreen
+      fix: |
+        Barreras explícitas forward→SSR (scene/normal/albedo), SSR→denoise, composite→TAA/present
+        y TAA→present, solo en la ruta SSR.
+      files: [src/engine3d/vulkan/frame/present.rs]
+    - id: ssr-albedo-alpha-misused-as-opacity
+      symptom: hits no reflectivos sustituían color iluminado por albedo plano
+      fix: |
+        SSR samplea scene directamente; albedo.a vuelve a usarse solo como gate reflectivo/Fresnel.
+      files: [shaders/raster/ssr.frag, shaders/raster/composite.frag]
+    - id: ssr-miss-lost-specular-fallback
+      symptom: misses negros y pérdida de brillo en materiales rugosos
+      fix: |
+        SSR conserva especular directo y sondas en forward; composite miss devuelve scene. RT
+        conserva la supresión histórica.
+      files: [shaders/raster/forward.frag, shaders/raster/composite.frag]
+    - id: ssr-roughness-tiers-unreachable
+      symptom: High/Ultra no reflejaban roughness > 0.35
+      fix: |
+        SSR marca todos los SurfacePbr y aplica roughness_support del tier; RT conserva su gate 0.35.
+      files: [shaders/raster/forward.frag, src/engine3d/config_3d/reflection_graphics.rs]
+    - id: ssr-denoise-and-temporal-artifacts
+      symptom: sangrado de normales/depth y ghosting temporal
+      fix: |
+        Denoise SSR decodifica normales y linealiza depth; TAA SSR rechaza disoclusión/profundidad/
+        normal. RT conserva los filtros históricos.
+      files: [shaders/raster/denoise.frag, shaders/raster/taa.frag]
+    - id: ssr-transparent-depth-corruption
+      symptom: transparentes contaminaban depth/G-buffer usados por SSR
+      fix: |
+        Pipeline SSR exclusiva sin escritura de depth ni G-buffer; RT/probes conservan la pipeline
+        heredada. Composite SSR atenúa el reflejo del opaco subyacente con scene.a.
+      files: [src/engine3d/vulkan/frame/pipelines.rs, src/engine3d/vulkan/frame/gbuffer.rs, shaders/raster/composite.frag]
+  rt_isolation: |
+    Verificado por diff: shaders/rt/*, shaders/bvh/trace.comp, frame/rt.rs y frame/reflections.rs
+    no tienen cambios. composite/denoise/TAA seleccionan la rama RT por modo explícito y mantienen
+    sus fórmulas/blend anteriores. Las pipelines transparentes SSR no se usan en RT ni capture_probe.
+  pending_manual: |
+    - SSR Low/Medium/High/Ultra sobre suelo plano, esferas chrome/acero/plástico/vidrio/agua.
+    - Orbitar cámara y comprobar que el reflejo sigue la geometría, sin autoimpactos ni banda central.
+    - Miss SSR con probes activos: debe conservar especular/entorno, no negro.
+    - Transparentes: no deben contaminar depth/G-buffer ni recibir reflejo del opaco sin atenuar.
+    - RT ON: misma salida que antes; ssr_debug no debe ejecutarse y rt_debug debe seguir mostrando trace.
+    - Cambio caliente Off↔SSR↔RT, resize, MSAA y SSAA; comprobar barreras con RER_VK_VALIDATION=1.
 
 ash_validation_audit:
   method: |

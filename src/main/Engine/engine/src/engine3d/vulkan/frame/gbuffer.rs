@@ -8,8 +8,8 @@
 use ash::vk;
 
 use super::pipelines::{
-    empty_vertex, graphics, graphics_blend_color_only, graphics_no_depth_test, skinned_vertex,
-    static_vertex, with_samples,
+    empty_vertex, graphics, graphics_blend_color_only, graphics_no_depth_test,
+    graphics_ssr_transparent, skinned_vertex, static_vertex, with_samples,
 };
 use super::{COLOR, DEPTH, Pipes, VELOCITY, VulkanError, WORLD};
 
@@ -76,6 +76,9 @@ pub(super) struct GbufferPipeSet {
     skinned_blend: vk::Pipeline,
     /// Quad de cielo MSAA. Nulo en 1× (el fondo se copia, no se rasteriza).
     sky: vk::Pipeline,
+    /// Transparentes SSR: sin escritura de G-buffer ni profundidad. No se usan en RT/sondas.
+    forward_ssr: vk::Pipeline,
+    skinned_ssr: vk::Pipeline,
 }
 
 impl Default for GbufferPipeSet {
@@ -85,11 +88,29 @@ impl Default for GbufferPipeSet {
 }
 
 impl GbufferPipeSet {
-    pub(super) fn overlay(&self, mut base: Pipes) -> Pipes {
+    /// Overlay tradicional: RT y capturas de sondas conservan exactamente sus pipelines.
+    pub(super) fn overlay(&self, base: Pipes) -> Pipes {
+        self.overlay_variant(base, false)
+    }
+
+    /// Overlay exclusivo del forward de SSR; solo sustituye los dos pipelines transparentes.
+    pub(super) fn overlay_ssr(&self, base: Pipes) -> Pipes {
+        self.overlay_variant(base, true)
+    }
+
+    fn overlay_variant(&self, mut base: Pipes, ssr: bool) -> Pipes {
         base.forward = self.forward;
-        base.forward_blend = self.forward_blend;
+        base.forward_blend = if ssr {
+            self.forward_ssr
+        } else {
+            self.forward_blend
+        };
         base.skinned = self.skinned;
-        base.skinned_blend = self.skinned_blend;
+        base.skinned_blend = if ssr {
+            self.skinned_ssr
+        } else {
+            self.skinned_blend
+        };
         if self.sky != vk::Pipeline::null() {
             base.sky = self.sky;
         }
@@ -103,6 +124,8 @@ impl GbufferPipeSet {
             skinned: vk::Pipeline::null(),
             skinned_blend: vk::Pipeline::null(),
             sky: vk::Pipeline::null(),
+            forward_ssr: vk::Pipeline::null(),
+            skinned_ssr: vk::Pipeline::null(),
         }
     }
 
@@ -115,6 +138,8 @@ impl GbufferPipeSet {
             if self.sky != vk::Pipeline::null() {
                 device.destroy_pipeline(self.sky, None);
             }
+            device.destroy_pipeline(self.forward_ssr, None);
+            device.destroy_pipeline(self.skinned_ssr, None);
         }
     }
 
@@ -212,12 +237,39 @@ impl GbufferPipeSet {
             } else {
                 vk::Pipeline::null()
             };
+            // Se crean al final para no alterar el orden de los pipelines existentes.
+            let forward_ssr = graphics_ssr_transparent(
+                device,
+                cache,
+                forward_layout,
+                forward_vert,
+                Some(forward_frag),
+                &static_v,
+                formats,
+                Some(DEPTH),
+                false,
+                &mut keep,
+            )?;
+            let skinned_ssr = graphics_ssr_transparent(
+                device,
+                cache,
+                skinned_layout,
+                skinned_vert,
+                Some(forward_frag),
+                &skinned_v,
+                formats,
+                Some(DEPTH),
+                false,
+                &mut keep,
+            )?;
             Ok(Self {
                 forward,
                 forward_blend,
                 skinned,
                 skinned_blend,
                 sky: sky_pipe,
+                forward_ssr,
+                skinned_ssr,
             })
         })();
         if built.is_err() {
@@ -232,6 +284,59 @@ impl GbufferPipeSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ash::vk::Handle;
+
+    fn pipeline(raw: u64) -> vk::Pipeline {
+        vk::Pipeline::from_raw(raw)
+    }
+
+    fn base_pipes() -> Pipes {
+        Pipes {
+            forward: pipeline(1),
+            forward_blend: pipeline(2),
+            skinned: pipeline(3),
+            skinned_blend: pipeline(4),
+            shadow: pipeline(5),
+            shadow_skinned: pipeline(6),
+            gizmo: pipeline(7),
+            gizmo_lines: pipeline(8),
+            hud: pipeline(9),
+            taa: pipeline(10),
+            ssr: pipeline(11),
+            denoise: pipeline(12),
+            composite: pipeline(13),
+            present: pipeline(14),
+            sky: pipeline(15),
+        }
+    }
+
+    #[test]
+    fn ssr_overlay_only_replaces_transparent_pipelines() {
+        let set = GbufferPipeSet {
+            forward: pipeline(20),
+            forward_blend: pipeline(21),
+            skinned: pipeline(22),
+            skinned_blend: pipeline(23),
+            sky: vk::Pipeline::null(),
+            forward_ssr: pipeline(24),
+            skinned_ssr: pipeline(25),
+        };
+        let base = base_pipes();
+        let ssr = set.overlay_ssr(base);
+        assert_eq!(ssr.forward, set.forward);
+        assert_eq!(ssr.forward_blend, set.forward_ssr);
+        assert_eq!(ssr.skinned, set.skinned);
+        assert_eq!(ssr.skinned_blend, set.skinned_ssr);
+        assert_eq!(ssr.shadow, base.shadow);
+        assert_eq!(ssr.ssr, base.ssr);
+        assert_eq!(ssr.present, base.present);
+        assert_eq!(ssr.sky, base.sky);
+
+        // Esta ruta es la que sigue `capture_probe`: nunca debe heredar la variante SSR.
+        let legacy = set.overlay(base);
+        assert_eq!(legacy.forward_blend, set.forward_blend);
+        assert_eq!(legacy.skinned_blend, set.skinned_blend);
+    }
 
     #[test]
     fn color_only_is_always_the_first_slot() {

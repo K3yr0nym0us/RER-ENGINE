@@ -1,24 +1,41 @@
 use super::*;
 
 impl FrameRenderer {
-    pub(super) fn forward_pipes(&self, base: Pipes) -> Pipes {
+    pub(super) fn forward_pipes(&self, base: Pipes, ssr: bool) -> Pipes {
         let samples = if self.msaa_samples > 1 {
             self.msaa_samples
         } else {
             1
         };
-        self.overlay_gbuffer_pipes(base, self.gbuffer_mask, samples)
+        self.overlay_gbuffer_pipes_mode(base, self.gbuffer_mask, samples, ssr)
     }
 
+    /// Overlay tradicional usado por las capturas de probes. También conserva el camino RT.
     pub(super) fn overlay_gbuffer_pipes(
         &self,
         base: Pipes,
         mask: GbufferMask,
         samples: u32,
     ) -> Pipes {
+        self.overlay_gbuffer_pipes_mode(base, mask, samples, false)
+    }
+
+    fn overlay_gbuffer_pipes_mode(
+        &self,
+        base: Pipes,
+        mask: GbufferMask,
+        samples: u32,
+        ssr: bool,
+    ) -> Pipes {
         self.gbuffer_pipe_cache
             .get(&(mask, samples))
-            .map(|set| set.overlay(base))
+            .map(|set| {
+                if ssr {
+                    set.overlay_ssr(base)
+                } else {
+                    set.overlay(base)
+                }
+            })
             .unwrap_or(base)
     }
 
@@ -238,7 +255,9 @@ impl FrameRenderer {
                 0,
             );
         }
-        let color_pipes = self.forward_pipes(*pipes);
+        // RT tiene prioridad explícita: incluso con flags inconsistentes nunca recibe la variante SSR.
+        let ssr = input.ssr && !input.raytracing;
+        let color_pipes = self.forward_pipes(*pipes, ssr);
         // Vistas multisampleadas copiadas fuera del borrow: los pases necesitan `&mut self` para
         // registrar los layouts de profundidad y `self.targets.ms` prestado no convive con eso.
         let ms_pack: Option<([Option<vk::ImageView>; 5], vk::ImageView)> = if msaa {

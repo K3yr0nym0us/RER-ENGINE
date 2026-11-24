@@ -8,8 +8,8 @@
 #   - docs/yaml/rendering/Reflections_SSR.yaml (SSR en pantalla y composite final)
 #   - docs/yaml/rendering/Shadows_3D.yaml (no hay shadow rays en RT)
 
-version: 7
-updated: 2026-11-23
+version: 8
+updated: 2026-11-24
 status: implemented
 validated: 2026-11-08  # RTX 3060, capa de validación sin errores de API en el camino RT
 
@@ -102,22 +102,31 @@ pipeline:
 denoise:
   shader: src/main/Engine/engine/shaders/raster/denoise.frag
   profile: |
-    Kernel 3×3 con peso `exp(-|Δdepth| · 80) · pow(max(dot(n, n0), 0), 16) · alpha`. El radio
-    llega por push constant (`step_px`) y sale del preset del tier. Los tiers Medio/Alto/Máximo
+    El push constant es `vec4 params`: `x=step_px`, `y=near`, `z=far`, `w=modo`. En RT (`w=2`)
+    se conserva el kernel histórico `exp(-|Δdepth| · 80) · pow(max(dot(n, n0), 0), 16) · alpha`
+    con normales codificadas y profundidad no lineal. En SSR (`w=1`) se decodifican/normalizan
+    normales, se linealiza profundidad a metros y RGB/confianza se acumulan por separado.
+    El radio llega por `step_px` y sale del preset del tier. Los tiers Medio/Alto/Máximo
     encadenan 2/3/4 pasadas con ping-pong (`denoise`/`denoise2` y sets de descriptores separados).
-  gate: corre en modo RT (y en SSR con el target RT limpio, como antes).
+  gate: corre en modo RT y SSR con perfiles exclusivos; la rama RT no cambia.
 
 sampling:
   primary_ray: de 1 a 4 rayos por píxel según el tier, desde `inv_view_proj` (cámara) o G-buffer (reflejo), con 1 a 3 rebotes
   bounce_energy: solo el rayo primario toma el cielo como fallback; los rebotes que fallan no suman luz y cada rebote aporta como máximo 0.35 del anterior (antes se acumulaba cielo en cada miss y High/Ultra se sobreiluminaban)
-  recursion: los rebotes de geometría solo se habilitan en superficies con roughness > 0.30. En espejos (roughness <= 0.30) se fuerza 1 rebote: un segundo rebote reflejado en el suelo volvía a tocar la esfera y producía el reflejo duplicado/recursivo de High/Ultra. La calidad de esos tiers la dan los rayos extra (2/4), la resolución, el denoise y el TAA.
+  recursion: |
+    Los rebotes de geometría solo se habilitan en superficies con roughness > 0.30. En espejos
+    (roughness <= 0.30) se fuerza 1 rebote: un segundo rebote reflejado en el suelo volvía a tocar
+    la esfera y producía el reflejo duplicado/recursivo de High/Ultra. La calidad de esos tiers
+    la dan los rayos extra (2/4), la resolución, el denoise y el TAA.
   material_gate: |
     `forward.frag` escribe en `out_albedo.a` un flag de material reflectivo = `SurfacePbr` con
     roughness <= 0.35, excluyendo el terreno. Entran chrome, acero, plástico, vidrio y agua;
     el suelo demo tiene roughness 0.50 y NO refleja en ningún tier (antes aparecía en High/Ultra
     porque el umbral del tier llegaba a 0.70/1.00). `reflect.rgen` y `trace.comp` leen el flag
-    (binding 7). El pase transparente escribe el G-buffer SIN mezcla alfa (solo el color de
-    escena se mezcla) para que la roughness de agua/cristal no se corrompa con la del fondo.
+    (binding 7). En RT el pase transparente conserva la escritura tradicional del G-buffer SIN
+    mezcla alfa (solo el color de escena se mezcla) para que la roughness de agua/cristal no se
+    corrompa con la del fondo. SSR usa una pipeline transparente separada que no escribe depth
+    ni G-buffer; esa variante nunca se enlaza en RT ni en las capturas de probes.
   roughness_gate: |
     El límite superior lo da `rt_params.w` del tier RTX (0.25 / 0.40 / 0.70 / 1.00). Es un
     límite, no un selector: solo se aplica a superficies que ya pasaron el `material_gate`.

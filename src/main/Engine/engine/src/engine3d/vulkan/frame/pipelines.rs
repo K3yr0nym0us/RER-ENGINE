@@ -241,8 +241,21 @@ pub(super) fn graphics_with_depth_test(
     keep: &mut Vec<vk::Pipeline>,
 ) -> Result<vk::Pipeline, VulkanError> {
     graphics_with_gbuffer_blend(
-        device, cache, layout, vert, frag, vertex, colors, depth, blend, true, !blend, depth_bias,
-        topology, depth_test, keep,
+        device,
+        cache,
+        layout,
+        vert,
+        frag,
+        vertex,
+        colors,
+        depth,
+        blend,
+        GbufferBlend::All,
+        !blend,
+        depth_bias,
+        topology,
+        depth_test,
+        keep,
     )
 }
 
@@ -273,13 +286,58 @@ pub(super) fn graphics_blend_color_only(
         colors,
         depth,
         true,
-        false,
+        GbufferBlend::WriteOnly,
         true,
         depth_bias,
         vk::PrimitiveTopology::TRIANGLE_LIST,
         true,
         keep,
     )
+}
+
+/// Transparencia exclusiva de SSR: mezcla solo la escena, prueba profundidad contra los opacos
+/// y no modifica ni la profundidad ni los attachments de G-buffer. RT y sondas siguen usando
+/// `graphics_blend_color_only`, que conserva sus escrituras tradicionales.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn graphics_ssr_transparent(
+    device: &ash::Device,
+    cache: vk::PipelineCache,
+    layout: vk::PipelineLayout,
+    vert: vk::ShaderModule,
+    frag: Option<vk::ShaderModule>,
+    vertex: &VertexSpec,
+    colors: &[vk::Format],
+    depth: Option<vk::Format>,
+    depth_bias: bool,
+    keep: &mut Vec<vk::Pipeline>,
+) -> Result<vk::Pipeline, VulkanError> {
+    graphics_with_gbuffer_blend(
+        device,
+        cache,
+        layout,
+        vert,
+        frag,
+        vertex,
+        colors,
+        depth,
+        true,
+        GbufferBlend::None,
+        false,
+        depth_bias,
+        vk::PrimitiveTopology::TRIANGLE_LIST,
+        true,
+        keep,
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GbufferBlend {
+    /// Todos los attachments reciben el mismo estado de blend (opacos/probes).
+    All,
+    /// Solo attachment 0 mezcla; el G-buffer se escribe sin blend (RT heredado).
+    WriteOnly,
+    /// Solo attachment 0 mezcla; el G-buffer no se escribe (SSR).
+    None,
 }
 
 fn graphics_with_gbuffer_blend(
@@ -292,7 +350,7 @@ fn graphics_with_gbuffer_blend(
     colors: &[vk::Format],
     depth: Option<vk::Format>,
     blend: bool,
-    blend_gbuffer: bool,
+    blend_gbuffer: GbufferBlend,
     depth_write: bool,
     depth_bias: bool,
     topology: vk::PrimitiveTopology,
@@ -349,7 +407,7 @@ pub(super) fn graphics_probe(
         colors,
         depth,
         false,
-        true,
+        GbufferBlend::All,
         true,
         false,
         vk::PrimitiveTopology::TRIANGLE_LIST,
@@ -362,6 +420,58 @@ pub(super) fn graphics_probe(
 
 pub(super) const PROBE_VIEW_MASK: u32 = 0b11_1111;
 
+fn depth_stencil_state(
+    depth: Option<vk::Format>,
+    depth_test: bool,
+    depth_write: bool,
+) -> vk::PipelineDepthStencilStateCreateInfo<'static> {
+    vk::PipelineDepthStencilStateCreateInfo::default()
+        .depth_test_enable(depth.is_some() && depth_test)
+        .depth_write_enable(depth.is_some() && depth_test && depth_write)
+        .depth_compare_op(vk::CompareOp::LESS)
+}
+
+fn blend_attachment(
+    blend: bool,
+    write_mask: vk::ColorComponentFlags,
+) -> vk::PipelineColorBlendAttachmentState {
+    vk::PipelineColorBlendAttachmentState::default()
+        .color_write_mask(write_mask)
+        .blend_enable(blend)
+        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
+        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .color_blend_op(vk::BlendOp::ADD)
+        .src_alpha_blend_factor(vk::BlendFactor::ONE)
+        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .alpha_blend_op(vk::BlendOp::ADD)
+}
+
+fn color_blend_attachments(
+    blend: bool,
+    gbuffer: GbufferBlend,
+    attachment_count: usize,
+) -> Vec<vk::PipelineColorBlendAttachmentState> {
+    let scene = blend_attachment(blend, vk::ColorComponentFlags::RGBA);
+    if gbuffer == GbufferBlend::All {
+        return vec![scene; attachment_count];
+    }
+    let write_mask = if gbuffer == GbufferBlend::WriteOnly {
+        vk::ColorComponentFlags::RGBA
+    } else {
+        vk::ColorComponentFlags::empty()
+    };
+    let gbuffer_state = vk::PipelineColorBlendAttachmentState::default()
+        .color_write_mask(write_mask)
+        .blend_enable(false);
+    let mut attachments = Vec::with_capacity(attachment_count);
+    attachments.push(scene);
+    attachments.extend(std::iter::repeat_n(
+        gbuffer_state,
+        attachment_count.saturating_sub(1),
+    ));
+    attachments
+}
+
 #[allow(clippy::too_many_arguments)]
 fn graphics_with_gbuffer_blend_ex(
     device: &ash::Device,
@@ -373,7 +483,7 @@ fn graphics_with_gbuffer_blend_ex(
     colors: &[vk::Format],
     depth: Option<vk::Format>,
     blend: bool,
-    blend_gbuffer: bool,
+    blend_gbuffer: GbufferBlend,
     depth_write: bool,
     depth_bias: bool,
     topology: vk::PrimitiveTopology,
@@ -429,30 +539,8 @@ fn graphics_with_gbuffer_blend_ex(
         .depth_bias_slope_factor(if depth_bias { 2.0 } else { 0.0 });
     let multisample = vk::PipelineMultisampleStateCreateInfo::default()
         .rasterization_samples(sample_flags(vertex.samples));
-    let depth_state = vk::PipelineDepthStencilStateCreateInfo::default()
-        .depth_test_enable(depth.is_some() && depth_test)
-        .depth_write_enable(depth.is_some() && depth_test && depth_write)
-        .depth_compare_op(vk::CompareOp::LESS);
-    let blend_attachment = vk::PipelineColorBlendAttachmentState::default()
-        .color_write_mask(vk::ColorComponentFlags::RGBA)
-        .blend_enable(blend)
-        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .alpha_blend_op(vk::BlendOp::ADD);
-    let attachments = if blend_gbuffer {
-        vec![blend_attachment; colors.len()]
-    } else {
-        let gbuffer = vk::PipelineColorBlendAttachmentState::default()
-            .color_write_mask(vk::ColorComponentFlags::RGBA)
-            .blend_enable(false);
-        let mut list = Vec::with_capacity(colors.len());
-        list.push(blend_attachment);
-        list.extend(std::iter::repeat_n(gbuffer, colors.len().saturating_sub(1)));
-        list
-    };
+    let depth_state = depth_stencil_state(depth, depth_test, depth_write);
+    let attachments = color_blend_attachments(blend, blend_gbuffer, colors.len());
     let blend_state = vk::PipelineColorBlendStateCreateInfo::default().attachments(&attachments);
     let dynamics = [vk::DynamicState::VIEWPORT, vk::DynamicState::SCISSOR];
     let dynamic = vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&dynamics);
@@ -661,5 +749,59 @@ mod tests {
             locations(&hud_instance_vertex()),
             vec![0, 2, 3, 4, 5, 6, 7, 8]
         );
+    }
+
+    #[test]
+    fn ssr_transparent_only_blends_scene_and_tests_opaque_depth() {
+        let attachments = color_blend_attachments(true, GbufferBlend::None, 5);
+        assert_eq!(attachments.len(), 5);
+        assert_ne!(attachments[0].blend_enable, 0);
+        assert_eq!(
+            attachments[0].color_write_mask,
+            vk::ColorComponentFlags::RGBA
+        );
+        assert_eq!(
+            attachments[0].src_color_blend_factor,
+            vk::BlendFactor::SRC_ALPHA
+        );
+        assert_eq!(
+            attachments[0].dst_color_blend_factor,
+            vk::BlendFactor::ONE_MINUS_SRC_ALPHA
+        );
+        for attachment in &attachments[1..] {
+            assert_eq!(attachment.blend_enable, 0);
+            assert_eq!(
+                attachment.color_write_mask,
+                vk::ColorComponentFlags::empty()
+            );
+        }
+
+        let depth = depth_stencil_state(Some(DEPTH), true, false);
+        assert_ne!(depth.depth_test_enable, 0);
+        assert_eq!(depth.depth_write_enable, 0);
+        assert_eq!(depth.depth_compare_op, vk::CompareOp::LESS);
+    }
+
+    #[test]
+    fn legacy_transparent_still_writes_gbuffer_and_depth() {
+        let attachments = color_blend_attachments(true, GbufferBlend::WriteOnly, 5);
+        assert_ne!(attachments[0].blend_enable, 0);
+        for attachment in &attachments[1..] {
+            assert_eq!(attachment.blend_enable, 0);
+            assert_eq!(attachment.color_write_mask, vk::ColorComponentFlags::RGBA);
+        }
+        let depth = depth_stencil_state(Some(DEPTH), true, true);
+        assert_ne!(depth.depth_test_enable, 0);
+        assert_ne!(depth.depth_write_enable, 0);
+    }
+
+    #[test]
+    fn opaque_and_probe_pipelines_keep_identical_attachment_states() {
+        let attachments = color_blend_attachments(false, GbufferBlend::All, 5);
+        assert_eq!(attachments.len(), 5);
+        for attachment in attachments {
+            assert_eq!(attachment.blend_enable, 0);
+            assert_eq!(attachment.color_write_mask, vk::ColorComponentFlags::RGBA);
+        }
     }
 }

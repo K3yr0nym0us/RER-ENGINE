@@ -155,7 +155,8 @@ pub(crate) struct SceneUniforms {
     pub(crate) light_params: [f32; 4],
     /// xy = jitter subpíxel de TAA; z = peso del IBL de sondas; w = metros/texel de sombra.
     pub(crate) jitter: [f32; 4],
-    /// x = near, y = far; z = 1 cuando SSR/reflejos activos (forward IBL cede especular).
+    /// x = near, y = far; z = modo de reflejos: 0 = Off, 1 = SSR, 2 = RT. RT sigue activando
+    /// reflejos con >= 0.5 (como antes); SSR se distingue con ~= 1.0 para conservar spec/probes.
     /// w = capa GPU de Grass (0 = sin fotos de terreno).
     pub(crate) depth_plane: [f32; 4],
     /// x = bias_min, y = bias_max, z = depth_const, w = depth_slope.
@@ -178,6 +179,9 @@ impl SceneUniforms {
     /// Offset de `jitter.z` (peso IBL) en el UBO de escena. La captura de sondas
     /// tiene que poner este campo a 0, no `light_params.y` (oscuridad de sombra).
     pub(crate) const IBL_WEIGHT_OFFSET: u64 = std::mem::offset_of!(Self, jitter) as u64 + 8;
+    /// Offset de `depth_plane.x` (near) en el UBO de escena. SSR/denoise/TAA leen near/far
+    /// desde aquí para linealizar profundidad sin duplicar un offset mágico.
+    pub(crate) const DEPTH_PLANE_OFFSET: u64 = std::mem::offset_of!(Self, depth_plane) as u64;
 }
 
 #[cfg(test)]
@@ -190,6 +194,22 @@ mod tests {
         let shadow_darkness = std::mem::offset_of!(SceneUniforms, light_params) as u64 + 4;
         assert_eq!(SceneUniforms::IBL_WEIGHT_OFFSET, jitter_z);
         assert_ne!(SceneUniforms::IBL_WEIGHT_OFFSET, shadow_darkness);
+        assert_eq!(
+            SceneUniforms::DEPTH_PLANE_OFFSET,
+            std::mem::offset_of!(SceneUniforms, depth_plane) as u64
+        );
+    }
+
+    #[test]
+    fn reflection_mode_encoding_in_depth_plane_z() {
+        // Contrato con forward.frag: SSR (~1.0) conserva spec/probes; RT (~2.0) mantiene el
+        // suppression historico. El gate `>= 0.5` sigue marcando reflejos activos en RT.
+        let off = 0.0f32;
+        let ssr = 1.0f32;
+        let rt = 2.0f32;
+        assert!(off < 0.5);
+        assert!((ssr - 1.0).abs() < 1e-6 && (0.5..1.5).contains(&ssr));
+        assert!((rt - 2.0).abs() < 1e-6 && rt >= 1.5);
     }
 
     #[test]

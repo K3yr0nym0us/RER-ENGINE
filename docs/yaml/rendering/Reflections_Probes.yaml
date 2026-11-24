@@ -7,8 +7,8 @@
 #   - docs/yaml/rendering/Reflections_SSR.yaml (miss SSR → probe)
 #   - docs/yaml/rendering/Reflections_RT.yaml (sampleo probe en hits off-screen)
 
-version: 3
-updated: 2026-11-23
+version: 4
+updated: 2026-11-24
 status: implemented
 
 principle:
@@ -21,7 +21,8 @@ principle:
     Editor: reflection_probes_enabled (persistido en .save como reflectionProbes).
     Si OFF: no captura y el termino IBL del forward queda en cero (`light_params.y = 0`).
     Los probes solo existen con un sistema de reflejos activo (SSR o RT; antes: tier ≠ off).
-    Su comportamiento no ha cambiado: selección por volumen/radio y switch global.
+    La selección por volumen/radio y el switch global no cambian. En SSR se conservan como
+    fallback del miss; en RT se mantiene la supresión histórica en superficies reflectivas.
   tier_philosophy: |
     En Ash el tier NO cambia la resolución del cubemap: todas las ranuras usan
     `PROBE_FACE_SIZE` fijo. El `cubemap_face_size` por tier de la era wgpu no se portó.
@@ -86,8 +87,10 @@ sampling:
     cuyo volumen contiene el punto, más cercana en distancia relativa a su radio) y la escribe en
     `InstanceData.tex_layer_pad[2]`; esa ranura también entra en la clave del batch de instancing.
   ssr_miss: |
-    `composite.frag` usa SSR o el trazado según confianza; el cubemap de sondas NO se muestrea
-    dentro del pase SSR en Ash (esa rama `refl_sample_probe_for_material` era de wgpu).
+    En modo SSR, `forward.frag` conserva el IBL de sondas y el especular directo como capa base.
+    Si la marcha SSR no encuentra impacto, `composite.frag` devuelve esa escena sin añadir reflejo
+    SSP; no hay misses negros. En modo RT se mantiene la supresión histórica de sondas en
+    superficies reflectivas para evitar doble aporte. El cubemap no se muestrea dentro de `ssr.frag`.
   parallax: |
     Sin corrección esférica por parallax; `entries`/`probe_meta` GPU de la era wgpu no se portaron.
   layer_policy: NearestByWorldPos (por volumen de influencia) para cualquier superficie.

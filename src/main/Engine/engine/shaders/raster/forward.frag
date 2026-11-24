@@ -226,6 +226,12 @@ void main() {
     }
     vec3 n = normalize(v_normal);
     bool terrain = v_flag.z > 3.5 && v_flag.z < 4.5;
+    // depth_plane.z: 0 = Off, 1 = SSR, 2 = RT. RT sigue siendo "reflejos activos" con >= 0.5,
+    // pero SSR se distingue con ~= 1.0 para conservar el especular directo y las sondas como
+    // fallback (el composite SSR no deja misses negros). El camino RT no cambia.
+    int refl_mode = int(clamp(u.depth_plane.z + 0.5, 0.0, 2.0));
+    bool ssr_mode = refl_mode == 1;
+    bool rt_mode = refl_mode == 2;
     vec4 albedo_s;
     vec3 albedo;
     if (terrain) {
@@ -267,18 +273,20 @@ void main() {
         * u.light_params.x;
     vec3 v = normalize(u.cam_pos.xyz - v_world);
     float spec = pow(max(dot(n, normalize(l + v)), 0.0), mix(8.0, 64.0, 1.0 - roughness));
-    if (u.depth_plane.z < 0.5) {
+    // En RT se suprime igual que antes (depth_plane.z >= 0.5). En SSR se conserva: el composite
+    // SSR mezcla el reflejo sobre esta escena, así que el spec directo evita huecos oscuros.
+    if (!rt_mode) {
         lit += u.light_color.rgb * spec * (1.0 - roughness) * shadow_factor * 0.35;
     }
     // IBL especular de sondas: no es una luz. `v_tex.z` es la ranura (-1 = fuera
     // del volumen → no se aplica). El peso va en `jitter.z`.
-    // Con SSR/RT (`depth_plane.z`) el composite ya pinta la banda reflectiva
-    // (roughness ≤ 0.35). Superponer el cubemap duplicaba el reflejo y, por la
-    // convención Y del cubemap, salía de cabeza.
+    // En RT el composite pinta la banda reflectiva (roughness ≤ 0.35) y el cubemap se suprimía
+    // para no duplicar el reflejo. En SSR las sondas se conservan como FALLBACK: si la marcha
+    // falla, el composite devuelve esta escena (con spec y probes) en vez de un negro.
     if (!terrain && u.jitter.z > 0.0) {
         float probe_index = v_tex.z;
-        bool ssr_owns_spec = u.depth_plane.z >= 0.5 && roughness <= 0.35;
-        if (probe_index >= 0.0 && !ssr_owns_spec) {
+        bool rt_owns_spec = rt_mode && roughness <= 0.35;
+        if (probe_index >= 0.0 && !rt_owns_spec) {
             vec3 probe_dir = normalize(mix(n, reflect(-v, n), clamp(1.0 - roughness, 0.0, 1.0)));
             vec3 env = texture(probe_cube, vec4(probe_dir, probe_index)).rgb;
             float ndotv = max(dot(n, v), 0.0);
@@ -324,10 +332,14 @@ void main() {
     }
     out_color = vec4(lit, alpha);
     out_normal_rough = vec4(n * 0.5 + 0.5, roughness);
-    // w = flag de material reflectivo: SurfacePbr con roughness baja. `v_flag.w` es la
-    // roughness (>= 0) o -1 si no hay PBR. El suelo tiene SurfacePbr de 0.50 y NO debe
-    // reflejar; las esferas de material (chrome/acero/plástico/vidrio/agua) van de 0.0 a 0.2.
-    float reflective = (v_flag.w >= 0.0 && v_flag.w <= 0.35 && !terrain) ? 1.0 : 0.0;
+    // w = flag de material reflectivo: SurfacePbr (`v_flag.w` = roughness >= 0, o -1 sin PBR).
+    // RT y Off conservan el gate historico de 0.35. En SSR se marcan TODOS los SurfacePbr sin
+    // tope duro: el limite real lo aplica `roughness_support` del preset en ssr.frag. El terreno
+    // sigue excluido de SSR; en RT su comportamiento no cambia.
+    float reflective = 0.0;
+    if (!terrain && v_flag.w >= 0.0) {
+        reflective = (ssr_mode || v_flag.w <= 0.35) ? 1.0 : 0.0;
+    }
     // En superficies transparentes reflectivas, albedo.a codifica el Fresnel en 0.55..1
     // para que composite module la fuerza del reflejo. El gate >= 0.5 de SSR/RT sigue pasando.
     if (reflective > 0.5 && alpha < 0.98) {

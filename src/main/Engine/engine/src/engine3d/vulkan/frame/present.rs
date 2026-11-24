@@ -1,4 +1,61 @@
 use super::*;
+use bytemuck::{Pod, Zeroable};
+
+const MODE_SSR: f32 = 1.0;
+const MODE_RT: f32 = 2.0;
+const TAA_MODE_SSR: f32 = 2.0;
+const TAA_MODE_NORMAL: f32 = 1.0;
+const SSR_ORIGIN_BIAS_M: f32 = 0.02;
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct SsrPush {
+    a: [f32; 4],
+    b: [f32; 4],
+    c: [f32; 4],
+    d: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct PassPush {
+    params: [f32; 4],
+}
+
+fn scene_near_far(scene: &[u8]) -> (f32, f32) {
+    let offset = SceneUniforms::DEPTH_PLANE_OFFSET as usize;
+    let mut near = 0.1;
+    let mut far = 1000.0;
+    if scene.len() >= offset + 8 {
+        near = f32::from_le_bytes(scene[offset..offset + 4].try_into().unwrap_or_default());
+        far = f32::from_le_bytes(scene[offset + 4..offset + 8].try_into().unwrap_or_default());
+    }
+    if !near.is_finite() || near <= 0.0 {
+        near = 0.1;
+    }
+    if !far.is_finite() || far <= near {
+        far = (near + 1000.0).max(near * 2.0);
+    }
+    (near, far)
+}
+
+/// Sincronización explícita para pases fullscreen: dynamic rendering no sustituye esta barrera.
+fn color_write_to_shader_read(device: &ash::Device, cmd: vk::CommandBuffer, image: vk::Image) {
+    crate::engine3d::vulkan::gpu::cmd_image_barrier(
+        device,
+        cmd,
+        image,
+        vk::ImageAspectFlags::COLOR,
+        1,
+        1,
+        vk::ImageLayout::GENERAL,
+        vk::ImageLayout::GENERAL,
+        vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        vk::PipelineStageFlags::FRAGMENT_SHADER,
+        vk::AccessFlags::COLOR_ATTACHMENT_WRITE,
+        vk::AccessFlags::SHADER_READ,
+    );
+}
 
 impl FrameRenderer {
     pub(super) fn resolve_present(
@@ -12,7 +69,11 @@ impl FrameRenderer {
     ) -> Result<(), VulkanError> {
         let extent = self.targets.extent;
         let clamp = self.samplers[2];
-        let mode_key = u8::from(input.ssr) | (u8::from(input.raytracing) << 1);
+        let depth_sampler = self.samplers[3];
+        let (near, far) = scene_near_far(input.scene);
+        // RT tiene prioridad explícita, igual que en el forward: flags inconsistentes no activan SSR.
+        let ssr = input.ssr && !input.raytracing;
+        let mode_key = u8::from(ssr) | (u8::from(input.raytracing) << 1);
         if self.last_reflection_mode != mode_key {
             // Al cambiar de sistema (o de Off a activo) cambia el historial de destino.
             self.taa_history_valid = false;
@@ -28,9 +89,8 @@ impl FrameRenderer {
                 [0.0, 0.0, 0.0, 0.0],
             );
         }
-        if input.reflections && !input.ssr {
-            // Con RT el composite no debe leer un SSR viejo: roughness baja fuerza SSR en el
-            // shader, así que dejamos la imagen limpia para que aporte cero.
+        if input.reflections && !ssr {
+            // Con RT el composite no debe leer un SSR viejo; el push selecciona RT explícitamente.
             clear_image_color(
                 device,
                 cmd,
@@ -39,30 +99,50 @@ impl FrameRenderer {
                 [0.0, 0.0, 0.0, 0.0],
             );
         }
-        // Parámetros del preset SSR (32 bytes, ver ssr.frag).
-        let ssr_params = [
-            input.ssr_preset.march_steps as f32,
-            input.ssr_preset.binary_search_steps as f32,
-            input.ssr_preset.max_distance,
-            input.ssr_preset.thickness,
-            if input.ssr_preset.adaptive_thickness {
-                1.0
-            } else {
-                0.0
-            },
-            input.ssr_preset.roughness_support,
-            input.ssr_preset.edge_fade,
-            0.0f32,
-        ];
-        let ssr_push = bytemuck::bytes_of(&ssr_params).to_vec();
+        // Parámetros SSR (64 bytes, ver ssr.frag). `max_distance` y `thickness` están en metros.
+        let min_thickness = input.ssr_preset.thickness.max(0.001);
+        let max_thickness = (input.ssr_preset.thickness * 4.0)
+            .max(0.05)
+            .max(min_thickness);
+        let width = extent.width as f32;
+        let height = extent.height as f32;
+        let ssr_push = SsrPush {
+            a: [
+                input.ssr_preset.march_steps as f32,
+                input.ssr_preset.binary_search_steps as f32,
+                input.ssr_preset.max_distance,
+                min_thickness,
+            ],
+            b: [
+                if input.ssr_preset.adaptive_thickness {
+                    1.0
+                } else {
+                    0.0
+                },
+                max_thickness,
+                input.ssr_preset.roughness_support,
+                input.ssr_preset.edge_fade,
+            ],
+            c: [near, far, SSR_ORIGIN_BIAS_M, width],
+            d: [height, width / height.max(1.0), 0.0, 0.0],
+        };
         let source = if input.reflections {
-            if input.ssr {
+            if ssr {
+                // Forward color outputs -> fragment SSR. La depth ya transita a READ_ONLY en
+                // `forward_pass`; aquí sincronizamos los adjuntos de color que muestrea SSR.
+                color_write_to_shader_read(device, cmd, self.targets.scene.image);
+                if let Some(normal) = self.targets.normal.as_ref() {
+                    color_write_to_shader_read(device, cmd, normal.image);
+                }
+                if let Some(albedo) = self.targets.albedo_out.as_ref() {
+                    color_write_to_shader_read(device, cmd, albedo.image);
+                }
                 write_combined(
                     device,
                     self.sets.ssr[slot],
                     0,
                     self.targets.depth.view,
-                    clamp,
+                    depth_sampler,
                     vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
                 )?;
                 write_combined(
@@ -84,7 +164,7 @@ impl FrameRenderer {
                 write_combined(
                     device,
                     self.sets.ssr[slot],
-                    5,
+                    4,
                     self.sampled_albedo(),
                     clamp,
                     vk::ImageLayout::GENERAL,
@@ -93,15 +173,17 @@ impl FrameRenderer {
                     device,
                     cmd,
                     pipes.ssr,
-                    self.layouts[6],
+                    self.ssr_layout,
                     self.sets.ssr[slot],
                     self.targets.ssr.view,
                     self.ssr_extent(),
-                    &ssr_push,
+                    bytemuck::bytes_of(&ssr_push),
                 );
+                // SSR -> denoise, sin depender de la sincronización implícita del render pass.
+                color_write_to_shader_read(device, cmd, self.targets.ssr.image);
             }
             // En SSR se filtra la imagen SSR; en RT se filtra la imagen trazada.
-            let denoise_source = if input.ssr {
+            let denoise_source = if ssr {
                 self.targets.ssr.view
             } else {
                 self.targets.reflection.view
@@ -130,18 +212,21 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
-            // Cada sistema usa su propio perfil de denoise (nunca se mezclan).
-            let passes = if input.raytracing {
-                input.rtx.denoise_passes.max(1)
-            } else {
+            // Cada sistema usa su propio perfil de denoise (nunca se mezclan). El modo del push
+            // permite que SSR corrija la comparación de profundidad sin cambiar el filtro RT.
+            let passes = if ssr {
                 input.ssr_preset.denoise_passes.max(1)
-            };
-            let step = if input.raytracing {
-                input.rtx.denoise_step.max(0.25)
             } else {
+                input.rtx.denoise_passes.max(1)
+            };
+            let step = if ssr {
                 input.ssr_preset.denoise_step.max(0.25)
-            }
-            .to_le_bytes();
+            } else {
+                input.rtx.denoise_step.max(0.25)
+            };
+            let denoise_push = PassPush {
+                params: [step, near, far, if ssr { MODE_SSR } else { MODE_RT }],
+            };
             draw_fullscreen(
                 device,
                 cmd,
@@ -150,7 +235,7 @@ impl FrameRenderer {
                 self.sets.denoise[slot],
                 self.targets.denoise.view,
                 extent,
-                &step,
+                bytemuck::bytes_of(&denoise_push),
             );
             // Pasadas extra del tier RTX (ping-pong). CADA pasada usa su propio set: actualizar
             // un set ya enlazado en este command buffer invalidaba el buffer completo.
@@ -212,7 +297,7 @@ impl FrameRenderer {
                     set,
                     denoised,
                     extent,
-                    &step,
+                    bytemuck::bytes_of(&denoise_push),
                 );
             }
             // El composite lee el resultado final del denoise: misma barrera que entre pasadas.
@@ -239,9 +324,9 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
-            // En SSR, binding 1 debe quedar limpio para que el composite elija la SSR filtrada
-            // del binding 2 (y sepa que está en modo SSR mirando las alfas). En RT es al revés.
-            let composite_rt = if input.ssr {
+            // El push decide el modo; mantenemos RT limpio en SSR y SSR limpio en RT para que
+            // las texturas no seleccionadas no puedan contaminar el composite.
+            let composite_rt = if ssr {
                 self.targets.reflection.view
             } else {
                 denoised
@@ -254,11 +339,7 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
-            let composite_ssr = if input.ssr {
-                denoised
-            } else {
-                self.targets.ssr.view
-            };
+            let composite_ssr = if ssr { denoised } else { self.targets.ssr.view };
             write_combined(
                 device,
                 self.sets.composite[slot],
@@ -292,6 +373,9 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
+            let composite_push = PassPush {
+                params: [if ssr { MODE_SSR } else { MODE_RT }, 0.0, 0.0, 0.0],
+            };
             draw_fullscreen(
                 device,
                 cmd,
@@ -300,23 +384,29 @@ impl FrameRenderer {
                 self.sets.composite[slot],
                 self.targets.history[slot].view,
                 extent,
-                &[],
+                bytemuck::bytes_of(&composite_push),
             );
+            if ssr {
+                // composite -> TAA (o -> present si TAA está apagado), solo en la ruta SSR.
+                color_write_to_shader_read(device, cmd, self.targets.history[slot].image);
+            }
             self.targets.history[slot].view
         } else {
             self.targets.scene.view
         };
         let present_source = if input.taa_enabled {
             let history = self.history_slot ^ 1;
-            let (history_view, target) = if input.reflections {
+            let (history_view, target, target_image) = if input.reflections {
                 (
                     self.targets.refl_history[history].view,
                     self.targets.refl_history[slot].view,
+                    self.targets.refl_history[slot].image,
                 )
             } else {
                 (
                     self.targets.history[history].view,
                     self.targets.history[slot].view,
+                    self.targets.history[slot].image,
                 )
             };
             write_combined(
@@ -343,11 +433,28 @@ impl FrameRenderer {
                 clamp,
                 vk::ImageLayout::GENERAL,
             )?;
-            let mut push = [0u8; 8];
-            let desired_blend = if input.raytracing {
+            // Bindings 3/4 ya existen en `full/taa`; no se inserta ni desplaza ningún descriptor.
+            write_combined(
+                device,
+                self.sets.taa[slot],
+                3,
+                self.targets.depth.view,
+                clamp,
+                vk::ImageLayout::DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+            )?;
+            write_combined(
+                device,
+                self.sets.taa[slot],
+                4,
+                self.sampled_normal(),
+                clamp,
+                vk::ImageLayout::GENERAL,
+            )?;
+            // SSR usa el blend TAA de escena. RT conserva exactamente su preset temporal.
+            let desired_blend = if ssr {
+                input.taa_blend
+            } else if input.raytracing {
                 input.rtx.temporal_blend
-            } else if input.reflections {
-                input.ssr_preset.temporal_blend
             } else {
                 input.taa_blend
             };
@@ -356,8 +463,14 @@ impl FrameRenderer {
             } else {
                 0.0
             };
-            push[..4].copy_from_slice(&blend.to_le_bytes());
-            push[4..8].copy_from_slice(&1.0f32.to_le_bytes());
+            let taa_push = PassPush {
+                params: [
+                    blend,
+                    if ssr { TAA_MODE_SSR } else { TAA_MODE_NORMAL },
+                    near,
+                    far,
+                ],
+            };
             draw_fullscreen(
                 device,
                 cmd,
@@ -366,8 +479,12 @@ impl FrameRenderer {
                 self.sets.taa[slot],
                 target,
                 extent,
-                &push,
+                bytemuck::bytes_of(&taa_push),
             );
+            if ssr {
+                // TAA -> present. No se añade ninguna barrera nueva a la ruta RT.
+                color_write_to_shader_read(device, cmd, target_image);
+            }
             target
         } else {
             source
@@ -377,7 +494,7 @@ impl FrameRenderer {
         // TAA encima, para ver qué devuelve realmente el pase de reflejos.
         let present_source = if input.debug_rt_view && input.raytracing {
             self.targets.reflection.view
-        } else if input.debug_ssr_view && input.ssr {
+        } else if input.debug_ssr_view && ssr {
             self.targets.ssr.view
         } else {
             present_source
@@ -491,5 +608,44 @@ impl FrameRenderer {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn push_constant_sizes_match_pipeline_ranges() {
+        assert_eq!(std::mem::size_of::<SsrPush>(), SSR_PUSH_BYTES as usize);
+        assert_eq!(
+            std::mem::size_of::<PassPush>(),
+            REFLECTION_PUSH_BYTES as usize
+        );
+        assert_eq!(MODE_SSR, 1.0);
+        assert_eq!(MODE_RT, 2.0);
+        assert_eq!(TAA_MODE_SSR, 2.0);
+        assert_eq!(TAA_MODE_NORMAL, 1.0);
+    }
+
+    #[test]
+    fn scene_near_far_reads_depth_plane_offset() {
+        let offset = SceneUniforms::DEPTH_PLANE_OFFSET as usize;
+        let mut scene = vec![0u8; offset + 8];
+        scene[offset..offset + 4].copy_from_slice(&0.25f32.to_le_bytes());
+        scene[offset + 4..offset + 8].copy_from_slice(&1800.0f32.to_le_bytes());
+        assert_eq!(scene_near_far(&scene), (0.25, 1800.0));
+    }
+
+    #[test]
+    fn scene_near_far_has_safe_fallbacks() {
+        assert_eq!(scene_near_far(&[]), (0.1, 1000.0));
+        let offset = SceneUniforms::DEPTH_PLANE_OFFSET as usize;
+        let mut scene = vec![0u8; offset + 8];
+        scene[offset..offset + 4].copy_from_slice(&f32::NAN.to_le_bytes());
+        scene[offset + 4..offset + 8].copy_from_slice(&0.0f32.to_le_bytes());
+        let (near, far) = scene_near_far(&scene);
+        assert_eq!(near, 0.1);
+        assert!(far > near);
     }
 }

@@ -19,6 +19,10 @@ use crate::engine3d::vulkan::gpu::{FrameTarget, GpuBuffer, GpuImage, SharedGpu};
 const FRAMES: usize = 2;
 /// Máximo de pasadas extra de denoise (tier Ultra = 4 pasadas en total → 3 extra).
 const MAX_EXTRA_DENOISE_PASSES: usize = 3;
+/// Push vec4 compartido por composite, denoise y TAA.
+const REFLECTION_PUSH_BYTES: u32 = 16;
+/// Push de SSR: cuatro vec4 con marcha, grosor, cámara y resolución.
+const SSR_PUSH_BYTES: u32 = 64;
 const COLOR: vk::Format = vk::Format::R8G8B8A8_UNORM;
 const WORLD: vk::Format = vk::Format::R16G16B16A16_SFLOAT;
 const VELOCITY: vk::Format = vk::Format::R16G16_SFLOAT;
@@ -308,8 +312,8 @@ pub struct FrameRenderer {
     pipelines: Vec<vk::Pipeline>,
     pool: vk::DescriptorPool,
     /// Los `VkDescriptorSetLayout` del renderer. Se guardan porque hay que destruirlos: el leak que
-    /// reportaba `vkDestroyDevice(): N leaked objects` al cerrar eran exactamente estos. Son 13
-    /// campos pero 12 objetos (`taa` comparte layout con `full`; `sky_bg` es propio).
+    /// reportaba `vkDestroyDevice(): N leaked objects` al cerrar eran exactamente estos. Son 14
+    /// campos pero 13 objetos (`taa` comparte layout con `full`; `sky_bg` y `ssr` son propios).
     set_layouts: SetLayouts,
     samplers: Vec<vk::Sampler>,
     sets: DescriptorSets,
@@ -420,6 +424,8 @@ pub struct FrameRenderer {
     full_vert: vk::ShaderModule,
     sky_frag: vk::ShaderModule,
     layout_full: vk::PipelineLayout,
+    /// Layout dedicado de SSR. Se appenda al registro para no desplazar índices de RT/probes.
+    ssr_layout: vk::PipelineLayout,
 }
 
 /// Los sets se indexan por slot en vuelo (`FRAMES`). Un set único reescrito cada frame era
@@ -541,7 +547,9 @@ impl FrameRenderer {
         let linear = sampler(device, false, vk::SamplerAddressMode::REPEAT)?;
         let shadow_sampler = compare_sampler(device)?;
         let clamp = sampler(device, false, vk::SamplerAddressMode::CLAMP_TO_EDGE)?;
-        let samplers = vec![linear, shadow_sampler, clamp];
+        // Índice 3, exclusivo de la depth de SSR: no mezcla siluetas ni desplaza 0..=2.
+        let nearest = nearest_sampler(device)?;
+        let samplers = vec![linear, shadow_sampler, clamp, nearest];
         // Las vistas de álbum y probes se escriben en TODOS los slots: cambian en momentos
         // arbitrarios (carga de modelos, recreate) y un slot con la vista vieja apuntando a una
         // imagen ya destruida es ilegal.
@@ -616,6 +624,8 @@ impl FrameRenderer {
         for slot in 0..FRAMES {
             write_uniform(device, sets.scene[slot], 0, &scene_ubo[slot])?;
             write_uniform(device, sets.scene[slot], 4, &probe_faces_ubo[slot])?;
+            // SSR binding 3: prefijo de cámara del mismo UBO que ya consume el forward.
+            write_uniform(device, sets.ssr[slot], 3, &scene_ubo[slot])?;
             write_combined(
                 device,
                 sets.scene[slot],
@@ -664,11 +674,12 @@ impl FrameRenderer {
         )?;
         let gizmo_layout = pipeline_layout(device, &[set_layouts.gizmo], 0)?;
         let hud_layout = pipeline_layout(device, &[set_layouts.hud], 0)?;
-        // `full` lo comparten SSR (push de 32 bytes con los parámetros del preset), composite
-        // y present; un rango de push sin usar por estos últimos es inocuo.
-        let full_layout = pipeline_layout(device, &[set_layouts.full], 32)?;
-        let taa_layout = pipeline_layout(device, &[set_layouts.taa], 8)?;
-        let denoise_layout = pipeline_layout(device, &[set_layouts.denoise], 4)?;
+        // composite/denoise/TAA comparten el contrato vec4 (16 B). `full` también lo usa present,
+        // cuyo shader no consume push constants; un rango sin usar es inocuo.
+        let full_layout = pipeline_layout(device, &[set_layouts.full], REFLECTION_PUSH_BYTES)?;
+        let taa_layout = pipeline_layout(device, &[set_layouts.taa], REFLECTION_PUSH_BYTES)?;
+        let denoise_layout =
+            pipeline_layout(device, &[set_layouts.denoise], REFLECTION_PUSH_BYTES)?;
         let sky_bg_layout = pipeline_layout(device, &[set_layouts.sky_bg], 0)?;
         layouts.extend([
             forward_layout,
@@ -682,6 +693,9 @@ impl FrameRenderer {
             denoise_layout,
             sky_bg_layout,
         ]);
+        // SSR tiene set y push propios. El objeto se registra al FINAL del vec, después de RT/BVH,
+        // para conservar incluso los índices que esos sistemas añaden al registro.
+        let ssr_layout = pipeline_layout(device, &[set_layouts.ssr], SSR_PUSH_BYTES)?;
         let vert = shader(device, spv("forward.vert"), &mut shaders)?;
         let frag = shader(device, spv("forward.frag"), &mut shaders)?;
         let skinned_vert = shader(device, spv("skinned.vert"), &mut shaders)?;
@@ -817,7 +831,7 @@ impl FrameRenderer {
         let ssr = graphics(
             device,
             gpu.pipeline_cache(),
-            full_layout,
+            ssr_layout,
             full_vert,
             Some(ssr_frag),
             &empty_vertex(),
@@ -922,6 +936,8 @@ impl FrameRenderer {
             &mut pipelines,
         )?;
         let bvh_layout = *layouts.last().unwrap_or(&vk::PipelineLayout::null());
+        // Registro final de SSR: RT (si existe) y BVH conservan sus posiciones históricas.
+        layouts.push(ssr_layout);
         // Pipelines de solo-profundidad (sin adjuntos de color) para el segundo pase que rellena
         // la depth 1× cuando el G-buffer está multisampleado. Usan `depth_only.frag`, que solo
         // repite el `discard` del alfa cortado: así la profundidad coincide con la imagen resuelta.
@@ -1110,6 +1126,7 @@ impl FrameRenderer {
             full_vert,
             sky_frag,
             layout_full: full_layout,
+            ssr_layout,
             gpu: gpu.clone(),
             targets,
             shaders,

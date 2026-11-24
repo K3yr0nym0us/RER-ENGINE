@@ -170,11 +170,12 @@ pub struct SsrPreset {
     pub march_steps: u32,
     /// Pasos de búsqueda binaria tras el impacto.
     pub binary_search_steps: u32,
-    /// Radio máximo de marcha en UV de pantalla.
+    /// Radio máximo de marcha en metros de recorrido del rayo, no en UV de pantalla.
     pub max_distance: f32,
-    /// Tolerancia de profundidad (grosor). 0 = adaptativo.
+    /// Tolerancia de profundidad en metros (grosor del volumen de impacto). 0 = adaptativo.
     pub thickness: f32,
-    /// Usar grosor adaptativo con la distancia recorrida.
+    /// Usar grosor adaptativo: aumenta el grosor con la distancia recorrida para no perder
+    /// impactos lejanos cuando la profundidad se comprime.
     pub adaptive_thickness: bool,
     /// Roughness máxima que todavía recibe SSR.
     pub roughness_support: f32,
@@ -182,7 +183,8 @@ pub struct SsrPreset {
     pub denoise_passes: u32,
     /// Paso en píxeles del denoise.
     pub denoise_step: f32,
-    /// Mezcla temporal de la cadena de reflejos (0 = sin acumulación).
+    /// Reservado para compatibilidad. SSR usa el blend del TAA de escena; RT conserva su
+    /// propio `RtxPreset::temporal_blend`.
     pub temporal_blend: f32,
     /// Ancho del fundido en los bordes de pantalla (UV).
     pub edge_fade: f32,
@@ -196,8 +198,8 @@ impl SsrPreset {
                 resolution_scale: 0.50,
                 march_steps: 16,
                 binary_search_steps: 2,
-                max_distance: 0.35,
-                thickness: 0.0008,
+                max_distance: 12.0,
+                thickness: 0.05,
                 adaptive_thickness: false,
                 roughness_support: 0.20,
                 denoise_passes: 1,
@@ -209,8 +211,8 @@ impl SsrPreset {
                 resolution_scale: 0.67,
                 march_steps: 32,
                 binary_search_steps: 4,
-                max_distance: 0.35,
-                thickness: 0.002,
+                max_distance: 25.0,
+                thickness: 0.08,
                 adaptive_thickness: false,
                 roughness_support: 0.40,
                 denoise_passes: 2,
@@ -222,8 +224,8 @@ impl SsrPreset {
                 resolution_scale: 0.85,
                 march_steps: 64,
                 binary_search_steps: 6,
-                max_distance: 0.35,
-                thickness: 0.006,
+                max_distance: 40.0,
+                thickness: 0.12,
                 adaptive_thickness: false,
                 roughness_support: 0.70,
                 denoise_passes: 3,
@@ -235,8 +237,8 @@ impl SsrPreset {
                 resolution_scale: 1.0,
                 march_steps: 128,
                 binary_search_steps: 8,
-                max_distance: 0.35,
-                thickness: 0.006,
+                max_distance: 60.0,
+                thickness: 0.18,
                 adaptive_thickness: true,
                 roughness_support: 1.0,
                 denoise_passes: 4,
@@ -299,10 +301,41 @@ mod tests {
         assert!((low.resolution_scale - 0.5).abs() < 1e-6);
         assert!((low.roughness_support - 0.2).abs() < 1e-6);
         assert_eq!(low.temporal_blend, 0.0);
+        // Distancia en metros (espacio de vista) y grosor en metros, no en UV de pantalla.
+        assert!((low.max_distance - 12.0).abs() < 1e-6);
+        assert!((low.thickness - 0.05).abs() < 1e-6);
+        let medium = SsrPreset::for_tier(ReflectionTier::Medium);
+        assert!((medium.max_distance - 25.0).abs() < 1e-6);
+        assert!((medium.thickness - 0.08).abs() < 1e-6);
+        let high = SsrPreset::for_tier(ReflectionTier::High);
+        assert!((high.max_distance - 40.0).abs() < 1e-6);
+        assert!((high.thickness - 0.12).abs() < 1e-6);
         let ultra = SsrPreset::for_tier(ReflectionTier::Ultra);
         assert_eq!((ultra.march_steps, ultra.binary_search_steps), (128, 8));
         assert!(ultra.adaptive_thickness);
         assert_eq!(ultra.denoise_passes, 4);
+        assert!((ultra.max_distance - 60.0).abs() < 1e-6);
+        assert!((ultra.thickness - 0.18).abs() < 1e-6);
+    }
+
+    #[test]
+    fn ssr_metric_values_grow_with_the_tier() {
+        let order = [
+            ReflectionTier::Low,
+            ReflectionTier::Medium,
+            ReflectionTier::High,
+            ReflectionTier::Ultra,
+        ];
+        let presets: Vec<_> = order.iter().copied().map(SsrPreset::for_tier).collect();
+        for pair in presets.windows(2) {
+            assert!(pair[0].max_distance < pair[1].max_distance);
+            assert!(pair[0].thickness < pair[1].thickness);
+        }
+        assert!(
+            presets
+                .iter()
+                .all(|p| p.max_distance >= 1.0 && p.thickness < 1.0)
+        );
     }
 
     #[test]
