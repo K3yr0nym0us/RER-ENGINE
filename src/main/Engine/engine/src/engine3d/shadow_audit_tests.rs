@@ -104,6 +104,32 @@ fn forward_frag_samples_array_shadow_with_layer_in_z_and_depth_in_w() {
 }
 
 #[test]
+fn forward_frag_does_not_bleach_cascade_seams() {
+    let f = require("shaders/raster/forward.frag");
+    assert!(
+        !f.contains("mix(shadow, 1.0"),
+        "REGRESIÓN: el fundido de costura vuelve a dejar un anillo brillante que sigue a la cámara"
+    );
+    assert!(
+        !f.contains("smoothstep(edge"),
+        "el borde de cascada no debe desvanecerse hacia luz total"
+    );
+}
+
+#[test]
+fn cascade_fade_is_disabled_for_every_tier() {
+    for tier in [
+        ShadowTier::Off,
+        ShadowTier::Low,
+        ShadowTier::Medium,
+        ShadowTier::High,
+        ShadowTier::Ultra,
+    ] {
+        assert_eq!(tier.cascade_fade(), 0.0, "tier {}", tier.wire());
+    }
+}
+
+#[test]
 fn forward_frag_keeps_texel_centered_pcf_and_bias() {
     let f = require("shaders/raster/forward.frag");
     assert!(

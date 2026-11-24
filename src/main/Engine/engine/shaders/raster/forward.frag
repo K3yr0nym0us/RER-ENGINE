@@ -123,17 +123,11 @@ float shadow_pcf(vec3 world, vec3 n) {
             used += 1.0;
         }
     }
-    float shadow = sum / used;
-    // Fundido en el borde lejano de cada cascada salvo la última: así se oculta
-    // el salto de resolución al entrar en la siguiente.
-    int count = int(clamp(u.cascade_params.w, 0.0, 4.0));
-    if (cascade < count - 1) {
-        float fade_width = max(u.cascade_params.y, 0.001);
-        float edge = u.cascade_splits[cascade];
-        float fade = smoothstep(edge - fade_width, edge, view_dist);
-        shadow = mix(shadow, 1.0, fade);
-    }
-    return shadow;
+    // Sin fundido en las costuras: mezclar hacia 1.0 (luz total) en el borde dejaba
+    // un anillo brillante de ~fade_width metros que seguía a la cámara, porque los
+    // cortes se miden desde el ojo. El salto de densidad entre capas no es visible
+    // con el PCF centrado en texel, así que se muestrea la capa elegida tal cual.
+    return sum / used;
 }
 
 // Un tile de material cubre 12.5 m (igual que la referencia). La cadena de mips

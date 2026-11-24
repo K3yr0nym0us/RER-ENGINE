@@ -26,14 +26,15 @@ principle:
        y la cuenta en `FrameInput.shadow_cascades`. `light_view_proj` conserva la cascada 0.
     3. Sombreado en el forward con `sampler2DArrayShadow` (depth compare `LESS_OR_EQUAL`) + PCF:
        selecciona capa por distancia al ojo contra `cascade_splits`, convierte el radio suave de
-       unidades de mundo a texeles de la capa y desvanece la costura con `cascade_fade`.
+        unidades de mundo a texeles de la capa. SIN fundido de costura: mezclar hacia luz total
+        en el borde dejaba un anillo brillante que seguia a la camara (`cascade_fade` = 0).
     4. El array pasa ATTACHMENT → READ_ONLY con registro explícito de layout
        (`transition_depth`), igual que la profundidad del viewport.
   note: |
     CSM con 4 capas como máximo: Low 2, Medium 3, High/Ultra 4; el lado por capa baja de 8192
     a 2048 porque la primera cascada ya da el detalle cercano (presupuesto 4×2048²×4 B = 64 MiB).
     Ultra extiende el alcance de sombras un 45 % sobre el radio de bounds (x1.45).
-    El radio PCF y el fade viajan en `cascade_params`; el muestreo del array usa SIEMPRE los
+    El radio PCF viaja en `cascade_params.x`; `cascade_params.y` queda a 0 (reservado, sin fade).
     cuatro componentes `vec4` de la textura (no `.x` suelto), y la matriz de cada capa llega al
     vertex shader por push constants, no parcheando el UBO con `cmd_update_buffer`.
     `shadow_darkness` se aplica en el forward como factor de la luz directa en sombra

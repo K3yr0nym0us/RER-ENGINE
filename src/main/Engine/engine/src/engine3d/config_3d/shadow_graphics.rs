@@ -82,14 +82,12 @@ impl ShadowTier {
         }
     }
 
-    /// Fracción del borde de cada cascada (menos la última) donde la sombra se desvanece,
-    /// para que el salto de densidad de texel entre capas no se lea como una línea dura.
+    /// Reservado (`cascade_params.y`): el fundido hacia luz total en la costura producía un
+    /// anillo brillante que seguía a la cámara. Se fija a 0; el campo se conserva para no
+    /// cambiar el layout del UBO ni el espejo GLSL.
     pub const fn cascade_fade(self) -> f32 {
-        match self {
-            Self::Off => 0.0,
-            Self::Low | Self::Medium => 0.10,
-            Self::High | Self::Ultra => 0.12,
-        }
+        let _ = self;
+        0.0
     }
 
     /// Lado X/Z del volumen de sombras volumétricas (voxels). El eje Y es la mitad para
