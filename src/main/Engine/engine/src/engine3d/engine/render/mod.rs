@@ -15,7 +15,12 @@ use winit::dpi::PhysicalSize;
 use rer_engine_core::surface::{SurfacePresentError, SurfacePresentError::*};
 
 use crate::engine3d::bvh::{RtMaterialGpu, RtSceneBlob, RtTriangle};
+use crate::engine3d::config_3d::directional_light::light_up_for_cardinal;
 use crate::engine3d::config_3d::reflection_graphics::{ReflectionDebugView, ReflectionMode};
+use crate::engine3d::config_3d::shadow_cascades::{
+    CascadeCamera, MAX_SHADOW_CASCADES, cascade_set,
+};
+use crate::engine3d::config_3d::shadow_graphics::ShadowTier;
 use crate::engine3d::ecs::{MeshComponent, SurfacePbr};
 use crate::engine3d::vulkan::{FrameAcquire, FrameTarget, MeshBatch, RtBatch, SkinnedBatch};
 
@@ -31,6 +36,19 @@ type StagedEntity = (
     (crate::engine3d::ecs::EntityId, usize, usize, Mat4, i32),
     bool,
 );
+
+/// Cascadas del frame, listas para volcar en `SceneUniforms` y en `FrameInput`.
+struct CascadeFrame {
+    /// Una matriz luz·proyección por capa del array de sombras.
+    matrices: [[[f32; 4]; 4]; MAX_SHADOW_CASCADES],
+    /// Borde lejano de cada cascada desde el ojo (`f32::MAX` en las inactivas).
+    splits: [f32; 4],
+    /// Mitad del lado de la caja ortográfica por cascada (mundo).
+    extents: [f32; 4],
+    /// (radio suave, fade, 1/lado, número de cascadas).
+    params: [f32; 4],
+    count: usize,
+}
 
 /// Secuencia de Halton para el jitter subpíxel de TAA.
 fn halton(index: u32, base: u32) -> f32 {
@@ -120,6 +138,83 @@ impl State {
         })
     }
 
+    /// Reparte el frustum en cascadas y calcula la matriz luz·proyección de cada capa.
+    ///
+    /// La base de cámara sale de la matriz de vista —válida tanto en órbita de editor como en
+    /// FPS—: sus filas son right/up/backward en espacio mundo, y `forward = -backward`. El up de
+    /// la luz es el que fija el cardinal del amanecer, no el de la cámara.
+    fn build_shadow_cascades(&self, aspect: f32) -> CascadeFrame {
+        let tier = self.shadow_tier;
+        let count = tier.cascade_count().min(MAX_SHADOW_CASCADES);
+        // Con Off no se dibuja nada, pero se calcula una cascada de relleno para que el array
+        // contenga matrices finitas y `light_view_proj` siga siendo válido.
+        let drawn = count.max(1);
+        let map_size = self.active_shadow_map_size().max(1);
+        let view = self.camera_view_matrix().to_cols_array_2d();
+        let row = |index: usize| {
+            GlamVec3::new(view[0][index], view[1][index], view[2][index]).normalize_or_zero()
+        };
+        let (right_cam, up_cam, backward) = (row(0), row(1), row(2));
+        let (forward, right, up) = if backward == GlamVec3::ZERO
+            || right_cam == GlamVec3::ZERO
+            || up_cam == GlamVec3::ZERO
+        {
+            // Vista degenerada (ojo justo sobre el blanco): cámara canónica hacia -Z.
+            (GlamVec3::NEG_Z, GlamVec3::X, GlamVec3::Y)
+        } else {
+            (-backward, right_cam, up_cam)
+        };
+
+        let near = self.camera.near.max(0.05);
+        // Alcance = radio de bounds × escala del tier (x1.45 solo en Ultra), acotado al far
+        // de la cámara: detrás de ahí no hay nada que sombrear.
+        let radius = self.world_bounds_3d.radius().max(24.0);
+        let far_limit = self.camera.far.max(near + 2.0);
+        let shadow_far = (radius * tier.shadow_distance_scale()).clamp(near + 2.0, far_limit);
+        let tan_half_fov_y = (self.camera.fov_y * 0.5).tan().max(1e-4);
+        let eye = self.camera_world_position();
+        let light_up = light_up_for_cardinal(self.sun_rise_cardinal);
+
+        let set = cascade_set(
+            &CascadeCamera {
+                eye,
+                forward,
+                right,
+                up,
+                tan_half_fov_y,
+                aspect: aspect.max(0.01),
+                near,
+                shadow_far,
+            },
+            drawn,
+            map_size,
+            self.directional_light_dir,
+            light_up,
+        );
+        let mut out = CascadeFrame {
+            matrices: set.matrices,
+            splits: set.splits,
+            extents: set.extents,
+            params: [0.0; 4],
+            count,
+        };
+        // Ninguna loncha encajó (sol degenerado / bounds inválidos): se mantiene la matriz
+        // histórica sobre los bounds en vez de dejar identidades que proyectarían basura.
+        if out.extents.iter().all(|extent| *extent == 0.0) {
+            let fallback = self.build_light_view_proj();
+            let fallback_extent = self.light_shadow_extent_m();
+            out.matrices.fill(fallback);
+            out.extents.fill(fallback_extent);
+        }
+        out.params = [
+            tier.cascade_soft_radius(),
+            tier.cascade_fade(),
+            1.0 / map_size as f32,
+            count as f32,
+        ];
+        out
+    }
+
     /// Graba la escena en un `FrameTarget` abierto por otro host (el editor).
     ///
     /// Todos los datos de `FrameInput` se construyen como locales de este método, así que
@@ -174,6 +269,7 @@ impl State {
         let view_proj = vp.to_cols_array_2d();
         let inv_view_proj = vp.inverse().to_cols_array_2d();
         let light_params = self.scene_light_params();
+        let cascades = self.build_shadow_cascades(aspect);
         let probe_weight = if probes_active { PROBE_IBL_WEIGHT } else { 0.0 };
         // Primera persona: el fragment shader recorta la geometría dentro de
         // este radio alrededor del ojo (w = 0 en editor => recorte desactivado).
@@ -190,7 +286,9 @@ impl State {
             cam_pos: [eye.x, eye.y, eye.z, camera_clip_radius],
             light_dir: self.scene_light_dir(),
             light_color: self.scene_light_color(),
-            light_view_proj: self.build_light_view_proj(),
+            // Histórico: el pase de sombras proyecta contra la ranura 0. La matriz de la
+            // cascada 0 se rellena arriba junto con el array completo; no se parchea el UBO.
+            light_view_proj: cascades.matrices[0],
             light_params,
             jitter: [
                 jitter_x,
@@ -211,6 +309,10 @@ impl State {
                 let [r, g, b] = self.interaction_highlight_color;
                 [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0, 0.0]
             },
+            cascade_view_proj: cascades.matrices,
+            cascade_splits: cascades.splits,
+            cascade_extent: cascades.extents,
+            cascade_params: cascades.params,
         };
         self.prev_view_proj = vp_stable;
         let scene_bytes = bytemuck::bytes_of(&scene_uni);
@@ -986,9 +1088,9 @@ impl State {
             scene: scene_bytes,
             sky: self.sky_uniform_for_frame(),
             sun_above_horizon: self.sun_above_horizon(),
-            shadows: self.shadow_tier
-                != crate::engine3d::config_3d::shadow_graphics::ShadowTier::Off,
+            shadows: self.shadow_tier != ShadowTier::Off,
             shadow_map_size: self.active_shadow_map_size(),
+            shadow_cascades: cascades.count,
             msaa_samples: self.msaa_sample_count,
             ssaa_scale: self.ssaa_scale,
             debug_ssr_view: self.reflection_debug_view == ReflectionDebugView::SsrDebug,

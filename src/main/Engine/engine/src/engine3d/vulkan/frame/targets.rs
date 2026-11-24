@@ -135,6 +135,38 @@ fn gbuffer_color_usage() -> vk::ImageUsageFlags {
         | vk::ImageUsageFlags::TRANSFER_DST
 }
 
+/// Array D32 de `SHADOW_LAYERS` capas: una por cascada. Siempre se asignan TODAS las capas,
+/// aunque el tier dibuje menos: cambiar de tier solo reasigna resolución y el descriptor del
+/// `sampler2DArrayShadow` nunca cambia de forma (vista TYPE_2D_ARRAY de las 4 capas).
+///
+/// `TRANSFER_SRC` lo necesita solo la sonda `RER_SHADOW_DEBUG`; no cuesta nada en el frame normal.
+/// Las vistas TYPE_2D por capa son obligatorias: con la vista de array, `begin_rendering`
+/// escribiría siempre la capa 0 y las cascadas lejanas quedarían sin pintar.
+fn create_shadow_array(gpu: &SharedGpu, size: u32) -> Result<GpuImage, VulkanError> {
+    let mut image = gpu.create_image_layers(
+        vk::Extent2D {
+            width: size,
+            height: size,
+        },
+        SHADOW_LAYERS,
+        1,
+        DEPTH,
+        vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+            | vk::ImageUsageFlags::SAMPLED
+            | vk::ImageUsageFlags::TRANSFER_SRC,
+        vk::ImageAspectFlags::DEPTH,
+        "shadow",
+    )?;
+    image.attach_layer_views("sombras")?;
+    if image.layer_view_count() != SHADOW_LAYERS as usize {
+        return Err(VulkanError::new(format!(
+            "el array de sombras quedó con {} vistas por capa en vez de {SHADOW_LAYERS}",
+            image.layer_view_count()
+        )));
+    }
+    Ok(image)
+}
+
 impl Targets {
     pub(super) fn color_views(&self) -> [Option<vk::ImageView>; 5] {
         [
@@ -242,16 +274,7 @@ impl Targets {
             "particles-wboit-reveal",
         )?;
         let particles_out = color("particles-wboit-out")?;
-        let shadow = gpu.create_image(
-            vk::Extent2D {
-                width: crate::engine3d::engine::SHADOW_MAP_SIZE,
-                height: crate::engine3d::engine::SHADOW_MAP_SIZE,
-            },
-            DEPTH,
-            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageAspectFlags::DEPTH,
-            "shadow",
-        )?;
+        let shadow = create_shadow_array(gpu, crate::engine3d::engine::SHADOW_MAP_SIZE)?;
         // Un cubemap array: 6 caras por ranura. Con un solo cubemap compartido, la última sonda
         // capturada del frame tapaba a las demás y todas las entidades recibían el mismo entorno.
         let probe = gpu.create_image_layers(
@@ -566,26 +589,19 @@ impl Targets {
         Ok(())
     }
 
-    /// Reasigna solo el shadow map al lado pedido por el tier.
+    /// Reasigna el array de sombras al lado pedido por el tier (siempre con las 4 capas).
     ///
-    /// Devuelve la imagen vieja para soltarla **después** de reescribir los descriptor sets.
-    /// Si se destruye el `ImageView` mientras el command buffer está grabando y el set de
-    /// escena todavía lo referencia, el validador invalida el buffer (VUID recording).
+    /// Devuelve la imagen vieja **con sus vistas por capa** para soltarla **después** de
+    /// reescribir los descriptor sets. Si se destruye el `ImageView` mientras el command
+    /// buffer está grabando y el set de escena todavía lo referencia, el validador invalida
+    /// el buffer (VUID recording). El `Drop` de `GpuImage` destruye imagen, vista de array,
+    /// vistas de capa y memoria en el orden correcto.
     pub(super) fn recreate_shadow(
         &mut self,
         gpu: &SharedGpu,
         size: u32,
     ) -> Result<GpuImage, VulkanError> {
-        let shadow = gpu.create_image(
-            vk::Extent2D {
-                width: size,
-                height: size,
-            },
-            DEPTH,
-            vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT | vk::ImageUsageFlags::SAMPLED,
-            vk::ImageAspectFlags::DEPTH,
-            "shadow",
-        )?;
+        let shadow = create_shadow_array(gpu, size)?;
         Ok(std::mem::replace(&mut self.shadow, shadow))
     }
 
@@ -636,6 +652,8 @@ impl FrameRenderer {
     pub(super) fn rewrite_target_descriptors(&mut self) -> Result<(), VulkanError> {
         let device = self.gpu.device();
         for slot in 0..FRAMES {
+            // binding 1 = `sampler2DArrayShadow`: la vista del array (TYPE_2D_ARRAY, 4 capas)
+            // y el compare sampler. Las vistas TYPE_2D por capa son solo para el pase de sombras.
             write_combined(
                 device,
                 self.sets.scene[slot],

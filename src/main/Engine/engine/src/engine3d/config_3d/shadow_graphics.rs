@@ -1,10 +1,10 @@
-//! Nivel de calidad de sombras (resolución del shadow map y amplitud del filtro PCF).
+//! Nivel de calidad de sombras (cascadas, resolución por cascada y filtro PCF).
 //!
-//! El motor usa un único shadow map (sin cascadas). El tier fija su resolución real;
-//! `vulkan::FrameRenderer` reasigna la imagen cuando cambia y `scene_light_params` ajusta el
-//! texel/radio del PCF, así que low/medium/high/ultra se ven distinto (no solo cuestan distinto).
-//! Las cascadas (CSM) y la distancia de sombra extendida de Ultra siguen pendientes
-//! (`docs/yaml/rendering/Shadows_3D.yaml` → Sombras / Preset de calidad).
+//! El motor usa un array de `MAX_SHADOW_CASCADES` capas de profundidad; el tier decide cuántas
+//! se dibujan y el lado de cada mapa. `vulkan::FrameRenderer` reasigna el array cuando cambia el
+//! tamaño y `cascade_params` fija el radio PCF en unidades de mundo, así que
+//! low/medium/high/ultra se ven distinto (no solo cuestan distinto). Ultra extiende además el
+//! alcance de sombras (`docs/yaml/rendering/Shadows_3D.yaml` → Sombras / Preset de calidad).
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
 pub enum ShadowTier {
@@ -38,15 +38,57 @@ impl ShadowTier {
         }
     }
 
-    /// Resolución del shadow map (px por lado) según el tier. Off usa 1×1 (mínimo,
-    /// no se renderiza ni se muestrea). Low reutiliza el tamaño base; el resto ×2 hasta 8192.
+    /// Cascadas dibujadas y muestreadas: Off 0, Low 2, Medium 3, High/Ultra 4.
+    /// Con Off se calcula una cascada de relleno para que el array tenga matrices finitas,
+    /// pero se reporta 0 y el forward no muestrea ninguna capa.
+    pub const fn cascade_count(self) -> usize {
+        match self {
+            Self::Off => 0,
+            Self::Low => 2,
+            Self::Medium => 3,
+            Self::High | Self::Ultra => 4,
+        }
+    }
+
+    /// Multiplicador del radio de bounds que fija el borde lejano de la última cascada.
+    /// Solo Ultra extiende el alcance (x1.45); el resto conserva x1.00.
+    pub const fn shadow_distance_scale(self) -> f32 {
+        match self {
+            Self::Ultra => 1.45,
+            Self::Off | Self::Low | Self::Medium | Self::High => 1.0,
+        }
+    }
+
+    /// Resolución del shadow map **por cascada** (px por lado). Off usa 1×1 (mínimo,
+    /// no se renderiza ni se muestrea). Con CSM el lado deja de subir a 8192: el array ya
+    /// cuesta 4× un mapa único y el detalle cerca de la cámara lo da la primera cascada.
     pub fn shadow_map_size(self) -> u32 {
         match self {
             Self::Off => 1,
-            Self::Low => crate::engine3d::engine::SHADOW_MAP_SIZE,
-            Self::Medium => 2048,
-            Self::High => 4096,
-            Self::Ultra => 8192,
+            Self::Low | Self::Medium => crate::engine3d::engine::SHADOW_MAP_SIZE,
+            Self::High | Self::Ultra => 2048,
+        }
+    }
+
+    /// Radio PCF pedido en unidades de mundo: el shader lo convierte a texeles de la cascada
+    /// que toque, porque cada capa cubre un área distinta con el mismo lado de mapa.
+    pub const fn cascade_soft_radius(self) -> f32 {
+        match self {
+            Self::Off => 0.0,
+            Self::Low => 0.045,
+            Self::Medium => 0.055,
+            Self::High => 0.065,
+            Self::Ultra => 0.085,
+        }
+    }
+
+    /// Fracción del borde de cada cascada (menos la última) donde la sombra se desvanece,
+    /// para que el salto de densidad de texel entre capas no se lea como una línea dura.
+    pub const fn cascade_fade(self) -> f32 {
+        match self {
+            Self::Off => 0.0,
+            Self::Low | Self::Medium => 0.10,
+            Self::High | Self::Ultra => 0.12,
         }
     }
 
@@ -136,7 +178,56 @@ mod tests {
             );
         }
         assert_eq!(DEFAULT_SHADOW_TIER, ShadowTier::Low);
-        assert_eq!(ShadowTier::Ultra.shadow_map_size(), 8192);
+        assert_eq!(ShadowTier::Off.shadow_map_size(), 1);
+        assert_eq!(ShadowTier::Low.shadow_map_size(), 1024);
+        assert_eq!(ShadowTier::Medium.shadow_map_size(), 1024);
+        assert_eq!(ShadowTier::High.shadow_map_size(), 2048);
+        assert_eq!(ShadowTier::Ultra.shadow_map_size(), 2048);
+    }
+
+    #[test]
+    fn cascades_grow_with_the_tier_and_never_exceed_four() {
+        assert_eq!(ShadowTier::Off.cascade_count(), 0);
+        assert_eq!(ShadowTier::Low.cascade_count(), 2);
+        assert_eq!(ShadowTier::Medium.cascade_count(), 3);
+        assert_eq!(ShadowTier::High.cascade_count(), 4);
+        assert_eq!(ShadowTier::Ultra.cascade_count(), 4);
+        for pair in ALL.windows(2) {
+            assert!(pair[0].cascade_count() <= pair[1].cascade_count());
+            assert!(pair[0].cascade_count() <= 4);
+        }
+    }
+
+    /// 4 capas × 2048² texeles × 4 B = 64 MiB como máximo. El array entero se asigna siempre
+    /// (incluso en Low), así que el presupuesto se mide por el peor tier, no por las capas usadas.
+    #[test]
+    fn shadow_array_stays_within_the_vram_budget() {
+        let side = ShadowTier::Ultra.shadow_map_size();
+        let bytes = 4_u64 * u64::from(side) * u64::from(side) * 4;
+        assert_eq!(bytes, 64 * 1024 * 1024);
+        for tier in ALL {
+            let side = u64::from(tier.shadow_map_size());
+            assert!(
+                4 * side * side * 4 <= bytes,
+                "{} excede el presupuesto",
+                tier.wire()
+            );
+        }
+    }
+
+    #[test]
+    fn ultra_is_the_only_tier_with_extended_shadow_distance() {
+        for tier in [
+            ShadowTier::Off,
+            ShadowTier::Low,
+            ShadowTier::Medium,
+            ShadowTier::High,
+        ] {
+            assert_eq!(tier.shadow_distance_scale(), 1.0, "tier {}", tier.wire());
+        }
+        assert!((ShadowTier::Ultra.shadow_distance_scale() - 1.45).abs() < 1.0e-6);
+        assert!(ShadowTier::Ultra.cascade_soft_radius() > ShadowTier::High.cascade_soft_radius());
+        assert!(ShadowTier::Ultra.cascade_fade() >= ShadowTier::High.cascade_fade());
     }
 
     #[test]

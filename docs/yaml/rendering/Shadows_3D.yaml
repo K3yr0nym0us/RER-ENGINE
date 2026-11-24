@@ -1,34 +1,41 @@
-# Sombras 3D por nivel (resolución del shadow map)
+# Sombras 3D por nivel (cascadas CSM y resolución por capa)
 #
-# El motor usa un único shadow map 2D ortográfico (depth compare, sin cascadas CSM), vive en
-# `engine/src/engine3d/vulkan/frame/mod.rs` (Ash) y el nivel de calidad controla su resolución REAL.
-# CSM y la distancia extendida de Ultra quedan como tarea pendiente: se implementó y se retiró
-# (ver `csm_attempt` más abajo), así que el estado real es "no hecho, con evidencias apuntadas".
+# El motor usa un array de profundidad D32_SFLOAT de 4 capas (una por cascada posible), vive en
+# `engine/src/engine3d/vulkan/frame/mod.rs` (Ash) y el nivel de calidad controla cuántas capas se
+# dibujan/muestrean y el lado REAL de cada mapa. Ultra extiende además el alcance (x1.45).
+# El intento anterior se retiró; la bitácora histórica se conserva en `csm_attempt` más abajo.
 #
 # Relacionado con:
 #   - docs/yaml/rendering/TAA_3D.yaml
 #   - docs/yaml/rendering/Reflections_3D.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 8
-updated: 2026-11-23
+version: 9
+updated: 2026-11-24
 
 principle:
   owner: motor_3d
   pipeline: |
-    1. Shadow pass único a `targets.shadow` (D32_SFLOAT) con el lado del tier; se reasigna
-       la imagen cuando cambia el tier (`Targets::recreate_shadow` devuelve el `GpuImage`
+    1. Shadow pass sobre un array `targets.shadow` (D32_SFLOAT, 4 capas) con el lado del tier;
+       se reasigna cuando cambia el tier (`Targets::recreate_shadow` devuelve el `GpuImage`
        viejo). `record()` espera a la GPU, reescribe los descriptor sets y suelta la vista
-       antigua después (ver `live_tier_recreate`).
-    2. Sombreado en el forward con sampler de comparación (`LESS_OR_EQUAL`) + PCF; el texel y
-       el radio salen del tamaño real del mapa (`State::active_shadow_map_size`).
-    3. El mapa pasa ATTACHMENT → READ_ONLY con registro explícito de layout
+       antigua después (ver `live_tier_recreate`). Se dibujan solo las capas del tier.
+    2. `State::build_shadow_cascades` reparte el frustum con `split_distances`, calcula las 8
+       esquinas de cada loncha con `slice_corners` y ajusta la ortho con `fit_cascade` (centro
+       alineado al texel, extent cuantizado). Vuelca las matrices en `SceneUniforms.cascade_*`
+       y la cuenta en `FrameInput.shadow_cascades`. `light_view_proj` conserva la cascada 0.
+    3. Sombreado en el forward con `sampler2DArrayShadow` (depth compare `LESS_OR_EQUAL`) + PCF:
+       selecciona capa por distancia al ojo contra `cascade_splits`, convierte el radio suave de
+       unidades de mundo a texeles de la capa y desvanece la costura con `cascade_fade`.
+    4. El array pasa ATTACHMENT → READ_ONLY con registro explícito de layout
        (`transition_depth`), igual que la profundidad del viewport.
   note: |
-    Sin CSM: un solo mapa ortográfico centrado en los bounds del mundo, así Ultra gana densidad
-    pero no distancia.
-    El radio PCF escala con la raíz del tamaño del mapa (penumbra parecida en el mundo al subir
-    resolución) y, por encima de 2.5 texeles, el kernel pasa de 3×3 a 5×5 (Ultra).
+    CSM con 4 capas como máximo: Low 2, Medium 3, High/Ultra 4; el lado por capa baja de 8192
+    a 2048 porque la primera cascada ya da el detalle cercano (presupuesto 4×2048²×4 B = 64 MiB).
+    Ultra extiende el alcance de sombras un 45 % sobre el radio de bounds (x1.45).
+    El radio PCF y el fade viajan en `cascade_params`; el muestreo del array usa SIEMPRE los
+    cuatro componentes `vec4` de la textura (no `.x` suelto), y la matriz de cada capa llega al
+    vertex shader por push constants, no parcheando el UBO con `cmd_update_buffer`.
     `shadow_darkness` se aplica en el forward como factor de la luz directa en sombra
     (`shadow_factor = 1 - darkness * (1 - shadow)`). Default 0.9; rango de UI 0.9–1.0
     (mayor = sombras más oscuras), con paso 0.001 y display de 3 decimales (0.900 → 1.000).
@@ -54,36 +61,48 @@ principle:
     salte el sampling.
 
 graphics_tiers:
+  # `resolution` = lado en px de CADA capa del array; `cascades` = capas dibujadas y muestreadas.
   - id: off
     aliases: [desactivado, none]
+    cascades: 0
     resolution: 1
+    distance_scale: 1.00
     note: |
       No se ejecuta el shadow pass y el forward salta el sampling (light_color.w = 0).
       El mapa se queda en el tamaño base para no dividir por 1 al construir la matriz de luz.
   - id: low
     aliases: [bajo]
+    cascades: 2
     resolution: 1024
+    distance_scale: 1.00
     note: Resolución base del motor (SHADOW_MAP_SIZE = 1024), coincide con el camino sin reasignar
   - id: medium
     aliases: [medio]
-    resolution: 2048
+    cascades: 3
+    resolution: 1024
+    distance_scale: 1.00
   - id: high
     aliases: [alto]
-    resolution: 4096
+    cascades: 4
+    resolution: 2048
+    distance_scale: 1.00
   - id: ultra
     aliases: [ultra]
-    resolution: 8192
+    cascades: 4
+    resolution: 2048
+    distance_scale: 1.45
     note: recortado a `max_image_dimension2_d`; si la asignación falla se prueba con la mitad
 
 commands:
   set_shadow_tier:
     params: { tier: off | low | medium | high | ultra }
     effect: |
-      Cambia la resolución real del shadow map (o salta el pase con Off). `FrameRenderer`
-      detecta el cambio en `record()`, espera a la GPU (`device_wait_idle`), reasigna esa
-      imagen, reescribe los descriptors de todos los slots y recién entonces suelta el
-      `GpuImage` viejo. El mismo cambio reasigna el volumen 3D antes del sim de partículas
-      (ver `live_tier_recreate`). El log muestra "[sombras] shadow map reasignado a NxN px".
+      Cambia el número de cascadas y el lado real de cada capa (o salta el pase con Off).
+      `FrameRenderer` detecta el cambio en `record()`, espera a la GPU (`device_wait_idle`),
+      reasigna el array, reescribe los descriptors de todos los slots y recién entonces suelta
+      el `GpuImage` viejo. El mismo cambio reasigna el volumen 3D antes del sim de partículas
+      (ver `live_tier_recreate`). El log muestra "[sombras] Nivel de sombras: X -> Y (N cascadas,
+      L px/cascada, x1.00|x1.45)".
 
 events:
   shadow_tier_changed:
@@ -211,12 +230,23 @@ camera_dependent_caster_culling:
     `directional_light.rs` cubre el crecimiento con el ángulo rasante, el desactivado/
     override y el tope de 2× extent.
 
-# Intento de CSM (2026-11-09): implementado, roto en pantalla y retirado. Se deja aquí porque
-# cuesta mucho reconstruir qué se descartó y qué no. Card Trello: `CASCADES / CSM (3D)`.
+# Intento de CSM (2026-11-09): implementado, roto en pantalla y retirado; reintroducido el
+# 2026-11-24 tras identificar la causa raíz. Se conserva la bitácora porque cuesta mucho
+# reconstruir qué se descartó y qué no. Card Trello: `CASCADES / CSM (3D)`.
 csm_attempt:
-  status: retirado-y-aplazado
+  status: implementado
   commits_con_el_codigo: [8d3182f, 91b83ee, 2f71909, 8221417, 04711ee]
   commit_del_rollback: 5efc8c0
+  root_cause_fixed: |
+    El fallo NO estaba en la matemática de cascadas ni en el layout del UBO: estaba en dos
+    detalles del muestreo del array de sombras. (1) El `sampler2DArrayShadow` se leía con un
+    componente suelto (`.x`) en vez de los CUATRO componentes del `vec4`; el resultado del
+    depth compare no se propagaba como se esperaba y la primera cascada parecía la única válida.
+    (2) La matriz de cada capa se metía en `shadow.vert` parcheando la ranura 0 del UBO con
+    `cmd_update_buffer`; esa escritura no llegaba de forma fiable a los draws de las capas 1+.
+    Ahora el muestreo usa el `vec4` completo y cada matriz viaja por push constants, sin
+    `cmd_update_buffer` sobre el bloque `Scene`. El array se declara con sus 4 capas fijas y el
+    tier solo decide cuántas se dibujan (2/3/4), con `light_view_proj` = cascada 0.
   what_was_built: |
     Array D32_SFLOAT de 4 capas (una por cascada) con vista `TYPE_2D` por capa para poder dirigir
     cada pase a su capa; `shadow_pass` recorría las cascadas del tier y parcheaba la ranura 0 del
@@ -250,13 +280,14 @@ csm_attempt:
       Que el arreglo se hubiera descartado por error: MSAA y la documentación de reflejos no tocan el
       sombraje, y el exe probado se verificó por mtime contra la hora del arranque.
   not_tested_before_rollback:
+    # Bitácora histórica: lo primero ya se aplicó en la reintroducción (ver `root_cause_fixed`).
     - >
       Llevar la matriz de cada cascada a `shadow.vert` por PUSH CONSTANTS en lugar de parchear el UBO
-      (elimina de golpe toda la clase de fallos "la escritura no llega al draw").
+      (elimina de golpe toda la clase de fallos "la escritura no llega al draw"). HECHO.
     - >
       La sonda `RER_SHADOW_DEBUG` del commit 04711ee, que copia el bloque central de cada capa y
       registra cuántos texelos tienen geometría: habría dicho si las capas 1+ se pintaban o no.
-      Sigue siendo el primer paso si se reabre el CSM.
+      Sigue disponible como primer paso de diagnóstico si reaparece el síntoma.
   caveat: |
     Con una sola cascada el motor funcionaba; con dos, la primera era correcta y las siguientes
     fallaban sistemáticamente. Eso deja acotado el problema al reparto matriz↔capa (cómo llega la

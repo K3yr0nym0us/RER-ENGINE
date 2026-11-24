@@ -17,7 +17,7 @@ principle:
     1. G-buffer del forward (MRT Ash, 5 ranuras fijas): scene (RGBA8) siempre; normal_rough
        (RGBA8), albedo (RGBA8) y world (RGBA16F) solo con SSR/RT; velocity (RG16F) solo con
        TAA; depth D32F. Ranuras apagadas: `Format::UNDEFINED` + `RenderingAttachmentInfo::default()`.
-    2. Shadow map único 2D (depth compare, resolución por tier de sombras).
+    2. Array de cascadas de sombras (depth compare, hasta 4 capas; lado por capa según el tier).
     3. TAA de escena: `shaders/raster/taa.frag` reproyecta con la velocidad del G-buffer,
        recorta el historial con el min/max de la vecindad 3×3 del frame actual y mezcla
        `mix(current, history, blend)`. `blend` es el peso del historial (0 = frame actual,

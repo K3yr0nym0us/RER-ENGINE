@@ -45,5 +45,8 @@ mod config_compat;
 mod config_shared;
 #[path = "engine/mod.rs"]
 pub(crate) mod engine;
+#[cfg(test)]
+#[path = "shadow_audit_tests.rs"]
+mod shadow_audit_tests;
 
 pub mod host;

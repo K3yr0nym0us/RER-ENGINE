@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 
 use bytemuck::{Pod, Zeroable};
 
+use crate::engine3d::config_3d::shadow_cascades::MAX_SHADOW_CASCADES;
 use crate::engine3d::ecs::MeshComponent;
 use crate::engine3d::entity_save_meta::EntitySaveMeta;
 use crate::engine3d::ipc::{AnimScriptData, AnimationFrameData};
@@ -104,6 +105,37 @@ pub(crate) const AUTOSAVE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// 1024: ~4× menos trabajo que 2048 en el shadow pass; PCF/texel usan esta constante.
 pub(crate) const SHADOW_MAP_SIZE: u32 = 1024;
 
+/// Bytes reservados en GPU para el UBO de escena por slot en vuelo. Debe ser múltiplo de 16 y
+/// caber `SceneUniforms` entero (752 B): el relleno final es solo alineación std140.
+pub(crate) const SCENE_UBO_BYTES: usize = 768;
+
+const _: () = assert!(std::mem::size_of::<SceneUniforms>() <= SCENE_UBO_BYTES);
+
+/// Los shaders que declaran `uniform Scene` son un espejo byte a byte de este struct. Si un
+/// offset se moviera, leerían otros campos y la escena se deformaría SIN error de API: estos
+/// asserts de compilación fijan el contrato tanto de los campos antiguos como de las cascadas.
+const _: () = assert!(std::mem::size_of::<SceneUniforms>() == 752);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, view_proj) == 0);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, view_proj_stable) == 64);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, prev_view_proj) == 128);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, inv_view_proj) == 192);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, cam_pos) == 256);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, light_dir) == 272);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, light_color) == 288);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, light_view_proj) == 304);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, light_params) == 368);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, jitter) == 384);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, depth_plane) == 400);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, shadow_bias) == 416);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, aura_color) == 432);
+// Campos nuevos, estrictamente AL FINAL: no se toca ningún offset anterior.
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, cascade_view_proj) == 448);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, cascade_splits) == 704);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, cascade_extent) == 720);
+const _: () = assert!(std::mem::offset_of!(SceneUniforms, cascade_params) == 736);
+const _: () = assert!(std::mem::size_of::<[[f32; 4]; 4]>() == 64);
+const _: () = assert!(MAX_SHADOW_CASCADES == 4);
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(crate) struct SceneUniforms {
@@ -130,6 +162,16 @@ pub(crate) struct SceneUniforms {
     pub(crate) shadow_bias: [f32; 4],
     /// rgb = color del aura de interacción (flag 8.0 en play).
     pub(crate) aura_color: [f32; 4],
+    /// Una matriz luz·proyección por capa del array de sombras (stride 64 B). `light_view_proj`
+    /// conserva la de la cascada 0 para el pase de sombras histórico.
+    pub(crate) cascade_view_proj: [[[f32; 4]; 4]; MAX_SHADOW_CASCADES],
+    /// Borde lejano de cada cascada desde el ojo; `f32::MAX` en las inactivas.
+    pub(crate) cascade_splits: [f32; 4],
+    /// Mitad del lado de la caja ortográfica de cada cascada (unidades de mundo).
+    pub(crate) cascade_extent: [f32; 4],
+    /// x = radio suave (mundo), y = grosor del fade entre cascadas, z = 1/lado del mapa,
+    /// w = número de cascadas activas.
+    pub(crate) cascade_params: [f32; 4],
 }
 
 impl SceneUniforms {
@@ -148,5 +190,40 @@ mod tests {
         let shadow_darkness = std::mem::offset_of!(SceneUniforms, light_params) as u64 + 4;
         assert_eq!(SceneUniforms::IBL_WEIGHT_OFFSET, jitter_z);
         assert_ne!(SceneUniforms::IBL_WEIGHT_OFFSET, shadow_darkness);
+    }
+
+    #[test]
+    fn scene_uniforms_ubo_layout_is_frozen() {
+        use super::{MAX_SHADOW_CASCADES, SCENE_UBO_BYTES};
+        assert_eq!(std::mem::size_of::<SceneUniforms>(), 752);
+        assert_eq!(SCENE_UBO_BYTES, 768);
+        assert!(std::mem::size_of::<SceneUniforms>() <= SCENE_UBO_BYTES);
+        assert_eq!(MAX_SHADOW_CASCADES, 4);
+        // Espejo del bloque `Scene` en GLSL; cualquier cambio rompe el render silenciosamente.
+        let offsets = [
+            std::mem::offset_of!(SceneUniforms, view_proj),
+            std::mem::offset_of!(SceneUniforms, view_proj_stable),
+            std::mem::offset_of!(SceneUniforms, prev_view_proj),
+            std::mem::offset_of!(SceneUniforms, inv_view_proj),
+            std::mem::offset_of!(SceneUniforms, cam_pos),
+            std::mem::offset_of!(SceneUniforms, light_dir),
+            std::mem::offset_of!(SceneUniforms, light_color),
+            std::mem::offset_of!(SceneUniforms, light_view_proj),
+            std::mem::offset_of!(SceneUniforms, light_params),
+            std::mem::offset_of!(SceneUniforms, jitter),
+            std::mem::offset_of!(SceneUniforms, depth_plane),
+            std::mem::offset_of!(SceneUniforms, shadow_bias),
+            std::mem::offset_of!(SceneUniforms, aura_color),
+            std::mem::offset_of!(SceneUniforms, cascade_view_proj),
+            std::mem::offset_of!(SceneUniforms, cascade_splits),
+            std::mem::offset_of!(SceneUniforms, cascade_extent),
+            std::mem::offset_of!(SceneUniforms, cascade_params),
+        ];
+        assert_eq!(
+            offsets,
+            [
+                0, 64, 128, 192, 256, 272, 288, 304, 368, 384, 400, 416, 432, 448, 704, 720, 736
+            ]
+        );
     }
 }

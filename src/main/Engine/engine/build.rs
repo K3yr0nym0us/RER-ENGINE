@@ -28,6 +28,10 @@ const SHADERS_3D: &[(&str, &str)] = &[
     ("shaders/raster/denoise.frag", "denoise.frag.spv"),
     ("shaders/raster/composite.frag", "composite.frag.spv"),
     ("shaders/raster/skinned.vert", "skinned.vert.spv"),
+    (
+        "shaders/raster/shadow_skinned.vert",
+        "shadow_skinned.vert.spv",
+    ),
     ("shaders/raster/hud_inst.vert", "hud_inst.vert.spv"),
     ("shaders/raster/hud_inst.frag", "hud_inst.frag.spv"),
     ("shaders/raster/present.frag", "present.frag.spv"),

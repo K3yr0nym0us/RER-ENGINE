@@ -9,7 +9,13 @@ impl State {
     pub(crate) fn set_shadow_tier(&mut self, tier: ShadowTier) {
         let prev = self.shadow_tier;
         if prev == tier {
-            log::info!("[sombras] Nivel de sombras sin cambios: {}", tier.wire());
+            log::info!(
+                "[sombras] Nivel de sombras sin cambios: {} ({} cascadas, {} px/cascada, x{:.2})",
+                tier.wire(),
+                tier.cascade_count(),
+                tier.shadow_map_size(),
+                tier.shadow_distance_scale()
+            );
             return;
         }
         self.shadow_tier = tier;
@@ -19,10 +25,12 @@ impl State {
             tier: tier.wire().to_string(),
         });
         log::info!(
-            "[sombras] Nivel de sombras: {} -> {} ({} px)",
+            "[sombras] Nivel de sombras: {} -> {} ({} cascadas, {} px/cascada, x{:.2})",
             prev.wire(),
             tier.wire(),
-            self.shadow_map_size
+            tier.cascade_count(),
+            self.shadow_map_size,
+            tier.shadow_distance_scale()
         );
     }
 }

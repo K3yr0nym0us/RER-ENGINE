@@ -83,19 +83,21 @@ Runtime 3D: camara orbital en editor, play con jugador `[Player]`, Rapier3D, mal
 Cada tier se aplica en `vulkan::FrameRenderer`; los valores pedidos se recortan a lo que admite
 el adaptador, y el recorte se registra en el log (nada de números que no afectan al render).
 
-- **Sombras** (`set_shadow_tier`): resuelve el lado del shadow map (Low 1024, Medium 2048,
-  High 4096, Ultra 8192; `Off` no dibuja el pase). `record()` reasigna solo esa imagen cuando
-  cambia (`Targets::recreate_shadow` devuelve el mapa viejo). El command buffer ya está
-  grabando y el editor pone `RER_VK_SYNC_FRAMES=0`, así que hay que `device_wait_idle`,
-  reescribir los descriptor sets y soltar el `GpuImage` después; el volumen 3D del mismo
-  tier se reasigna antes del sim de partículas. Recortado a `max_image_dimension2_d`, y si
-  la asignación falla baja a la mitad en vez de abortar cada frame. El texel del PCF y el
-  snapping de la matriz de luz salen del tamaño real (`active_shadow_map_size`), y el radio
-  PCF escala con la raíz del tamaño para que la penumbra no se afinde al subir resolución;
-  por encima de 2.5 texeles el kernel pasa de 3×3 a 5×5. Sigue siendo un único mapa sobre
-  los bounds del mundo: no hay cascadas (CSM). Se intentó y se retiró: la evidencia de qué
-  quedó descartado está en `docs/yaml/rendering/Shadows_3D.yaml` (`csm_attempt`) para no
-  volver a empezar de cero.
+- **Sombras** (`set_shadow_tier`): CSM con array D32_SFLOAT de hasta 4 capas. El tier fija
+  cascadas y lado por capa (Off 0/1 px, Low 2/1024, Medium 3/1024, High 4/2048, Ultra 4/2048;
+  Ultra además x1.45 de alcance). `State::build_shadow_cascades` reparte el frustum con
+  `config_3d/shadow_cascades` y vuelca matrices, cortes, extent y parámetros en los campos
+  `cascade_*` del final de `SceneUniforms`; `light_view_proj` sigue siendo la cascada 0 y las
+  matrices de cada capa llegan al pase de sombras por push constants. `record()` reasigna el
+  array cuando cambia el lado (`Targets::recreate_shadow` devuelve el mapa viejo). El command
+  buffer ya está grabando y el editor pone `RER_VK_SYNC_FRAMES=0`, así que hay que
+  `device_wait_idle`, reescribir los descriptor sets y soltar el `GpuImage` después; el volumen
+  3D del mismo tier se reasigna antes del sim de partículas. Recortado a
+  `max_image_dimension2_d`, y si la asignación falla baja a la mitad en vez de abortar cada
+  frame. El PCF convierte el radio en metros a texeles de la capa elegida y desvanece la
+  costura con `cascade_fade`. El intento anterior y su causa raíz (muestreo `vec4` del array y
+  matriz por push constants en vez de `cmd_update_buffer`) están documentados en
+  `docs/yaml/rendering/Shadows_3D.yaml` (`csm_attempt`).
 - **MSAA** (`set_msaa_tier`): Low 1× (por defecto, sin multisampling), Medium 2×, High 4×,
   Ultra 8×, recortado por `SharedGpu::max_gbuffer_samples` (intersección de
   `framebufferColorSampleCounts` y `framebufferDepthSampleCounts`). El G-buffer de pantalla sigue

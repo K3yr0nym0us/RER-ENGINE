@@ -240,7 +240,7 @@ pub(crate) fn sun_halo_radius_m(scale: f32, orbit_distance: f32) -> f32 {
 /// nunca un valor que cambie con `dir.y`: el antiguo umbral `|dir.y| > 0.99`
 /// conmutaba entre X e Y y giraba la base de la luz 180°, reflejando el shadow map
 /// cada vez que el sol cruzaba el cenit.
-fn light_view_proj_from(
+pub(crate) fn light_view_proj_from(
     center: Vec3,
     dir: Vec3,
     extent: f32,
@@ -296,6 +296,17 @@ fn light_shadow_extent_for(bounds: &WorldBounds3D, dir_y: f32) -> f32 {
         * shadow_grazing_scale(dir_y)
 }
 
+/// Eje `up` de la cámara de luz para un cardinal de salida del sol: la normal
+/// del plano de su órbita. Es FIJO por cardinal, nunca depende de `dir.y`: el
+/// antiguo `if dir.y.abs() > 0.95 { X } else { Y }` giraba la base 180° al
+/// cruzar el cenit y reflejaba el shadow map.
+pub(crate) fn light_up_for_cardinal(cardinal: SunRiseCardinal) -> Vec3 {
+    match cardinal {
+        SunRiseCardinal::East | SunRiseCardinal::West => Vec3::Z,
+        SunRiseCardinal::North | SunRiseCardinal::South => Vec3::X,
+    }
+}
+
 /// Matriz de luz para unos límites: usa siempre el suelo como centro, igual que
 /// `State::build_light_view_proj`. Separada de `State` para probarla sin Vulkan.
 fn light_view_proj_for_bounds(
@@ -305,10 +316,7 @@ fn light_view_proj_for_bounds(
     map_size: u32,
     cardinal: SunRiseCardinal,
 ) -> [[f32; 4]; 4] {
-    let up = match cardinal {
-        SunRiseCardinal::East | SunRiseCardinal::West => Vec3::Z,
-        SunRiseCardinal::North | SunRiseCardinal::South => Vec3::X,
-    };
+    let up = light_up_for_cardinal(cardinal);
     light_view_proj_from(sun_orbit_center(bounds), dir, extent, map_size, up)
 }
 
@@ -500,8 +508,7 @@ impl State {
         if self.shadow_tier == crate::engine3d::config_3d::shadow_graphics::ShadowTier::Off {
             crate::engine3d::engine::SHADOW_MAP_SIZE
         } else {
-            self.shadow_map_size
-                .max(crate::engine3d::engine::SHADOW_MAP_SIZE / 2)
+            self.shadow_tier.shadow_map_size()
         }
     }
 
@@ -903,10 +910,10 @@ mod tests {
     use super::{
         DEFAULT_LIGHT_COLOR, SHADOW_CASTER_MARGIN_MIN_M, SUN_CYCLE_SECONDS_PER_UNIT,
         SUN_HALO_REFERENCE_DISTANCE_M, SunRiseCardinal, day_factor, light_shadow_extent_for,
-        light_view_proj_for_bounds, light_view_proj_from, shadow_caster_margin_from,
-        shadow_grazing_scale, shadow_ortho_extent_m, shadow_world_texel_from,
-        sun_color_for_sun_height, sun_cycle_direction, sun_halo_radius_m, sun_local_direction,
-        sun_orbit_center, sun_orbit_distance_from, sun_phase_from_direction,
+        light_up_for_cardinal, light_view_proj_for_bounds, light_view_proj_from,
+        shadow_caster_margin_from, shadow_grazing_scale, shadow_ortho_extent_m,
+        shadow_world_texel_from, sun_color_for_sun_height, sun_cycle_direction, sun_halo_radius_m,
+        sun_local_direction, sun_orbit_center, sun_orbit_distance_from, sun_phase_from_direction,
         sun_position_from_bounds, sun_world_y,
     };
     use crate::engine3d::config_3d::world_bounds::{SKY_SPHERE_RADIUS, WorldBounds3D};
@@ -1265,6 +1272,15 @@ mod tests {
         assert!((shadow_grazing_scale(1.0) - 1.0).abs() < 1e-6);
         assert!(shadow_grazing_scale(0.1) > shadow_grazing_scale(0.5));
         assert!(shadow_grazing_scale(0.5) > 1.0);
+    }
+
+    #[test]
+    fn light_up_is_fixed_per_cardinal() {
+        // El eje up sale del plano de órbita del sol: nunca depende de dir.y.
+        assert_eq!(light_up_for_cardinal(SunRiseCardinal::East), Vec3::Z);
+        assert_eq!(light_up_for_cardinal(SunRiseCardinal::West), Vec3::Z);
+        assert_eq!(light_up_for_cardinal(SunRiseCardinal::North), Vec3::X);
+        assert_eq!(light_up_for_cardinal(SunRiseCardinal::South), Vec3::X);
     }
 
     #[test]

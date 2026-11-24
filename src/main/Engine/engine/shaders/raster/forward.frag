@@ -1,4 +1,7 @@
 #version 450
+// textureLod() con sampler de sombra (variante Level, sin derivados implícitos)
+// requiere esta extensión en GLSL para Vulkan.
+#extension GL_EXT_texture_shadow_lod : require
 
 layout(location = 0) in vec3 v_world;
 layout(location = 1) in vec3 v_normal;
@@ -23,9 +26,13 @@ layout(set = 0, binding = 0) uniform Scene {
     vec4 depth_plane;
     vec4 shadow_bias;
     vec4 aura_color; // rgb = color del aura de interacción
+    mat4 cascade_view_proj[4];
+    vec4 cascade_splits;
+    vec4 cascade_extent;
+    vec4 cascade_params;
 } u;
 
-layout(set = 0, binding = 1) uniform sampler2DShadow shadow_map;
+layout(set = 0, binding = 1) uniform sampler2DArrayShadow shadow_map;
 
 // Sombras volumétricas: el humo/niebla se agrupa en una textura 3D de transmitancia,
 // T = exp(-sigma * integral de densidad hacia el sol), calculada en el pase volumétrico.
@@ -54,24 +61,39 @@ layout(location = 2) out vec4 out_albedo;
 layout(location = 3) out vec4 out_world;
 layout(location = 4) out vec2 out_velocity;
 
-float shadow_pcf(vec3 world, vec3 n, bool terrain) {
+// Primera cascada cuyo split cubre la distancia al ojo; -1 (sin sombra) más allá
+// del último split. `cascade_params.w` es el número de cascadas activo.
+int shadow_cascade(float view_dist) {
+    int count = int(clamp(u.cascade_params.w, 0.0, 4.0));
+    int cascade = -1;
+    for (int i = 0; i < count; i++) {
+        if (view_dist <= u.cascade_splits[i]) {
+            cascade = i;
+            break;
+        }
+    }
+    return cascade;
+}
+
+float shadow_pcf(vec3 world, vec3 n) {
     if (u.light_color.w < 0.5) {
+        return 1.0;
+    }
+    float view_dist = distance(world, u.cam_pos.xyz);
+    int cascade = shadow_cascade(view_dist);
+    if (cascade < 0) {
         return 1.0;
     }
     vec3 ldir = normalize(u.light_dir.xyz);
     float ndotl = max(dot(normalize(n), ldir), 0.0);
     float slope_n = abs(dot(normalize(n), ldir));
-    // El bias debe escalar con el texel del shadow map, no ser metros fijos:
-    // con 1024 px sobre todo el mundo un texel son ~0.119 m, pero el bias de
-    // los modelos era 0.0004 m (~0.003 texel). Cada superficie (ndotl distinto)
-    // oscilaba al cruzar el umbral del comparador, a su propio ritmo. Escalar
-    // con u.jitter.w (metros/texel) lo hace estable y se autoajusta al tier:
-    // mas resolucion = texel menor = menos desplazamiento = salto menos visible.
+    // El bias escala con el texel del shadow map, no es metros fijos: u.jitter.w
+    // son metros/texel, así que se autoajusta al tier y a la cascada.
     float texel_m = max(u.jitter.w, 0.05);
     float normal_scale = u.shadow_bias.x + u.shadow_bias.y * (1.0 - ndotl)
         + texel_m * (1.5 + 2.0 * (1.0 - slope_n));
     vec3 biased = world + ldir * normal_scale;
-    vec4 clip = u.light_view_proj * vec4(biased, 1.0);
+    vec4 clip = u.cascade_view_proj[cascade] * vec4(biased, 1.0);
     vec3 ndc = clip.xyz / clip.w;
     vec2 uv = ndc.xy * 0.5 + 0.5;
     uv.y = 1.0 - uv.y;
@@ -80,26 +102,38 @@ float shadow_pcf(vec3 world, vec3 n, bool terrain) {
     }
     float slope = sqrt(max(1.0 - ndotl * ndotl, 0.0));
     float depth_ref = ndc.z - (u.shadow_bias.z + u.shadow_bias.w * slope);
-    float texel = u.light_params.z;
-    float radius = max(u.light_params.w, 1.0);
-    // Muestrear CENTROS de texel, no offsets fraccionarios. Con radio 0.85/1.7/2.4
-    // los taps caian entre texeles y el sampler de comparacion LINEAL interpelaba
-    // distinto en cada frame mientras el sol movia el UV -> temblor (mas rapido
-    // cuanto mas tier, porque hay mas cruces de centro por segundo).
-    int reach = radius > 2.5 ? 2 : 1;
+    // Un texel del mapa medido en metros de mundo: cascade_extent es semilado.
+    float texel_world = 2.0 * max(u.cascade_extent[cascade], 0.001) * u.cascade_params.z;
+    // cascade_params.x es el radio suave en metros; convertido a texeles solo
+    // decide 3×3 vs 5×5 (umbral 2.5).
+    float radius_texels = max(u.cascade_params.x, 0.0) / max(texel_world, 0.001);
+    int reach = radius_texels > 2.5 ? 2 : 1;
+    // Paso en UV = 1/lado del mapa. Los taps caen en CENTROS de texel (commit 4d85de2).
+    float texel = u.cascade_params.z;
     float sum = 0.0;
     float used = 0.0;
     for (int y = -reach; y <= reach; y++) {
         for (int x = -reach; x <= reach; x++) {
             vec2 off = vec2(float(x), float(y)) * texel;
-            // textureLod (variante Level) en vez de texture(): el early-return de arriba
-            // crea control flow no uniforme y texture() usaria derivados implicitos (UB).
-            // Bevy hace lo mismo con textureSampleCompareLevel. El shadow map no tiene mips.
-            sum += textureLod(shadow_map, vec3(uv + off, depth_ref), 0.0);
+            // textureLod (variante Level) en vez de texture(): los early-return
+            // de arriba crean control flow no uniforme y texture() usaria
+            // derivados implicitos (UB). El shadow map no tiene mips.
+            // sampler2DArrayShadow: .z = capa, .w = Dsub (NO al revés).
+            sum += textureLod(shadow_map, vec4(uv + off, float(cascade), depth_ref), 0.0);
             used += 1.0;
         }
     }
-    return sum / used;
+    float shadow = sum / used;
+    // Fundido en el borde lejano de cada cascada salvo la última: así se oculta
+    // el salto de resolución al entrar en la siguiente.
+    int count = int(clamp(u.cascade_params.w, 0.0, 4.0));
+    if (cascade < count - 1) {
+        float fade_width = max(u.cascade_params.y, 0.001);
+        float edge = u.cascade_splits[cascade];
+        float fade = smoothstep(edge - fade_width, edge, view_dist);
+        shadow = mix(shadow, 1.0, fade);
+    }
+    return shadow;
 }
 
 // Un tile de material cubre 12.5 m (igual que la referencia). La cadena de mips
@@ -218,7 +252,7 @@ void main() {
     float metallic = v_tex.y;
     vec3 l = normalize(u.light_dir.xyz);
     float ndotl = max(dot(n, l), 0.0);
-    float shadow = shadow_pcf(v_world, n, terrain);
+    float shadow = shadow_pcf(v_world, n);
     float ambient = clamp(u.light_dir.w, 0.0, 1.0);
     // `light_params.y` es la oscuridad de sombra (0 = sin oscurecer, 1 = negro).
     // En zona iluminada shadow=1 -> factor 1; en zona oculta shadow=0 -> 1 - darkness.

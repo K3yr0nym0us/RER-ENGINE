@@ -448,6 +448,29 @@ pub(super) fn pipeline_layout(
     .map_err(|error| vk_error("crear un pipeline layout", error))
 }
 
+/// Layout de los pipelines de sombras: UN único rango de push constants de 80 bytes,
+/// solo para VERTEX. Espejo de `CascadePush { mat4 view_proj; vec4 joint_base; }`:
+/// la matriz de la cascada va en 0..64 y la base de paleta del caster skinned en 64..80
+/// (`x` = base, `y/z/w` = 0). Esto sustituye al parcheo del UBO de escena entre draws.
+pub(super) fn shadow_pipeline_layout(
+    device: &ash::Device,
+    sets: &[vk::DescriptorSetLayout],
+) -> Result<vk::PipelineLayout, VulkanError> {
+    let range = [vk::PushConstantRange::default()
+        .stage_flags(vk::ShaderStageFlags::VERTEX)
+        .offset(0)
+        .size(80)];
+    unsafe {
+        device.create_pipeline_layout(
+            &vk::PipelineLayoutCreateInfo::default()
+                .set_layouts(sets)
+                .push_constant_ranges(&range),
+            None,
+        )
+    }
+    .map_err(|error| vk_error("crear el pipeline layout de sombras", error))
+}
+
 pub(super) fn shader(
     device: &ash::Device,
     bytes: &[u8],

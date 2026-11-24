@@ -7,7 +7,9 @@ use ash::vk;
 use gpu_allocator::MemoryLocation;
 
 use crate::engine3d::bvh::RtMaterialGpu;
+use crate::engine3d::config_3d::shadow_cascades::MAX_SHADOW_CASCADES;
 use crate::engine3d::config_3d::world_bounds::SkyUniform;
+use crate::engine3d::engine::types::{SCENE_UBO_BYTES, SceneUniforms};
 
 use super::accel::{self, Accel, BlasInput, TlasInstance, TlasSlot};
 use super::error::{VulkanError, vk_error};
@@ -28,7 +30,32 @@ const DEPTH_READ_ONLY: vk::ImageLayout = vk::ImageLayout::DEPTH_STENCIL_READ_ONL
 
 /// Suelo del shadow map: un mapa de 1 px no es muestreable y `ShadowTier::Off` reporta 1.
 const SHADOW_MAP_MIN: u32 = 512;
+/// Capas del array de sombras: siempre se asignan todas, el tier solo decide cuántas se dibujan.
+const SHADOW_LAYERS: u32 = MAX_SHADOW_CASCADES as u32;
 const MRT: [vk::Format; 5] = [COLOR, COLOR, COLOR, WORLD, VELOCITY];
+
+/// Override de cascadas `RER_SHADOW_CASCADES=1..4` (leído una vez, coste cero si no está).
+fn shadow_cascade_override() -> Option<usize> {
+    use std::sync::OnceLock;
+    static OVERRIDE: OnceLock<Option<usize>> = OnceLock::new();
+    *OVERRIDE.get_or_init(|| {
+        std::env::var("RER_SHADOW_CASCADES")
+            .ok()
+            .and_then(|value| value.trim().parse::<usize>().ok())
+    })
+}
+
+/// Sonda de capas del shadow map: `RER_SHADOW_DEBUG=1`. Sin la variable no se crea el buffer
+/// ni se emite copia alguna. Leído una vez.
+fn shadow_debug_enabled() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("RER_SHADOW_DEBUG")
+            .map(|value| value.trim() == "1" || value.trim().eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+    })
+}
 
 /// Extent del G-buffer para SSAA: `viewport × escala`, recortado de forma uniforme para que
 /// ninguna dimensión supere el límite de imagen del adaptador (así se conserva el aspecto).
@@ -55,6 +82,9 @@ fn spv(name: &str) -> &'static [u8] {
         "forward.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/forward.frag.spv")),
         "shadow.vert" => include_bytes!(concat!(env!("OUT_DIR"), "/shadow.vert.spv")),
         "skinned.vert" => include_bytes!(concat!(env!("OUT_DIR"), "/skinned.vert.spv")),
+        "shadow_skinned.vert" => {
+            include_bytes!(concat!(env!("OUT_DIR"), "/shadow_skinned.vert.spv"))
+        }
         "gizmo.vert" => include_bytes!(concat!(env!("OUT_DIR"), "/gizmo.vert.spv")),
         "gizmo.frag" => include_bytes!(concat!(env!("OUT_DIR"), "/gizmo.frag.spv")),
         "hud.vert" => include_bytes!(concat!(env!("OUT_DIR"), "/hud_inst.vert.spv")),
@@ -201,6 +231,8 @@ pub struct FrameInput<'a> {
     /// Lado del shadow map (px) exigido por el tier de sombras. `FrameRenderer` reasigna el mapa
     /// cuando cambia; sin esto el tier solo movía un número en el log.
     pub shadow_map_size: u32,
+    /// Número de cascadas activas (1..=MAX_SHADOW_CASCADES); cuántas capas del array se dibujan.
+    pub shadow_cascades: usize,
     /// Muestras de MSAA pedidas por el tier (1 = sin multisampling). `FrameRenderer` lo recorta
     /// a lo que el adaptador admite y recrea el G-buffer multisampleado.
     pub msaa_samples: u32,
@@ -355,6 +387,10 @@ pub struct FrameRenderer {
     depth_layout: vk::ImageLayout,
     /// Lado actual del shadow map; coincide con `targets.shadow.extent.width`.
     shadow_size: u32,
+    /// Buffer mapeado de la sonda `RER_SHADOW_DEBUG`: cuadrado central 32×32 de cada capa.
+    shadow_probe: Option<GpuBuffer>,
+    /// Contador de copias de la sonda (informe cada 30 frames).
+    shadow_probe_tick: u32,
     /// Muestras activas del G-buffer forward (1 = sin MSAA). Sigue al tier elegido por el editor.
     msaa_samples: u32,
     /// Escala de SSAA activa (1 = sin supersampling). Redimensiona el G-buffer respecto al viewport
@@ -538,8 +574,8 @@ impl FrameRenderer {
             )?;
         }
         let scene_ubo = [
-            host_buffer(gpu, 512, "scene-ubo-0")?,
-            host_buffer(gpu, 512, "scene-ubo-1")?,
+            host_buffer(gpu, SCENE_UBO_BYTES as u64, "scene-ubo-0")?,
+            host_buffer(gpu, SCENE_UBO_BYTES as u64, "scene-ubo-1")?,
         ];
         let probe_faces_ubo = [
             host_buffer(gpu, 6 * 64, "probe-faces-0")?,
@@ -621,11 +657,10 @@ impl FrameRenderer {
             ],
             8,
         )?;
-        let shadow_layout = pipeline_layout(device, &[set_layouts.scene], 0)?;
-        let shadow_skinned_layout = pipeline_layout(
+        let shadow_layout = shadow_pipeline_layout(device, &[set_layouts.scene])?;
+        let shadow_skinned_layout = shadow_pipeline_layout(
             device,
             &[set_layouts.scene, set_layouts.empty, set_layouts.joints],
-            8,
         )?;
         let gizmo_layout = pipeline_layout(device, &[set_layouts.gizmo], 0)?;
         let hud_layout = pipeline_layout(device, &[set_layouts.hud], 0)?;
@@ -651,6 +686,7 @@ impl FrameRenderer {
         let frag = shader(device, spv("forward.frag"), &mut shaders)?;
         let skinned_vert = shader(device, spv("skinned.vert"), &mut shaders)?;
         let shadow_vert = shader(device, spv("shadow.vert"), &mut shaders)?;
+        let shadow_skinned_vert = shader(device, spv("shadow_skinned.vert"), &mut shaders)?;
         let forward = graphics(
             device,
             gpu.pipeline_cache(),
@@ -718,7 +754,7 @@ impl FrameRenderer {
             device,
             gpu.pipeline_cache(),
             shadow_skinned_layout,
-            skinned_vert,
+            shadow_skinned_vert,
             None,
             &skinned_vertex(),
             &[],
@@ -1133,6 +1169,8 @@ impl FrameRenderer {
             shadow_layout: DEPTH_ATTACHMENT,
             depth_layout: DEPTH_ATTACHMENT,
             shadow_size: crate::engine3d::engine::SHADOW_MAP_SIZE,
+            shadow_probe: None,
+            shadow_probe_tick: 0,
         })
     }
 
@@ -1250,7 +1288,7 @@ impl FrameRenderer {
             self.shadow_layout = DEPTH_ATTACHMENT;
             self.rewrite_target_descriptors()?;
             drop(retired_shadow);
-            log::info!("[sombras] shadow map reasignado a {size}x{size} px");
+            log::info!("[sombras] array de {SHADOW_LAYERS} capas reasignado a {size}x{size} px");
         }
         if self.albedo_image != input.albedo.image {
             self.albedo_set_image(input.albedo)?;
@@ -1341,15 +1379,9 @@ impl FrameRenderer {
             self.shadow_pass(slot, input, &pipes, &device, cmd)?;
         } else {
             // Sin pase de sombras el mapa nunca pasó a READ_ONLY; el descriptor lo espera
-            // en ese layout aunque el shader no lo muestree.
-            let image = self.targets.shadow.image;
-            transition_depth(
-                &device,
-                cmd,
-                image,
-                &mut self.shadow_layout,
-                DEPTH_READ_ONLY,
-            );
+            // en ese layout aunque el shader no lo muestree. Las 4 capas a la vez: el array
+            // entero es lo que apunta el descriptor del `sampler2DArrayShadow`.
+            self.shadow_read_only(&device, cmd);
         }
         for capture in input.probe_captures {
             self.capture_probe(slot, input, *capture, &pipes, &device, cmd)?;

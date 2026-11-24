@@ -21,7 +21,14 @@ layout(set = 0, binding = 0) uniform Scene {
     vec4 shadow_bias;
 } u;
 
+// Cada cascada se proyecta con su propia matriz. Viaja en push constants para
+// no parchear el UBO de escena entre draws (commit 98c416c).
+layout(push_constant) uniform CascadePush {
+    mat4 view_proj;   // 0..64
+    vec4 joint_base;  // 64..80 (x = joint base del shader skinned)
+} pc;
+
 void main() {
     mat4 model = mat4(model0, model1, model2, model3);
-    gl_Position = u.light_view_proj * model * vec4(position, 1.0);
+    gl_Position = pc.view_proj * model * vec4(position, 1.0);
 }
