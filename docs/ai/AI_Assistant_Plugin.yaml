@@ -10,10 +10,11 @@ plugin_id: local-ai-assistant
 
 runtime:
   name: OpenCode standalone
-  binary: opencode.exe
+  binary: "opencode.exe (Windows); opencode (Linux, pendiente de publicación)"
   version_pinned: 2.2.x
   download: |
-    https://opencode.ai/update/api/latest/cli/opencode/opencode-windows-x64.zip
+    Windows: https://opencode.ai/update/api/latest/cli/opencode/opencode-windows-x64.zip
+    Linux: opencode-linux-x64.zip (planificado; todavía sin asset/hash publicado)
     (~125 MB; binario autocontenido, sin Node/Bun/npm ni VC++)
   install_layout: |
     {userData}/plugins/local-ai-assistant/
@@ -29,7 +30,12 @@ runtime:
     src/main/Engine/engine/src/editor/plugin_runtime.rs
   spawn_from: Editor nativo (editor/plugin_runtime.rs), no Electron
   system_requirements:
-    os: Windows x64 only (v1)
+    os: "Windows x64 (v1, validado); Linux x64 (planificado, con soporte en el editor)"
+  linux_status: |
+    La publicación del artefacto Linux está pendiente: no existe todavía el
+    asset opencode-linux-x64.zip con su hash en el release, así que no se da
+    por terminada. El editor ya contempla el nombre `opencode` y la variante
+    Linux, pero el catálogo no debe anunciarla como disponible.
 
 sandbox:
   workspace: |
@@ -130,7 +136,7 @@ f0_validated:
 out_of_scope_v1:
   - comandos del motor / crear entidades desde la IA
   - embeddings / RAG vectorial
-  - macOS / Linux binary for opencode
+  - macOS / WSL binary for opencode (fuera de alcance)
   - login device OAuth automático (fallback manual)
 
 removed_v2:

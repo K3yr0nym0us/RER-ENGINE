@@ -701,6 +701,8 @@ impl App {
         // Si la ventana perdió el foco o está minimizada, no se puede dejar el cursor
         // atrapado en el viewport: el usuario no podría usar la barra de tareas ni Alt+Tab.
         if !state.engine_window_focused || state.window().is_minimized().unwrap_or(false) {
+            #[cfg(not(target_os = "windows"))]
+            let _ = state.window().set_cursor_grab(CursorGrabMode::None);
             rer_engine_core::platform::release_cursor_clip();
             self.clip_rect = None;
             return;
@@ -715,7 +717,16 @@ impl App {
             frame.extent.height,
         );
         // Reaplica el clip cada frame: Windows puede resetearlo al cambiar de foco.
+        #[cfg(target_os = "windows")]
         rer_engine_core::platform::clip_cursor_to_rect(rect.0, rect.1, rect.2, rect.3);
+        #[cfg(not(target_os = "windows"))]
+        rer_engine_core::platform::clip_cursor_to_rect(
+            state.window(),
+            rect.0,
+            rect.1,
+            rect.2,
+            rect.3,
+        );
         self.clip_rect = Some(rect);
 
         // En play se recentra para que el look relativo no llegue al borde del clip.

@@ -4,7 +4,7 @@ Crate independiente del motor RER-ENGINE que genera **terreno natural con
 superficies suaves** (Marching Cubes), por chunks, con cuotas configurables por
 feature y distribución automática de blueprints.
 
-La lógica vive **solo en Rust**. El editor (React) envía la config y muestra
+La lógica vive **solo en Rust**. El editor nativo Rust envía la config y muestra
 progreso; el engine 3D sube mallas y splats a GPU. No se duplica generación
 en TypeScript.
 
@@ -48,8 +48,8 @@ defecto); `fit_config_to_world` escala features al área generada.
   mundos pequeños usan el mínimo suave actual; los grandes se acercan al máximo
   anterior (más desnivel absoluto). El cálculo está en
   `scale::land_grade_amplitude`.
-- **Lagos / valles / montañas**: huella elíptica con costa irregular.
-  Las montañas combinan mesetas y picos con masa + crestas (la referencia
+- **Lagos / valles / montañas**: huella elíptica con costa irregular. Las
+  montañas combinan mesetas y picos con masa + crestas (la referencia
   de diseño no incluye lagos ni ríos).
 - **Ríos**: nacen en ladera de montaña o en el borde alto del mundo y
   bajan (lago o salida del mapa). No se plantan en un punto interior.
@@ -72,8 +72,8 @@ compartidas con modelos): las columnas van a un **atlas** (16×16 tiles de
 
 Fotos de suelo (Grass, Dirt, Clay, Sand, Stone, Snow, Mud) en
 `worldgen/assets/terrain/`. Viajan en el ZIP del plugin (`terrain/` al lado
-de la DLL). El engine solo las sube a GPU; el shader `forward.frag` mezcla
-esas capas con el splat. El vaso de un lago usa `Mud.jpg` (resto de los
+de la biblioteca nativa). El engine solo las sube a GPU; el shader `forward.frag`
+mezcla esas capas con el splat. El vaso de un lago usa `Mud.jpg` (resto de los
 pesos RGBA). Capa 0 del array = checker del editor; Grass no puede usarla.
 
 ## Consumo en el engine
@@ -97,24 +97,29 @@ pesos RGBA). Capa 0 del array = checker del editor; Grass no puede usarla.
    - al encoger, elimina los chunks y el scatter que quedan fuera;
    - si el mundo supera el área generada, regenera todo con un área nueva.
 
-   Esta ruta vive en `config_3d/worldgen` y solo se activa con la DLL cargada
-   y un mundo ya generado: el motor 3D normal no genera ni recorta terreno.
+   Esta ruta vive en `config_3d/worldgen` y solo se activa con la biblioteca
+   nativa cargada y un mundo ya generado: el motor 3D normal no genera ni recorta terreno.
 
-Instalación local: `%APPDATA%\rer-engine\plugins\world-gen\` con
-`rer_worldgen.dll` y la carpeta `terrain/`. `yarn dev` y `yarn start`
-reconstruyen el crate y copian DLL + texturas ahí (debug / release según
-el perfil). A mano: `yarn rust:build:worldgen` o
-`yarn rust:build:worldgen:release`. El editor no debe tener la DLL cargada
-durante la copia. Un cambio de shader/host GPU pide reiniciar `yarn dev`.
-No reinstalar el plugin desde el catálogo para una DLL local.
+Instalación local:
+- Windows: `%APPDATA%\RER-ENGINE\plugins\world-gen\` con `rer_worldgen.dll`.
+- Linux: `$XDG_CONFIG_HOME/RER-ENGINE/plugins/world-gen\` (o
+  `~/.config/RER-ENGINE/plugins/world-gen\`) con `librer_worldgen.so`.
+
+Ambas incluyen la carpeta `terrain/`. `yarn dev` y `yarn start` reconstruyen
+el crate y copian la biblioteca + texturas (debug / release según el perfil).
+A mano: `yarn rust:build:worldgen` o `yarn rust:build:worldgen:release`.
+El editor no debe tener la biblioteca cargada durante la copia. Un cambio de
+shader/host GPU pide reiniciar `yarn dev`. No reinstalar el plugin desde el
+catálogo para una biblioteca local.
 
 Generar el mundo es **CPU** (densidad, mesh, splat) en el hilo `rer-worldgen`.
 El tick del engine solo sube GPU. Eso es normal.
 
 ## Fachada FFI (`plugin_ffi`, ABI v2)
 
-La DLL `rer_worldgen.dll` (`cdylib`) se instala desde Plugins (GitHub
-Releases). El engine **no depende del crate**: `libloading` + espejo en
+La biblioteca `rer_worldgen.dll` (Windows) o `librer_worldgen.so` Linux
+(`cdylib`) se instala desde Plugins (GitHub Releases) o desde el build local.
+El engine **no depende del crate**: `libloading` + espejo en
 `engine3d/config_3d/worldgen/abi.rs`.
 
 Exports: `wg_abi_version`, `wg_world_create`, `wg_world_free`,
@@ -122,7 +127,7 @@ Exports: `wg_abi_version`, `wg_world_create`, `wg_world_free`,
 `wg_scatter`, y los `wg_free_*`.
 
 1. Cada export captura panics (`catch_unwind`).
-2. Allocator único: la DLL allocó → `wg_free_*`.
+2. Allocator único: la biblioteca allocó → `wg_free_*`.
 3. Errores: `Status` + `wg_last_error`.
 4. Cambio de firma → incrementar `ABI_VERSION`.
 
@@ -135,13 +140,20 @@ alturas por cada capa Y).
 - Topología MC: costuras, normales hacia fuera, UV en `[0, 1]`.
 - Planner: cuotas, lagos lejos de montañas, suelo de lagos/ríos.
 - Biomas: porcentajes, nieve en cumbres, orilla de arena continua.
-- FFI contra la DLL; presupuestos en release (ver `tests/performance.rs`).
+- FFI contra la biblioteca nativa; presupuestos en release (ver `tests/performance.rs`).
 
 ## Publicación
 
-```
+```powershell
 powershell -File scripts\publish-worldgen.ps1 -Version "1.0.0"
 ```
 
-Empaqueta `rer_worldgen.dll` en `rer-worldgen-<versión>-win-x64.zip` y el
-SHA-256 para el catálogo Rust (`editor/plugins.rs`).
+```bash
+node ./scripts/publish-worldgen.mjs 1.0.0
+```
+
+El script cross-platform genera `rer-worldgen-<versión>-win-x64.zip` con
+`rer_worldgen.dll` o `rer-worldgen-<versión>-linux-x64.zip` con
+`librer_worldgen.so`, más `terrain/*.jpg`, e imprime el SHA-256. Ese valor se
+configura en `engine/src/editor/plugin_runtime.rs`; el artefacto Linux sigue
+pendiente de publicación y no se instala on-demand hasta tener hash verificado.

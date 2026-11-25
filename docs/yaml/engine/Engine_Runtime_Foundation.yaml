@@ -9,7 +9,7 @@
 #   - .cursor/rules/project.mdc
 
 version: 1
-updated: 2026-11-16
+updated: 2026-11-24
 
 editor_window:
   principle: |
@@ -36,7 +36,9 @@ gpu_policy:
   profiles:
     - EngineGpuProfile::TwoD  → rer_engine_2d
     - EngineGpuProfile::ThreeD → rer_engine_3d
-  platforms: Windows
+  platforms:
+    - "Windows 10/11"
+    - "Linux (X11 / Wayland)"
   forbidden:
     - wgpu / OpenGL / DX12 / WebGL
     - Backends::all()
@@ -57,12 +59,17 @@ input_routing:
   note: |
     La ventana winit del editor recibe ratón y teclado para el viewport 3D/2D.
     Electron solo recibe/reenvía mensajes de su UI y de las modales.
+  platform_limits: |
+    Windows: Ctrl/Shift globales vía GetAsyncKeyState (query_ctrl_held_os /
+    query_shift_held_os) siguen funcionando aunque la ventana pierda el foco.
+    Linux: solo el estado de teclado rastreado por winit; no hay consulta
+    global al SO. Es una limitación conocida, no un bloqueo de arranque.
 
 metrics:
   motor: debug_metrics ~1 Hz (fps, frame_time, draw_calls, cpu_percent, gpu_percent?)
   sampler: core/src/process_metrics.rs
-  electron_gpu: "src/main/gpuProcessUsage.ts (Windows: contadores GPU Engine por PID)"
-  ui: MetricsPanel.tsx
+  windows_gpu: "PDH GPU Engine por PID; Linux: N/A"
+  ui: src/main/Engine/engine/src/editor/ui/metrics_overlay.rs
 
 game_build_intro:
   status: pendiente
@@ -80,7 +87,7 @@ game_build_intro:
 
 do_not:
   - Reintroducir overlay, tracker Win32, set_bounds o proceso 2D legacy
-  - Reintroducir with_embed_parent_window / rutas Linux-X11
+  - Reintroducir with_embed_parent_window / rutas Linux-X11 de overlay (no la compatibilidad Linux del editor)
   - Usar WebGL en el renderer para el mundo del juego
   - Cambiar backend según variable de entorno en producción
-  - Añadir compatibilidad Linux / macOS / WSL
+  - Añadir compatibilidad macOS / WSL (fuera de alcance) o romper el comportamiento Windows existente

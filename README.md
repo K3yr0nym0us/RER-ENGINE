@@ -38,12 +38,12 @@ Principio **engine-first**: posiciones, cámaras, física y convenciones espacia
 
 | Regla | Detalle |
 |-------|---------|
-| **Motor 2D y 3D** | Siempre **Vulkan** (Windows) con **Ash**. |
+| **Motor 2D y 3D** | Siempre **Vulkan** (Windows y Linux) con **Ash**. |
 | **Prohibido** | OpenGL, EGL, DX12, `wgpu`/`Backends::all()` y cualquier selección de backend por entorno. |
 | **Shaders** | GLSL en `engine/shaders/` (`2d/`, `raster/`, `rt/`, `bvh/`), compilado a SPIR-V con `glslc`. |
 | **Si la GPU falla** | El editor abre y muestra el error; el motor emite `{"event":"error"}` y no envía `ready`. |
 
-Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
+Requisitos: **Vulkan** (loader + ICD) en Windows y Linux (`vulkaninfo` o drivers actualizados).
 
 ### Implementación (`core/src/vulkan/gpu/`)
 
@@ -72,12 +72,41 @@ Requisitos: **Vulkan** en Windows (`vulkaninfo` o drivers actualizados).
 
 ---
 
+## Plataformas soportadas
+
+- **Windows 10/11** y **Linux (X11 y Wayland)**: mismo código y mismos comandos
+  (`yarn dev`, `yarn start`, `yarn build`, `yarn dist`, `yarn quality`).
+- **Fuera de alcance:** macOS y WSL.
+
+`yarn dist` genera un instalador NSIS (`.exe`) en Windows y `AppImage` + `.deb`
+en Linux, con el mismo icono PNG y los binarios del editor en `extraResources`.
+
 ## Requisitos
 
-- **Node.js** 20+ y **Yarn**
-- **Rust** (toolchain estable) y **Cargo**
-- **Windows 10/11**
-- **GPU**: **Vulkan** para el editor y los binarios standalone `rer_engine_2d` / `rer_engine_3d` (drivers actualizados).
+- **Node.js 22** e **Yarn** (ambas plataformas).
+- **Rust 1.100** y **Cargo** (versión fijada en `rust-toolchain.toml`).
+- **GPU con Vulkan**: loader e ICD instalados; comprobar con `vulkaninfo`.
+- **Windows 10/11**: drivers/Vulkan SDK (proporciona `glslc` para los shaders).
+- **Linux (X11/Wayland)**, además de lo anterior:
+  - `libasound2` (ALSA) para audio en runtime; `libasound2-dev` si compilas.
+  - `glslc` de `glslang-tools` para compilar los shaders a SPIR-V (o
+    `$VULKAN_SDK/bin/glslc` si usas el SDK).
+  - `vulkan-tools` y una ICD como `mesa-vulkan-drivers` (loader/ICD; también
+    se usa en CI headless con `xvfb`).
+  - `xdg-desktop-portal` más un backend (GTK/KDE) para los diálogos nativos
+    de abrir/guardar (`rfd`), especialmente bajo Wayland.
+  - En Debian/Ubuntu: `sudo apt-get install -y pkg-config libasound2-dev glslang-tools vulkan-tools mesa-vulkan-drivers xvfb`.
+
+### Limitaciones conocidas en Linux
+
+- **Métrica GPU % por PID:** solo Windows (contadores PDH). En Linux el panel
+  muestra **N/A** y el editor arranca con normalidad.
+- **Ctrl/Shift globales vía OS** (`GetAsyncKeyState`): solo Windows. En Linux
+  se usa el estado de teclado que rastrea la ventana winit; se pierde la
+  consulta global cuando la ventana no tiene el foco.
+- **Publicación de plugins Linux:** el artefacto/hash Linux del plugin
+  worldgen/OpenCode aún no está publicado; no se da por terminada esa
+  publicación. En desarrollo el plugin se instala desde el build local.
 
 ---
 
@@ -105,7 +134,8 @@ yarn build
 # Vista previa del build
 yarn preview
 
-# Instalador (compila los 3 binarios release + electron-builder)
+# Instalador (compila los 3 binarios release + electron-builder):
+# Windows → NSIS .exe; Linux → AppImage + .deb
 yarn dist
 ```
 

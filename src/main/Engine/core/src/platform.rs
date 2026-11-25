@@ -1,4 +1,4 @@
-//! Utilidades de plataforma Windows compartidas por los motores.
+//! Utilidades de plataforma compartidas por los motores.
 
 /// Icono de la aplicación (mismo PNG que usa Electron) incrustado en el binario.
 ///
@@ -15,6 +15,7 @@ pub fn app_window_icon() -> Option<winit::window::Icon> {
     winit::window::Icon::from_rgba(rgba.into_raw(), width, height).ok()
 }
 
+#[cfg(target_os = "windows")]
 pub fn query_ctrl_held_os() -> bool {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -26,6 +27,12 @@ pub fn query_ctrl_held_os() -> bool {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+pub fn query_ctrl_held_os() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
 pub fn query_shift_held_os() -> bool {
     unsafe {
         use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LSHIFT, VK_RSHIFT};
@@ -33,6 +40,11 @@ pub fn query_shift_held_os() -> bool {
         let right = (GetAsyncKeyState(VK_RSHIFT.0 as i32) as u16 & 0x8000) != 0;
         left || right
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn query_shift_held_os() -> bool {
+    false
 }
 
 /// Restringe el cursor al rectángulo físico indicado (coordenadas de pantalla).
@@ -52,7 +64,19 @@ pub fn clip_cursor_to_rect(x: i32, y: i32, width: u32, height: u32) {
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn clip_cursor_to_rect(_x: i32, _y: i32, _width: u32, _height: u32) {}
+pub fn clip_cursor_to_rect(
+    window: &winit::window::Window,
+    _x: i32,
+    _y: i32,
+    _width: u32,
+    _height: u32,
+) {
+    use winit::window::CursorGrabMode;
+
+    let _ = window
+        .set_cursor_grab(CursorGrabMode::Locked)
+        .or_else(|_| window.set_cursor_grab(CursorGrabMode::Confined));
+}
 
 /// Libera la restricción de cursor impuesta con [`clip_cursor_to_rect`].
 pub fn release_cursor_clip() {
@@ -61,4 +85,6 @@ pub fn release_cursor_clip() {
         use windows::Win32::UI::WindowsAndMessaging::ClipCursor;
         let _ = ClipCursor(None);
     }
+    // En Linux el host libera `CursorGrabMode::None` sobre la ventana; se
+    // conserva esta API sin argumentos porque también la usa el editor.
 }

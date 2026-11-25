@@ -67,13 +67,22 @@ Do not reintroduce:
 
 - `with_embed_parent_window`
 - `set_bounds` / overlay geometry
-- X11 / Wayland / Linux overlay paths
+- X11 / Wayland overlay paths (ventanas hijas/overlays, en cualquier plataforma)
 
 ## Platform
 
-Development and runtime are **Windows only**.
+Development and runtime target **Windows 10/11 and Linux (X11 and Wayland)**.
+macOS and WSL are out of scope.
 
-Do not add Linux, macOS, or WSL compatibility branches.
+- Keep the existing Windows behavior and paths intact: original Win32 bodies stay
+  under `#[cfg(target_os = "windows")]`; new platform-specific code goes behind
+  `#[cfg(not(target_os = "windows"))]`.
+- Do not add a new OS-abstraction layer; reuse the existing `cfg` guards and
+  `process.platform` checks already present in the project.
+- Vulkan (Ash) remains the only GPU backend on both platforms; never select a
+  backend from the environment.
+- Known Linux-only limits: the GPU-per-PID metric shows N/A, and global
+  Ctrl/Shift OS queries are Windows-only (Linux relies on winit-tracked state).
 
 ## Editor UI (egui)
 

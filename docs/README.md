@@ -2,6 +2,8 @@
 
 Índice de contratos y modelos del editor. Este directorio describe **lo ya implementado**; el trabajo pendiente se anota dentro de cada documento (`status: pendiente`) y en los comentarios del código, porque los antiguos `CHECKLIST*.md` se retiraron del repo.
 
+**Plataformas:** Windows 10/11 y Linux (X11/Wayland). macOS y WSL están fuera de alcance. La métrica GPU % por PID y los atajos globales Ctrl/Shift vía OS siguen siendo exclusivos de Windows; en Linux el panel muestra `N/A`.
+
 **Última revisión:** 24 nov 2026 (SSR 3D: marcha tradicional, sincronización Vulkan, fallback de sondas y aislamiento RT). Revisión anterior: 23 nov 2026 (array de texturas 3D con crecimiento bajo demanda: `Texture_Array_3D.yaml`). Antes: 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`); 14 nov 2026 (World Generator); noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
 
 ## Estructura
@@ -127,4 +129,4 @@
 - [`engine/src/engine2d/ARCHITECTURE.md`](../src/main/Engine/engine/src/engine2d/ARCHITECTURE.md)
 - [`engine/ARCHITECTURE.md`](../src/main/Engine/engine/ARCHITECTURE.md)
 - [`renderer/ARCHITECTURE.md`](../src/renderer/ARCHITECTURE.md)
-- [`worldgen/README.md`](../src/main/Engine/worldgen/README.md) — plugin World Generator (DLL, biomas, engine)
+- [`worldgen/README.md`](../src/main/Engine/worldgen/README.md) — plugin World Generator (`rer_worldgen.dll` en Windows / `librer_worldgen.so` en Linux; biomas, engine). La publicación del artefacto Linux con su hash está pendiente.

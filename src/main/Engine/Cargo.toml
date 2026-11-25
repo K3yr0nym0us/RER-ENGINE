@@ -20,7 +20,7 @@ edition = "2024"
 rust-version = "1.95"
 
 [workspace.dependencies]
-winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
+winit = { version = "0.30", default-features = false, features = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"] }
 # Backends en runtime (`rer_engine_core::backend_policy`): solo Vulkan (2D y 3D) sobre Ash.
 pollster = "0.4"
 glam = "0.33"

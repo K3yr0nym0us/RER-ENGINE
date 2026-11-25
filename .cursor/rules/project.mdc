@@ -7,9 +7,14 @@ alwaysApply: true
 
 ## Environment
 
-- Primary development environment: **Windows 10/11**.
-- Use PowerShell-compatible commands and Windows paths.
-- Runtime target: **Windows only** (no Linux / macOS / WSL support).
+- Supported development and runtime targets: **Windows 10/11 and Linux
+  (X11/Wayland)**. Same commands (`yarn dev`, `yarn start`, `yarn build`,
+  `yarn dist`, `yarn quality`) on both.
+- Keep Windows commands/paths working (PowerShell on Windows); use the existing
+  cross-platform scripts on Linux (bash). Node 22 and Rust 1.100 are required.
+- macOS and WSL are out of scope; do not add compatibility branches for them.
+- Preserve Windows behavior and paths when adding Linux support (cfg guards /
+  `process.platform`), and document any Linux-only limitation.
 
 ## Stack
 

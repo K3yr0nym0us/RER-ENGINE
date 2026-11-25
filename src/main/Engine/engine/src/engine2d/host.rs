@@ -23,6 +23,7 @@ use rer_engine_core::surface::SurfacePresentError;
 /// sin depender del foco de ventana. Esto evita el bug de "toggle" que ocurre
 /// cuando Electron pierde el foco al hacer click en el viewport del motor y
 /// el keyup de Control nunca llega al renderer.
+#[cfg(target_os = "windows")]
 fn query_ctrl_held_os() -> bool {
     // SAFETY: GetAsyncKeyState es seguro de llamar en cualquier contexto Win32.
     unsafe {
@@ -33,6 +34,11 @@ fn query_ctrl_held_os() -> bool {
         let right = (GetAsyncKeyState(VK_RCONTROL.0 as i32) as u16 & 0x8000) != 0;
         left || right
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn query_ctrl_held_os() -> bool {
+    false
 }
 
 /// Convierte un `KeyCode` de winit a la string de control usada en los bindings.

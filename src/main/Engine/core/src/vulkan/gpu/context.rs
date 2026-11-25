@@ -169,7 +169,7 @@ impl SharedGpu {
     }
 
     pub(super) fn create(window: &Window, options: &VulkanOptions) -> Result<Self, VulkanError> {
-        // FFI: cargar vulkan-1.dll y crear instance/device. El Drop de GpuInner los destruye.
+        // FFI: cargar el loader de Vulkan y crear instance/device. El Drop de GpuInner los destruye.
         unsafe { Self::create_unchecked(window, options) }
     }
 
@@ -179,7 +179,7 @@ impl SharedGpu {
     ) -> Result<Self, VulkanError> {
         let entry = ash::Entry::load().map_err(|error| {
             VulkanError::new(format!(
-                "No se pudo cargar vulkan-1.dll ({error}). Instala los controladores de la GPU o el Vulkan Runtime."
+                "No se pudo cargar el loader de Vulkan (biblioteca nativa) ({error}). Instala los controladores de la GPU o el Vulkan Runtime."
             ))
         })?;
 
@@ -272,7 +272,7 @@ impl SharedGpu {
         };
 
         let surface = ash_window::create_surface(&entry, &instance, display, window_handle, None)
-            .map_err(|error| vk_error("crear la superficie Win32", error))?;
+            .map_err(|error| vk_error("crear la superficie", error))?;
         let surface_loader = ash::khr::surface::Instance::new(&entry, &instance);
 
         let physical = pick_physical_device(&instance, &surface_loader, surface)?;

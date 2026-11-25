@@ -73,7 +73,7 @@ arrastra ambos motores). Por eso `--all-features` **no** basta: oculta errores d
 | `yarn rust:test:engine3d` | fmt + clippy/test/build de `engine3d` + clippy/test/build del editor (motor 3D y editor) |
 | `yarn rust:test:engine2d` | fmt + clippy/test/build de `engine2d` + clippy/test/build del editor (motor 2D y editor) |
 | `yarn rust:test:worldgen` | fmt + clippy/test/build del plugin `rer-worldgen` |
-| `yarn rust:build:worldgen` / `:release` | build de `rer-worldgen` y copia a `%APPDATA%\rer-engine\plugins\world-gen` (también lo hacen `yarn dev` / `yarn start`) |
+| `yarn rust:build:worldgen` / `:release` | build de `rer-worldgen` (`rer_worldgen.dll` en Windows, `librer_worldgen.so` en Linux) y copia al directorio de plugins de la app: Windows `%APPDATA%\RER-ENGINE\plugins\world-gen`, Linux `$XDG_CONFIG_HOME/RER-ENGINE/plugins/world-gen` (o `~/.config/RER-ENGINE/plugins/world-gen`). También lo hacen `yarn dev` / `yarn start` |
 | `yarn rust:test:all` | las tres suites completas |
 | `yarn quality:rust` | quality Rust general (`--all-features`, audit) + `rust:test:all` |
 
@@ -83,10 +83,12 @@ features que no compilan en el binario de producción.
 
 ## CI
 
-`.github/workflows/quality.yml` (`windows-latest`):
+`.github/workflows/quality.yml` (matriz `[windows-latest, ubuntu-latest]`):
 
 - Frontend: `yarn lint`, `yarn typecheck`, `yarn test:coverage`
 - Rust: fmt, check, clippy (`-D warnings`), test, audit + suites por feature (`engine3d`, `engine2d`, `worldgen`)
+- En Ubuntu se instalan `pkg-config libasound2-dev glslang-tools vulkan-tools mesa-vulkan-drivers xvfb`; `glslc` procede de `glslang-tools` y los tests que crean ventana se ejecutan con `xvfb-run -a`.
+- La caché de Yarn/Cargo y `cargo audit` se mantienen en ambas plataformas; el job Windows conserva sus pasos originales.
 
 ## Qué se analiza / qué no
 

@@ -158,6 +158,7 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
     let installed = app.plugins_modal.plugins.is_installed(id);
     let enabled = app.plugins_modal.plugins.is_enabled(id);
     let installing = is_installing(app, id);
+    let install_available = crate::editor::plugin_runtime::plugin_install_available(id);
     let card_width = if installing {
         CARD_INSTALL_WIDTH
     } else {
@@ -287,18 +288,39 @@ fn plugin_card(ui: &mut egui::Ui, app: &mut EditorApp, entry: &PluginCatalogEntr
                 ui.vertical(|ui| {
                     let width = ui.available_width();
                     if !installed {
-                        if styled_button(
-                            ui,
-                            tr(locale, "Instalar", "Install"),
-                            ButtonKind::Primary,
-                            width,
-                            true,
-                        ) {
-                            app.plugins_modal.error = None;
-                            app.plugins_modal.cancelling = false;
-                            app.plugins_modal.progress = None;
-                            app.plugins_modal.busy_id = Some(id.to_string());
-                            plugins::action(app, "install", json!({ "plugin_id": id }));
+                        if install_available {
+                            if styled_button(
+                                ui,
+                                tr(locale, "Instalar", "Install"),
+                                ButtonKind::Primary,
+                                width,
+                                true,
+                            ) {
+                                app.plugins_modal.error = None;
+                                app.plugins_modal.cancelling = false;
+                                app.plugins_modal.progress = None;
+                                app.plugins_modal.busy_id = Some(id.to_string());
+                                plugins::action(app, "install", json!({ "plugin_id": id }));
+                            }
+                        } else {
+                            let pending =
+                                tr(locale, "Pendiente de publicación", "Publication pending");
+                            let _ = styled_button(
+                                ui,
+                                pending,
+                                ButtonKind::OutlineSecondary,
+                                width,
+                                false,
+                            );
+                            ui.label(
+                                RichText::new(tr(
+                                    locale,
+                                    "El artefacto Linux aún no está publicado.",
+                                    "The Linux artifact is not published yet.",
+                                ))
+                                .size(10.5)
+                                .color(theme::TEXT_MUTED),
+                            );
                         }
                     } else {
                         ui.vertical_centered(|ui| {

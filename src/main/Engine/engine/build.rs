@@ -104,7 +104,7 @@ fn main() {
             "No se encontró glslc.\n\
              Instala el Vulkan SDK (https://vulkan.lunarg.com/) y abre una terminal nueva,\n\
              o define la variable VULKAN_SDK apuntando a la raíz del SDK\n\
-             (glslc está en %VULKAN_SDK%\\Bin\\glslc.exe)."
+             (Windows: %VULKAN_SDK%\\Bin\\glslc.exe; Linux: $VULKAN_SDK/bin/glslc)."
         );
     });
 
@@ -133,6 +133,11 @@ fn find_glslc() -> Option<PathBuf> {
     }
     if let Ok(sdk) = env::var("VULKAN_SDK") {
         let candidate = Path::new(&sdk).join("Bin").join("glslc.exe");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+        // Linux: el SDK instala el compilador en `bin/glslc` (minúsculas).
+        let candidate = Path::new(&sdk).join("bin").join("glslc");
         if candidate.is_file() {
             return Some(candidate);
         }

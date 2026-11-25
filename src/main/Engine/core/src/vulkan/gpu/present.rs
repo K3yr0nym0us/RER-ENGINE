@@ -45,7 +45,7 @@ impl PresentTarget {
             .as_raw();
         let surface = unsafe {
             ash_window::create_surface(gpu.entry(), gpu.instance(), display, window_handle, None)
-                .map_err(|error| vk_error("crear la superficie Win32 secundaria", error))?
+                .map_err(|error| vk_error("crear la superficie secundaria", error))?
         };
         let surface_loader = ash::khr::surface::Instance::new(gpu.entry(), gpu.instance());
         let swapchain_loader = ash::khr::swapchain::Device::new(gpu.instance(), gpu.device());

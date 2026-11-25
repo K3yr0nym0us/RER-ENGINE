@@ -1,18 +1,19 @@
 # RER-ENGINE — Modelo de plugins opcionales
 # Referencia para IAs y contribuidores.
 
-version: 3
-updated: 2026-11-14
+version: 4
+updated: 2026-11-24
 
 summary: |
   Plugins opcionales se instalan bajo demanda desde el pie del sidebar (Plugins).
   No se empaquetan modelos ni runtimes en el instalador base ni en el motor Rust.
   Estado persistido en userData/plugins/state.json.
-  World Generator es una DLL nativa (rer_worldgen.dll); RER-AI es runtime OpenCode.
+  World Generator es una biblioteca nativa (rer_worldgen.dll en Windows;
+  librer_worldgen.so en Linux); RER-AI es runtime OpenCode.
 
 principles:
-  - Lógica de mundo/terreno en Rust (DLL); el editor solo envía intent y muestra estado
-  - Descarga on-demand tras confirmación del usuario
+  - Lógica de mundo/terreno en Rust (biblioteca nativa); el editor solo envía intent y muestra estado
+  - Descarga on-demand tras confirmación del usuario, solo cuando existe un SHA-256 verificado
   - La modal y toda su gestión son 100% Rust (editor/ui/plugins_modal.rs + editor/plugin_runtime.rs): state.json, descargas, unzip, SHA-256 y servidor OpenCode. Sin Electron ni React.
 
 catalog:
@@ -21,8 +22,9 @@ catalog:
     version: "2.0.0"
     manifest_code: src/main/Engine/engine/src/editor/plugins.rs (catálogo Rust)
     system_requirements:
-      - Windows x64
-      - Microsoft Visual C++ 2015–2022 Redistributable (x64); requisito del runtime Rust del motor, no se instala desde el plugin
+      - Windows x64 (artefacto validado)
+      - Linux x64 (soporte del editor; publicación del artefacto/hash pendiente)
+      - Windows: Microsoft Visual C++ 2015–2022 Redistributable (x64); requisito del runtime Rust del motor, no se instala desde el plugin
   - id: world-gen
     name: World Generator
     version: "1.0.0"
@@ -30,23 +32,30 @@ catalog:
     docs: src/main/Engine/worldgen/README.md
     modal: src/main/Engine/engine/src/editor/ui/worldgen_modal.rs (MIGRADA a ventana nativa)
     engine: src/main/Engine/engine/src/engine3d/config_3d/worldgen
-    install_dir: "{userData}/plugins/world-gen/rer_worldgen.dll"
+    install_dir:
+      windows: "{userData}/plugins/world-gen/rer_worldgen.dll"
+      linux: "{userData}/plugins/world-gen/librer_worldgen.so"
     notes: |
       ABI v2 (wg_*). Biomas con porcentajes (mín. 10 % por activo); nieve en cumbres;
       atlas de splats 16×16×64 px (no una capa 1024² por columna). Barrido de
       columnas con progreso phase=scan, luego mesh. Voxel size = detalle MC, no
       radio del mundo. Generación en CPU; GPU pinta. No reinstalar el catálogo
-      para una DLL local de desarrollo. `yarn dev` / `yarn start` copian
-      `rer_worldgen.dll` a install_dir (scripts/install-worldgen-dev.mjs).
+      para una biblioteca local de desarrollo. `yarn dev` / `yarn start` copian
+      `rer_worldgen.dll` (Windows) o `librer_worldgen.so` (Linux) a install_dir
+      (scripts/install-worldgen-dev.mjs). La publicación on-demand Linux queda
+      pendiente hasta disponer de artefacto y SHA-256 verificados.
 
 persistence:
   path: "{userData}/plugins/state.json"
+  user_data:
+    windows: "%APPDATA%/RER-ENGINE"
+    linux: "$XDG_CONFIG_HOME/RER-ENGINE o ~/.config/RER-ENGINE"
   schema:
     installed:
       local-ai-assistant:
         version: string
-        modelPath: string
-        llamaServerPath: string
+        opencodePath: string
+        workspaceDir: string
         installedAt: ISO-8601
       world-gen:
         version: string
@@ -62,4 +71,4 @@ ui:
   native_footer: El pie del editor nativo abre directamente la ventana nativa de plugins.
   modal: src/main/Engine/engine/src/editor/ui/plugins_modal.rs
   runtime: src/main/Engine/engine/src/editor/plugin_runtime.rs
-  note: Sin ventana modal Electron ni overlay React.
+  note: Sin ventana modal Electron ni overlay React. En Linux, si falta hash publicado, el botón de instalación aparece como "Pendiente de publicación" y no inicia descargas.

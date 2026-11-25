@@ -3,14 +3,19 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::thread::{self, JoinHandle};
+#[cfg(target_os = "windows")]
+use std::thread;
+use std::thread::JoinHandle;
+#[cfg(target_os = "windows")]
 use std::time::Duration;
 
 use sysinfo::{Pid, ProcessesToUpdate, System};
 
 /// Intervalo entre lecturas. La consulta PDH solo toca los contadores de este PID.
+#[cfg(target_os = "windows")]
 const GPU_SAMPLE_INTERVAL: Duration = Duration::from_secs(3);
 /// Cada cuánto se redescubren las instancias GPU del proceso (aparecen al renderizar).
+#[cfg(target_os = "windows")]
 const GPU_COUNTER_REFRESH: Duration = Duration::from_secs(30);
 /// Valor centinela en `AtomicU32` (= sin dato GPU).
 const GPU_RAW_NONE: u32 = u32::MAX;
@@ -76,6 +81,7 @@ fn raw_to_gpu_percent(raw: u32) -> Option<f32> {
     Some((raw as f32) / 10.0)
 }
 
+#[cfg(target_os = "windows")]
 fn store_gpu_percent(raw: &AtomicU32, percent: Option<f32>) {
     match percent {
         Some(v) if v.is_finite() && v >= 0.0 => {
@@ -85,6 +91,7 @@ fn store_gpu_percent(raw: &AtomicU32, percent: Option<f32>) {
     }
 }
 
+#[cfg(target_os = "windows")]
 fn spawn_gpu_poll_thread(
     pid: u32,
     raw: Arc<AtomicU32>,
@@ -116,7 +123,18 @@ fn spawn_gpu_poll_thread(
     }))
 }
 
+/// Sin PDH no hay contadores por PID: no se crea ningún hilo GPU en Linux.
+#[cfg(not(target_os = "windows"))]
+fn spawn_gpu_poll_thread(
+    _pid: u32,
+    _raw: Arc<AtomicU32>,
+    _stop: Arc<AtomicBool>,
+) -> Option<JoinHandle<()>> {
+    None
+}
+
 /// Duerme a trozos para que `Drop` no espere el intervalo entero.
+#[cfg(target_os = "windows")]
 fn wait_or_stop(stop: &AtomicBool, total: Duration) -> bool {
     let step = Duration::from_millis(200);
     let mut left = total;
@@ -136,12 +154,19 @@ pub fn is_engine_gpu_metrics_available() -> bool {
     gpu_sampling_available()
 }
 
+#[cfg(target_os = "windows")]
 fn gpu_sampling_available() -> bool {
     true
 }
 
+#[cfg(not(target_os = "windows"))]
+fn gpu_sampling_available() -> bool {
+    false
+}
+
 /// Contadores PDH del proceso. No usa `Get-Counter` ni el comodín de todos los motores GPU:
 /// ese comodín, relanzado en PowerShell, enumeraba el sistema entero y apilaba procesos.
+#[cfg(target_os = "windows")]
 mod gpu_counters {
     use windows::Win32::System::Performance::{
         PDH_CSTATUS_NEW_DATA, PDH_CSTATUS_VALID_DATA, PDH_FMT_COUNTERVALUE, PDH_FMT_DOUBLE,
@@ -310,7 +335,7 @@ mod gpu_counters {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "windows"))]
 mod tests {
     use super::gpu_counters::{multi_sz_strings, path_matches_pid};
 
@@ -329,5 +354,18 @@ mod tests {
         assert!(path_matches_pid(path, "pid_42_"));
         assert!(!path_matches_pid(path, "pid_4_"));
         assert!(!path_matches_pid(path, "pid_420_"));
+    }
+}
+
+#[cfg(all(test, not(target_os = "windows")))]
+mod linux_tests {
+    use super::{ProcessMetricsSampler, is_engine_gpu_metrics_available};
+
+    #[test]
+    fn sin_pdh_no_hilo_gpu_y_el_panel_se_oculta() {
+        assert!(!is_engine_gpu_metrics_available());
+        let sampler = ProcessMetricsSampler::new();
+        assert!(sampler.gpu_thread.is_none());
+        assert!(sampler.sample_gpu_percent().is_none());
     }
 }

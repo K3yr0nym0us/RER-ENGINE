@@ -243,7 +243,7 @@ impl SharedGpu {
         &self.inner.instance
     }
 
-    /// Librería Vulkan (`vulkan-1.dll`). Hace falta para crear superficies extra
+    /// Loader de Vulkan (biblioteca nativa). Hace falta para crear superficies extra
     /// (ventanas nativas secundarias) sobre el mismo device.
     pub fn entry(&self) -> &ash::Entry {
         &self.inner.entry

@@ -14,9 +14,14 @@ extraResources:
   - from: src/main/Engine/target/release
     to: engine
     filter:
+      # Los binarios Linux no llevan extensión; estos patrones los cubren igual
+      # que los .exe de Windows (rer_engine_2d, rer_engine_3d, rer_engine_editor).
       - rer_engine_2d*
       - rer_engine_3d*
       - rer_engine_editor*
+      # Librería del plugin worldgen en Linux (crate-type = ["cdylib"]).
+      # Se incluye solo si está presente en target/release.
+      - librer_worldgen*.so
   - from: src/main/Engine/Models
     to: engine/Models
   - from: docs/ai
@@ -25,3 +30,10 @@ extraResources:
 win:
   target:
     - nsis
+
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Development
+  icon: src/resources/RER-ENGINE-LOGO.png

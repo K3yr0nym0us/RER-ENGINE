@@ -10,8 +10,9 @@
  * Compilarlo aparte (sin `vulkan`) era un build redundante que además se
  * recompilaba de nuevo al cambiar de features.
  *
- * Tras el editor, instala el plugin `rer-worldgen` (DLL + terrain) en
- * `%APPDATA%\rer-engine\plugins\world-gen` para que `yarn dev` / `yarn start`
+ * Tras el editor, instala el plugin `rer-worldgen` (biblioteca nativa + terrain)
+ * en el directorio de datos de la app (Windows: APPDATA; Linux: XDG_CONFIG_HOME
+ * o ~/.config), bajo `plugins/world-gen`, para que `yarn dev` / `yarn start`
  * usen la versión local. Ver `scripts/install-worldgen-dev.mjs`.
  *
  * Uso:

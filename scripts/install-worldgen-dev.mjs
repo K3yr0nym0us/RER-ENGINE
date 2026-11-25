@@ -1,6 +1,8 @@
 /**
- * Compila `rer-worldgen` y copia DLL + texturas al directorio de plugins
- * que usa el editor (`%APPDATA%\rer-engine\plugins\world-gen`).
+ * Compila `rer-worldgen` y copia la biblioteca nativa + texturas al directorio
+ * de plugins que usa el editor (Windows: `%APPDATA%\RER-ENGINE\plugins\world-gen`;
+ * Linux: `$XDG_CONFIG_HOME/RER-ENGINE/plugins/world-gen` o
+ * `~/.config/RER-ENGINE/plugins/world-gen`).
  *
  * Lo invocan `yarn rust:build:editor` / `yarn rust:build:editor:release`
  * (predev y yarn start). Uso directo:
@@ -10,12 +12,17 @@
  */
 import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const PLUGIN_ID = 'world-gen'
-const DLL_NAME = 'rer_worldgen.dll'
+if (process.platform !== 'win32' && process.platform !== 'linux') {
+  fail(`plataforma no soportada: ${process.platform}`)
+}
+const LIBRARY_NAME =
+  process.platform === 'win32' ? 'rer_worldgen.dll' : 'librer_worldgen.so'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const engineDir = path.join(root, 'src', 'main', 'Engine')
@@ -38,6 +45,12 @@ function fail(message) {
 }
 
 function userDataDir() {
+  if (process.platform === 'linux') {
+    const configHome =
+      process.env.XDG_CONFIG_HOME?.trim() || path.join(os.homedir(), '.config')
+    return path.join(configHome, 'RER-ENGINE')
+  }
+
   const appdata = process.env.APPDATA
   if (!appdata) fail('APPDATA no está definido')
   for (const name of ['RER-ENGINE', 'rer-engine']) {
@@ -107,15 +120,17 @@ if (built.error) fail(`fallo al iniciar cargo: ${built.error.message}`)
 if (built.status !== 0) fail(`cargo build rer-worldgen falló con exit ${built.status ?? 1}`)
 
 const targetRoot = process.env.CARGO_TARGET_DIR
-  ? path.resolve(process.env.CARGO_TARGET_DIR)
+  ? path.resolve(root, process.env.CARGO_TARGET_DIR)
   : path.join(engineDir, 'target')
-const dllSrc = path.join(targetRoot, profile, DLL_NAME)
-if (!fs.existsSync(dllSrc)) fail(`no se encontró la DLL: ${dllSrc}`)
+const librarySrc = path.join(targetRoot, profile, LIBRARY_NAME)
+if (!fs.existsSync(librarySrc)) {
+  fail(`no se encontró la biblioteca nativa: ${librarySrc}`)
+}
 
 const destDir = path.join(userDataDir(), 'plugins', PLUGIN_ID)
-const dllDest = path.join(destDir, DLL_NAME)
+const libraryDest = path.join(destDir, LIBRARY_NAME)
 fs.mkdirSync(destDir, { recursive: true })
-copyReplace(dllSrc, dllDest)
+copyReplace(librarySrc, libraryDest)
 
 const terrainSrc = path.join(engineDir, 'worldgen', 'assets', 'terrain')
 const terrainDest = path.join(destDir, 'terrain')
@@ -127,5 +142,5 @@ if (fs.existsSync(terrainSrc)) {
   }
 }
 
-ensurePluginState(dllDest)
-console.log(`[worldgen-dev] ${profile} → ${dllDest}`)
+ensurePluginState(libraryDest)
+console.log(`[worldgen-dev] ${profile} → ${libraryDest}`)

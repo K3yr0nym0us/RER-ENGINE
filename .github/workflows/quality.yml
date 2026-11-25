@@ -12,8 +12,12 @@ concurrency:
 
 jobs:
   frontend:
-    name: ESLint · TypeScript · Tests
-    runs-on: windows-latest
+    name: ESLint · TypeScript · Tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
 
     steps:
@@ -41,8 +45,12 @@ jobs:
         run: yarn test:coverage
 
   rust:
-    name: fmt · check · clippy · test · audit
-    runs-on: windows-latest
+    name: fmt · check · clippy · test · audit (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 90
 
     steps:
@@ -57,13 +65,21 @@ jobs:
       # build.rs compila los shaders con glslc (incluido en el Vulkan SDK), que
       # no viene instalado en windows-latest. La acción exporta VULKAN_SDK y
       # añade su Bin al PATH, tal como espera find_glslc() en engine/build.rs.
+      # En Ubuntu glslc llega de glslang-tools (paso siguiente), no del SDK.
       - name: Install Vulkan SDK (glslc)
+        if: runner.os == 'Windows'
         uses: jakoch/install-vulkan-sdk-action@v1
         with:
           vulkan_version: 1.4.363.1
           install_runtime: false
           cache: true
           stripdown: true
+
+      - name: Install Linux dependencies (ALSA, glslc, Vulkan, Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev glslang-tools vulkan-tools mesa-vulkan-drivers xvfb
 
       - name: Cache Cargo
         uses: Swatinem/rust-cache@v2
@@ -80,13 +96,24 @@ jobs:
         run: cargo clippy --manifest-path src/main/Engine/Cargo.toml --workspace --all-targets --all-features -- -D warnings
 
       - name: cargo test
+        if: runner.os == 'Windows'
         run: cargo test --manifest-path src/main/Engine/Cargo.toml --workspace --all-features
+
+      # En Linux los tests que crean ventana necesitan un display virtual.
+      - name: cargo test (Linux / Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a cargo test --manifest-path src/main/Engine/Cargo.toml --workspace --all-features
 
       # Los binarios se compilan con features restrictivas (engine3d, engine2d,
       # editor). `--all-features` no detecta errores de cfg(feature) en los
       # binarios aislados, así que se validan las tres combinaciones reales.
       - name: Feature suites (3D / 2D / worldgen)
+        if: runner.os == 'Windows'
         run: node ./scripts/run-rust-suite.mjs all
+
+      - name: Feature suites (3D / 2D / worldgen) (Linux / Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a node ./scripts/run-rust-suite.mjs all
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked

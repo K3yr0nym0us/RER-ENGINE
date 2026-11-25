@@ -24,11 +24,40 @@ use super::user_event::UserEvent;
 
 const WORLDGEN_ID: &str = "world-gen";
 const ASSISTANT_ID: &str = "local-ai-assistant";
+#[cfg(windows)]
 const WORLDGEN_URL: &str = "https://github.com/K3yr0nym0us/RER-ENGINE/releases/download/worldgen-v1.0.0/rer-worldgen-1.0.0-win-x64.zip";
+#[cfg(windows)]
 const WORLDGEN_SHA256: &str = "9a9819609643995d5433db9e124f7556ba9bdf604648c26a7d7db20a26516249";
+#[cfg(windows)]
 const OPENCODE_URL: &str =
     "https://opencode.ai/update/api/latest/cli/opencode/opencode-windows-x64.zip";
+#[cfg(windows)]
 const OPENCODE_SIZE: u64 = 124_800_929;
+
+// Los artefactos Linux aún no tienen hashes publicados. No se descargan hasta
+// configurar un SHA-256 verificado; nunca se recurre al ZIP de Windows.
+#[cfg(not(windows))]
+const WORLDGEN_URL_LINUX: &str = "https://github.com/K3yr0nym0us/RER-ENGINE/releases/download/worldgen-v1.0.0/rer-worldgen-1.0.0-linux-x64.zip";
+#[cfg(not(windows))]
+const WORLDGEN_SHA256_LINUX: Option<&str> = None;
+#[cfg(not(windows))]
+const WORLDGEN_SIZE_LINUX: u64 = 0;
+#[cfg(not(windows))]
+const OPENCODE_URL_LINUX: &str =
+    "https://opencode.ai/update/api/latest/cli/opencode/opencode-linux-x64.zip";
+#[cfg(not(windows))]
+const OPENCODE_SHA256_LINUX: Option<&str> = None;
+// Sin tamaño verificado: download() usa Content-Length cuando está disponible.
+#[cfg(not(windows))]
+const OPENCODE_SIZE_LINUX: u64 = 0;
+#[cfg(windows)]
+const OPENCODE_EXE_NAME: &str = "opencode.exe";
+#[cfg(not(windows))]
+const OPENCODE_EXE_NAME: &str = "opencode";
+#[cfg(windows)]
+const WORLDGEN_LIBRARY_NAME: &str = "rer_worldgen.dll";
+#[cfg(not(windows))]
+const WORLDGEN_LIBRARY_NAME: &str = "librer_worldgen.so";
 
 #[derive(Default)]
 struct RuntimeState {
@@ -51,19 +80,32 @@ static RUNTIME: LazyLock<Mutex<RuntimeState>> = LazyLock::new(|| {
 // Rutas
 // ---------------------------------------------------------------------------
 
-/// `app.getPath('userData')`: `%APPDATA%/RER-ENGINE` (o `rer-engine` en dev).
+/// `app.getPath('userData')`: `%APPDATA%/RER-ENGINE` (o `rer-engine` en dev)
+/// en Windows; `$XDG_CONFIG_HOME/RER-ENGINE` o `~/.config/RER-ENGINE` en Linux.
 pub fn user_data_dir() -> PathBuf {
-    let appdata = std::env::var_os("APPDATA")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
-        .unwrap_or_else(|| PathBuf::from("."));
-    for name in ["RER-ENGINE", "rer-engine"] {
-        let dir = appdata.join(name);
-        if dir.exists() {
-            return dir;
+    #[cfg(windows)]
+    {
+        let appdata = std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(PathBuf::from))
+            .unwrap_or_else(|| PathBuf::from("."));
+        for name in ["RER-ENGINE", "rer-engine"] {
+            let dir = appdata.join(name);
+            if dir.exists() {
+                return dir;
+            }
         }
+        appdata.join("RER-ENGINE")
     }
-    appdata.join("RER-ENGINE")
+    #[cfg(not(windows))]
+    {
+        let config_home = std::env::var_os("XDG_CONFIG_HOME")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))
+            .unwrap_or_else(|| PathBuf::from(".config"));
+        config_home.join("RER-ENGINE")
+    }
 }
 
 pub fn plugins_dir() -> PathBuf {
@@ -83,7 +125,7 @@ fn assistant_bin_dir() -> PathBuf {
 }
 
 fn opencode_exe() -> PathBuf {
-    assistant_bin_dir().join("opencode.exe")
+    assistant_bin_dir().join(OPENCODE_EXE_NAME)
 }
 
 fn workspace_dir() -> PathBuf {
@@ -133,6 +175,23 @@ pub fn worldgen_library_path() -> Option<String> {
     let record = state.get("installed")?.get(WORLDGEN_ID)?;
     let path = record.get("libraryPath")?.as_str()?;
     Path::new(path).is_file().then(|| path.to_string())
+}
+
+/// Indica si el catálogo puede ofrecer instalación on-demand en esta plataforma.
+/// Linux no descarga nada hasta publicar un SHA-256 verificable; una instalación
+/// local creada por `install-worldgen-dev.mjs` sigue siendo utilizable.
+#[cfg(windows)]
+pub fn plugin_install_available(_plugin_id: &str) -> bool {
+    true
+}
+
+#[cfg(not(windows))]
+pub fn plugin_install_available(plugin_id: &str) -> bool {
+    match plugin_id {
+        WORLDGEN_ID => WORLDGEN_SHA256_LINUX.is_some(),
+        ASSISTANT_ID => OPENCODE_SHA256_LINUX.is_some(),
+        _ => false,
+    }
 }
 
 pub fn preferences(plugin_id: &str) -> Value {
@@ -213,6 +272,17 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+fn verify_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    let actual = sha256_file(path)?;
+    if actual != expected {
+        let _ = fs::remove_file(path);
+        return Err(format!(
+            "SHA-256 mismatch: expected {expected}, got {actual}"
+        ));
+    }
+    Ok(())
+}
+
 fn download(
     url: &str,
     destination: &Path,
@@ -278,38 +348,51 @@ fn install_worldgen(
     cancel: Arc<AtomicBool>,
     proxy: winit::event_loop::EventLoopProxy<UserEvent>,
 ) -> Result<(), String> {
+    #[cfg(windows)]
+    let (url, expected_sha256, expected_size) = (WORLDGEN_URL, WORLDGEN_SHA256, 201_366);
+    #[cfg(not(windows))]
+    let (url, expected_sha256, expected_size) = match WORLDGEN_SHA256_LINUX {
+        Some(hash) => (WORLDGEN_URL_LINUX, hash, WORLDGEN_SIZE_LINUX),
+        None => {
+            return Err(format!(
+                "No trusted SHA-256 is configured for {WORLDGEN_URL_LINUX}; refusing to download the Linux artifact"
+            ));
+        }
+    };
+
     let dir = plugin_dir(WORLDGEN_ID);
     fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
     let zip_path = dir.join("world-gen-1.0.0.zip");
     download(
-        WORLDGEN_URL,
+        url,
         &zip_path,
         WORLDGEN_ID,
         "artifact",
-        201_366,
+        expected_size,
         &cancel,
         &proxy,
     )?;
     if cancel.load(Ordering::Relaxed) {
         return Err("__CANCELLED__".to_string());
     }
-    let actual = sha256_file(&zip_path)?;
-    if actual != WORLDGEN_SHA256 {
-        let _ = fs::remove_file(&zip_path);
-        return Err(format!(
-            "SHA-256 mismatch: expected {WORLDGEN_SHA256}, got {actual}"
-        ));
-    }
-    progress(&proxy, WORLDGEN_ID, "extracting", 100, 201_366, 201_366);
+    verify_sha256(&zip_path, expected_sha256)?;
+    progress(
+        &proxy,
+        WORLDGEN_ID,
+        "extracting",
+        100,
+        expected_size,
+        expected_size,
+    );
     let archive = fs::File::open(&zip_path).map_err(|error| error.to_string())?;
     let mut zip = zip::ZipArchive::new(archive).map_err(|error| error.to_string())?;
-    let mut dll = zip
-        .by_name("rer_worldgen.dll")
-        .map_err(|_| "rer_worldgen.dll not found inside the artifact archive".to_string())?;
-    let library = dir.join("rer_worldgen.dll");
+    let mut library_entry = zip
+        .by_name(WORLDGEN_LIBRARY_NAME)
+        .map_err(|_| format!("{WORLDGEN_LIBRARY_NAME} not found inside the artifact archive"))?;
+    let library = dir.join(WORLDGEN_LIBRARY_NAME);
     let mut output = fs::File::create(&library).map_err(|error| error.to_string())?;
-    std::io::copy(&mut dll, &mut output).map_err(|error| error.to_string())?;
-    drop(dll);
+    std::io::copy(&mut library_entry, &mut output).map_err(|error| error.to_string())?;
+    drop(library_entry);
 
     // Fotos de terreno (opcionales).
     let mut photos: Vec<(String, Vec<u8>)> = Vec::new();
@@ -391,28 +474,44 @@ fn install_assistant(
     }
     let bin_dir = assistant_bin_dir();
     fs::create_dir_all(&bin_dir).map_err(|error| error.to_string())?;
+    #[cfg(windows)]
+    let (url, expected_size) = (OPENCODE_URL, OPENCODE_SIZE);
+    #[cfg(not(windows))]
+    let (url, expected_size) = (OPENCODE_URL_LINUX, OPENCODE_SIZE_LINUX);
     let exe = opencode_exe();
     if !exe.is_file() {
+        #[cfg(not(windows))]
+        let expected_sha256 = match OPENCODE_SHA256_LINUX {
+            Some(hash) => hash,
+            None => {
+                return Err(format!(
+                    "No trusted SHA-256 is configured for {OPENCODE_URL_LINUX}; refusing to download the Linux artifact"
+                ));
+            }
+        };
+
         let zip_path = bin_dir.join("opencode.zip");
         download(
-            OPENCODE_URL,
+            url,
             &zip_path,
             ASSISTANT_ID,
             "opencode",
-            OPENCODE_SIZE,
+            expected_size,
             &cancel,
             &proxy,
         )?;
         if cancel.load(Ordering::Relaxed) {
             return Err("__CANCELLED__".to_string());
         }
+        #[cfg(not(windows))]
+        verify_sha256(&zip_path, expected_sha256)?;
         progress(
             &proxy,
             ASSISTANT_ID,
             "extracting",
             100,
-            OPENCODE_SIZE,
-            OPENCODE_SIZE,
+            expected_size,
+            expected_size,
         );
         let archive = fs::File::open(&zip_path).map_err(|error| error.to_string())?;
         let mut zip = zip::ZipArchive::new(archive).map_err(|error| error.to_string())?;
@@ -420,7 +519,9 @@ fn install_assistant(
         drop(zip);
         let _ = fs::remove_file(&zip_path);
         if !exe.is_file() {
-            return Err("opencode.exe was not extracted from runtime archive".to_string());
+            return Err(format!(
+                "{OPENCODE_EXE_NAME} was not extracted from runtime archive"
+            ));
         }
     }
     progress(
@@ -428,8 +529,8 @@ fn install_assistant(
         ASSISTANT_ID,
         "preparing",
         100,
-        OPENCODE_SIZE,
-        OPENCODE_SIZE,
+        expected_size,
+        expected_size,
     );
     prepare_workspace()?;
 
