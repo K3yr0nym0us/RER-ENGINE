@@ -89,13 +89,14 @@ en Linux, con el mismo icono PNG y los binarios del editor en `extraResources`.
 - **Windows 10/11**: drivers/Vulkan SDK (proporciona `glslc` para los shaders).
 - **Linux (X11/Wayland)**, además de lo anterior:
   - `libasound2` (ALSA) para audio en runtime; `libasound2-dev` si compilas.
+  - `libudev-dev` para compilar el backend de gamepads (`gilrs`).
   - `glslc` de `glslang-tools` para compilar los shaders a SPIR-V (o
     `$VULKAN_SDK/bin/glslc` si usas el SDK).
   - `vulkan-tools` y una ICD como `mesa-vulkan-drivers` (loader/ICD; también
     se usa en CI headless con `xvfb`).
   - `xdg-desktop-portal` más un backend (GTK/KDE) para los diálogos nativos
     de abrir/guardar (`rfd`), especialmente bajo Wayland.
-  - En Debian/Ubuntu: `sudo apt-get install -y pkg-config libasound2-dev glslang-tools vulkan-tools mesa-vulkan-drivers xvfb`.
+  - En Debian/Ubuntu: `sudo apt-get install -y pkg-config libasound2-dev libudev-dev glslang-tools vulkan-tools mesa-vulkan-drivers xvfb`.
 
 ### Limitaciones conocidas en Linux
 

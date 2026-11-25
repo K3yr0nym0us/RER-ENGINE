@@ -87,7 +87,7 @@ features que no compilan en el binario de producción.
 
 - Frontend: `yarn lint`, `yarn typecheck`, `yarn test:coverage`
 - Rust: fmt, check, clippy (`-D warnings`), test, audit + suites por feature (`engine3d`, `engine2d`, `worldgen`)
-- En Ubuntu se instalan `pkg-config libasound2-dev glslang-tools vulkan-tools mesa-vulkan-drivers xvfb`; `glslc` procede de `glslang-tools` y los tests que crean ventana se ejecutan con `xvfb-run -a`.
+- En Ubuntu se instalan `pkg-config libasound2-dev libudev-dev glslang-tools vulkan-tools mesa-vulkan-drivers xvfb`; `glslc` procede de `glslang-tools` y los tests que crean ventana se ejecutan con `xvfb-run -a`.
 - La caché de Yarn/Cargo y `cargo audit` se mantienen en ambas plataformas; el job Windows conserva sus pasos originales.
 
 ## Qué se analiza / qué no
