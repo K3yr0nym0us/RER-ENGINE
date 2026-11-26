@@ -18,6 +18,19 @@ function electronLog(...args: unknown[]): void {
 app.commandLine.appendSwitch('disable-gpu');
 app.commandLine.appendSwitch('disable-software-rasterizer');
 
+// Linux (incl. WSLg): forzar X11/XWayland en Chromium y en el proceso hijo.
+// El editor Rust se lanza con `env: { ...process.env }` (ver `startEditorFrame`),
+// así que limpiar WAYLAND_DISPLAY aquí hace que winit use X11 en vez de Wayland
+// y su ventana nativa sea visible. Estas vars deben fijarse antes de que se
+// inicialicen libwayland/GTK/libGL.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'x11')
+  process.env['WAYLAND_DISPLAY'] = ''
+  process.env['GDK_BACKEND'] = 'x11'
+  process.env['GTK_THEME'] = 'Adwaita-dark'
+  process.env['_GTK_THEME_VARIANT'] = 'dark'
+}
+
 // ---------------------------------------------------------------------------
 // Estado del launcher
 // ---------------------------------------------------------------------------
