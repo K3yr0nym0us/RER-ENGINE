@@ -447,6 +447,14 @@ pub enum EngineEvent {
     Error {
         message: String,
     },
+    /// Emitido cuando el preview cambia de estado desde el motor.
+    PreviewPlayingChanged {
+        playing: bool,
+    },
+    /// Emitido cuando debe mostrarse/ocultarse el aviso textual de snap 2D.
+    SnapHintChanged {
+        visible: bool,
+    },
     /// Emitido cuando el usuario hace click izquierdo sobre una entidad.
     EntitySelected {
         id: u32,
@@ -945,4 +953,25 @@ pub fn start_ipc_thread(proxy: EventLoopProxy<EngineCommand>) {
             }
         })
         .expect("No se pudo crear el hilo IPC");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EngineEvent;
+
+    #[test]
+    fn preview_state_event_uses_the_editor_protocol_name() {
+        let value = serde_json::to_value(EngineEvent::PreviewPlayingChanged { playing: false })
+            .expect("PreviewPlayingChanged debe serializar");
+        assert_eq!(value["event"], "preview_playing_changed");
+        assert_eq!(value["playing"], false);
+    }
+
+    #[test]
+    fn snap_hint_event_uses_the_editor_protocol_name() {
+        let value = serde_json::to_value(EngineEvent::SnapHintChanged { visible: true })
+            .expect("SnapHintChanged debe serializar");
+        assert_eq!(value["event"], "snap_hint_changed");
+        assert_eq!(value["visible"], true);
+    }
 }

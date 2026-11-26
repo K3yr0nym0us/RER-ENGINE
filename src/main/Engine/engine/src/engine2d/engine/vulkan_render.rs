@@ -143,10 +143,6 @@ impl State {
                 },
             };
 
-            let snap_hint = self
-                .build_snap_hint_instance_2d()
-                .map(|instance| (self.canonical_quad_idx, instance));
-
             let hud = if has_glyphs {
                 Some(HudBatch {
                     instances: &self.player_ui_glyph_instances,
@@ -166,7 +162,6 @@ impl State {
                 collision: &collision,
                 tool_overlay,
                 gizmo,
-                snap_hint,
                 ui,
                 hud,
             };
@@ -178,7 +173,6 @@ impl State {
                 !grid_vertices.is_empty(),
                 !collision.is_empty(),
                 !tool_overlay.is_empty(),
-                input.snap_hint.is_some(),
                 !input.ui.screen_grid.is_empty(),
                 !input.ui.object.is_empty(),
                 !input.ui.text.is_empty(),

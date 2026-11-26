@@ -8,6 +8,7 @@
 //! reales llegan en las fases 2–4.
 
 use crate::editor::app::EditorApp;
+use crate::editor::cli::Locale;
 
 use super::{bottom_bar, sidebar_left, sidebar_right, top_bar, widgets};
 
@@ -104,6 +105,23 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
                 );
             }
 
+            // Aviso textual de snap durante el arrastre del gizmo 2D.
+            if !app.engine_loading
+                && app.engine_error.is_none()
+                && !app.preview_playing
+                && app.snap_hint_visible
+            {
+                widgets::viewport_notification(
+                    ui,
+                    egui::Align2::LEFT_TOP,
+                    rect.min + egui::vec2(12.0, 12.0),
+                    rect.width().min(420.0),
+                    snap_hint_text(app.cli.locale),
+                    egui::FontId::new(13.0, egui::FontFamily::Name("rer-bold".into())),
+                    crate::editor::theme::INFO,
+                );
+            }
+
             // Modo play: sustituye al tooltip PNG «Esc para salir / Esc to exit».
             if !app.engine_loading && app.engine_error.is_none() && app.preview_playing {
                 let esc_hint = crate::editor::i18n::tr(
@@ -126,11 +144,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             // los controles los define el script). Se pinta abajo para no
             // solaparse con el hint de colocación de entidades.
             if !app.engine_loading && app.engine_error.is_none() && !app.preview_playing {
-                let nav_hint = crate::editor::i18n::tr(
-                    app.cli.locale,
-                    "Clic en la ventana del motor · [WASD] mover · [Espacio] subir · [C] bajar · Botón derecho mirar",
-                    "Click the engine window · [WASD] move · [Space] up · [C] down · Right mouse look",
-                );
+                let nav_hint = navigation_hint(app.cli.context.is_3d(), app.cli.locale);
                 widgets::viewport_notification(
                     ui,
                     egui::Align2::CENTER_CENTER,
@@ -149,12 +163,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
             // Métricas en la esquina superior derecha del viewport, como un HUD
             // de juego. El check de la consola controla su visibilidad.
             if app.show_metrics && !app.engine_loading && app.engine_error.is_none() {
-                super::metrics_overlay::show(
-                    ui,
-                    rect,
-                    app.metrics,
-                    app.cli.locale,
-                );
+                super::metrics_overlay::show(ui, rect, app.metrics, app.cli.locale);
             }
         });
 }
@@ -193,6 +202,30 @@ fn max_console_height(full_height: f32) -> f32 {
         .max(MIN_CONSOLE_HEIGHT)
 }
 
+fn navigation_hint(is_3d: bool, locale: Locale) -> &'static str {
+    if is_3d {
+        crate::editor::i18n::tr(
+            locale,
+            "Clic en la ventana del motor · [WASD] mover · [Espacio] subir · [C] bajar · Botón derecho mirar",
+            "Click the engine window · [WASD] move · [Space] up · [C] down · Right mouse look",
+        )
+    } else {
+        crate::editor::i18n::tr(
+            locale,
+            "Clic derecho para arrastrar · Rueda del mouse Zoom",
+            "Right click to drag · Mouse wheel Zoom",
+        )
+    }
+}
+
+fn snap_hint_text(locale: Locale) -> &'static str {
+    crate::editor::i18n::tr(
+        locale,
+        "Mantén [Ctrl] para autoajustar a la cuadrícula",
+        "Hold [Ctrl] to snap to grid",
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -221,5 +254,28 @@ mod tests {
             assert!(console_height(height) >= MIN_CONSOLE_HEIGHT);
             assert!(console_height(height) <= max_console_height(height));
         }
+    }
+
+    #[test]
+    fn snap_hint_is_text_in_both_locales() {
+        assert_eq!(
+            snap_hint_text(Locale::Es),
+            "Mantén [Ctrl] para autoajustar a la cuadrícula",
+        );
+        assert_eq!(snap_hint_text(Locale::En), "Hold [Ctrl] to snap to grid");
+    }
+
+    #[test]
+    fn navigation_hint_matches_the_open_engine() {
+        assert_eq!(
+            navigation_hint(false, Locale::Es),
+            "Clic derecho para arrastrar · Rueda del mouse Zoom",
+        );
+        assert_eq!(
+            navigation_hint(false, Locale::En),
+            "Right click to drag · Mouse wheel Zoom",
+        );
+        assert!(navigation_hint(true, Locale::Es).contains("[WASD]"));
+        assert!(navigation_hint(true, Locale::En).contains("Right mouse look"));
     }
 }

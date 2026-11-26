@@ -75,8 +75,6 @@ pub(crate) struct FrameInput<'a> {
     /// Cruces y líneas de construcción de la herramienta activa (mundo, mismo pass que la rejilla).
     pub tool_overlay: &'a [NdcVertex],
     pub gizmo: Option<GizmoBatch>,
-    /// PNG del hint de snap: (índice de malla canónica, instancia).
-    pub snap_hint: Option<(usize, InstanceData)>,
     pub ui: NdcOverlay<'a>,
     pub hud: Option<HudBatch<'a>>,
 }
@@ -136,7 +134,6 @@ pub(crate) struct Renderer {
     line_buffers: Vec<GpuBuffer>,
     ndc_line_buffers: Vec<GpuBuffer>,
     ndc_tri_buffers: Vec<GpuBuffer>,
-    snap_buffers: Vec<GpuBuffer>,
     hud_instance_buffers: Vec<GpuBuffer>,
     gizmo_vertices: GpuBuffer,
     gizmo_vertex_count: u32,
@@ -146,7 +143,6 @@ pub(crate) struct Renderer {
     pipe_blit: vk::Pipeline,
     pipe_line: vk::Pipeline,
     pipe_gizmo: vk::Pipeline,
-    pipe_snap_hint: vk::Pipeline,
     pipe_hud: vk::Pipeline,
 }
 
@@ -401,24 +397,6 @@ impl Renderer {
             vk::PrimitiveTopology::TRIANGLE_LIST,
         )?;
 
-        // Hint de snap: instancia el quad canónico con el shader de escena sobre el swapchain. En
-        // wgpu el pass llevaba el depth del scene target con `ALWAYS` y sin escritura, así que
-        // omitirlo aquí produce exactamente el mismo resultado.
-        let pipe_snap_hint = make_pipeline(
-            device,
-            gpu.pipeline_cache(),
-            layout_scene,
-            vert_scene,
-            frag_scene,
-            &scene_bindings,
-            &scene_attributes,
-            &[swapchain_format],
-            None,
-            true,
-            vk::CullModeFlags::NONE,
-            vk::PrimitiveTopology::TRIANGLE_LIST,
-        )?;
-
         // Glyphs HUD de pantalla: mismo layout de vértice/instancia que la escena, pero muestrea
         // el atlas de UI y usa los uniformes NDC (`ScreenHudSceneUniforms::ndc_identity`).
         let pipe_hud = make_pipeline(
@@ -445,7 +423,6 @@ impl Renderer {
         let mut line_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut ndc_line_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut ndc_tri_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
-        let mut snap_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let mut hud_instance_buffers = Vec::with_capacity(FRAMES_IN_FLIGHT);
         let hud_identity = ScreenHudSceneUniforms::ndc_identity();
         for _ in 0..FRAMES_IN_FLIGHT {
@@ -502,12 +479,6 @@ impl Renderer {
                 vk::BufferUsageFlags::VERTEX_BUFFER,
                 MemoryLocation::CpuToGpu,
                 "2d-ndc-tris",
-            )?);
-            snap_buffers.push(gpu.create_buffer(
-                4,
-                vk::BufferUsageFlags::VERTEX_BUFFER,
-                MemoryLocation::CpuToGpu,
-                "2d-snap-instance",
             )?);
             hud_instance_buffers.push(gpu.create_buffer(
                 4,
@@ -566,7 +537,6 @@ impl Renderer {
             line_buffers,
             ndc_line_buffers,
             ndc_tri_buffers,
-            snap_buffers,
             hud_instance_buffers,
             gizmo_vertices,
             gizmo_vertex_count: gizmo_verts.len() as u32,
@@ -575,7 +545,6 @@ impl Renderer {
             pipe_blit,
             pipe_line,
             pipe_gizmo,
-            pipe_snap_hint,
             pipe_hud,
         };
         renderer.write_static_descriptors()?;
@@ -789,19 +758,6 @@ impl Renderer {
             self.ndc_tri_buffers[slot].write(0, bytemuck::cast_slice(&verts))?;
         }
 
-        let snap_instance_bytes = std::mem::size_of::<InstanceData>();
-        if self.snap_buffers[slot].size < snap_instance_bytes as u64 {
-            self.snap_buffers[slot] = self.gpu.create_buffer(
-                snap_instance_bytes as u64,
-                vk::BufferUsageFlags::VERTEX_BUFFER,
-                MemoryLocation::CpuToGpu,
-                "2d-snap-instance",
-            )?;
-        }
-        if let Some((_, instance)) = &input.snap_hint {
-            self.snap_buffers[slot].write(0, bytemuck::bytes_of(instance))?;
-        }
-
         let hud_instance_count = input
             .hud
             .as_ref()
@@ -992,29 +948,6 @@ impl Renderer {
                 }
             }
 
-            // Hint de snap: quad canónico instanciado con el shader de escena.
-            if let Some((mesh_idx, _)) = &input.snap_hint
-                && let Some(mesh) = self.meshes.get(*mesh_idx)
-            {
-                device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_snap_hint);
-                device.cmd_bind_descriptor_sets(
-                    cmd,
-                    vk::PipelineBindPoint::GRAPHICS,
-                    self.layout_scene,
-                    0,
-                    &[self.scene_sets[slot], self.atlas_set],
-                    &[],
-                );
-                device.cmd_bind_vertex_buffers(
-                    cmd,
-                    0,
-                    &[mesh.vertex.buffer, self.snap_buffers[slot].buffer],
-                    &[0, 0],
-                );
-                device.cmd_bind_index_buffer(cmd, mesh.index.buffer, 0, vk::IndexType::UINT32);
-                device.cmd_draw_indexed(cmd, mesh.index_count, 1, 0, 0, 0);
-            }
-
             // Rejilla NDC de edición de UI (uniform NDC, pipeline de líneas).
             if !input.ui.screen_grid.is_empty() {
                 device.cmd_bind_pipeline(cmd, vk::PipelineBindPoint::GRAPHICS, self.pipe_line);
@@ -1189,7 +1122,6 @@ impl Drop for Renderer {
                 self.pipe_blit,
                 self.pipe_line,
                 self.pipe_gizmo,
-                self.pipe_snap_hint,
                 self.pipe_hud,
             ] {
                 device.destroy_pipeline(pipeline, None);

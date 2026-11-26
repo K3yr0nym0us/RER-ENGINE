@@ -443,6 +443,7 @@ impl State {
                 self.apply_player_ui_play_hud(playing);
 
                 if playing {
+                    self.set_snap_hint_visible(false);
                     self.clear_active_projectiles();
                     self.active_tool = ActiveTool::None;
                     self.tool_overlay_buffer = gizmo::build_from_vertices(&[]);
@@ -524,6 +525,7 @@ impl State {
                     "[preview] modo {}",
                     if playing { "juego" } else { "editor" }
                 );
+                send_event(&EngineEvent::PreviewPlayingChanged { playing });
             }
             EngineCommand::Common(EngineCommandCommon::SetCtrlHeld { held }) => {
                 self.ctrl_held = held;
@@ -688,7 +690,7 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::SetLocale { locale }) => {
                 log::info!("[IPC] SetLocale: {}", locale);
-                self.snap_locale = locale;
+                self.locale = locale;
             }
             EngineCommand::Common(EngineCommandCommon::SetAutosave { enabled }) => {
                 self.autosave_enabled = enabled;

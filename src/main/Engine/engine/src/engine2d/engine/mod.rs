@@ -20,7 +20,6 @@ mod render;
 mod render_helpers;
 mod scene_scripts;
 mod scripts;
-mod snap_hint;
 mod tick;
 pub(crate) mod types;
 mod undo_entity;
@@ -43,7 +42,7 @@ use crate::engine2d::config_compat::Camera;
 use crate::engine2d::ecs::{NameComponent, Transform, World};
 use crate::engine2d::entity_save_meta::EntitySaveRegistry;
 use crate::engine2d::gizmo::GizmoBuffer;
-use crate::engine2d::ipc::{EngineCommand, EngineCommandCommon};
+use crate::engine2d::ipc::{EngineCommand, EngineCommandCommon, EngineEvent, send_event};
 use crate::engine2d::mesh::Mesh;
 use crate::engine2d::scripting::{EntitySnapshot, ScriptEngine};
 
@@ -172,20 +171,10 @@ pub struct State {
     pub(crate) vsync_enabled: bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
     pub(crate) tool_overlay_buffer: GizmoBuffer,
-    /// UV del PNG de hint de snap en español en el atlas, si se cargó correctamente.
-    pub(crate) snap_hint_uv: Option<[f32; 4]>,
-    /// Tamaño original del PNG de hint ES (ancho, alto) en píxeles.
-    pub(crate) snap_hint_size: (f32, f32),
-    /// UV del PNG de hint de snap en inglés en el atlas, si se cargó correctamente.
-    pub(crate) snap_hint_uv_en: Option<[f32; 4]>,
-    /// Tamaño original del PNG de hint EN (ancho, alto) en píxeles.
-    pub(crate) snap_hint_size_en: (f32, f32),
-    /// Locale activo del editor: "en" | "es". Determina qué imagen de hint se muestra.
-    pub(crate) snap_locale: String,
-    /// Controla visibilidad del hint de snap (solo editor 2D).
+    /// Locale activo del editor: "en" | "es".
+    pub(crate) locale: String,
+    /// Controla visibilidad del aviso textual de snap (solo editor 2D).
     pub(crate) show_snap_hint: bool,
-    /// Alpha actual del hint [0..1] para fade in/out suave.
-    pub(crate) snap_hint_alpha: f32,
     /// Entidades creadas por herramientas de dibujo (colisionadores).
     pub(crate) collider_entities: Vec<EntityId>,
     /// Entidades creadas por herramientas de dibujo (áreas de ejecución).
@@ -600,9 +589,13 @@ impl State {
         self.active_gizmo_axis = axis;
     }
 
-    /// Muestra/oculta el hint visual de snap a cuadrícula en el viewport 2D.
+    /// Muestra/oculta el aviso textual de snap a cuadrícula en el viewport 2D.
     pub fn set_snap_hint_visible(&mut self, visible: bool) {
+        if self.show_snap_hint == visible {
+            return;
+        }
         self.show_snap_hint = visible;
+        send_event(&EngineEvent::SnapHintChanged { visible });
     }
 
     /// Centro de selección para gizmo/grupo. Si no hay grupo, usa selected_entity.

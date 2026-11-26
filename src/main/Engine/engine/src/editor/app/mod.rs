@@ -45,6 +45,8 @@ pub struct EditorApp {
     pub cli: Cli,
     pub status: EditorStatus,
     pub preview_playing: bool,
+    /// Aviso textual de snap durante el arrastre del gizmo 2D.
+    pub snap_hint_visible: bool,
     pub debug_mode: bool,
     pub saving: bool,
     pub has_saved_once: bool,
@@ -154,6 +156,7 @@ impl EditorApp {
             cli,
             status: EditorStatus::Starting,
             preview_playing: false,
+            snap_hint_visible: false,
             debug_mode: false,
             saving: false,
             auto_save_enabled: false,

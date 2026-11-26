@@ -60,48 +60,6 @@ impl State {
         let checker_uv = atlas.pack(&checker_pixels, 128, 128);
         let uv_rects = vec![checker_uv]; // idx 0 = checkerboard (plano de suelo)
 
-        // Hint visual de snap (Ctrl): carga versión ES y EN del PNG en el atlas.
-        let load_snap_hint = |atlas: &mut crate::engine2d::texture::TextureAtlas,
-                              filename: &str|
-         -> (Option<[f32; 4]>, (f32, f32)) {
-            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("../assets")
-                .join(filename);
-            match std::fs::read(&path) {
-                Ok(bytes) => {
-                    use image::ImageReader;
-                    match ImageReader::new(std::io::Cursor::new(&bytes))
-                        .with_guessed_format()
-                        .map_err(|e| e.to_string())
-                        .and_then(|r| r.decode().map_err(|e| e.to_string()))
-                    {
-                        Ok(img) => {
-                            let img = img.to_rgba8();
-                            let (w, h) = img.dimensions();
-                            let uv = atlas.pack(img.as_raw(), w, h);
-                            (Some(uv), (w as f32, h as f32))
-                        }
-                        Err(e) => {
-                            log::warn!(
-                                "[snap-hint] Error decodificando '{}': {}",
-                                path.display(),
-                                e
-                            );
-                            (None, (0.0, 0.0))
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("[snap-hint] No se pudo leer '{}': {}", path.display(), e);
-                    (None, (0.0, 0.0))
-                }
-            }
-        };
-        let (snap_hint_uv, snap_hint_size) =
-            load_snap_hint(&mut atlas, "tooltip-btn-ctrl-to-auto-adjust.png");
-        let (snap_hint_uv_en, snap_hint_size_en) =
-            load_snap_hint(&mut atlas, "tooltip-btn-ctrl-to-auto-adjust-english.png");
-
         // ── Escenario base del editor 2D ─────────────────────────────────────
         let ground_plane = crate::engine2d::config_compat::mesh::create_ground_plane();
         let meshes = vec![ground_plane];
@@ -218,13 +176,8 @@ impl State {
             debug_mode: false,
             vsync_enabled: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
-            snap_hint_uv,
-            snap_hint_size,
-            snap_hint_uv_en,
-            snap_hint_size_en,
-            snap_locale: "en".to_string(),
+            locale: "en".to_string(),
             show_snap_hint: false,
-            snap_hint_alpha: 0.0,
             collider_entities: Vec::new(),
             execution_area_entities: Vec::new(),
             execution_overlaps: HashSet::new(),

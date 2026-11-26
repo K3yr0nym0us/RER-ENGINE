@@ -1178,8 +1178,8 @@ impl State {
             halfH: c.half_h,
         });
 
-        let language = if self.snap_locale == "en" || self.snap_locale == "es" {
-            Some(self.snap_locale.clone())
+        let language = if self.locale == "en" || self.locale == "es" {
+            Some(self.locale.clone())
         } else {
             None
         };

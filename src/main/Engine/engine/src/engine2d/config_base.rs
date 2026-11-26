@@ -25,7 +25,6 @@ impl State {
         self.static_tex_cache.clear();
         self.anim_texture_cache.clear();
         self.atlas.reset();
-        self.reload_snap_hint_assets();
 
         self.scenario_entities.clear();
         self.character_entities.clear();
@@ -63,8 +62,7 @@ impl State {
         self.quick_build_preview_path = None;
         self.quick_build_preview_kind = None;
         self.quick_build_preview_scale = None;
-        self.show_snap_hint = false;
-        self.snap_hint_alpha = 0.0;
+        self.set_snap_hint_visible(false);
 
         self.pivot_edit_mode = None;
         self.logical_area_mode = None;

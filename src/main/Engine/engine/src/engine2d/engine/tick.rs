@@ -31,7 +31,6 @@ impl State {
         } else {
             self.live_fps * 0.9 + instant_fps * 0.1
         };
-        self.update_snap_hint_alpha();
 
         // Emitir métricas de debug ~1 vez por segundo.
         self.metrics_frame_count += 1;

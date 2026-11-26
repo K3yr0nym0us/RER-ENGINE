@@ -204,6 +204,7 @@ impl EditorApp {
             "ready" => {
                 self.status = EditorStatus::Ready;
                 self.preview_playing = false;
+                self.snap_hint_visible = false;
             }
             "error" => {
                 self.status = EditorStatus::Error;
@@ -211,6 +212,7 @@ impl EditorApp {
             "stopped" => {
                 self.status = EditorStatus::Starting;
                 self.preview_playing = false;
+                self.snap_hint_visible = false;
                 self.left_sidebar.active_tool = None;
                 self.placement_hint = None;
                 self.selected_entity = None;
@@ -456,6 +458,12 @@ impl EditorApp {
             "preview_playing_changed" => {
                 self.preview_playing = event
                     .get("playing")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+            }
+            "snap_hint_changed" => {
+                self.snap_hint_visible = event
+                    .get("visible")
                     .and_then(Value::as_bool)
                     .unwrap_or(false);
             }
