@@ -35,6 +35,23 @@ fn samples_buffer(audio: &DecodedAudio) -> rodio::buffer::SamplesBuffer {
     rodio::buffer::SamplesBuffer::new(channels, sample_rate, audio.samples.clone())
 }
 
+fn is_actionable_stream_error(error: &rodio::cpal::StreamError) -> bool {
+    !matches!(error, rodio::cpal::StreamError::BufferUnderrun)
+}
+
+fn open_device_sink() -> Result<rodio::MixerDeviceSink, rodio::DeviceSinkError> {
+    let builder = rodio::DeviceSinkBuilder::from_default_device()?.with_error_callback(|error| {
+        if is_actionable_stream_error(&error) {
+            log::error!("[audio] stream: {error}");
+        }
+    });
+    #[cfg(target_os = "linux")]
+    let builder = builder.with_buffer_size(rodio::cpal::BufferSize::Fixed(4096));
+    let mut sink = builder.open_sink_or_fallback()?;
+    sink.log_on_drop(false);
+    Ok(sink)
+}
+
 /// Lanza el thread dedicado de audio.
 pub(crate) fn start_audio_thread() -> Option<AudioSlot> {
     let slot: AudioSlot = Arc::new((Mutex::new(None), Condvar::new()));
@@ -42,7 +59,7 @@ pub(crate) fn start_audio_thread() -> Option<AudioSlot> {
     std::thread::Builder::new()
         .name("audio".into())
         .spawn(move || {
-            let device_sink = match rodio::DeviceSinkBuilder::open_default_sink() {
+            let device_sink = match open_device_sink() {
                 Ok(handle) => handle,
                 Err(e) => {
                     log::error!("[audio] thread: no se pudo abrir dispositivo: {e}");
