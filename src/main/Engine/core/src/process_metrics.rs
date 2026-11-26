@@ -1,5 +1,7 @@
 // CPU/GPU del proceso del motor (no uso global del SO).
 // Windows: contadores GPU Engine por PID.
+// `sysinfo` devuelve 100% por núcleo en Windows y Linux; se normaliza al total
+// de CPUs lógicos para que el panel tenga el mismo significado en ambos SO.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -47,10 +49,14 @@ impl ProcessMetricsSampler {
         let pid = Pid::from_u32(std::process::id());
         self.system
             .refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
-        self.system
+        let raw = self
+            .system
             .process(pid)
             .map(|p| p.cpu_usage())
-            .unwrap_or(0.0)
+            .unwrap_or(0.0);
+        // `refresh_processes` también carga la lista de CPUs usada por sysinfo para
+        // calcular el porcentaje; usar su tamaño mantiene exactamente la misma escala.
+        normalize_cpu_percent(raw, self.system.cpus().len())
     }
 
     /// % GPU del proceso del motor (contadores por PID; no uso global del sistema).
@@ -79,6 +85,14 @@ fn raw_to_gpu_percent(raw: u32) -> Option<f32> {
         return None;
     }
     Some((raw as f32) / 10.0)
+}
+
+/// Convierte el porcentaje por núcleo de `sysinfo` a porcentaje del total de CPUs.
+fn normalize_cpu_percent(raw: f32, logical_cpus: usize) -> f32 {
+    if !raw.is_finite() || raw <= 0.0 {
+        return 0.0;
+    }
+    (raw / logical_cpus.max(1) as f32).clamp(0.0, 100.0)
 }
 
 #[cfg(target_os = "windows")]
@@ -367,5 +381,26 @@ mod linux_tests {
         let sampler = ProcessMetricsSampler::new();
         assert!(sampler.gpu_thread.is_none());
         assert!(sampler.sample_gpu_percent().is_none());
+    }
+}
+
+#[cfg(test)]
+mod cpu_tests {
+    use super::normalize_cpu_percent;
+
+    #[test]
+    fn cpu_multinucleo_se_normaliza_al_total_de_cpus() {
+        assert_eq!(normalize_cpu_percent(400.0, 4), 100.0);
+        assert_eq!(normalize_cpu_percent(200.0, 8), 25.0);
+        assert_eq!(normalize_cpu_percent(100.0, 8), 12.5);
+        assert_eq!(normalize_cpu_percent(1000.0, 8), 100.0);
+    }
+
+    #[test]
+    fn cpu_descarta_valores_invalidos_y_evita_dividir_por_cero() {
+        assert_eq!(normalize_cpu_percent(f32::NAN, 8), 0.0);
+        assert_eq!(normalize_cpu_percent(f32::INFINITY, 8), 0.0);
+        assert_eq!(normalize_cpu_percent(-10.0, 8), 0.0);
+        assert_eq!(normalize_cpu_percent(50.0, 0), 50.0);
     }
 }

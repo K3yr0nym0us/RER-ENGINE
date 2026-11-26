@@ -100,6 +100,16 @@ en Linux, con el mismo icono PNG y los binarios del editor en `extraResources`.
 
 ### Limitaciones conocidas en Linux
 
+- **WSL2/WSLg:** está fuera del alcance de rendimiento del motor. Si
+  `vulkaninfo --summary` solo lista `llvmpipe` / `PHYSICAL_DEVICE_TYPE_CPU`,
+  Vulkan renderiza en la CPU: es normal usar varios núcleos (CPU >100% en
+  herramientas por proceso) y tener FPS bajos. Que `nvidia-smi` detecte la GPU
+  para CUDA **no** significa que exista un ICD Vulkan acelerado. Para medir el
+  rendimiento real del motor, usa el build de Windows o Linux nativo con un ICD
+  de GPU Vulkan 1.3; no instales el driver NVIDIA de Linux dentro de WSL. El ICD
+  experimental Dozen puede seguir exponiendo Vulkan 1.2 y no ser compatible.
+  Para ver el adaptador y el aviso de software en la consola, ejecuta con
+  `RER_LOG_LAYERS=vulkan` (por ejemplo, `RER_LOG_LAYERS=vulkan yarn start`).
 - **Métrica GPU % por PID:** solo Windows (contadores PDH). En Linux el panel
   muestra **N/A** y el editor arranca con normalidad.
 - **Ctrl/Shift globales vía OS** (`GetAsyncKeyState`): solo Windows. En Linux

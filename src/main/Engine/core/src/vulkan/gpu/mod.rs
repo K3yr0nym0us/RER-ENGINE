@@ -56,6 +56,8 @@ struct GpuInner {
     queue: Mutex<vk::Queue>,
     queue_family: u32,
     hw_rt: bool,
+    /// El adaptador ejecuta Vulkan en CPU (p. ej. `llvmpipe`), aunque exponga APIs de GPU.
+    software_adapter: bool,
     /// `multiview` de Vulkan 1.1 (obligatorio desde 1.1, consultado por si acaso).
     multiview: bool,
     swapchain_loader: ash::khr::swapchain::Device,
@@ -181,6 +183,11 @@ pub use self::sync::{
 impl SharedGpu {
     pub fn hw_rt(&self) -> bool {
         self.inner.hw_rt
+    }
+
+    /// `true` si Vulkan se ejecuta en CPU en lugar de una GPU física.
+    pub fn is_software_adapter(&self) -> bool {
+        self.inner.software_adapter
     }
 
     /// Límite de dimensión 2D de texturas del adaptador (para recortar tamaños de shadow map).

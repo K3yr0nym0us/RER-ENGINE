@@ -156,11 +156,15 @@ impl SharedGpu {
         )?;
         drop(smoke);
         log::info!(
-            "[vulkan] contexto Ash listo. RT por hardware: {}",
+            "[vulkan] contexto Ash listo. RT: {}",
             if !options.ray_tracing {
                 "no solicitado"
             } else if gpu.hw_rt() {
-                "disponible"
+                if gpu.is_software_adapter() {
+                    "API disponible en adaptador software"
+                } else {
+                    "disponible por hardware"
+                }
             } else {
                 "no disponible (BVH por software)"
             }
@@ -278,7 +282,20 @@ impl SharedGpu {
         let physical = pick_physical_device(&instance, &surface_loader, surface)?;
         let props = instance.get_physical_device_properties(physical);
         let name = cstr_lossy(props.device_name.as_ptr());
-        log::info!("[vulkan] adaptador: {name}");
+        let software_adapter = props.device_type == vk::PhysicalDeviceType::CPU;
+        log::info!(
+            "[vulkan] adaptador: {name} ({:?}, Vulkan {}.{})",
+            props.device_type,
+            vk::api_version_major(props.api_version),
+            vk::api_version_minor(props.api_version)
+        );
+        if software_adapter {
+            log::warn!(
+                "[vulkan] adaptador de software: el render se ejecuta en la CPU. \
+                 En WSL2/WSLg, CUDA/nvidia-smi no implican aceleración Vulkan; \
+                 comprueba `vulkaninfo --summary` o usa Linux nativo con un ICD de GPU."
+            );
+        }
 
         let extensions = instance
             .enumerate_device_extension_properties(physical)
@@ -543,6 +560,7 @@ impl SharedGpu {
                 queue: Mutex::new(queue),
                 queue_family,
                 hw_rt,
+                software_adapter,
                 multiview,
                 swapchain_loader,
                 swapchain: Mutex::new(swapchain),
