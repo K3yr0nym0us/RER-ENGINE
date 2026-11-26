@@ -225,6 +225,14 @@ impl Log for EngineLogger {
     }
 
     fn log(&self, record: &Record<'_>) {
+        #[cfg(target_os = "linux")]
+        if record
+            .target()
+            .starts_with("winit::platform_impl::linux::x11::util::randr")
+            && is_xrandr_zero_size_warning(record.target(), &record.args().to_string())
+        {
+            return;
+        }
         if !self.enabled(record.metadata()) {
             return;
         }
@@ -271,6 +279,14 @@ pub fn set_layer(layer: LogLayer, enabled: bool) {
     let mut current = layers();
     current.set(layer, enabled);
     set_layers(current);
+}
+
+/// WSLg/xpra pueden anunciar monitores virtuales de `0mm`; winit ya usa escala
+/// 1.0 en ese caso. Silenciamos solo ese aviso concreto, no otros errores de X11.
+#[cfg(target_os = "linux")]
+fn is_xrandr_zero_size_warning(target: &str, message: &str) -> bool {
+    target.starts_with("winit::platform_impl::linux::x11::util::randr")
+        && message.starts_with("XRandR reported that the display's 0mm in size")
 }
 
 /// Mapea el `target` de `log` a la capa visible en la consola.
@@ -355,6 +371,24 @@ mod tests {
         assert_eq!(LogLayers::parse("all"), Some(LogLayers::all()));
         assert_eq!(LogLayers::parse("none"), Some(LogLayers::none()));
         assert_eq!(LogLayers::parse("  "), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ignora_solo_el_aviso_de_monitor_virtual_sin_tamano() {
+        let target = "winit::platform_impl::linux::x11::util::randr";
+        assert!(is_xrandr_zero_size_warning(
+            target,
+            "XRandR reported that the display's 0mm in size, which is certifiably insane",
+        ));
+        assert!(!is_xrandr_zero_size_warning(
+            target,
+            "Failed to get output info"
+        ));
+        assert!(!is_xrandr_zero_size_warning(
+            "winit::platform_impl::linux::x11::window",
+            "XRandR reported that the display's 0mm in size",
+        ));
     }
 
     #[test]
