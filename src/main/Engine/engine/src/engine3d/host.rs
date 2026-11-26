@@ -22,6 +22,8 @@ use rer_engine_core::surface::SurfacePresentError;
 use crate::engine3d::config_3d::editor_viewport_controls::{self, GIZMO_CENTER_AXIS};
 use crate::engine3d::config_3d::plane_tool_rotate_dbg;
 use crate::engine3d::config_3d::transform_gizmo::TransformGizmoMode;
+#[cfg(target_os = "linux")]
+use crate::engine3d::platform::{X11MouseMotionFilter, is_x11_backend};
 
 /// Evita que Q/E se consuman como texto en player_ui mientras la herramienta plano está activa.
 fn is_plane_tool_rotate_key(key: PhysicalKey, text: Option<&str>) -> bool {
@@ -449,6 +451,9 @@ pub struct App {
     right_click_motion: (f32, f32),
     /// Rect físico del viewport con `ClipCursor` aplicado (editor).
     clip_rect: Option<(i32, i32, u32, u32)>,
+    /// Filtro Linux/X11 para punteros absolutos de RDP/WSLg y eventos duplicados.
+    #[cfg(target_os = "linux")]
+    x11_mouse_motion: X11MouseMotionFilter,
 }
 
 impl App {
@@ -478,6 +483,27 @@ impl App {
             editor_fly_capture: false,
             right_click_motion: (0.0, 0.0),
             clip_rect: None,
+            #[cfg(target_os = "linux")]
+            x11_mouse_motion: X11MouseMotionFilter::default(),
+        }
+    }
+
+    fn reset_x11_mouse_filter(&mut self) {
+        #[cfg(target_os = "linux")]
+        self.x11_mouse_motion.reset();
+    }
+
+    fn filter_device_motion(&mut self, delta_x: f32, delta_y: f32) -> Option<(f32, f32)> {
+        #[cfg(target_os = "linux")]
+        {
+            if !is_x11_backend() {
+                return Some((delta_x, delta_y));
+            }
+            self.x11_mouse_motion.filter(delta_x, delta_y)
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Some((delta_x, delta_y))
         }
     }
 
@@ -520,6 +546,9 @@ impl App {
         if !self.cursor_captured {
             return;
         }
+        let Some((delta_x, delta_y)) = self.filter_device_motion(delta_x, delta_y) else {
+            return;
+        };
         if let Some(state) = self.state.as_mut() {
             if state.is_play_controller_active() {
                 state.apply_fps_mouse_look(delta_x, delta_y);
@@ -596,6 +625,7 @@ impl App {
 
 impl App {
     fn reset_preview_input_state(&mut self, state: &mut crate::engine3d::engine::State) {
+        self.reset_x11_mouse_filter();
         self.last_cursor = None;
         self.mouse_middle = false;
         self.mouse_right = false;
@@ -610,6 +640,7 @@ impl App {
     }
 
     fn capture_cursor_for_preview(&mut self, state: &crate::engine3d::engine::State) {
+        self.reset_x11_mouse_filter();
         if !state.is_play_controller_active() {
             self.release_cursor_after_preview(state);
             return;
@@ -658,6 +689,7 @@ impl App {
     }
 
     fn release_cursor_after_preview(&mut self, state: &crate::engine3d::engine::State) {
+        self.reset_x11_mouse_filter();
         let window = state.window();
         if let Err(err) = window.set_cursor_grab(CursorGrabMode::None) {
             log::warn!("[preview] no se pudo liberar el cursor: {err}");
@@ -672,6 +704,7 @@ impl App {
     /// Libera el cursor al abrir una modal/confirmación de salida.
     #[cfg_attr(not(feature = "editor"), allow(dead_code))]
     pub(crate) fn release_cursor_for_dialog(&mut self) {
+        self.reset_x11_mouse_filter();
         if let Some(state) = self.state.as_ref() {
             let window = state.window();
             window.set_cursor_visible(true);
@@ -889,6 +922,17 @@ impl App {
         let mut preview_toggle = None;
         let mut release_cursor_on_focus_loss = false;
         let mut recapture_cursor_on_focus_gain = false;
+
+        #[cfg(target_os = "linux")]
+        if matches!(
+            &event,
+            WindowEvent::MouseInput {
+                button: MouseButton::Right,
+                ..
+            }
+        ) {
+            self.reset_x11_mouse_filter();
+        }
 
         {
             let Some(state) = self.state.as_mut() else {
@@ -1625,16 +1669,20 @@ impl ApplicationHandler<EngineCommand> for App {
         _device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
-        let Some(state) = self.state.as_mut() else {
-            return;
-        };
-
-        if !self.cursor_captured || !state.is_play_controller_active() {
+        if !self.cursor_captured
+            || !self
+                .state
+                .as_ref()
+                .is_some_and(|state| state.is_play_controller_active())
+        {
             return;
         }
 
-        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event {
-            state.apply_fps_mouse_look(dx as f32, dy as f32);
+        if let DeviceEvent::MouseMotion { delta: (dx, dy) } = event
+            && let Some((dx, dy)) = self.filter_device_motion(dx as f32, dy as f32)
+            && let Some(state) = self.state.as_mut()
+        {
+            state.apply_fps_mouse_look(dx, dy);
         }
     }
     fn window_event(
@@ -1729,6 +1777,8 @@ pub fn run() {
         editor_fly_capture: false,
         right_click_motion: (0.0, 0.0),
         clip_rect: None,
+        #[cfg(target_os = "linux")]
+        x11_mouse_motion: X11MouseMotionFilter::default(),
     };
     event_loop
         .run_app(&mut app)
