@@ -760,6 +760,14 @@ impl App {
                             state.player_ui_on_shift_released();
                         }
                     }
+                    KeyCode::Escape if pressed && !repeat && state.is_preview_playing() => {
+                        state.handle_command(EngineCommand::Common(
+                            EngineCommandCommon::SetPreviewPlaying { playing: false },
+                        ));
+                        self.keyboard_mouse_pressed.clear();
+                        self.gamepad_pressed.clear();
+                        state.clear_all_on_keep_horizontal_blocks();
+                    }
                     KeyCode::KeyZ if pressed && !repeat => {
                         let ctrl_active = self.ctrl_held || query_ctrl_held_os();
                         if ctrl_active {
