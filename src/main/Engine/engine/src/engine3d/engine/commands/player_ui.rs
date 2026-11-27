@@ -23,7 +23,7 @@ impl State {
                                 id: entry.id,
                                 font_path: entry.font_path.clone(),
                                 font_name: entry.font_name.clone(),
-                                text: entry.text.clone(),
+                                text: entry.text.source_text().to_string(),
                                 center_x: entry.center_x,
                                 center_y: entry.center_y,
                                 width: entry.width,
@@ -91,9 +91,10 @@ impl State {
                 id,
                 locked,
                 z_index,
+                text,
             }) => {
                 if let Err(message) =
-                    self.set_player_ui_hud_element_props(&element_kind, id, locked, z_index)
+                    self.set_player_ui_hud_element_props(&element_kind, id, locked, z_index, text)
                 {
                     send_event(&EngineEvent::Error { message });
                 }

@@ -1,4 +1,5 @@
 use super::*;
+use rer_engine_core::i18n::LocaleId;
 
 /// Entidad seleccionada en el viewport 3D (la mantiene el motor).
 #[derive(Debug, Clone, PartialEq)]
@@ -208,6 +209,29 @@ impl EditorApp {
             }
             "error" => {
                 self.status = EditorStatus::Error;
+            }
+            "locale_changed" => {
+                let Some(raw_language) = event.get("activeLanguage").and_then(Value::as_str) else {
+                    return;
+                };
+                let Ok(language) = LocaleId::parse(raw_language) else {
+                    return;
+                };
+                self.project_state.i18n.default_language = language.clone();
+
+                // El editor solo tiene textos ES/EN. Un idioma de catálogo como
+                // árabe o chino se conserva en el proyecto sin falsear la UI.
+                let editor_locale = match language.language() {
+                    "es" => Some(crate::editor::cli::Locale::Es),
+                    "en" => Some(crate::editor::cli::Locale::En),
+                    _ => None,
+                };
+                if let Some(editor_locale) = editor_locale
+                    && editor_locale != self.cli.locale
+                {
+                    self.cli.locale = editor_locale;
+                    crate::editor::bridge::notify_locale(editor_locale);
+                }
             }
             "stopped" => {
                 self.status = EditorStatus::Starting;
@@ -608,6 +632,38 @@ impl EditorApp {
 mod tests {
     use super::*;
     use crate::editor::ui::sidebar_right::particles::EmitterRow;
+
+    #[test]
+    fn locale_changed_updates_project_language_without_inventing_editor_translations() {
+        let mut app = EditorApp::new(crate::editor::cli::Cli::default());
+
+        app.handle_engine_event(&json!({
+            "event": "locale_changed",
+            "activeLanguage": "es-MX",
+            "formattingLocale": "es-MX",
+            "epoch": 1,
+        }));
+        assert_eq!(app.project_state.i18n.default_language.to_string(), "es-MX");
+        assert_eq!(app.cli.locale, crate::editor::cli::Locale::Es);
+
+        app.handle_engine_event(&json!({
+            "event": "locale_changed",
+            "activeLanguage": "ar",
+            "formattingLocale": "ar-EG",
+            "epoch": 2,
+        }));
+        assert_eq!(app.project_state.i18n.default_language.to_string(), "ar");
+        assert_eq!(app.cli.locale, crate::editor::cli::Locale::Es);
+
+        app.handle_engine_event(&json!({
+            "event": "locale_changed",
+            "activeLanguage": "en-US",
+            "formattingLocale": "en-US",
+            "epoch": 3,
+        }));
+        assert_eq!(app.project_state.i18n.default_language.to_string(), "en-US");
+        assert_eq!(app.cli.locale, crate::editor::cli::Locale::En);
+    }
 
     #[test]
     fn placement_hint_follows_the_ghost_lifecycle() {

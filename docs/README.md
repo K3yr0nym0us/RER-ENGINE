@@ -4,7 +4,7 @@
 
 **Plataformas:** Windows 10/11 y Linux (X11/Wayland). macOS y WSL están fuera de alcance. La métrica GPU % por PID y los atajos globales Ctrl/Shift vía OS siguen siendo exclusivos de Windows; en Linux el panel muestra `N/A`.
 
-**Última revisión:** 24 nov 2026 (SSR 3D: marcha tradicional, sincronización Vulkan, fallback de sondas y aislamiento RT). Revisión anterior: 23 nov 2026 (array de texturas 3D con crecimiento bajo demanda: `Texture_Array_3D.yaml`). Antes: 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`); 14 nov 2026 (World Generator); noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
+**Última revisión:** 26 nov 2026 (i18n del proyecto, catálogos JSON, HUD con `TextValue`/`cosmic-text`, API Rhai e IPC de idioma/locale). Revisión anterior: 24 nov 2026 (SSR 3D: marcha tradicional, sincronización Vulkan, fallback de sondas y aislamiento RT). Antes: 23 nov 2026 (array de texturas 3D con crecimiento bajo demanda: `Texture_Array_3D.yaml`); 16 nov 2026 (intro 4K del motor para el build final del juego: `Engine/branding/`, `status: pendiente`); 14 nov 2026 (World Generator); noviembre 2026 (Ash/Vulkan; LOD GLB); junio 2026 (reflejos).
 
 ## Estructura
 
@@ -17,7 +17,16 @@
 - `yaml/editor/`: modales, propiedades, UI del jugador, sockets y física de huesos.
 - `yaml/plugins/`: sistema de plugins.
 - `ai/`: asistente RER-AI (OpenCode) y prompts de contexto.
+- `I18N_AND_TEXT.md`: contrato transversal de idiomas, catálogos, HUD y `cosmic-text`.
 - Los documentos de calidad (`.md`) quedan en la raíz de `docs/`.
+
+---
+
+## Contrato transversal: i18n y texto
+
+[I18N_AND_TEXT.md](./I18N_AND_TEXT.md) resume el contrato implementado: manifiesto raíz `i18n`, catálogos JSON por locale/namespace, `TextValue` en HUD, `cosmic-text` con fallback Inter/Noto Arabic/Hebrew/SC/Fira, cambio de idioma con invalidación del HUD, API Rhai y eventos IPC.
+
+El alcance actual es el editor y el preview de juego. Las pantallas de menú se persisten pero no se renderizan en play, y guardar `.save` no equivale a exportar un juego final.
 
 ---
 
@@ -27,7 +36,7 @@
 |-----------|-----------|
 | [Engine_Runtime_Foundation.yaml](./yaml/engine/Engine_Runtime_Foundation.yaml) | Ventana única del editor, GPU Vulkan, métricas; intro 4K del build de juego (`status: pendiente`) |
 | [Engine_Context.yaml](./yaml/engine/Engine_Context.yaml) | Contexto del motor (documento histórico del renderer React) |
-| [IPC_Protocol.yaml](./yaml/engine/IPC_Protocol.yaml) | Arranque del editor Rust, `set-locale`, contratos `ipc/` por motor |
+| [IPC_Protocol.yaml](./yaml/engine/IPC_Protocol.yaml) | Arranque del editor Rust, `set-locale` del launcher, `set_language`/`set_formatting_locale`, `locale_changed` |
 
 ---
 
@@ -35,8 +44,8 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Save_Proyect_Model.yaml](./yaml/persistence/Save_Proyect_Model.yaml) | `.save` ZIP, Resources, manifest, guardar/cargar, bibliotecas globales |
-| [Project_Load_3D.yaml](./yaml/persistence/Project_Load_3D.yaml) | Carga `.save` 3D: burst, precarga, GLB, eventos `project_loaded_3d` |
+| [Save_Proyect_Model.yaml](./yaml/persistence/Save_Proyect_Model.yaml) | `.save` ZIP, Resources, manifiesto raíz sin `version`/`language`, `i18n`, guardar/cargar |
+| [Project_Load_3D.yaml](./yaml/persistence/Project_Load_3D.yaml) | Carga `.save` 3D: `.rerasset`, burst, i18n y eventos `project_loaded_3d`/`locale_changed` |
 | [Escenes_Model_3D.yaml](./yaml/persistence/Escenes_Model_3D.yaml) | Multi-escena editor 3D, dirty, `switch_editor_scene` |
 
 ---
@@ -45,7 +54,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [Rerasset_Format.yaml](./yaml/assets/Rerasset_Format.yaml) | `.rerasset` / RTEX v1 (editor RGBA8); `export_profiles` reserva BC7/ASTC para el build final |
+| [Rerasset_Format.yaml](./yaml/assets/Rerasset_Format.yaml) | `.rerasset` / RTEX v1; `importer_version` es del asset, no del manifiesto ni del proyecto |
 
 ---
 
@@ -87,7 +96,7 @@
 
 | Documento | Contenido |
 |-----------|-----------|
-| [RHAI_API.yaml](./yaml/scripting/RHAI_API.yaml) | API scripting 2D y play character 3D |
+| [RHAI_API.yaml](./yaml/scripting/RHAI_API.yaml) | API scripting 2D/3D, idioma/locale y globales `tr`/`tr_n`/`tr_fmt` |
 | [Programing_Model.yaml](./yaml/scripting/Programing_Model.yaml) | Programación visual (escena + entidad), nodos → Rhai |
 
 ---
@@ -102,7 +111,7 @@
 | [Sockets_3D.yaml](./yaml/editor/Sockets_3D.yaml) | Sockets en huesos skinned, vínculos objeto↔socket, modal Configuración de sockets |
 | [Bone_Physics_3D.yaml](./yaml/editor/Bone_Physics_3D.yaml) | Física secundaria por hueso (jiggle), modal Editar física de huesos |
 | [Entity_Textures.yaml](./yaml/editor/Entity_Textures.yaml) | LOD texturas embebidas GLB (pestaña Texturas 3D) |
-| [Player_UI_Model.yaml](./yaml/editor/Player_UI_Model.yaml) | HUD jugador, pantallas, undo/redo, NDC |
+| [Player_UI_Model.yaml](./yaml/editor/Player_UI_Model.yaml) | HUD jugador, `TextValue`, `cosmic-text`, fuentes y flujo «Usar en HUD» |
 
 ---
 

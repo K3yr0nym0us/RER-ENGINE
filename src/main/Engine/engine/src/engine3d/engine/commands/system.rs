@@ -54,9 +54,27 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::Redo) => {
                 self.apply_redo();
             }
-            EngineCommand::Common(EngineCommandCommon::SetLocale { locale }) => {
-                log::info!("[IPC] SetLocale: {}", locale);
-                self.snap_locale = locale;
+            EngineCommand::Common(EngineCommandCommon::SetLanguage { language }) => {
+                log::info!("[IPC] SetLanguage: {}", language);
+                match LocaleId::parse(&language) {
+                    Ok(language) => {
+                        self.set_active_language(language);
+                    }
+                    Err(error) => send_event(&EngineEvent::Error {
+                        message: format!("Idioma inválido {language:?}: {error}"),
+                    }),
+                }
+            }
+            EngineCommand::Common(EngineCommandCommon::SetFormattingLocale { locale }) => {
+                log::info!("[IPC] SetFormattingLocale: {}", locale);
+                match LocaleId::parse(&locale) {
+                    Ok(locale) => {
+                        self.set_formatting_locale(locale);
+                    }
+                    Err(error) => send_event(&EngineEvent::Error {
+                        message: format!("Locale de formato inválido {locale:?}: {error}"),
+                    }),
+                }
             }
             EngineCommand::Common(EngineCommandCommon::SetAutosave { enabled }) => {
                 self.autosave_enabled = enabled;

@@ -11,12 +11,16 @@ macro_rules! player_ui_hud_props_impl {
                 id: u32,
                 locked: Option<bool>,
                 z_index: Option<i32>,
+                text: Option<rer_engine_core::i18n::TextValue>,
             ) -> Result<(), String> {
                 if !self.player_ui_edit_active {
                     return Err("modo edición UI inactivo".into());
                 }
-                if locked.is_none() && z_index.is_none() {
+                if locked.is_none() && z_index.is_none() && text.is_none() {
                     return Err("sin cambios".into());
+                }
+                if text.is_some() && !matches!(element_kind, "text" | "button") {
+                    return Err("texto no soportado para este tipo de elemento HUD".into());
                 }
                 let key = self
                     .player_ui_screen_key()
@@ -38,6 +42,9 @@ macro_rules! player_ui_hud_props_impl {
                         if let Some(z) = z_index {
                             b.z_index = z;
                         }
+                        if let Some(text) = text {
+                            b.text = text;
+                        }
                     }
                     "button" => {
                         let Some(list) = self.player_ui_buttons.get_mut(&key) else {
@@ -51,6 +58,9 @@ macro_rules! player_ui_hud_props_impl {
                         }
                         if let Some(z) = z_index {
                             b.z_index = z;
+                        }
+                        if let Some(text) = text {
+                            b.text = text;
                         }
                     }
                     "image" => {

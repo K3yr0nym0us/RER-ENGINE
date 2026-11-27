@@ -1,10 +1,10 @@
+use rer_engine_core::i18n::I18nConfig;
+
 use super::*;
 
 #[allow(non_snake_case)]
 #[derive(Debug, Deserialize, Clone)]
 pub(crate) struct ProjectSaveData {
-    #[serde(default)]
-    pub(crate) version: u32,
     #[serde(default)]
     pub(crate) r#type: String,
     pub gameStyle: String,
@@ -40,7 +40,7 @@ pub(crate) struct ProjectSaveData {
     #[serde(default, rename = "worldGen3d")]
     pub(crate) worldGen3d: Option<serde_json::Value>,
     #[serde(default)]
-    pub(crate) language: Option<String>,
+    pub(crate) i18n: I18nConfig,
     #[serde(default)]
     pub(crate) playerUiScreens: Vec<crate::engine3d::ipc::SaveUiScreenSnapshot>,
     #[serde(default)]

@@ -384,7 +384,6 @@ pub(crate) fn build_minimal_project_from_store(
     scenes: &[SavedScene],
 ) -> ProjectSaveData {
     ProjectSaveData {
-        version: 1,
         r#type: "3D".to_string(),
         gameStyle: game_style.to_string(),
         activeSceneId: None,
@@ -400,7 +399,7 @@ pub(crate) fn build_minimal_project_from_store(
         backgrounds: Vec::new(),
         scenes: scenes.to_vec(),
         blueprints: Vec::new(),
-        language: None,
+        i18n: rer_engine_core::i18n::I18nConfig::default(),
         playerUiScreens:
             crate::engine3d::config_3d::player_ui::defaults::default_3d_project_ui_screens(),
         menuUiScreens: Vec::new(),

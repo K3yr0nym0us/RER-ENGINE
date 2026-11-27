@@ -4,6 +4,7 @@ use std::{
     thread,
 };
 
+use rer_engine_core::i18n::TextValue;
 use serde::Serialize;
 use winit::event_loop::EventLoopProxy;
 
@@ -18,6 +19,14 @@ pub enum EngineEvent {
         gravity: f32,
     },
     Pong,
+    /// Idioma de catálogos o locale de formato cambiado en el runtime.
+    LocaleChanged {
+        #[serde(rename = "activeLanguage")]
+        language: String,
+        #[serde(rename = "formattingLocale")]
+        locale: String,
+        epoch: u64,
+    },
     Error {
         message: String,
     },
@@ -644,7 +653,7 @@ pub enum EngineEvent {
     },
     PlayerUiTextBoxUpdated {
         id: u32,
-        text: String,
+        text: TextValue,
     },
     PlayerUiTextBoxRemoved {
         id: u32,
@@ -846,4 +855,31 @@ pub fn start_ipc_thread(proxy: EventLoopProxy<EngineCommand>) {
             }
         })
         .expect("No se pudo crear el hilo IPC");
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::EngineEvent;
+
+    #[test]
+    fn locale_changed_event_uses_active_and_formatting_locale_names() {
+        let value = serde_json::to_value(EngineEvent::LocaleChanged {
+            language: "ar".to_owned(),
+            locale: "ar-EG".to_owned(),
+            epoch: 9,
+        })
+        .expect("LocaleChanged debe serializar");
+
+        assert_eq!(
+            value,
+            json!({
+                "event": "locale_changed",
+                "activeLanguage": "ar",
+                "formattingLocale": "ar-EG",
+                "epoch": 9,
+            })
+        );
+    }
 }

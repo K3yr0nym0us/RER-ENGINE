@@ -1,5 +1,7 @@
 //! Tipos y utilidades compartidas de la UI HUD del jugador.
 
+use crate::i18n::TextValue;
+
 /// Rectángulo en NDC (centro + tamaño).
 #[derive(Clone, Copy, Debug)]
 pub struct UiHudRect {
@@ -14,7 +16,7 @@ pub struct PlayerUiTextBox {
     pub id: u32,
     pub font_path: String,
     pub font_name: String,
-    pub text: String,
+    pub text: TextValue,
     pub center_x: f32,
     pub center_y: f32,
     pub width: f32,
@@ -46,7 +48,7 @@ pub struct PlayerUiButton {
     pub background_color: [f32; 4],
     pub texture_path: Option<String>,
     pub transparency_background: f32,
-    pub text: String,
+    pub text: TextValue,
     pub text_color: [f32; 4],
     pub transparency_text: f32,
     pub font_path: String,

@@ -4,8 +4,8 @@
 # Pipeline 3D: engine/src/engine3d/assets/
 #
 # Relacionado con:
-#   - docs/yaml/persistence/Save_Proyect_Model.yaml (manifest v2 resources.models)
-#   - docs/yaml/assets/Rerasset_Format.yaml `export_profiles` (perfiles GPU solo en exportación final)
+#   - docs/yaml/persistence/Save_Proyect_Model.yaml (manifest raíz resources.models)
+#   - docs/yaml/assets/Rerasset_Format.yaml `export_profiles` (reservados; pipeline de build final pendiente)
 
 constants:
   RER_ASSET_VERSION: 1
@@ -16,7 +16,8 @@ editor_contract:
   principle: |
     En el editor (Windows) todos los albedos bakeados usan RTEX v1 con
     RGBA8 sin compresión GPU (BC7/ASTC/BC1 no participan en import/bake/carga).
-    La optimización por perfil GPU es solo al exportar el juego compilado.
+    Los perfiles de compresión quedan reservados para una futura exportación de
+    juego final; ese pipeline no está implementado en el editor actual.
   supported_read_write:
     texture_format: 0  # Rgba8UnormSrgb
     compression_type: 0  # None — mips son RGBA8 crudos consecutivos
@@ -63,6 +64,7 @@ rerasset:
     - Escritura atómica: .rerasset.tmp → rename.
     - Skeleton (SKEL) y clips de animación (ANIM) serializados desde importer v2.
     - Rebake automático si cambia size/mtime del fuente o importer_version del .rerasset es menor.
+    - importer_version versiona el importador del formato .rerasset, no el manifiesto ni el proyecto.
 
 rtex:
   magic: RTEX
@@ -119,21 +121,24 @@ rtex:
       read_rtex en editor solo acepta compression_type=0.
 
   export_profiles:
-    status: aplazado (el checklist que los listaba se retiró del repo)
-    when: pipeline Editor → Save → Build → Ejecutable (aplazado)
+    status: aplazado (sin pipeline de exportación de juego final implementado)
+    when: una futura etapa Editor → Build → Ejecutable
     cook_at_build_time: |
-      El artista importa una vez; el .save conserva RGBA8 editable; variantes BC7/ASTC
-      se generan solo en el paso de build, no durante la edición.
+      Si se implementa esa etapa, el artista importará una vez; el .save conservará
+      RGBA8 editable y las variantes BC7/ASTC se generarían solo en build. No forman
+      parte del contrato actual de guardado/carga del editor.
 
-manifest_v2:
-  version: 2
+manifest_reference:
+  note: |
+    El manifiesto raíz no tiene version ni language. resources.models[] referencia
+    assets .rerasset; importer_version pertenece a cada asset, no al proyecto.
   resources:
     models:
       - id: model_fsb_operator_a1b2c3
         name: FSB Operator
         type: character
         asset: imported/models/model_fsb_operator_a1b2c3.rerasset
-        importer_version: 1
+        importer_version: 2
 
 implementation:
   rtex: src/main/Engine/core/src/assets/rtex.rs

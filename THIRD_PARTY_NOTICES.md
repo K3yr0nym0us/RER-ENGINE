@@ -164,3 +164,32 @@ Las ecuaciones del solver de fluidos
 - **Licencia:** SIL Open Font License 1.1 — Copyright 2020 The Inter Project
   Authors (https://github.com/rsms/inter). El texto completo se conserva en
   `src/main/Engine/assets/fonts/OFL.txt`.
+
+---
+
+## Fuentes de fallback deterministas
+
+- **Uso en RER-ENGINE:** fuentes empaquetadas sin modificar en
+  `src/main/Engine/assets/fonts/` para el fallback determinista de texto árabe,
+  hebreo, chino simplificado y monoespaciado, sin depender de fuentes del
+  sistema operativo.
+- **Origen de Noto Sans Arabic, Noto Sans Hebrew y Fira Mono:** copias de los
+  archivos incluidos en el directorio `fonts/` del crate `cosmic-text 0.19.0`
+  (https://crates.io/crates/cosmic-text/0.19.0). Las fuentes Noto proceden del
+  proyecto Google Noto; Fira Mono fue publicada originalmente por Mozilla
+  Foundation y Telefonica S.A.
+- **Noto Sans Arabic y Noto Sans Hebrew:** `NotoSansArabic.ttf` y
+  `NotoSansHebrew.ttf`. **Licencia:** SIL Open Font License 1.1 — Copyright 2012
+  Google Inc. All Rights Reserved. El texto completo se conserva en
+  `src/main/Engine/assets/fonts/NotoSansArabic-Hebrew-LICENSE.txt`.
+- **Fira Mono:** `FiraMono-Medium.ttf`. **Licencia:** SIL Open Font License 1.1 —
+  Digitized data copyright (c) 2012-2015, The Mozilla Foundation and Telefonica
+  S.A. El texto completo se conserva en
+  `src/main/Engine/assets/fonts/FiraMono-LICENSE.txt`.
+- **Origen de Noto Sans SC:** descargado del repositorio Google Fonts:
+  `https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/NotoSansSC%5Bwght%5D.ttf`.
+  Se distribuye localmente como `NotoSansSC-Variable.ttf`, junto con su licencia
+  `NotoSansSC-OFL.txt`, obtenida de
+  `https://raw.githubusercontent.com/google/fonts/main/ofl/notosanssc/OFL.txt`.
+- **Licencia de Noto Sans SC:** SIL Open Font License 1.1 — Copyright 2014-2021
+  Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'.

@@ -156,7 +156,6 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
     };
 
     let mut root = Map::new();
-    root.insert("version".into(), json!(1));
     root.insert("type".into(), json!(input.project_type));
     root.insert("gameStyle".into(), json!(input.game_style));
     root.insert("scenes".into(), Value::Array(scenes));
@@ -191,10 +190,7 @@ pub fn build_manifest(input: &ManifestInput<'_>) -> Value {
     if let Some(world_gen_3d) = engine_scene.get("world_gen_3d") {
         root.insert("worldGen3d".into(), world_gen_3d.clone());
     }
-    root.insert(
-        "language".into(),
-        json!(state.locale.as_deref().unwrap_or("en")),
-    );
+    root.insert("i18n".into(), json!(state.i18n));
     root.insert(
         "playerUiScreens".into(),
         Value::Array(state.player_ui_screens.clone()),
@@ -986,7 +982,11 @@ mod tests {
         ProjectState {
             project_type: Some("3D".into()),
             game_style: Some("third-person".into()),
-            locale: Some("es".into()),
+            i18n: rer_engine_core::i18n::I18nConfig {
+                default_language: "es".parse().unwrap(),
+                fallback_language: "en".parse().unwrap(),
+                catalog_paths: Vec::new(),
+            },
             scenes: vec![scene_state()],
             active_scene_id: Some(1),
             blueprints: vec![json!({ "id": "bp_1", "model": "C:/models/hero.glb" })],
@@ -1060,9 +1060,17 @@ mod tests {
             game_style: "third-person",
         });
 
-        assert_eq!(manifest["version"], json!(1));
+        assert!(manifest.get("version").is_none());
+        assert!(manifest.get("language").is_none());
         assert_eq!(manifest["type"], json!("3D"));
-        assert_eq!(manifest["language"], json!("es"));
+        assert_eq!(
+            manifest["i18n"],
+            json!({
+                "defaultLanguage": "es",
+                "fallbackLanguage": "en",
+                "catalogPaths": []
+            })
+        );
         let scenes = manifest["scenes"].as_array().unwrap();
         assert_eq!(scenes.len(), 1);
         let scene = &scenes[0];

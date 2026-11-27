@@ -72,6 +72,10 @@ pub struct SidebarLeftState {
     pub(crate) pending_clear_scene: bool,
     /// Recurso pendiente de borrar; la modal nativa pide confirmación.
     pub(crate) pending_remove_asset: Option<RemoveAssetDraft>,
+    /// Detalle ligero de la fuente seleccionada en Recursos → Fuentes.
+    pub(crate) font_details: Option<crate::editor::assets::AssetEntry>,
+    /// Familia egui registrada para la muestra; se conserva entre frames.
+    pub(crate) font_preview: Option<FontPreviewCache>,
     /// Escena pendiente de borrar; la modal nativa confirma (o avisa si es la única).
     pub(crate) pending_delete_scene: Option<DeleteSceneDraft>,
     /// Creación de escena pendiente; la ventana nativa pide el nombre.
@@ -104,6 +108,14 @@ pub struct SidebarLeftState {
     pub(crate) scene_script_open: Option<u64>,
     /// Código del editor; `None` hasta que llega el `project_state` con el script.
     pub(crate) scene_script_source: Option<String>,
+}
+
+/// Carga de la fuente de la muestra, identificada por su ruta y familia egui.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FontPreviewCache {
+    pub path: String,
+    pub family: Option<String>,
+    pub error: Option<String>,
 }
 
 /// Pantalla UI que el usuario quiere borrar (HUD o menú).
@@ -249,6 +261,8 @@ enum LeftAction {
         path: String,
         name: String,
     },
+    /// Abre el detalle de una fuente sin iniciar otro flujo de importación.
+    OpenFontDetails(crate::editor::assets::AssetEntry),
     CreateEntity {
         kind: EntityKind,
         asset: String,
@@ -335,10 +349,12 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
         });
     if let Some(next) = next_locale {
         app.cli.locale = next;
+        app.project_state.i18n.default_language =
+            next.as_str().parse().expect("editor locale must be valid");
         crate::editor::bridge::notify_locale(next);
         app.send_engine(json!({
-            "cmd": "set_locale",
-            "locale": next.as_str(),
+            "cmd": "set_language",
+            "language": next.as_str(),
         }));
     }
 
@@ -743,6 +759,11 @@ fn apply_action(app: &mut EditorApp, action: LeftAction) {
         LeftAction::OpenRemoveAsset { kind, path, name } => {
             // La modal nativa confirma antes de enviar el comando de borrado.
             app.left_sidebar.pending_remove_asset = Some(RemoveAssetDraft { kind, path, name });
+        }
+        LeftAction::OpenFontDetails(asset) => {
+            // La caché se conserva para que `ensure_font_preview` pueda dar de
+            // baja la familia anterior si se cambia de fuente sin cerrar la modal.
+            app.left_sidebar.font_details = Some(asset);
         }
         LeftAction::CreateEntity { kind, asset } => create_entity(app, kind, asset),
         LeftAction::SetActiveTool(tool) => {

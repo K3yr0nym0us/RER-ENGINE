@@ -1,21 +1,24 @@
 # Player UI / HUD del jugador
 #
 # Pantallas HUD en coordenadas NDC (-1..1), editables en modo preview.
-# Elementos: texto, botones, imÃ¡genes, polÃ­gonos (objects). Persistencia
-# en manifest por escena; referencias a fonts[] y hudImages[].
+# Elementos: texto, botones, imágenes y polígonos (objects). Persistencia
+# en playerUiScreens[]; referencias a fonts[] y hudImages[].
 #
 # Relacionado con:
-#   - docs/yaml/persistence/Save_Proyect_Model.yaml (referencias player_ui_*)
-#   - docs/yaml/editor/MODAL_ELECTRON.yaml (ventana nativa del editor HUD)
+#   - docs/I18N_AND_TEXT.md
+#   - docs/yaml/persistence/Save_Proyect_Model.yaml
+#   - docs/yaml/editor/MODAL_ELECTRON.yaml
 #   - docs/yaml/engine/IPC_Protocol.yaml
 
-version: 2
-updated: 2026-11-11
+version: 3
+updated: 2026-11-26
 
 principle:
   owner_runtime: motor (config_2d/player_ui | config_3d/player_ui)
-  owner_ui: dropdown nativo egui (listas) + modal editor Electron
+  owner_ui: dropdown nativo egui (listas) + editor HUD nativo
   coordinates: NDC; origen centro pantalla; z_index para orden de dibujo
+  text_contract: TextValue (localized | literal) en cajas de texto y botones
+  text_runtime: cosmic-text mediante TextSystem
 
 screens:
   structure:
@@ -24,26 +27,80 @@ screens:
     active: boolean               # Una pantalla activa por scope en play
   scope:
     - player                      # HUD en juego
-    - menu                        # MenÃºs overlay (futuro / segÃºn proyecto)
-  defaults:
-    3d_fp: src/renderer/src/defaults/fpPlayerUiDefaults.ts
-    2d: default2dPlayerUiScreens()
+    - menu                        # Persistencia/listado; sin renderer runtime de menús
+  defaults: |
+    El editor nativo crea la pantalla HUD inicial. La plantilla 3D incluye Player UI 01
+    y dos objetos de crosshair; 2D parte de su pantalla HUD por defecto.
 
 native_sidebar:
   source_of_truth: editor nativo (editor/ui_screens.rs); sin puente React -> main
   commands: sync_player_ui_screens / set_active_player_ui_screen enviados por Rust
   player:
-    - Nuevo HUD (create_ui_screen_modal.rs; modal nativa Rust, ya migrada)
-    - Lista con switch de activo (accion Rust), editar (ventana nativa HUD) y eliminar
+    - Nuevo HUD (create_ui_screen_modal.rs; modal nativa Rust)
+    - Lista con switch de activo (acción Rust), editar (ventana nativa HUD) y eliminar
   menu:
-    - Nuevo menu (create_ui_screen_modal.rs), renombrar (rename_ui_screen_modal.rs) y eliminar
-    - status: las pantallas menu se persisten y listan, pero el motor no renderiza menus en play
+    - Nuevo menú (create_ui_screen_modal.rs), renombrar (rename_ui_screen_modal.rs) y eliminar
+    - status: las pantallas menu se persisten y se listan, pero el motor no renderiza menús en play
   overlay_rebuild: |
-    Al entrar, cambiar o salir de edicion se llama a rebuild_player_ui_overlay().
+    Al entrar, cambiar o salir de edición se llama a rebuild_player_ui_overlay().
     Sin ese rebuild los objects existen en estado pero no generan vertices y no se ven
     en el viewport.
   default_3d: |
     Plantilla 3D: pantalla Player UI 01 + 2 objects de crosshair (horizontal y vertical).
+
+text_value:
+  description: |
+    El campo text de text_box y button es un TextValue serializado. No hay un campo
+    de texto plano legacy en las listas/actualizaciones runtime del HUD.
+  localized: |
+    {
+      "kind": "localized",
+      "id": { "namespace": "player_ui", "key": "title" },
+      "source": "Título",
+      "arguments": { "name": "Ada" }
+    }
+  literal: |
+    { "kind": "literal", "value": "Jugar" }
+  rules:
+    - localized referencia un catálogo por namespace/key/context opcional y conserva source.
+    - literal se muestra sin consultar catálogos.
+    - arguments es opcional y alimenta los placeholders de la plantilla.
+    - El editor usa source como etiqueta del elemento.
+    - Las propiedades conservan un TextValue localizado; una cadena escrita se envuelve como literal.
+    - La edición directa de texto solo modifica literales; un localizado no se reemplaza por texto plano.
+
+text_runtime:
+  engine: cosmic-text / TextSystem
+  embedded_fonts:
+    - Inter Regular + Inter Bold (familia Inter 18pt)
+    - Noto Sans Arabic
+    - Noto Sans Hebrew
+    - Noto Sans SC
+    - Fira Mono
+  fallback: |
+    La fuente de proyecto es primaria. Si falta un glifo, se usa el fallback integrado
+    por script (Inter, Noto Arabic, Noto Hebrew, Noto Sans SC, Fira Mono), sin consultar
+    fuentes del sistema operativo.
+  shaping_locale: |
+    Los textos localizados usan activeLanguage. Los literales usan und para elegir el
+    fallback por contenido. Cambiar el locale conserva las caras y limpia las cachés de
+    shaping/rasterizado.
+  language_change: |
+    Un cambio efectivo de idioma o locale de formato sincroniza Rhai, reconstruye el
+    overlay HUD y emite locale_changed. En 3D también se limpia la caché del prompt de
+    interacción. Ver docs/I18N_AND_TEXT.md.
+
+font_workflow:
+  steps:
+    - Recursos → Fuentes → seleccionar/importar una fuente.
+    - Abrir el detalle de la fuente (primaria, fallback y muestras multilengüe).
+    - Pulsar Usar en HUD.
+    - El editor abre el selector nativo de texto con la fuente preseleccionada.
+    - Añadir crea el texto; Usar en HUD no crea el elemento por sí solo.
+  requirements: |
+    Debe existir una pantalla HUD de jugador. Si no existe, el detalle indica que hay
+    que crearla primero en Interfaz de usuario. La fuente se referencia por su ruta de
+    biblioteca y no se duplica dentro de playerUi*.
 
 interaction_prompt:
   description: |
@@ -57,18 +114,22 @@ interaction_prompt:
   highlight: |
     El objeto mirado usa el flag de instancia 2.0 del forward shader (idéntico al
     hover del editor): tinte azul translúcido al 38% + rim, sin ocultar los colores.
-  text: "{prompt localizado}  [{tecla}]" — ver docs/yaml/gameplay/Entities_Model_3D.yaml
+  text: '"{prompt localizado}  [{tecla}]" — ver docs/yaml/gameplay/Entities_Model_3D.yaml'
   source: config_3d/interaction.rs + config_3d/player_ui/font.rs (build_cached_hud_label_glyph)
 
 element_types:
   text_box:
     fields: [id, font_path, text, center_x, center_y, width, height, z_index, locked]
+    text_type: TextValue
     font_ref: fonts library
     commands: add_player_ui_text_box, remove_player_ui_text_box, set_player_ui_hud_element_props
   button:
-    fields: [id, text, font_path, texture_path?, center, size, z_index, locked, â€¦]
+    fields: [id, text, font_path, texture_path?, center, size, z_index, locked, …]
+    text_type: TextValue
     refs: fonts + hudImages
-    config_model: playerUiButtonModel.ts
+    config_model:
+      - src/main/Engine/engine/src/engine2d/config_2d/player_ui/button.rs
+      - src/main/Engine/engine/src/engine3d/config_3d/player_ui/button.rs
   image:
     fields: [id, image_path, center, size, z_index, locked]
     ref: hudImages library
@@ -80,20 +141,23 @@ element_types:
 edit_mode:
   cmd: set_player_ui_edit_mode { enabled, scope?, screen_id? }
   effect: |
-    En preview pausado o play segÃºn motor: muestra handles, permite crear/mover
-    elementos; emite player_ui_* events al sidebar y al modal editor.
+    En preview pausado o play según motor: muestra handles, permite crear/mover
+    elementos; emite player_ui_* events al sidebar y al editor nativo.
   modal:
     native: editor/ui/hud_editor_modal.rs + editor/hud_editor.rs
     state: HudEditorState + HudElements (evento player_ui_text_boxes_list)
-    note: MIGRADA a ventana nativa; sin host Electron, sesiones ni patches IPC.
+    note: Ventana nativa; sin host Electron, sesiones ni patches IPC.
 
 persistence:
   manifest_fields:
-    - playerUiScreens[] por escena
+    - playerUiScreens[]
     - playerUiTextBoxes / Buttons / Images / Objects anidados por screen
+  text: |
+    text/button.text se guardan como TextValue. Los catálogos se guardan en i18n/ y se
+    referencian desde i18n.catalogPaths del manifiesto raíz.
   pack: |
-    Solo paths de fonts e imÃ¡genes HUD; los polÃ­gonos referencian hudImages[]
-    sin empaquetar geometrÃ­a aparte. Ver docs/yaml/persistence/Save_Proyect_Model.yaml.
+    Solo paths de fonts e imágenes HUD; los polígonos referencian hudImages[]
+    sin empaquetar geometría aparte. Ver docs/yaml/persistence/Save_Proyect_Model.yaml.
   load: import_player_ui_* con paths resueltos tras extraer .save
   undo: push_undo_player_ui_hud en motor 3D (afecta dirty de escena)
 
@@ -111,12 +175,16 @@ key_files:
   native_sync: src/main/Engine/engine/src/editor/ui_screens.rs
   native_sidebar: src/main/Engine/engine/src/editor/ui/sidebar_left/interface.rs
   modal: src/main/Engine/engine/src/editor/ui/hud_editor_modal.rs (ventana nativa)
+  font_details: src/main/Engine/engine/src/editor/ui/font_details_modal.rs
+  text_system: src/main/Engine/engine/src/text/
   note: Sin bridge React; el editor nativo posee el catálogo y el guardado.
 
 rhai:
-  note: API engine.* para mostrar/ocultar pantallas y leer input HUD en play.
+  note: API engine.* para mostrar/ocultar pantallas, leer input HUD y cambiar idioma/locale en play.
   see: docs/yaml/scripting/RHAI_API.yaml
 
 do_not:
-  - Duplicar archivos de fuentes o imÃ¡genes HUD en playerUi* del manifest
-  - Editar HUD desde modal sin sincronizar sync_player_ui_screens al guardar
+  - Duplicar archivos de fuentes o imágenes HUD en playerUi* del manifiesto
+  - Editar HUD desde la modal sin sincronizar sync_player_ui_screens al guardar
+  - Reemplazar un TextValue localizado por una cadena plana al editar propiedades
+  - Prometer renderer runtime de pantallas menu o exportación de juego final

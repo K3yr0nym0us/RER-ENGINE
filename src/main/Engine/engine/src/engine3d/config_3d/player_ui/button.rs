@@ -1,5 +1,7 @@
 //! Lógica de botones HUD (alta/baja/lista); render en `button_render.rs`.
 
+use rer_engine_core::i18n::TextValue;
+
 use crate::engine3d::engine::State;
 use crate::engine3d::ipc::{
     AddPlayerUiButtonPayload, EngineEvent, PlayerUiButtonListItem, SavePlayerUiButtonSnapshot,
@@ -58,7 +60,7 @@ impl State {
             background_color: parse_hex_color_rgba(&payload.background_color, bg_alpha),
             texture_path: payload.texture_path.filter(|p| !p.is_empty()),
             transparency_background: (bg_alpha / 100.0).clamp(0.0, 1.0),
-            text: payload.text,
+            text: TextValue::literal(payload.text),
             text_color: parse_hex_color_rgba(&payload.text_color, text_alpha),
             transparency_text: (text_alpha / 100.0).clamp(0.0, 1.0),
             font_path: payload.font_path,
@@ -88,7 +90,7 @@ impl State {
         log::info!("[player-ui] botón añadido: id={}", id);
         send_event(&EngineEvent::PlayerUiButtonAdded {
             id: entry.id,
-            text: entry.text.clone(),
+            text: entry.text.source_text().to_string(),
             font_name: entry.font_name.clone(),
         });
         Ok(id)

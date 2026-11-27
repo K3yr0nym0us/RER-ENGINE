@@ -128,7 +128,7 @@ pub fn apply(ctx: &egui::Context) {
     });
 }
 
-/// Instala las fuentes fijas del editor: Inter empaquetada en el binario.
+/// Instala las fuentes fijas del editor: Inter y el fallback multilengüe Noto.
 ///
 /// No se consulta ninguna fuente del sistema operativo y no existe ajuste que
 /// permita cambiarlas: los TTF se enlazan con `include_bytes!` (ver
@@ -151,12 +151,39 @@ fn install_fonts(ctx: &egui::Context) {
             crate::embedded_fonts::INTER_BOLD,
         )),
     );
+    fonts.font_data.insert(
+        "Noto Sans SC".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            crate::embedded_fonts::NOTO_SANS_SC,
+        )),
+    );
+    fonts.font_data.insert(
+        "Noto Sans Hebrew".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            crate::embedded_fonts::NOTO_SANS_HEBREW,
+        )),
+    );
+    fonts.font_data.insert(
+        "Noto Sans Arabic".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            crate::embedded_fonts::NOTO_SANS_ARABIC,
+        )),
+    );
+    fonts.font_data.insert(
+        "Fira Mono".to_owned(),
+        Arc::new(egui::FontData::from_static(
+            crate::embedded_fonts::FIRA_MONO,
+        )),
+    );
 
-    // Inter es la única fuente de texto proporcional: se descarta Ubuntu-Light,
-    // que era la fuente por defecto incluida en egui.
+    // Inter es la fuente de texto proporcional; Noto cubre los scripts del
+    // preview multilengüe sin depender de fuentes instaladas en el sistema.
     if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
         family.clear();
         family.push("inter-regular".to_owned());
+        family.push("Noto Sans SC".to_owned());
+        family.push("Noto Sans Hebrew".to_owned());
+        family.push("Noto Sans Arabic".to_owned());
         family.push("NotoEmoji-Regular".to_owned());
         family.push("emoji-icon-font".to_owned());
     }
@@ -167,16 +194,23 @@ fn install_fonts(ctx: &egui::Context) {
         vec![
             "inter-bold".to_owned(),
             "inter-regular".to_owned(),
+            "Noto Sans SC".to_owned(),
+            "Noto Sans Hebrew".to_owned(),
+            "Noto Sans Arabic".to_owned(),
             "NotoEmoji-Regular".to_owned(),
             "emoji-icon-font".to_owned(),
         ],
     );
 
-    // Monoespaciada: Hack (empaquetada en egui) para el editor de código; Inter
-    // queda solo como respaldo de los glifos que Hack no contiene.
+    // Monoespaciada: Hack (empaquetada en egui) para el editor de código; Fira
+    // Mono y Noto quedan como respaldo de los glifos que Hack no contiene.
     if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Monospace) {
         family.clear();
         family.push("Hack".to_owned());
+        family.push("Fira Mono".to_owned());
+        family.push("Noto Sans SC".to_owned());
+        family.push("Noto Sans Hebrew".to_owned());
+        family.push("Noto Sans Arabic".to_owned());
         family.push("inter-regular".to_owned());
         family.push("NotoEmoji-Regular".to_owned());
         family.push("emoji-icon-font".to_owned());
@@ -203,5 +237,7 @@ fn install_fonts(ctx: &egui::Context) {
 
     ctx.set_fonts(fonts);
 
-    log::info!("[editor] fuentes Inter empaquetadas instaladas (sin fuentes del SO)");
+    log::info!(
+        "[editor] fuentes Inter + fallback Noto/Fira empaquetadas instaladas (sin fuentes del SO)"
+    );
 }

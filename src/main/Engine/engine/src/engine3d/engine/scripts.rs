@@ -1,10 +1,91 @@
+use std::path::Path;
+
+use rer_engine_core::i18n::{I18nConfig, LocaleId};
+use rer_engine_core::scripting::I18nChange;
+
 use crate::engine3d::ecs::Transform;
-use crate::engine3d::ipc::{EngineCommand, EngineCommandCommon};
+use crate::engine3d::ipc::{EngineCommand, EngineCommandCommon, EngineEvent, send_event};
 use crate::engine3d::scripting::{EntitySnapshot, PlayScriptInput, ScriptCmd, cached_clip_names};
 
 use super::State;
 
 impl State {
+    pub(crate) fn sync_script_i18n(&self) {
+        let snapshot = self.i18n.snapshot();
+        self.script_engine.set_i18n(
+            snapshot.catalogs,
+            snapshot.active_language,
+            snapshot.formatting_locale,
+        );
+    }
+
+    pub(crate) fn load_i18n_config(
+        &mut self,
+        extract_dir: &Path,
+        config: Option<&I18nConfig>,
+    ) -> Result<(), String> {
+        let changed = self.i18n.load(extract_dir, config)?;
+        self.sync_script_i18n();
+        self.invalidate_i18n_hud();
+        if changed {
+            self.emit_locale_changed();
+        }
+        Ok(())
+    }
+
+    pub(crate) fn set_active_language(&mut self, language: LocaleId) -> bool {
+        if !self.i18n.set_language(language) {
+            return false;
+        }
+        self.sync_script_i18n();
+        self.invalidate_i18n_hud();
+        self.emit_locale_changed();
+        true
+    }
+
+    pub(crate) fn set_formatting_locale(&mut self, locale: LocaleId) -> bool {
+        if !self.i18n.set_locale(locale) {
+            return false;
+        }
+        self.sync_script_i18n();
+        self.invalidate_i18n_hud();
+        self.emit_locale_changed();
+        true
+    }
+
+    fn invalidate_i18n_hud(&mut self) {
+        self.interaction_prompt_cache.clear();
+        self.interaction_prompt_glyph_instances.clear();
+        self.rebuild_player_ui_overlay();
+    }
+
+    fn emit_locale_changed(&self) {
+        send_event(&EngineEvent::LocaleChanged {
+            language: self.i18n.active_language().to_string(),
+            locale: self.i18n.formatting_locale().to_string(),
+            epoch: self.i18n.epoch(),
+        });
+    }
+
+    pub(crate) fn drain_i18n_changes(&mut self) {
+        let mut changed = false;
+        for change in self.script_engine.drain_i18n_changes() {
+            match change {
+                I18nChange::LanguageChanged { language, .. } => {
+                    changed |= self.i18n.set_language(language);
+                }
+                I18nChange::LocaleChanged { locale, .. } => {
+                    changed |= self.i18n.set_locale(locale);
+                }
+            }
+        }
+        if changed {
+            self.sync_script_i18n();
+            self.invalidate_i18n_hud();
+            self.emit_locale_changed();
+        }
+    }
+
     pub(crate) fn build_play_script_input(&self) -> PlayScriptInput {
         let play_aim_dir_3d = if self.preview_playing && self.is_play_controller_active() {
             let dir = self.camera.view_forward();
@@ -30,6 +111,7 @@ impl State {
 
     /// Ejecuta un tick del motor de scripting y aplica los comandos generados.
     pub(crate) fn update_scripts(&mut self) {
+        self.drain_i18n_changes();
         if !self.preview_playing {
             return;
         }
@@ -52,6 +134,7 @@ impl State {
             active_ui.as_deref(),
         );
         self.apply_script_commands(commands);
+        self.drain_i18n_changes();
     }
 
     pub(crate) fn execute_control_script(

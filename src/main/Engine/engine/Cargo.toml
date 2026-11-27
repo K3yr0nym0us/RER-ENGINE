@@ -32,6 +32,10 @@ glam.workspace = true
 bytemuck.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+cosmic-text.workspace = true
+fontdb.workspace = true
+# Necesario para nombrar `Script` en el fallback estático de cosmic-text.
+unicode-script = "0.5"
 log.workspace = true
 gltf = { workspace = true, optional = true }
 ufbx = { workspace = true, optional = true }
@@ -59,8 +63,6 @@ zip.workspace = true
 rfd = { version = "0.18", optional = true }
 # Núcleo Ash compartido (contexto, swapchain, buffers, imágenes) y tipos IPC.
 rer-engine-core = { path = "../core", features = ["vulkan"] }
-ttf-parser.workspace = true
-ab_glyph.workspace = true
 ash = "0.38"
 gpu-allocator = { version = "0.28", default-features = false, features = ["vulkan", "std"], optional = true }
 

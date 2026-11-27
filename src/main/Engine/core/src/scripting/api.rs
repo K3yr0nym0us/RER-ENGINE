@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use rhai::{Engine, INT};
+use rhai::{Dynamic, Engine, INT, Map};
 
+use crate::i18n::{LocaleId, TextArguments};
+
+use super::i18n::ScriptI18nState;
 use super::interaction::InteractionState;
 use super::play_script_input::PlayScriptInput;
 use super::script_cmd::ScriptCmd;
@@ -102,6 +105,8 @@ pub struct ScriptApiContext {
     pub play_input: Arc<Mutex<PlayScriptInput>>,
     /// Estado de interacción (objetivo bajo la mira y pulsación), writable por el motor.
     pub interaction: Arc<Mutex<InteractionState>>,
+    /// Catálogos y selección de idioma compartidos por todas las funciones Rhai.
+    pub i18n: Arc<Mutex<ScriptI18nState>>,
     pub profile: ScriptEngineProfile,
 }
 
@@ -115,6 +120,7 @@ impl ScriptApiContext {
             control_binding_key: Arc::new(Mutex::new(String::new())),
             play_input: Arc::new(Mutex::new(PlayScriptInput::default())),
             interaction: Arc::new(Mutex::new(InteractionState::default())),
+            i18n: Arc::new(Mutex::new(ScriptI18nState::default())),
             profile,
         }
     }
@@ -133,7 +139,197 @@ impl ScriptApiContext {
     }
 }
 
+fn rhai_value_to_json(value: &Dynamic) -> Result<serde_json::Value, String> {
+    if value.is_unit() {
+        return Ok(serde_json::Value::Null);
+    }
+    if let Ok(value) = value.as_int() {
+        return Ok(serde_json::Value::from(value));
+    }
+    if let Ok(value) = value.as_float() {
+        return serde_json::Number::from_f64(value)
+            .map(serde_json::Value::Number)
+            .ok_or_else(|| format!("non-finite float {value} cannot be converted to JSON"));
+    }
+    if let Ok(value) = value.as_bool() {
+        return Ok(serde_json::Value::Bool(value));
+    }
+    if let Ok(value) = value.as_immutable_string_ref() {
+        return Ok(serde_json::Value::String(value.to_string()));
+    }
+    if let Ok(values) = value.as_array_ref() {
+        return values
+            .iter()
+            .map(rhai_value_to_json)
+            .collect::<Result<Vec<_>, _>>()
+            .map(serde_json::Value::Array);
+    }
+    if let Ok(values) = value.as_map_ref() {
+        return values
+            .iter()
+            .map(|(key, value)| rhai_value_to_json(value).map(|value| (key.to_string(), value)))
+            .collect::<Result<serde_json::Map<_, _>, _>>()
+            .map(serde_json::Value::Object);
+    }
+
+    Err(format!(
+        "unsupported Rhai value type: {}",
+        value.type_name()
+    ))
+}
+
+fn rhai_map_to_arguments(values: Map) -> Result<TextArguments, String> {
+    values
+        .into_iter()
+        .map(|(key, value)| Ok((key.to_string(), rhai_value_to_json(&value)?)))
+        .collect()
+}
+
+fn decimal_count_json(count: f64) -> Result<serde_json::Value, String> {
+    serde_json::Number::from_f64(count)
+        .map(serde_json::Value::Number)
+        .ok_or_else(|| format!("count must be a finite decimal, got {count}"))
+}
+
+fn register_i18n_api(engine: &mut Engine, ctx: &ScriptApiContext) {
+    let language_ctx = ctx.i18n.clone();
+    engine.register_fn(
+        "__engine_set_language",
+        move |language: String| match LocaleId::parse(&language) {
+            Ok(language) => language_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .set_language(language),
+            Err(error) => log::warn!("[scripting] set_language({language:?}): {error}"),
+        },
+    );
+
+    let locale_ctx = ctx.i18n.clone();
+    engine.register_fn(
+        "__engine_set_locale",
+        move |locale: String| match LocaleId::parse(&locale) {
+            Ok(locale) => locale_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .set_locale(locale),
+            Err(error) => log::warn!("[scripting] set_locale({locale:?}): {error}"),
+        },
+    );
+
+    let language_ctx = ctx.i18n.clone();
+    engine.register_fn("__engine_get_language", move || {
+        language_ctx
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .active_language
+            .to_string()
+    });
+
+    let locale_ctx = ctx.i18n.clone();
+    engine.register_fn("__engine_get_locale", move || {
+        locale_ctx
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .formatting_locale
+            .to_string()
+    });
+
+    for name in ["__engine_tr", "tr"] {
+        let i18n_ctx = ctx.i18n.clone();
+        engine.register_fn(name, move |key: String| {
+            i18n_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .translate(&key, None)
+        });
+
+        let i18n_ctx = ctx.i18n.clone();
+        engine.register_fn(name, move |key: String, source: String| {
+            i18n_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .translate(&key, Some(&source))
+        });
+    }
+
+    let i18n_ctx = ctx.i18n.clone();
+    engine.register_fn("tr_n", move |key: String, count: INT| {
+        i18n_ctx
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .translate_plural(&key, serde_json::Value::from(count), None)
+    });
+
+    let i18n_ctx = ctx.i18n.clone();
+    engine.register_fn(
+        "tr_n",
+        move |key: String, count: f64| match decimal_count_json(count) {
+            Ok(count) => i18n_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .translate_plural(&key, count, None),
+            Err(error) => {
+                log::warn!("[scripting] tr_n({key:?}, {count}): {error}");
+                String::new()
+            }
+        },
+    );
+
+    let i18n_ctx = ctx.i18n.clone();
+    engine.register_fn("tr_n", move |key: String, count: INT, source: String| {
+        i18n_ctx
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .translate_plural(&key, serde_json::Value::from(count), Some(&source))
+    });
+
+    let i18n_ctx = ctx.i18n.clone();
+    engine.register_fn("tr_n", move |key: String, count: f64, source: String| {
+        match decimal_count_json(count) {
+            Ok(count) => i18n_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .translate_plural(&key, count, Some(&source)),
+            Err(error) => {
+                log::warn!("[scripting] tr_n({key:?}, {count}): {error}");
+                String::new()
+            }
+        }
+    });
+
+    let i18n_ctx = ctx.i18n.clone();
+    engine.register_fn(
+        "tr_fmt",
+        move |key: String, args: Map| match rhai_map_to_arguments(args) {
+            Ok(arguments) => i18n_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .translate_with_arguments(&key, &arguments, None),
+            Err(error) => {
+                log::warn!("[scripting] tr_fmt({key:?}): {error}");
+                String::new()
+            }
+        },
+    );
+
+    let i18n_ctx = ctx.i18n.clone();
+    engine.register_fn("tr_fmt", move |key: String, args: Map, source: String| {
+        match rhai_map_to_arguments(args) {
+            Ok(arguments) => i18n_ctx
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .translate_with_arguments(&key, &arguments, Some(&source)),
+            Err(error) => {
+                log::warn!("[scripting] tr_fmt({key:?}): {error}");
+                String::new()
+            }
+        }
+    });
+}
+
 pub fn register_native_api(engine: &mut Engine, ctx: &ScriptApiContext) {
+    register_i18n_api(engine, ctx);
+
     let c = ctx.clone();
     engine.register_fn("__engine_log", move |msg: String| {
         c.push(ScriptCmd::Log { message: msg });
@@ -559,6 +755,10 @@ pub fn api_preamble(profile: ScriptEngineProfile) -> &'static str {
 const API_PREAMBLE_2D: &str = r#"
 let engine = #{
     log: |msg| { __engine_log(msg); },
+    set_language: |language| { __engine_set_language(language); },
+    set_locale: |locale| { __engine_set_locale(locale); },
+    get_language: || { __engine_get_language() },
+    get_locale: || { __engine_get_locale() },
     move_to: |id, x, y| { __engine_move_to(id, x, y); },
     translate: |id, dx, dy| { __engine_translate(id, dx, dy); },
     set_scale: |id, sx, sy| { __engine_set_scale(id, sx, sy); },
@@ -583,6 +783,10 @@ let engine = #{
 const API_PREAMBLE_3D: &str = r#"
 let engine = #{
     log: |msg| { __engine_log(msg); },
+    set_language: |language| { __engine_set_language(language); },
+    set_locale: |locale| { __engine_set_locale(locale); },
+    get_language: || { __engine_get_language() },
+    get_locale: || { __engine_get_locale() },
     move_to: |id, x, y| { __engine_move_to(id, x, y); },
     translate: |id, dx, dy| { __engine_translate(id, dx, dy); },
     set_scale: |id, sx, sy| { __engine_set_scale(id, sx, sy); },
@@ -638,12 +842,20 @@ pub fn scene_script_preamble(profile: ScriptEngineProfile) -> &'static str {
 const SCENE_SCRIPT_PREAMBLE_2D: &str = r#"
 let engine = #{
     log: |msg| { __engine_log(msg); },
+    set_language: |language| { __engine_set_language(language); },
+    set_locale: |locale| { __engine_set_locale(locale); },
+    get_language: || { __engine_get_language() },
+    get_locale: || { __engine_get_locale() },
 };
 "#;
 
 const SCENE_SCRIPT_PREAMBLE_3D: &str = r#"
 let engine = #{
     log: |msg| { __engine_log(msg); },
+    set_language: |language| { __engine_set_language(language); },
+    set_locale: |locale| { __engine_set_locale(locale); },
+    get_language: || { __engine_get_language() },
+    get_locale: || { __engine_get_locale() },
     set_graphics_texture_tier: |tier| { __engine_set_graphics_texture_tier(tier); },
     get_graphics_texture_tier: || { __engine_get_graphics_texture_tier() },
     set_reflection_tier: |tier| { __engine_set_reflection_tier(tier); },

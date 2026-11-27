@@ -275,15 +275,29 @@ fn asset_rows(
                         30.0
                     };
                     let name_width = (ui.available_width() - trailing).max(0.0);
-                    ui.add_sized(
-                        [name_width, 18.0],
-                        egui::Label::new(
-                            RichText::new(&asset.name)
-                                .size(12.0)
-                                .color(crate::editor::theme::TEXT),
+                    let name = RichText::new(&asset.name)
+                        .size(12.0)
+                        .color(crate::editor::theme::TEXT);
+                    let response = if kind == AssetKind::Font && !loading {
+                        ui.add_sized(
+                            [name_width, 18.0],
+                            egui::Button::new(name)
+                                .fill(egui::Color32::TRANSPARENT)
+                                .stroke(egui::Stroke::NONE)
+                                .truncate(),
                         )
-                        .truncate(),
-                    );
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .on_hover_text(crate::editor::i18n::tr(
+                            locale,
+                            "Ver detalle de la fuente",
+                            "View font details",
+                        ))
+                    } else {
+                        ui.add_sized([name_width, 18.0], egui::Label::new(name).truncate())
+                    };
+                    if kind == AssetKind::Font && !loading && response.clicked() {
+                        actions.push(LeftAction::OpenFontDetails(asset.clone()));
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 2.0;
                         if loading {

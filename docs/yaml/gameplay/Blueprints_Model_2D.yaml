@@ -12,7 +12,7 @@
 #   - docs/yaml/editor/Entity_Properties_Modal.yaml (convertToBlueprint)
 #   - docs/yaml/editor/MODAL_ELECTRON.yaml          (selector nativo de blueprints, migrado)
 #
-# Última revisión: junio 2026
+# Última revisión: noviembre 2026 (persistencia nativa del manifiesto)
 
 overview: |
   Una blueprint 2D es una plantilla con id estable (`bp_*` en editor, persistido en manifest).
@@ -166,13 +166,12 @@ persistence:
   location: project.blueprints[] (raíz manifest; global al proyecto)
   entities: entities[].blueprint_id en cada escena (scenes[].entities)
   save_2d:
-    file: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
+    file: src/main/Engine/engine/src/editor/save/manifest.rs
     rule: |
-      Proyecto 2D: serializa blueprints[] del editor tal cual (BluePrintEntry).
-      No aplica blueprintToSave ni model_id (solo proyectos 3D).
+      Proyecto 2D: serializa blueprints[] del editor tal cual.
+      No aplica model_id (solo proyectos 3D).
   on_load:
-    - project_loaded_2d → blueprintFromSave por entrada
-    - setBlueprints en React
+    - project_loaded_2d → lista de blueprints al editor nativo
     - import_scene con resolve_entity_restore por entidad con blueprint_id
 
 # ---------------------------------------------------------------------------

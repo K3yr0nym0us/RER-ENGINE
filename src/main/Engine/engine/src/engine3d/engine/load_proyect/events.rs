@@ -28,14 +28,24 @@ pub(crate) fn send_project_loaded_3d_with_editor_scenes(
     project: &ProjectSaveData,
     view: &ActiveSaveView,
     editor_scenes: &[crate::engine3d::ipc::EditorSceneListItem],
+    active_language: String,
+    formatting_locale: String,
 ) {
-    send_project_loaded_3d(project, view, Some(editor_scenes));
+    send_project_loaded_3d(
+        project,
+        view,
+        Some(editor_scenes),
+        active_language,
+        formatting_locale,
+    );
 }
 
 pub(crate) fn send_project_loaded_3d(
     project: &ProjectSaveData,
     view: &ActiveSaveView,
     editor_scenes: Option<&[crate::engine3d::ipc::EditorSceneListItem]>,
+    active_language: String,
+    formatting_locale: String,
 ) {
     let scenes: Vec<ProjectLoaded3dSceneTab> = if let Some(items) = editor_scenes {
         items
@@ -161,7 +171,8 @@ pub(crate) fn send_project_loaded_3d(
         sceneName: view.sceneName.clone(),
         entityCount: view.entities.len() as u32,
         scenes,
-        language: project.language.clone(),
+        activeLanguage: active_language,
+        formattingLocale: formatting_locale,
         models,
         sounds: project
             .sounds

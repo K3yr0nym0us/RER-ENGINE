@@ -1,10 +1,5 @@
 //! Orquestación del overlay HUD (texto, botones, imágenes y objetos poligonales).
 
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use ab_glyph::FontArc;
-
 use crate::engine2d::engine::State;
 use crate::engine2d::gizmo;
 
@@ -43,23 +38,6 @@ impl State {
         } else if !self.player_ui_edit_active {
             self.rebuild_player_ui_overlay();
         }
-    }
-
-    pub(crate) fn player_ui_font_cached(&self, path: &str) -> Option<Arc<FontArc>> {
-        self.player_ui_font_cache.get(path).cloned()
-    }
-
-    pub(crate) fn player_ui_font_cached_mut(
-        &mut self,
-        cache: &mut HashMap<String, Arc<FontArc>>,
-        path: &str,
-    ) -> Option<Arc<FontArc>> {
-        if let Some(font) = cache.get(path) {
-            return Some(font.clone());
-        }
-        let font = super::font::load_font_arc(path)?;
-        cache.insert(path.to_string(), font.clone());
-        Some(font)
     }
 
     /// Rebuild completo: resetea atlas y caché de texturas (alta/baja/edición de texto).
@@ -169,18 +147,17 @@ impl State {
 
         self.player_ui_glyph_instances.clear();
 
-        let mut font_cache = self.player_ui_font_cache.clone();
         for layer in &draw_order {
             match layer.kind {
                 super::hud_layers::HudLayerKind::Text => {
                     let b = &text_boxes[layer.index];
-                    text_render::append_text_glyphs(self, std::slice::from_ref(b), &mut font_cache);
+                    text_render::append_text_glyphs(self, std::slice::from_ref(b));
                 }
                 super::hud_layers::HudLayerKind::Button => {
                     let btn = &buttons[layer.index];
                     button_render::append_button_hud_glyphs(
+                        &mut self.i18n,
                         std::slice::from_ref(btn),
-                        &mut font_cache,
                         &mut self.player_ui_text_atlas,
                         &mut self.player_ui_glyph_instances,
                         vw,
@@ -212,6 +189,5 @@ impl State {
                 }
             }
         }
-        self.player_ui_font_cache = font_cache;
     }
 }

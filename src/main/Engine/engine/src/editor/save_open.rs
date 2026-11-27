@@ -8,6 +8,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
+use rer_engine_core::i18n::I18nConfig;
+
 use crate::editor::context::{GameStyle, ProjectType};
 
 /// Resultado de abrir un `.save`.
@@ -56,6 +58,11 @@ pub fn open_save(save_path: &Path) -> Result<OpenedSave, String> {
         }
     };
 
+    if let Err(error) = validate_i18n_manifest(&manifest) {
+        let _ = std::fs::remove_dir_all(&dir);
+        return Err(error);
+    }
+
     let project_type = manifest
         .get("type")
         .and_then(Value::as_str)
@@ -74,6 +81,23 @@ pub fn open_save(save_path: &Path) -> Result<OpenedSave, String> {
         project_type,
         game_style,
     })
+}
+
+fn validate_i18n_manifest(manifest: &Value) -> Result<(), String> {
+    if manifest.get("version").is_some() || manifest.get("language").is_some() {
+        return Err(
+            "El .save usa un manifiesto legacy con 'version' o 'language' y no es compatible"
+                .to_string(),
+        );
+    }
+    let Some(config) = manifest.get("i18n") else {
+        return Err(
+            "El manifest no contiene 'i18n'; este .save legacy no es compatible".to_string(),
+        );
+    };
+    serde_json::from_value::<I18nConfig>(config.clone())
+        .map(|_| ())
+        .map_err(|error| format!("El manifest contiene una configuración 'i18n' inválida: {error}"))
 }
 
 #[cfg(test)]
@@ -111,13 +135,13 @@ mod tests {
         for (name, manifest, expected, style) in [
             (
                 "two_d.save",
-                r#"{"type":"2D","gameStyle":"top-down"}"#,
+                r#"{"type":"2D","gameStyle":"top-down","i18n":{"defaultLanguage":"en","fallbackLanguage":"en","catalogPaths":[]}}"#,
                 ProjectType::TwoD,
                 Some(GameStyle::TopDown),
             ),
             (
                 "three_d.save",
-                r#"{"type":"3D","gameStyle":"first-person"}"#,
+                r#"{"type":"3D","gameStyle":"first-person","i18n":{"defaultLanguage":"en","fallbackLanguage":"en","catalogPaths":[]}}"#,
                 ProjectType::ThreeD,
                 Some(GameStyle::FirstPerson),
             ),
@@ -128,6 +152,48 @@ mod tests {
             assert_eq!(opened.game_style, style);
             assert!(opened.extract_dir.join("manifest.json").is_file());
             let _ = std::fs::remove_dir_all(&opened.extract_dir);
+        }
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn rejects_legacy_or_invalid_i18n_saves() {
+        let base = std::env::temp_dir().join(format!(
+            "rer-save-open-i18n-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).expect("crear directorio de prueba");
+
+        for (name, manifest, expected) in [
+            (
+                "missing-i18n.save",
+                r#"{"type":"2D","gameStyle":"top-down"}"#,
+                "i18n",
+            ),
+            (
+                "legacy-version.save",
+                r#"{"type":"2D","version":1,"i18n":{"defaultLanguage":"en","fallbackLanguage":"en"}}"#,
+                "legacy",
+            ),
+            (
+                "legacy-language.save",
+                r#"{"type":"2D","language":"es","i18n":{"defaultLanguage":"es","fallbackLanguage":"en"}}"#,
+                "legacy",
+            ),
+            (
+                "unknown-i18n-field.save",
+                r#"{"type":"2D","i18n":{"defaultLanguage":"en","fallbackLanguage":"en","fallbackLangauge":"en"}}"#,
+                "i18n",
+            ),
+        ] {
+            let save = write_save(&base, name, manifest);
+            let error = open_save(&save).expect_err("manifiesto incompatible");
+            assert!(error.contains(expected), "{error}");
         }
 
         let _ = std::fs::remove_dir_all(&base);

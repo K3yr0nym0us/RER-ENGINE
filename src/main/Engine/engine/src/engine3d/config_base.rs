@@ -155,6 +155,7 @@ impl State {
         self.logical_area_mode = None;
         self.script_engine = ScriptEngine::new(ScriptEngineProfile::Engine3d)
             .expect("Error al reinicializar el motor de scripting Rhai");
+        self.sync_script_i18n();
         self.script_engine.clear_scene_script();
         self.control_bindings_by_entity.clear();
         self.clear_play_controller_script_frame();

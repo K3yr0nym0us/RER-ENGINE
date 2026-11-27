@@ -478,8 +478,7 @@ macro_rules! __rer_player_ui_text_drag {
                     self.player_ui_last_text_click = Some((id, now));
                     self.player_ui_selected_text_id = Some(id);
                     self.clear_player_ui_selection_except_text();
-                    if double {
-                        self.player_ui_begin_text_edit(id);
+                    if double && self.player_ui_begin_text_edit(id) {
                         log::info!("[player-ui] edición de texto: id={id}");
                     }
                     self.rebuild_player_ui_overlay();

@@ -1,11 +1,8 @@
 //! Renderizado de cuadros de texto HUD (marco gizmo + glifos + cursor).
 
-use std::sync::Arc;
-
-use ab_glyph::FontArc;
-
 use crate::engine2d::engine::State;
 use crate::engine2d::gizmo::{self, GizmoVertex};
+use crate::text::hud_style;
 
 use super::config::{HasUiHudRect, PlayerUiTextBox, box_corners};
 use super::font::{build_hud_label_glyph, text_caret_line_ndc};
@@ -66,32 +63,37 @@ pub(crate) fn append_text_box_gizmo_verts(
     }
 }
 
-pub(crate) fn append_text_glyphs(
-    state: &mut State,
-    boxes: &[PlayerUiTextBox],
-    font_cache: &mut std::collections::HashMap<String, Arc<FontArc>>,
-) {
+pub(crate) fn append_text_glyphs(state: &mut State, boxes: &[PlayerUiTextBox]) {
     let vw = state.size.width.max(1) as f32;
     let vh = state.size.height.max(1) as f32;
     for b in boxes {
-        let Some(font) = state.player_ui_font_cached_mut(font_cache, &b.font_path) else {
-            log::warn!(
-                "[player-ui] no se pudo cargar fuente para cuadro {}: {}",
-                b.id,
-                b.font_path
-            );
+        let Ok(resolved) = state.i18n.resolve(&b.text) else {
+            log::warn!("[player-ui] no se pudo resolver texto para cuadro {}", b.id);
             continue;
         };
+        let text = resolved.display;
+        if text.trim().is_empty() {
+            continue;
+        }
+        let family = match state.i18n.ensure_font(&b.font_path, &b.font_name) {
+            Ok(family) => family,
+            Err(error) => {
+                log::warn!(
+                    "[player-ui] no se pudo cargar fuente para cuadro {}: {error}",
+                    b.id
+                );
+                continue;
+            }
+        };
+        let rect = b.ui_hud_rect();
+        let (width_px, height_px) = super::font::hud_pixel_size(rect, vw, vh);
+        let language = state.i18n.text_shaping_language(&b.text);
+        let style = hud_style(family, width_px, height_px, [1.0; 4], Some(&language));
         build_hud_label_glyph(
-            &font,
-            &b.text,
-            super::config::UiHudRect {
-                center_x: b.center_x,
-                center_y: b.center_y,
-                width: b.width,
-                height: b.height,
-            },
-            [1.0, 1.0, 1.0, 1.0],
+            state.i18n.text_system_mut(),
+            &text,
+            &style,
+            rect,
             vw,
             vh,
             &mut state.player_ui_text_atlas,
@@ -105,15 +107,30 @@ pub(crate) fn rebuild_caret_buffer(state: &mut State, edit_id: u32) {
         state.player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
         return;
     };
-    let Some(font) = state.player_ui_font_cached(&b.font_path) else {
+    let Ok(resolved) = state.i18n.resolve(&b.text) else {
+        state.player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
+        return;
+    };
+    let Ok(family) = state.i18n.ensure_font(&b.font_path, &b.font_name) else {
         state.player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
         return;
     };
     let vw = state.size.width.max(1) as f32;
     let vh = state.size.height.max(1) as f32;
     let rect = b.ui_hud_rect();
-    let Some(line) = text_caret_line_ndc(&font, &b.text, state.player_ui_text_caret, &rect, vw, vh)
-    else {
+    let (width_px, height_px) = super::font::hud_pixel_size(rect, vw, vh);
+    let language = state.i18n.text_shaping_language(&b.text);
+    let style = hud_style(family, width_px, height_px, [1.0; 4], Some(&language));
+    let caret = state.player_ui_text_caret;
+    let Some(line) = text_caret_line_ndc(
+        state.i18n.text_system_mut(),
+        &resolved.display,
+        caret,
+        &style,
+        &rect,
+        vw,
+        vh,
+    ) else {
         state.player_ui_caret_buffer = gizmo::build_from_vertices(&[]);
         return;
     };

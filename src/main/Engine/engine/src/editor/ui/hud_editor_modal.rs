@@ -17,7 +17,11 @@ use crate::editor::theme;
 use super::widgets;
 
 fn element_label(element: &HudElement, locale: Locale) -> String {
-    if element.label.trim().is_empty() {
+    let label = element
+        .text_value
+        .as_ref()
+        .map_or(element.label.as_str(), |text| text.source_text());
+    if label.trim().is_empty() {
         match element.kind {
             HudElementKind::Text => tr(locale, "Empty text", "Empty text").to_string(),
             HudElementKind::Button => tr(locale, "Button", "Button").to_string(),
@@ -25,7 +29,7 @@ fn element_label(element: &HudElement, locale: Locale) -> String {
             HudElementKind::Object => format!("{} #{}", tr(locale, "Object", "Object"), element.id),
         }
     } else {
-        element.label.clone()
+        label.to_string()
     }
 }
 

@@ -8,8 +8,8 @@
 #   - docs/yaml/scripting/RHAI_API.yaml (gravity_and_controls_2d, callbacks on_press)
 #   - docs/yaml/engine/IPC_Protocol.yaml (set_control_bindings, run_control_script)
 
-version: 2
-updated: 2026-11-11
+version: 3
+updated: 2026-11-26
 
 principle:
   scope: personajes (character / player), no escenarios ni objetos estáticos
@@ -35,7 +35,7 @@ binding_kinds:
     description: Botones y ejes de mando (donde esté soportado en preview)
 
 persistence:
-  manifest_field: controls[] o embebido en entidad según buildProjectSaveFromEngine
+  manifest_field: controls[] o embebido en entidad según build_manifest del editor Rust
   shape: SavedControlBindings por entity id
   load: restaurado con la escena; aplicado al entrar en preview
 

@@ -73,9 +73,15 @@ impl State {
                 manifest::log_load_manifest_summary(&project, &extract_dir);
                 paths::resolve_loaded_paths(&mut project, &extract_dir);
                 let extract_path = path.clone();
-                match apply_loaded_proyect_3d(self, &project) {
+                match apply_loaded_proyect_3d(self, &project, &extract_dir) {
                     Ok(view) => {
-                        events::send_project_loaded_3d(&project, &view, None);
+                        events::send_project_loaded_3d(
+                            &project,
+                            &view,
+                            None,
+                            self.i18n.active_language().to_string(),
+                            self.i18n.formatting_locale().to_string(),
+                        );
                         self.editor_scenes_init_from_project(&project, &extract_path, &view);
                         self.sync_active_editor_scene_committed();
                         self.clear_editor_undo_redo();
@@ -96,7 +102,9 @@ impl State {
 pub(crate) fn apply_loaded_proyect_3d(
     state: &mut State,
     project: &ProjectSaveData,
+    extract_dir: &Path,
 ) -> Result<ActiveSaveView, String> {
+    state.load_i18n_config(extract_dir, Some(&project.i18n))?;
     let result = scene::apply_loaded_proyect_3d_with_scene(state, project, None);
     if result.is_ok()
         && let Some(renderer) = state.frame_renderer.as_mut()

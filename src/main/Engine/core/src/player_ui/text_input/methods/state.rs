@@ -34,14 +34,24 @@ macro_rules! __rer_player_ui_text_core {
             self.player_ui_text_caret = self.player_ui_text_caret.min(text.chars().count());
         }
 
-        fn player_ui_begin_text_edit(&mut self, id: u32) {
-            let char_count = self
-                .player_ui_boxes_for_id(id)
-                .map(|b| b.text.chars().count())
-                .unwrap_or(0);
+        fn player_ui_begin_text_edit(&mut self, id: u32) -> bool {
+            let Some(entry) = self.player_ui_boxes_for_id(id) else {
+                return false;
+            };
+            let Some(text) = rer_engine_core::player_ui::text_input::editable_text(&entry.text)
+            else {
+                self.player_ui_text_editing_id = None;
+                self.player_ui_text_caret = 0;
+                log::warn!(
+                    "[player-ui] el texto localizado id={id} no se puede editar directamente en el HUD; edítalo en los catálogos i18n"
+                );
+                return false;
+            };
+            let char_count = text.chars().count();
             self.player_ui_text_editing_id = Some(id);
             self.player_ui_text_caret = char_count;
             self.player_ui_restart_caret_blink();
+            true
         }
 
         pub(crate) fn player_ui_boxes_for_id(&self, id: u32) -> Option<&PlayerUiTextBox> {

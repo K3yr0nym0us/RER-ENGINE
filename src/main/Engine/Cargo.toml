@@ -27,6 +27,11 @@ glam = "0.33"
 bytemuck = { version = "1", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+cosmic-text = { version = "0.19", default-features = false, features = ["std", "swash"] }
+fontdb = { version = "0.23", default-features = false }
+icu_locale = { version = "2.4", default-features = false, features = ["serde"] }
+icu_plurals = { version = "2.4", default-features = false, features = ["compiled_data"] }
+fixed_decimal = { version = "0.7", default-features = false }
 log = "0.4"
 gltf = "1"
 ufbx = "0.11"
@@ -39,8 +44,6 @@ raw-window-handle = "0.6"
 rhai = { version = "1.22", features = ["sync"] }
 gilrs = "0.11"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_Accessibility", "Win32_System_Performance"] }
-ttf-parser = "0.25"
-ab_glyph = "0.2"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 sysinfo = "0.39"
 # Gestión de plugins 100% Rust (descargas, integridad y servidor OpenCode).

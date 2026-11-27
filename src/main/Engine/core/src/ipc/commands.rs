@@ -1,5 +1,6 @@
 use serde::Deserialize;
 
+use crate::i18n::TextValue;
 use crate::ipc::types::{
     AddPlayerUiButtonPayload, AnimScriptData, AnimationFrameData, ControlBindingsData,
     EntityRestoreAnimation, EntityRestorePhysics, EntityRestoreScript, EntityRestoreTransform,
@@ -292,6 +293,8 @@ pub enum EngineCommandCommon {
         locked: Option<bool>,
         #[serde(default)]
         z_index: Option<i32>,
+        #[serde(default)]
+        text: Option<TextValue>,
     },
     SetPlayerUiObjectStyle {
         id: u32,
@@ -318,7 +321,10 @@ pub enum EngineCommandCommon {
     ReloadAsset {
         path: String,
     },
-    SetLocale {
+    SetLanguage {
+        language: String,
+    },
+    SetFormattingLocale {
         locale: String,
     },
     SetAutosave {
@@ -363,4 +369,64 @@ pub struct RotationEulerDelta {
 pub struct AxisValue {
     pub axis: u8,
     pub value: f32,
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::EngineCommandCommon;
+
+    #[test]
+    fn set_language_uses_the_language_field_without_a_legacy_alias() {
+        let command = serde_json::from_value::<EngineCommandCommon>(json!({
+            "cmd": "set_language",
+            "language": "es"
+        }))
+        .expect("set_language must deserialize");
+
+        assert!(matches!(
+            command,
+            EngineCommandCommon::SetLanguage { language } if language == "es"
+        ));
+        assert!(
+            serde_json::from_value::<EngineCommandCommon>(json!({
+                "cmd": "set_locale",
+                "locale": "es"
+            }))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<EngineCommandCommon>(json!({
+                "cmd": "set_language",
+                "locale": "es"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn hud_props_deserialize_serialized_text_value() {
+        let command = serde_json::from_value::<EngineCommandCommon>(json!({
+            "cmd": "set_player_ui_hud_element_props",
+            "element_kind": "text",
+            "id": 3,
+            "text": {
+                "kind": "localized",
+                "id": {"namespace": "player_ui", "key": "title"},
+                "source": "Título"
+            }
+        }))
+        .expect("HUD props must deserialize");
+
+        assert!(matches!(
+            command,
+            EngineCommandCommon::SetPlayerUiHudElementProps {
+                element_kind,
+                id,
+                text: Some(text),
+                ..
+            } if element_kind == "text" && id == 3 && text.is_localized()
+        ));
+    }
 }

@@ -19,6 +19,7 @@ use crate::engine3d::gizmo::GizmoBuffer;
 use crate::engine3d::ipc::PlayCameraFollowMode;
 use crate::engine3d::mesh::Mesh;
 use crate::engine3d::scripting::{EntitySnapshot, ScriptEngine};
+use crate::i18n::I18nRuntime;
 
 pub struct State {
     pub(crate) window: Arc<Window>,
@@ -250,8 +251,6 @@ pub struct State {
     /// UV empaquetados en `player_ui_text_atlas` por ruta de imagen (evita releer disco en cada frame).
     pub(crate) player_ui_hud_texture_cache:
         std::collections::HashMap<String, crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
-    pub(crate) player_ui_font_cache:
-        std::collections::HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
     pub(crate) player_ui_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,
     /// Glifos del prompt de interacción (se reconstruyen cada frame en play).
     pub(crate) interaction_prompt_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,
@@ -345,7 +344,8 @@ pub struct State {
     pub(crate) tool_overlay_buffer: GizmoBuffer,
     /// Anillo que marca la zona clickeable del emisor bajo el cursor.
     pub(crate) emitter_hover_overlay: GizmoBuffer,
-    pub(crate) snap_locale: String,
+    /// Runtime de catálogos, idioma activo, formato y shaping de texto.
+    pub(crate) i18n: I18nRuntime,
     pub(crate) anim_saved_transforms: std::collections::HashMap<u32, (GlamVec3, GlamVec3)>,
     pub pivot_edit_mode: Option<(u32, String, u32, u32)>,
     pub logical_area_mode: Option<u32>,

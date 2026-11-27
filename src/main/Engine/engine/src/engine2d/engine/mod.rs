@@ -45,6 +45,7 @@ use crate::engine2d::gizmo::GizmoBuffer;
 use crate::engine2d::ipc::{EngineCommand, EngineCommandCommon, EngineEvent, send_event};
 use crate::engine2d::mesh::Mesh;
 use crate::engine2d::scripting::{EntitySnapshot, ScriptEngine};
+use crate::i18n::I18nRuntime;
 
 use crate::engine2d::ecs::EntityId;
 
@@ -150,7 +151,6 @@ pub struct State {
     pub(crate) player_ui_text_atlas: crate::engine2d::screen_hud_image::ScreenHudAtlas,
     pub(crate) player_ui_hud_texture_cache:
         HashMap<String, crate::engine2d::screen_hud_image::ScreenHudPackedImage>,
-    pub(crate) player_ui_font_cache: HashMap<String, std::sync::Arc<ab_glyph::FontArc>>,
     pub(crate) player_ui_glyph_instances: Vec<crate::engine2d::mesh::InstanceData>,
     pub(crate) player_ui_selected_text_id: Option<u32>,
     pub(crate) player_ui_selected_button_id: Option<u32>,
@@ -171,8 +171,8 @@ pub struct State {
     pub(crate) vsync_enabled: bool,
     /// Buffer de overlay de la herramienta activa (cruces + líneas de construcción).
     pub(crate) tool_overlay_buffer: GizmoBuffer,
-    /// Locale activo del editor: "en" | "es".
-    pub(crate) locale: String,
+    /// Runtime de catálogos, idioma activo, formato y shaping de texto.
+    pub(crate) i18n: I18nRuntime,
     /// Controla visibilidad del aviso textual de snap (solo editor 2D).
     pub(crate) show_snap_hint: bool,
     /// Entidades creadas por herramientas de dibujo (colisionadores).

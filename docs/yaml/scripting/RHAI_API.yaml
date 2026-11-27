@@ -1,15 +1,16 @@
 # RER-ENGINE — Scripting Rhai (API 2D y 3D)
-# Referencia para IAs y contribuidores. Junio 2026.
+# Referencia para IAs y contribuidores. Noviembre 2026.
 
-version: 1
-updated: 2026-06-04
+version: 2
+updated: 2026-11-26
 
 summary: |
   Guía breve para escribir scripts en entidades. El motor 2D y el 3D comparten la misma forma
   de script; algunas funciones solo existen en uno de los dos.
   Render del motor: Rust — `rer_engine_2d` y `rer_engine_3d` usan Ash sobre Vulkan
-  (Windows; sin variables de entorno). Ventana overlay junto al editor Electron. Los scripts Rhai no
-  configuran la GPU; solo llaman a la API engine.* de gameplay.
+  (Windows y Linux). El editor Rust hospeda el motor in-process; no hay ventana overlay.
+  Los scripts Rhai no configuran la GPU; solo llaman a la API engine.* de gameplay.
+  La API de internacionalización es común a ambos motores y usa los catálogos JSON del proyecto.
 
 # ── Forma de un script ────────────────────────────────────────────────────────
 
@@ -111,6 +112,57 @@ common_api:
   utility:
     - function: engine.log(message)
       description: Mensaje en la consola del editor.
+
+  i18n:
+    description: |
+      API común a 2D y 3D. `activeLanguage` resuelve catálogos y shaping del HUD;
+      `formattingLocale` es un locale de formato independiente. Los cambios efectivos
+      se propagan al runtime, invalidan el overlay HUD y emiten `locale_changed`.
+      Ver docs/I18N_AND_TEXT.md.
+    functions:
+      - function: engine.set_language(language)
+        description: |
+          Cambia el idioma de catálogos. Acepta un locale BCP-47 como "es", "en-US"
+          o "ar". Un valor inválido se ignora con aviso; el mismo valor normalizado es un no-op.
+      - function: engine.set_locale(locale)
+        description: Cambia el locale de formato sin cambiar activeLanguage.
+      - function: engine.get_language()
+        description: Devuelve activeLanguage normalizado como string.
+      - function: engine.get_locale()
+        description: Devuelve formattingLocale normalizado como string.
+    globals:
+      - function: tr(key)
+        description: |
+          Resuelve key en el namespace `game`. Obtiene source de los catálogos de
+          fallback/default; si no existe, devuelve "" y registra un aviso.
+      - function: tr(key, source)
+        description: Resuelve key y usa source como fallback literal si falta la entrada.
+      - function: tr_n(key, count)
+        description: |
+          Resuelve un mensaje plural con count (entero o decimal). Equivale a pasar
+          el argumento `{count}`; las reglas ICU usan el locale del catálogo resuelto.
+      - function: tr_n(key, count, source)
+        description: Igual que tr_n, con source explícito como fallback.
+      - function: tr_fmt(key, args)
+        description: |
+          Resuelve una plantilla con placeholders nombrados desde un mapa Rhai.
+          Es interpolación de argumentos, no parseo de ICU MessageFormat.
+      - function: tr_fmt(key, args, source)
+        description: Igual que tr_fmt, con source explícito como fallback.
+    example: |
+      fn on_start(entity) {
+          engine.set_language("es");
+          engine.set_locale("es-MX");
+
+          engine.log(engine.get_language() + " / " + engine.get_locale());
+          engine.log(tr("hello", "Hello"));
+          engine.log(tr_n("items", 2, "{count} item"));
+          engine.log(tr_fmt("welcome", #{ name: "Ada" }, "Hello {name}"));
+      }
+    notes:
+      - tr usa siempre el namespace `game`; los mensajes del HUD pueden usar otros namespaces mediante TextValue.
+      - Sin source no se inventa texto: se busca el source del catálogo o se devuelve una cadena vacía.
+      - formattingLocale no sustituye activeLanguage ni cambia las reglas de plural del catálogo.
 
 # ── Solo motor 2D ─────────────────────────────────────────────────────────────
 
@@ -324,5 +376,6 @@ implementation:
   modules:
     - ScriptEngine
     - api.rs
+    - i18n.rs
     - script_cmd.rs
   note: Los motores 2D y 3D del crate `rer-engine` reexportan el módulo.

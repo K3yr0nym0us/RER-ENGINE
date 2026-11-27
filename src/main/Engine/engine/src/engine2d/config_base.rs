@@ -69,6 +69,7 @@ impl State {
 
         self.script_engine = ScriptEngine::new(ScriptEngineProfile::Engine2d)
             .expect("Error al reinicializar el motor de scripting Rhai");
+        self.sync_script_i18n();
         self.control_bindings_by_entity.clear();
         self.save_registry.clear();
         self.blocked_on_keep_horizontal.clear();

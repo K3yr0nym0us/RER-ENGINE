@@ -11,6 +11,7 @@ use crate::engine3d::config_compat::{ActiveTool, GridConfig};
 use crate::engine3d::ecs::World;
 use crate::engine3d::entity_save_meta::EntitySaveRegistry;
 use crate::engine3d::scripting::{ScriptEngine, ScriptEngineProfile};
+use crate::i18n::I18nRuntime;
 
 use super::{State, start_audio_thread};
 use crate::engine3d::config_3d::directional_light::{
@@ -116,6 +117,15 @@ impl State {
 
         let (model_preload_tx, model_preload_rx) =
             crate::engine3d::config_3d::static_model_cache::create_model_preload_channel();
+        let i18n = I18nRuntime::new();
+        let script_engine = ScriptEngine::new(ScriptEngineProfile::Engine3d)
+            .expect("Error al inicializar el motor de scripting Rhai");
+        let i18n_snapshot = i18n.snapshot();
+        script_engine.set_i18n(
+            i18n_snapshot.catalogs,
+            i18n_snapshot.active_language,
+            i18n_snapshot.formatting_locale,
+        );
         let state = Self {
             window,
             vulkan: vulkan.clone(),
@@ -245,7 +255,6 @@ impl State {
             player_ui_text_overlay_buffer,
             player_ui_text_atlas,
             player_ui_hud_texture_cache: HashMap::new(),
-            player_ui_font_cache: HashMap::new(),
             player_ui_glyph_instances: Vec::new(),
             interaction_prompt_glyph_instances: Vec::new(),
             interaction_key_pressed: None,
@@ -300,7 +309,7 @@ impl State {
             play_session_camera_yaw_baseline: 0.0,
             tool_overlay_buffer: tool_overlay_buffer_init,
             emitter_hover_overlay: crate::engine3d::gizmo::build_from_vertices(&vulkan, &[]),
-            snap_locale: "en".to_string(),
+            i18n,
             anim_saved_transforms: std::collections::HashMap::new(),
             pivot_edit_mode: None,
             logical_area_mode: None,
@@ -309,8 +318,7 @@ impl State {
             active_animations: HashMap::new(),
             default_animation_by_entity: HashMap::new(),
             entity_facing_right: HashMap::new(),
-            script_engine: ScriptEngine::new(ScriptEngineProfile::Engine3d)
-                .expect("Error al inicializar el motor de scripting Rhai"),
+            script_engine,
             script_snapshots: HashMap::new(),
             script_anim_names: HashMap::new(),
             control_bindings_by_entity: HashMap::new(),

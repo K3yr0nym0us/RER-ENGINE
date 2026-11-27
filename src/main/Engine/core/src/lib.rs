@@ -3,6 +3,7 @@ pub mod backend_policy;
 pub mod bundled_models;
 pub mod editor_defaults;
 pub mod gizmo;
+pub mod i18n;
 pub mod ipc;
 pub mod logging;
 pub mod platform;

@@ -1,3 +1,4 @@
+use rer_engine_core::i18n::TextValue;
 use serde::{Deserialize, Serialize};
 
 use super::*;
@@ -408,7 +409,7 @@ pub struct SavePlayerUiTextBoxSnapshot {
     pub font_path: String,
     #[serde(alias = "fontName")]
     pub font_name: String,
-    pub text: String,
+    pub text: TextValue,
     #[serde(alias = "centerX")]
     pub center_x: f32,
     #[serde(alias = "centerY")]
@@ -437,7 +438,7 @@ pub struct SavePlayerUiButtonSnapshot {
     pub texture_path: Option<String>,
     #[serde(alias = "transparencyBackground")]
     pub transparency_background: f32,
-    pub text: String,
+    pub text: TextValue,
     #[serde(alias = "textColor")]
     pub text_color: [f32; 4],
     #[serde(alias = "transparencyText")]
@@ -566,7 +567,7 @@ pub struct EditorSceneListItem {
 pub struct PlayerUiTextBoxListItem {
     pub id: u32,
     pub font_name: String,
-    pub text: String,
+    pub text: TextValue,
     pub z_index: i32,
     pub locked: bool,
 }
@@ -574,7 +575,7 @@ pub struct PlayerUiTextBoxListItem {
 #[derive(Debug, Serialize, Clone)]
 pub struct PlayerUiButtonListItem {
     pub id: u32,
-    pub text: String,
+    pub text: TextValue,
     pub font_name: String,
     pub z_index: i32,
     pub locked: bool,
@@ -875,8 +876,8 @@ pub struct ProjectLoaded3dEvent {
     pub entityCount: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenes: Vec<ProjectLoaded3dSceneTab>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub language: Option<String>,
+    pub activeLanguage: String,
+    pub formattingLocale: String,
     pub models: Vec<ImportSceneSprite>,
     pub sounds: Vec<ImportSceneSprite>,
     pub fonts: Vec<ImportSceneSprite>,
@@ -893,4 +894,179 @@ pub struct ProjectLoaded3dEvent {
     pub playerUiScreens: Vec<SaveUiScreenSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub menuUiScreens: Vec<SaveUiScreenSnapshot>,
+}
+
+#[cfg(test)]
+mod tests {
+    use rer_engine_core::i18n::{LocalizedText, TextId, TextValue};
+    use serde_json::json;
+
+    use super::{
+        PlayerUiButtonListItem, PlayerUiTextBoxListItem, ProjectLoaded3dEvent,
+        ProjectLoaded3dWorld, SavePlayerUiButtonSnapshot, SavePlayerUiTextBoxSnapshot,
+    };
+
+    fn world() -> ProjectLoaded3dWorld {
+        ProjectLoaded3dWorld {
+            worldWidth: 10.0,
+            worldHeight: 10.0,
+            worldDepth: None,
+            worldRadius: None,
+            worldCenterX: 0.0,
+            worldCenterZ: 0.0,
+            gridVisible: false,
+            gridCellSize: 1.0,
+            gravity: None,
+            targetFps: 0.0,
+            lightAmbient: None,
+            lightIntensity: None,
+            shadowDarkness: None,
+            sunCycleEnabled: None,
+            sunRiseCardinal: None,
+            sunCycleDay: None,
+            sunCycleNight: None,
+            sunCyclePhase: None,
+            graphicsTextureTier: None,
+            textureDetailDistance: None,
+            reflectionTier: None,
+            reflectionMode: None,
+            rtTier: None,
+            reflectionRaytracing: None,
+            reflectionProbes: None,
+            shadowTier: None,
+            msaaTier: None,
+            ssaaTier: None,
+            taaEnabled: None,
+            taaBlend: None,
+            taaJitterScale: None,
+            lodEnabled: None,
+            lod1Distance: None,
+            lod2Distance: None,
+        }
+    }
+
+    #[test]
+    fn project_loaded_3d_exposes_both_runtime_locales_without_legacy_language() {
+        let event = ProjectLoaded3dEvent {
+            event: "project_loaded_3d",
+            activeSceneId: 1,
+            sceneName: "Scene-01".to_owned(),
+            entityCount: 0,
+            scenes: Vec::new(),
+            activeLanguage: "es".to_owned(),
+            formattingLocale: "es-MX".to_owned(),
+            models: Vec::new(),
+            sounds: Vec::new(),
+            fonts: Vec::new(),
+            backgrounds: Vec::new(),
+            hud_images: Vec::new(),
+            blueprints: serde_json::json!([]),
+            world: world(),
+            player: None,
+            config_camera: None,
+            playerUiScreens: Vec::new(),
+            menuUiScreens: Vec::new(),
+        };
+
+        let value = serde_json::to_value(event).expect("project_loaded_3d must serialize");
+        assert_eq!(value["activeLanguage"], "es");
+        assert_eq!(value["formattingLocale"], "es-MX");
+        assert!(value.get("language").is_none());
+    }
+
+    #[test]
+    fn hud_snapshot_and_list_text_values_roundtrip_without_legacy_fields() {
+        let localized = TextValue::Localized(LocalizedText::new(
+            TextId::new("player_ui", "title"),
+            "Título",
+        ));
+        let text_box = SavePlayerUiTextBoxSnapshot {
+            scope: "player".into(),
+            screen_id: "main".into(),
+            id: 1,
+            font_path: "fonts/default.ttf".into(),
+            font_name: "Default".into(),
+            text: localized.clone(),
+            center_x: 0.0,
+            center_y: 0.0,
+            width: 0.4,
+            height: 0.1,
+            z_index: 1,
+            locked: false,
+        };
+        let button = SavePlayerUiButtonSnapshot {
+            scope: "player".into(),
+            screen_id: "main".into(),
+            id: 2,
+            shape_type: "rect".into(),
+            round: 4.0,
+            background_color: [0.0, 0.0, 0.0, 1.0],
+            texture_path: None,
+            transparency_background: 1.0,
+            text: TextValue::literal("Jugar"),
+            text_color: [1.0, 1.0, 1.0, 1.0],
+            transparency_text: 1.0,
+            font_path: "fonts/default.ttf".into(),
+            font_name: "Default".into(),
+            border_color: [1.0, 1.0, 1.0, 1.0],
+            border_weight: 1.0,
+            center_x: 0.0,
+            center_y: 0.0,
+            width: 0.2,
+            height: 0.1,
+            source_aspect: Some(2.0),
+            z_index: 2,
+            locked: false,
+        };
+
+        let box_json = serde_json::to_value(&text_box).unwrap();
+        assert_eq!(box_json["text"], serde_json::to_value(&localized).unwrap());
+        assert!(box_json.get("version").is_none());
+        assert!(box_json["text"].get("textKey").is_none());
+        let decoded_box: SavePlayerUiTextBoxSnapshot =
+            serde_json::from_value(box_json.clone()).unwrap();
+        assert_eq!(decoded_box.text, localized.clone());
+        assert_eq!(serde_json::to_value(decoded_box).unwrap(), box_json);
+
+        let button_json = serde_json::to_value(&button).unwrap();
+        assert_eq!(
+            button_json["text"],
+            json!({"kind": "literal", "value": "Jugar"})
+        );
+        assert!(button_json.get("version").is_none());
+        assert!(button_json["text"].get("textKey").is_none());
+        let decoded_button: SavePlayerUiButtonSnapshot =
+            serde_json::from_value(button_json.clone()).unwrap();
+        assert_eq!(decoded_button.text, TextValue::literal("Jugar"));
+        assert_eq!(serde_json::to_value(decoded_button).unwrap(), button_json);
+
+        let box_item = serde_json::to_value(PlayerUiTextBoxListItem {
+            id: 1,
+            font_name: "Default".into(),
+            text: localized,
+            z_index: 1,
+            locked: false,
+        })
+        .unwrap();
+        assert_eq!(
+            box_item["text"],
+            json!({
+                "kind": "localized",
+                "id": {"namespace": "player_ui", "key": "title"},
+                "source": "Título"
+            })
+        );
+        let button_item = serde_json::to_value(PlayerUiButtonListItem {
+            id: 2,
+            text: TextValue::literal("Jugar"),
+            font_name: "Default".into(),
+            z_index: 2,
+            locked: false,
+        })
+        .unwrap();
+        assert_eq!(
+            button_item["text"],
+            json!({"kind": "literal", "value": "Jugar"})
+        );
+    }
 }

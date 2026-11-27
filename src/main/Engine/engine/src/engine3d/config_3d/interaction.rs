@@ -7,8 +7,10 @@
 
 use super::*;
 
-use crate::engine3d::ecs::Interactable;
+use crate::engine3d::ecs::{Interactable, InteractionTrigger};
 use crate::engine3d::scripting::{InteractionState, ScriptCmd};
+use crate::text::{FontFamily, FontWeight, prompt_style};
+use rer_engine_core::i18n::{LocalizedText, TextId, TextValue};
 use rer_engine_core::player_ui::config::UiHudRect;
 
 /// Definición de un tooltip con nombre, compartida por todas las entidades que lo usan.
@@ -66,6 +68,19 @@ const PROMPT_Y_OFFSET_PX: f32 = 42.0;
 /// Segundos que tarda en llenarse/vaciarse el anillo de «mantener».
 const HOLD_FILL_SECONDS: f32 = 1.1;
 const HOLD_DRAIN_SECONDS: f32 = 0.8;
+
+fn interaction_prompt_values(cfg: &Interactable) -> (TextValue, TextValue) {
+    let (key, source) = match cfg.trigger {
+        InteractionTrigger::Press => ("interaction.press", "Press"),
+        InteractionTrigger::Hold => ("interaction.hold", "Hold"),
+    };
+    let prefix = TextValue::Localized(LocalizedText::new(TextId::new("game", key), source));
+    let action = TextValue::Localized(LocalizedText::new(
+        TextId::new("game", "interaction.to_interact"),
+        "To interact",
+    ));
+    (prefix, action)
+}
 
 impl State {
     /// Borra el anillo de progreso (al perder el objetivo o salir de play).
@@ -322,6 +337,21 @@ impl State {
         self.rebuild_interaction_prompt(target, self.interaction_prompt_alpha, target_cfg.as_ref());
     }
 
+    /// Resuelve el prefijo y la acción del prompt con el catálogo activo.
+    fn interaction_prompt_text(&self, cfg: &Interactable) -> (String, String) {
+        let (prefix, action) = interaction_prompt_values(cfg);
+        let resolve = |value: &TextValue| {
+            self.i18n.resolve(value).map_or_else(
+                |error| {
+                    log::warn!("[interaction] no se pudo resolver el texto del prompt: {error}");
+                    value.source_text().to_owned()
+                },
+                |resolved| resolved.display,
+            )
+        };
+        (resolve(&prefix), resolve(&action))
+    }
+
     /// Reconstruye el tooltip del objetivo: «Pulsa»(negrita) / [E] / acción.
     /// `cfg` ya viene resuelto contra el registro de tooltips compartido.
     fn rebuild_interaction_prompt(
@@ -356,7 +386,7 @@ impl State {
 
         let vw = self.size.width.max(1) as f32;
         let vh = self.size.height.max(1) as f32;
-        let (prefix, action) = cfg.prompt_parts(&self.snap_locale);
+        let (prefix, action) = self.interaction_prompt_text(cfg);
         let key = cfg.key.trim();
 
         let width_px = (prefix.chars().count().max(action.chars().count()) as f32 * 12.0 + 64.0)
@@ -372,21 +402,38 @@ impl State {
             height: 2.0 * h / vh,
         };
 
-        let font = self
-            .interaction_font()
-            .or_else(super::player_ui::font::load_builtin_font_arc);
-        let Some(font) = font else {
-            return;
-        };
+        let (family, font_path) = self.interaction_font();
+        let language = self.i18n.active_language().to_string();
+        let locale = self.i18n.formatting_locale().to_string();
+        let epoch = self.i18n.epoch();
 
-        // 1. «Press» / «Pulsa» en negrita.
-        super::player_ui::font::build_cached_hud_label_glyph(
-            &font,
+        // 1. «Press» / «Pulsa» en negrita real.
+        let prefix_rect = line_rect(top_px + 8.0, 34.0);
+        let (prefix_w, prefix_h) = super::player_ui::font::hud_pixel_size(prefix_rect, vw, vh);
+        let prefix_style = prompt_style(
+            family.clone(),
+            prefix_w,
+            prefix_h,
+            FontWeight::Bold,
+            Some(&language),
+        );
+        let prefix_key = super::player_ui::font::prompt_cache_key(
+            &language,
+            &locale,
+            epoch,
+            &font_path,
+            &prefix_style,
             &prefix,
-            line_rect(top_px + 8.0, 34.0),
+            prefix_w,
+            prefix_h,
+        );
+        super::player_ui::font::build_cached_hud_label_glyph(
+            self.i18n.text_system_mut(),
+            &prefix,
+            &prefix_style,
+            &prefix_key,
+            prefix_rect,
             alpha,
-            true,
-            4,
             vw,
             vh,
             &self.vulkan,
@@ -413,13 +460,24 @@ impl State {
             1.0,
             &mut self.interaction_prompt_glyph_instances,
         );
+        let (key_w, key_h) = super::player_ui::font::hud_pixel_size(key_box, vw, vh);
+        let key_style = prompt_style(
+            family.clone(),
+            key_w,
+            key_h,
+            FontWeight::Regular,
+            Some(&language),
+        );
+        let key_cache_key = super::player_ui::font::prompt_cache_key(
+            &language, &locale, epoch, &font_path, &key_style, key, key_w, key_h,
+        );
         super::player_ui::font::build_cached_hud_label_glyph(
-            &font,
+            self.i18n.text_system_mut(),
             key,
+            &key_style,
+            &key_cache_key,
             key_box,
             alpha,
-            false,
-            4,
             vw,
             vh,
             &self.vulkan,
@@ -429,13 +487,32 @@ impl State {
         );
 
         // 3. Acción: «to move the platform» / «para mover la plataforma».
-        super::player_ui::font::build_cached_hud_label_glyph(
-            &font,
+        let action_rect = line_rect(top_px + 94.0, 28.0);
+        let (action_w, action_h) = super::player_ui::font::hud_pixel_size(action_rect, vw, vh);
+        let action_style = prompt_style(
+            family,
+            action_w,
+            action_h,
+            FontWeight::Bold,
+            Some(&language),
+        );
+        let action_key = super::player_ui::font::prompt_cache_key(
+            &language,
+            &locale,
+            epoch,
+            &font_path,
+            &action_style,
             &action,
-            line_rect(top_px + 94.0, 28.0),
+            action_w,
+            action_h,
+        );
+        super::player_ui::font::build_cached_hud_label_glyph(
+            self.i18n.text_system_mut(),
+            &action,
+            &action_style,
+            &action_key,
+            action_rect,
             alpha,
-            true,
-            4,
             vw,
             vh,
             &self.vulkan,
@@ -603,61 +680,74 @@ impl State {
         packed
     }
 
-    /// Fuente del proyecto para el prompt (HUD activo o biblioteca de fuentes).
-    fn interaction_font(&mut self) -> Option<std::sync::Arc<ab_glyph::FontArc>> {
-        let path = self.interaction_font_path()?;
-        if let Some(font) = self.player_ui_font_cache.get(&path).cloned() {
-            return Some(font);
+    /// Fuente del proyecto para el prompt y ruta usada en su clave de caché.
+    fn interaction_font(&mut self) -> (FontFamily, String) {
+        let (path, name) = self.interaction_font_source();
+        match self.i18n.ensure_font(&path, &name) {
+            Ok(family) => (family, path),
+            Err(error) => {
+                log::warn!("[interaction] fuente del prompt no legible ({path}): {error}");
+                (FontFamily::SansSerif, String::new())
+            }
         }
-        let font = super::player_ui::font::load_font_arc(&path)?;
-        self.player_ui_font_cache.insert(path, font.clone());
-        Some(font)
     }
 
     /// Fuente a usar para el prompt: la del HUD activo o cualquier fuente registrada.
-    fn interaction_font_path(&self) -> Option<String> {
+    fn interaction_font_source(&self) -> (String, String) {
         if let Some(key) = self.player_ui_screen_key()
             && let Some(boxes) = self.player_ui_text_boxes.get(&key)
-            && let Some(path) = boxes
-                .iter()
-                .find(|b| !b.font_path.trim().is_empty())
-                .map(|b| b.font_path.clone())
+            && let Some(text_box) = boxes.iter().find(|b| !b.font_path.trim().is_empty())
         {
-            return Some(path);
+            return (text_box.font_path.clone(), text_box.font_name.clone());
         }
-        self.font_store
-            .keys()
-            .next()
-            .cloned()
-            .or_else(|| self.player_ui_font_cache.keys().next().cloned())
+        let mut fonts: Vec<_> = self.font_store.iter().collect();
+        fonts.sort_by_key(|(path, _)| *path);
+        fonts.into_iter().next().map_or_else(
+            || (String::new(), String::new()),
+            |(path, name)| (path.clone(), name.clone()),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::i18n::I18nRuntime;
+
+    fn resolved_prompt(runtime: &I18nRuntime, cfg: &Interactable) -> (String, String) {
+        let (prefix, action) = interaction_prompt_values(cfg);
+        (
+            runtime.resolve(&prefix).expect("resolve prefix").display,
+            runtime.resolve(&action).expect("resolve action").display,
+        )
+    }
 
     #[test]
-    fn prompt_parts_derive_verb_from_trigger() {
+    fn prompt_resolves_in_spanish_and_falls_back_to_source_for_arabic() {
+        let mut runtime = I18nRuntime::new();
         let press = Interactable::default();
+        let hold = Interactable {
+            trigger: InteractionTrigger::Hold,
+            ..Default::default()
+        };
+
+        runtime.set_language(rer_engine_core::i18n::LocaleId::parse("es").expect("test locale"));
         assert_eq!(
-            press.prompt_parts("es"),
+            resolved_prompt(&runtime, &press),
             ("Pulsa".into(), "Para interactuar".into())
         );
         assert_eq!(
-            press.prompt_parts("en"),
-            ("Press".into(), "To interact".into())
-        );
-        let hold = Interactable {
-            trigger: crate::engine3d::ecs::InteractionTrigger::Hold,
-            ..Default::default()
-        };
-        assert_eq!(
-            hold.prompt_parts("es"),
+            resolved_prompt(&runtime, &hold),
             ("Mantén".into(), "Para interactuar".into())
         );
+
+        runtime.set_language(rer_engine_core::i18n::LocaleId::parse("ar").expect("test locale"));
         assert_eq!(
-            hold.prompt_parts("en"),
+            resolved_prompt(&runtime, &press),
+            ("Press".into(), "To interact".into())
+        );
+        assert_eq!(
+            resolved_prompt(&runtime, &hold),
             ("Hold".into(), "To interact".into())
         );
     }
@@ -672,9 +762,112 @@ mod tests {
     }
 
     #[test]
-    fn prompt_cache_key_es_unica_por_texto_y_tamano() {
-        // El cache usa texto + dimensiones en píxeles; dos textos distintos no colisionan.
-        assert_ne!("Abrir|40x28", "Cerrar|40x28");
-        assert_ne!("Abrir|40x28", "Abrir|80x28");
+    fn prompt_cache_key_incluye_idioma_locale_epoca_fuente_estilo_y_texto() {
+        let style = prompt_style(FontFamily::SansSerif, 200, 40, FontWeight::Bold, Some("es"));
+        let base = super::player_ui::font::prompt_cache_key(
+            "es",
+            "es-MX",
+            7,
+            "fonts/project.ttf",
+            &style,
+            "Abrir",
+            200,
+            40,
+        );
+
+        assert_ne!(
+            base,
+            super::player_ui::font::prompt_cache_key(
+                "en",
+                "es-MX",
+                7,
+                "fonts/project.ttf",
+                &style,
+                "Abrir",
+                200,
+                40,
+            )
+        );
+        assert_ne!(
+            base,
+            super::player_ui::font::prompt_cache_key(
+                "es",
+                "en-US",
+                7,
+                "fonts/project.ttf",
+                &style,
+                "Abrir",
+                200,
+                40,
+            )
+        );
+        assert_ne!(
+            base,
+            super::player_ui::font::prompt_cache_key(
+                "es",
+                "es-MX",
+                8,
+                "fonts/project.ttf",
+                &style,
+                "Abrir",
+                200,
+                40,
+            )
+        );
+        assert_ne!(
+            base,
+            super::player_ui::font::prompt_cache_key(
+                "es",
+                "es-MX",
+                7,
+                "fonts/other.ttf",
+                &style,
+                "Abrir",
+                200,
+                40,
+            )
+        );
+        assert_ne!(
+            base,
+            super::player_ui::font::prompt_cache_key(
+                "es",
+                "es-MX",
+                7,
+                "fonts/project.ttf",
+                &style,
+                "Cerrar",
+                200,
+                40,
+            )
+        );
+        assert_ne!(
+            base,
+            super::player_ui::font::prompt_cache_key(
+                "es",
+                "es-MX",
+                7,
+                "fonts/project.ttf",
+                &style,
+                "Abrir",
+                240,
+                40,
+            )
+        );
+
+        let mut regular = style;
+        regular.weight = FontWeight::Regular;
+        assert_ne!(
+            base,
+            super::player_ui::font::prompt_cache_key(
+                "es",
+                "es-MX",
+                7,
+                "fonts/project.ttf",
+                &regular,
+                "Abrir",
+                200,
+                40,
+            )
+        );
     }
 }

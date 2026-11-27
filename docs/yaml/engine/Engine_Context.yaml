@@ -10,8 +10,8 @@
 #   - docs/yaml/persistence/Escenes_Model_3D.yaml
 #   - docs/yaml/editor/Entity_Properties_Modal.yaml
 
-version: 1
-updated: 2026-06-14
+version: 2
+updated: 2026-11-26
 
 principle:
   pattern: |
@@ -30,8 +30,10 @@ architecture:
 
 data_flow: |
   Vigente (egui): el editor Rust posee el estado del motor en proceso y consume
-  sus comandos/eventos directamente; Electron solo lanza el editor y reenvía
-  `set-locale` por stdin. El flujo React de abajo es histórico, no vigente.
+  sus comandos/eventos directamente. Electron solo lanza el editor y le pasa
+  `--locale`; el editor envía `set_language` al motor in-process. Al cargar un
+  `.save`, `i18n.defaultLanguage` configura los catálogos. El flujo React de
+  abajo es histórico, no vigente.
 
 critical_refs:
   entityTransformsRef: "id → { position, rotation, scale }"

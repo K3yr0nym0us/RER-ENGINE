@@ -38,7 +38,7 @@ macro_rules! __rer_player_ui_text_edit {
                 id,
                 font_path: font_path.to_string(),
                 font_name,
-                text: "Texto".to_string(),
+                text: rer_engine_core::i18n::TextValue::literal("Texto"),
                 center_x: 0.0,
                 center_y,
                 width: DEFAULT_BOX_W,
@@ -231,7 +231,7 @@ macro_rules! __rer_player_ui_text_edit {
                 }
                 KeyCode::ArrowRight => {
                     if let Some(b) = self.player_ui_boxes_for_id(edit_id) {
-                        let max = b.text.chars().count();
+                        let max = b.text.source_text().chars().count();
                         if self.player_ui_text_caret < max {
                             self.player_ui_text_caret += 1;
                         }
@@ -244,7 +244,7 @@ macro_rules! __rer_player_ui_text_edit {
                 }
                 KeyCode::End => {
                     if let Some(b) = self.player_ui_boxes_for_id(edit_id) {
-                        self.player_ui_text_caret = b.text.chars().count();
+                        self.player_ui_text_caret = b.text.source_text().chars().count();
                     }
                     self.player_ui_restart_caret_blink();
                 }
@@ -264,18 +264,24 @@ macro_rules! __rer_player_ui_text_edit {
             if caret == 0 {
                 return;
             }
-            let mut updated: Option<String> = None;
+            let mut updated: Option<rer_engine_core::i18n::TextValue> = None;
             if let Some(boxes) = self.player_ui_boxes_mut() {
                 if let Some(b) = Self::find_box_by_id_mut(boxes, id) {
+                    let source = b.text.source_text();
                     let start =
                         rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(
-                            &b.text,
+                            source,
                             caret - 1,
                         );
                     let end = rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(
-                        &b.text, caret,
+                        source, caret,
                     );
-                    b.text.replace_range(start..end, "");
+                    if !rer_engine_core::player_ui::text_input::mutate_literal_text(
+                        &mut b.text,
+                        |text| text.replace_range(start..end, ""),
+                    ) {
+                        return;
+                    }
                     updated = Some(b.text.clone());
                 }
             }
@@ -291,22 +297,28 @@ macro_rules! __rer_player_ui_text_edit {
 
         fn player_ui_text_delete_after_caret(&mut self, id: u32) {
             let caret = self.player_ui_text_caret;
-            let mut updated: Option<String> = None;
+            let mut updated: Option<rer_engine_core::i18n::TextValue> = None;
             if let Some(boxes) = self.player_ui_boxes_mut() {
                 if let Some(b) = Self::find_box_by_id_mut(boxes, id) {
-                    let char_count = b.text.chars().count();
+                    let source = b.text.source_text();
+                    let char_count = source.chars().count();
                     if caret >= char_count {
                         return;
                     }
                     let start =
                         rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(
-                            &b.text, caret,
+                            source, caret,
                         );
                     let end = rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(
-                        &b.text,
+                        source,
                         caret + 1,
                     );
-                    b.text.replace_range(start..end, "");
+                    if !rer_engine_core::player_ui::text_input::mutate_literal_text(
+                        &mut b.text,
+                        |text| text.replace_range(start..end, ""),
+                    ) {
+                        return;
+                    }
                     updated = Some(b.text.clone());
                 }
             }
@@ -333,38 +345,40 @@ macro_rules! __rer_player_ui_text_edit {
 
         fn player_ui_text_insert_at_caret(&mut self, id: u32, s: &str) {
             let caret = self.player_ui_text_caret;
-            let mut updated: Option<String> = None;
+            let mut updated: Option<rer_engine_core::i18n::TextValue> = None;
             let mut inserted_chars = 0usize;
             if let Some(boxes) = self.player_ui_boxes_mut() {
                 if let Some(b) = Self::find_box_by_id_mut(boxes, id) {
+                    let source = b.text.source_text();
                     let byte_start =
                         rer_engine_core::player_ui::text_input::hit_test::char_index_to_byte(
-                            &b.text, caret,
+                            source, caret,
                         );
                     let mut chunk = String::new();
                     for ch in s.chars() {
                         if ch == '\n' || ch == '\r' || ch == '\u{8}' || ch == '\u{7f}' {
                             continue;
                         }
-                        if b.text.chars().count() + chunk.chars().count() >= MAX_TEXT_CHARS {
+                        if source.chars().count() + chunk.chars().count() >= MAX_TEXT_CHARS {
                             break;
                         }
                         chunk.push(ch);
                     }
                     if !chunk.is_empty() {
                         inserted_chars = chunk.chars().count();
-                        let mut new_text = String::with_capacity(b.text.len() + chunk.len());
-                        new_text.push_str(&b.text[..byte_start]);
-                        new_text.push_str(&chunk);
-                        new_text.push_str(&b.text[byte_start..]);
-                        b.text = new_text;
+                        if !rer_engine_core::player_ui::text_input::mutate_literal_text(
+                            &mut b.text,
+                            |text| text.insert_str(byte_start, &chunk),
+                        ) {
+                            return;
+                        }
                         updated = Some(b.text.clone());
                     }
                 }
             }
             if let Some(text) = updated {
                 self.player_ui_text_caret = caret + inserted_chars;
-                self.player_ui_clamp_caret_for_box(&text);
+                self.player_ui_clamp_caret_for_box(text.source_text());
                 self.player_ui_restart_caret_blink();
                 self.rebuild_player_ui_overlay();
                 self.emit_player_ui_text_updated(id, &text);

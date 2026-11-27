@@ -1,6 +1,6 @@
 # Carga de proyecto 3D al abrir .save (rendimiento y flujo)
 #
-# El motor hace el trabajo pesado en Rust; el renderer solo refleja eventos.
+# El motor hace el trabajo pesado en Rust; el editor nativo refleja eventos.
 # Complementa load_flow.motor_3d en docs/yaml/persistence/Save_Proyect_Model.yaml.
 #
 # Relacionado con:
@@ -10,13 +10,14 @@
 #   - docs/yaml/persistence/Escenes_Model_3D.yaml
 #   - docs/yaml/rendering/Model_LOD_3D.yaml
 
-version: 1
-updated: 2026-11-12
+version: 2
+updated: 2026-11-26
 
 principle: |
   Abrir un .save 3D no debe bloquear el arranque del motor ni precargar toda la
-  biblioteca de modelos. Solo se importan/decodifican los GLB/GLTF referenciados
-  por entidades de la escena activa y el modelo visual del jugador play character.
+  biblioteca de modelos. La GPU se alimenta desde .rerasset cuando está listo;
+  GLB/GLTF solo se usa como ruta de importación o compatibilidad. Solo se cargan
+  los modelos requeridos por entidades de la escena activa y el jugador play character.
 
 entry_point:
   file: src/main/Engine/engine/src/engine3d/engine/load_proyect.rs
@@ -25,14 +26,15 @@ entry_point:
 startup:
   env: RER_3D_START_FROM_SAVE
   ready: Motor emite ready tras escena vacía; burst continúa en segundo plano
-  overlay: Renderer muestra loader hasta project_load_3d_complete
+  overlay: El editor nativo muestra loader hasta project_load_3d_complete
 
 phases:
   1_resolve_paths:
     action: resolve_loaded_paths (relativas bajo extract_dir)
   2_world_and_stores:
     action: |
-      mundo, iluminación, LoadSound/Font/HudImage, imported_model_registry (v2).
+      mundo, iluminación, LoadSound/Font/HudImage, imported_model_registry.
+      load_i18n_config carga catalogPaths y aplica defaultLanguage/formattingLocale.
       La config LOD de modelos (lodEnabled/lod1Distance/lod2Distance del `world`) se
       reaplica aquí vía apply_model_lod_from_world_wire; ver docs/yaml/rendering/Model_LOD_3D.yaml.
   3_clear_scene:
@@ -69,7 +71,7 @@ gpu_optimizations:
     file: ensure_editor_box_gpu_assets
     effect: una mesh/textura GPU compartida para todos los [EditorBox]
   static_model_cache:
-    key: model_id (v2) o path fuente
+    key: model_id o path fuente
     source: .rerasset cuando AssetState::Ready
 
 textures_glb_editor:
@@ -80,7 +82,7 @@ textures_glb_editor:
     Ignora normal/metallic y resto del pack en carga inicial.
   reserved: AllEmbedded para módulo de calidad futuro (ver docs/yaml/editor/Entity_Textures.yaml)
 
-electron_main:
+launcher_main:
   stderr: reenvío líneas [load_proyect] al panel del editor
   spawn_args: solo save_path al editor Rust (este extrae el ZIP y decide 2D/3D desde el manifest)
   note: extract_dir lo crea Rust en editor/save_open.rs; Electron no descomprime el .save
@@ -88,6 +90,10 @@ electron_main:
 events:
   project_loaded_3d:
     when: Tras parsear manifest y aplicar escena activa (tabs, mundo, entidades base)
+    i18n_fields: activeLanguage, formattingLocale
+  locale_changed:
+    when: Cambio efectivo de activeLanguage o formattingLocale
+    fields: activeLanguage, formattingLocale, epoch
   project_load_3d_complete:
     when: Fin de burst/precarga; cierra loader
   load_progress:
@@ -95,7 +101,7 @@ events:
     ui: panel consola [Carga]
   model_loaded:
     fields: kind (model | character), entity_category
-    note: front clasifica entidad sin pendingSpawnKindRef
+    note: el editor nativo clasifica la entidad sin pendingSpawnKindRef
 
 spawn_character:
   from: Characters accordion / load_model con kind=character
@@ -107,5 +113,5 @@ key_files:
   - src/main/Engine/engine/src/engine3d/engine/load_proyect.rs
   - src/main/Engine/engine/src/engine3d/config_3d/static_model_cache.rs
   - src/main/Engine/engine/src/engine3d/config_3d/gltf_texture_load.rs
-  - src/main/index.ts
-  - src/renderer/src/context/useContextEngine/hooks/createEngineEventHandler.ts
+  - src/main/Engine/engine/src/editor/save_open.rs
+  - src/main/Engine/engine/src/editor/app/events.rs

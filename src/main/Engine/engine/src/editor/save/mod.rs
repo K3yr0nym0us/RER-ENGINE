@@ -59,6 +59,7 @@ pub fn write_save(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rer_engine_core::i18n::I18nConfig;
     use serde_json::json;
     use std::fs;
     use std::io::Read;
@@ -92,12 +93,23 @@ mod tests {
         fs::create_dir_all(&assets).unwrap();
         let sound = assets.join("hit.wav");
         fs::write(&sound, b"RIFF").unwrap();
+        let catalog = assets.join("catalogs").join("ui.json");
+        fs::create_dir_all(catalog.parent().unwrap()).unwrap();
+        fs::write(
+            &catalog,
+            br#"{"locale":"es","namespace":"ui","entries":[]}"#,
+        )
+        .unwrap();
 
         let save_path = dir.join("project.save");
         let state = ProjectState {
             project_type: Some("2D".into()),
             game_style: Some("top-down".into()),
-            locale: Some("es".into()),
+            i18n: I18nConfig {
+                default_language: "es".parse().unwrap(),
+                fallback_language: "en".parse().unwrap(),
+                catalog_paths: vec![catalog.clone()],
+            },
             scenes: vec![
                 json!({ "id": 1, "name": "Nivel", "entities": [], "player": null, "sprites": [] }),
             ],
@@ -115,7 +127,7 @@ mod tests {
             Some(&dir),
         )
         .unwrap();
-        assert!(result.files >= 2);
+        assert!(result.files >= 3);
 
         let file = fs::File::open(&save_path).unwrap();
         let mut archive = zip::ZipArchive::new(file).unwrap();
@@ -132,6 +144,8 @@ mod tests {
         }
         assert!(names.contains(&"manifest.json".to_string()));
         assert!(names.contains(&"sounds/hit.wav".to_string()));
+        assert!(names.contains(&"i18n/ui.json".to_string()));
+        assert!(!names.contains(&"assets/ui.json".to_string()));
 
         let mut manifest = String::new();
         archive
@@ -141,7 +155,59 @@ mod tests {
             .unwrap();
         let manifest: Value = serde_json::from_str(&manifest).unwrap();
         assert_eq!(manifest["sounds"][0]["path"], json!("sounds/hit.wav"));
-        assert_eq!(manifest["language"], json!("es"));
+        assert!(manifest.get("version").is_none());
+        assert!(manifest.get("language").is_none());
+        assert_eq!(
+            manifest["i18n"],
+            json!({
+                "defaultLanguage": "es",
+                "fallbackLanguage": "en",
+                "catalogPaths": ["i18n/ui.json"]
+            })
+        );
+        let mut catalog_bytes = Vec::new();
+        archive
+            .by_name("i18n/ui.json")
+            .unwrap()
+            .read_to_end(&mut catalog_bytes)
+            .unwrap();
+        assert_eq!(
+            catalog_bytes,
+            br#"{"locale":"es","namespace":"ui","entries":[]}"#
+        );
+
+        let opened = crate::editor::save_open::open_save(&save_path).unwrap();
+        let restored = ProjectState::from_manifest_dir(&opened.extract_dir).unwrap();
+        assert_eq!(restored.i18n.default_language, state.i18n.default_language);
+        assert_eq!(
+            restored.i18n.fallback_language,
+            state.i18n.fallback_language
+        );
+        assert_eq!(
+            restored.i18n.catalog_paths,
+            vec![PathBuf::from("i18n/ui.json")]
+        );
+
+        let roundtrip_path = dir.join("roundtrip.save");
+        write_save(
+            &engine_scene(),
+            &restored,
+            "2D",
+            "top-down",
+            &roundtrip_path,
+            Some(&opened.extract_dir),
+        )
+        .unwrap();
+        let roundtrip = fs::File::open(&roundtrip_path).unwrap();
+        let mut roundtrip = zip::ZipArchive::new(roundtrip).unwrap();
+        let mut roundtrip_catalog = Vec::new();
+        roundtrip
+            .by_name("i18n/ui.json")
+            .unwrap()
+            .read_to_end(&mut roundtrip_catalog)
+            .unwrap();
+        assert_eq!(roundtrip_catalog, catalog_bytes);
+        let _ = std::fs::remove_dir_all(&opened.extract_dir);
 
         let _ = fs::remove_dir_all(&dir);
     }

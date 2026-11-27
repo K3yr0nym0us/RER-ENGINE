@@ -151,9 +151,14 @@ impl State {
                 log::info!("[sound] lista enviada: {} sonidos", count);
             }
             EngineCommand::Common(EngineCommandCommon::LoadFont { path, name }) => {
-                match validate_font_file(&path) {
+                let loaded = crate::text::validate_font_file(&path)
+                    .and_then(|()| self.i18n.ensure_font(&path, &name).map(|_| ()));
+                match loaded {
                     Ok(()) => {
                         self.font_store.insert(path.clone(), name.clone());
+                        self.interaction_prompt_cache.clear();
+                        self.interaction_prompt_glyph_instances.clear();
+                        self.rebuild_player_ui_overlay();
                         send_event(&EngineEvent::FontLoaded {
                             path: path.clone(),
                             name: name.clone(),
@@ -169,6 +174,10 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::RemoveFont { path }) => {
                 if self.font_store.remove(&path).is_some() {
+                    let _ = self.i18n.remove_font(&path);
+                    self.interaction_prompt_cache.clear();
+                    self.interaction_prompt_glyph_instances.clear();
+                    self.rebuild_player_ui_overlay();
                     send_event(&EngineEvent::FontRemoved { path: path.clone() });
                     log::info!("[font] eliminada: {}", path);
                 } else {

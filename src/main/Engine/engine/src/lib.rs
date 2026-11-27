@@ -10,6 +10,9 @@
 
 mod embedded_fonts;
 
+pub mod i18n;
+pub mod text;
+
 #[cfg(feature = "engine3d")]
 pub mod engine3d;
 

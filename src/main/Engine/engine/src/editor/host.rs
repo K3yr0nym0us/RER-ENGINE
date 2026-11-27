@@ -391,8 +391,8 @@ impl EditorWindow {
         self.app.engine_loading = false;
         self.app.engine_error = None;
         self.app.send_engine(serde_json::json!({
-            "cmd": "set_locale",
-            "locale": self.app.cli.locale.as_str(),
+            "cmd": "set_language",
+            "language": self.app.cli.locale.as_str(),
         }));
         self.mount_saved_scene();
         self.window.request_redraw();
@@ -407,8 +407,8 @@ impl EditorWindow {
         self.app.engine_loading = false;
         self.app.engine_error = None;
         self.app.send_engine(serde_json::json!({
-            "cmd": "set_locale",
-            "locale": self.app.cli.locale.as_str(),
+            "cmd": "set_language",
+            "language": self.app.cli.locale.as_str(),
         }));
         self.mount_saved_scene();
         self.window.request_redraw();

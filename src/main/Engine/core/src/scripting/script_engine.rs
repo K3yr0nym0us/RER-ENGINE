@@ -2,11 +2,14 @@ use std::collections::HashMap;
 
 use rhai::{AST, Dynamic, Engine, INT, Map, Scope};
 
+use crate::i18n::{CatalogSet, LocaleId};
+
 use super::api::{
     ScriptApiContext, ScriptEngineProfile, register_native_api, wrap_scene_source, wrap_user_source,
 };
 use super::control::ControlScriptDispatch;
 use super::entity_snapshot::EntitySnapshot;
+use super::i18n::{I18nChange, ScriptI18nSnapshot};
 use super::interaction::InteractionState;
 use super::play_script_input::PlayScriptInput;
 use super::script_cmd::ScriptCmd;
@@ -52,6 +55,39 @@ impl ScriptEngine {
 
     pub fn profile(&self) -> ScriptEngineProfile {
         self.profile
+    }
+
+    /// Reemplaza los catálogos y la selección de idioma sin generar cambios
+    /// de vuelta hacia el host y descarta cualquier cambio pendiente obsoleto.
+    pub fn set_i18n(
+        &self,
+        catalogs: CatalogSet,
+        active_language: LocaleId,
+        formatting_locale: LocaleId,
+    ) {
+        self.api_ctx
+            .i18n
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .set_i18n(catalogs, active_language, formatting_locale);
+    }
+
+    #[must_use]
+    pub fn i18n_snapshot(&self) -> ScriptI18nSnapshot {
+        self.api_ctx
+            .i18n
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .snapshot()
+    }
+
+    #[must_use]
+    pub fn drain_i18n_changes(&self) -> Vec<I18nChange> {
+        self.api_ctx
+            .i18n
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .drain_changes()
     }
 
     pub fn attach_script(&mut self, entity_id: u32, path: &str, source: &str) -> ScriptResult<()> {
@@ -723,13 +759,108 @@ fn entity_to_dynamic(entity_id: u32, snap: Option<&EntitySnapshot>) -> Dynamic {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scripting::api::{ScriptApiContext, register_native_api, wrap_user_source};
+    use crate::i18n::{
+        Catalog, CatalogEntry, CatalogSet, LocaleId, MessageTemplate, PluralCategory,
+    };
+    use crate::scripting::api::{
+        ScriptApiContext, register_native_api, wrap_scene_source, wrap_user_source,
+    };
 
     fn compile_control(profile: ScriptEngineProfile, source: &str) -> Result<(), String> {
         let mut engine = ScriptEngine::new(profile).unwrap();
         engine
             .control_ast("test_control", source, "on_keep", false)
             .map(|_| ())
+    }
+
+    fn locale(value: &str) -> LocaleId {
+        LocaleId::parse(value).expect("test locale should parse")
+    }
+
+    fn entry(source: &str, translated: &str) -> CatalogEntry {
+        CatalogEntry {
+            source: source.to_owned(),
+            template: MessageTemplate::text(translated),
+        }
+    }
+
+    fn plural_entry(source: &str, forms: &[(PluralCategory, &str)]) -> CatalogEntry {
+        CatalogEntry {
+            source: source.to_owned(),
+            template: MessageTemplate::plural(
+                forms
+                    .iter()
+                    .map(|(category, text)| (*category, (*text).to_owned()))
+                    .collect(),
+            ),
+        }
+    }
+
+    fn test_catalogs() -> CatalogSet {
+        let mut english = Catalog::new(locale("en"), "game");
+        english.insert("hello", entry("Hello", "Hello"));
+        let mut spanish = Catalog::new(locale("es"), "game");
+        spanish.insert("hello", entry("Hello", "Hola"));
+        CatalogSet::new(locale("en"), locale("en"), vec![english, spanish])
+    }
+
+    fn plural_catalogs() -> CatalogSet {
+        let source = "{count} item";
+        let mut english = Catalog::new(locale("en"), "game");
+        english.insert(
+            "items",
+            plural_entry(
+                source,
+                &[
+                    (PluralCategory::One, "{count} item"),
+                    (PluralCategory::Other, "{count} items"),
+                ],
+            ),
+        );
+
+        let mut russian = Catalog::new(locale("ru"), "game");
+        russian.insert(
+            "items",
+            plural_entry(
+                source,
+                &[
+                    (PluralCategory::One, "{count} один"),
+                    (PluralCategory::Few, "{count} мало"),
+                    (PluralCategory::Many, "{count} много"),
+                    (PluralCategory::Other, "{count} другое"),
+                ],
+            ),
+        );
+
+        let mut arabic = Catalog::new(locale("ar"), "game");
+        arabic.insert(
+            "items",
+            plural_entry(
+                source,
+                &[
+                    (PluralCategory::Zero, "{count} صفر"),
+                    (PluralCategory::One, "{count} один"),
+                    (PluralCategory::Two, "{count} два"),
+                    (PluralCategory::Few, "{count} мало"),
+                    (PluralCategory::Many, "{count} много"),
+                    (PluralCategory::Other, "{count} другое"),
+                ],
+            ),
+        );
+
+        CatalogSet::new(locale("en"), locale("en"), vec![english, russian, arabic])
+    }
+
+    fn eval_entity_source(engine: &mut ScriptEngine, source: &str) -> Dynamic {
+        let wrapped = wrap_user_source(engine.profile, source);
+        let ast = engine
+            .engine
+            .compile(&wrapped)
+            .expect("entity script should compile");
+        engine
+            .engine
+            .eval_ast::<Dynamic>(&ast)
+            .expect("entity script should evaluate")
     }
 
     #[test]
@@ -741,6 +872,263 @@ mod tests {
             &ScriptApiContext::new(ScriptEngineProfile::Engine3d),
         );
         engine.compile(&wrapped).expect("preamble only");
+    }
+
+    #[test]
+    fn all_i18n_preambles_compile() {
+        let source = r#"
+engine.set_language("es");
+engine.set_locale("es-MX");
+let language = engine.get_language();
+let locale = engine.get_locale();
+let translated = tr("hello", "Hello");
+let from_catalog = tr("hello");
+let native = __engine_tr("hello", "Hello");
+let plural = tr_n("items", 2);
+let plural_with_source = tr_n("items", 2.5, "{count} items");
+let formatted = tr_fmt("welcome", #{ name: "Ada" });
+let formatted_with_source = tr_fmt("welcome", #{ name: "Ada" }, "Hello {name}");
+"#;
+
+        for profile in [ScriptEngineProfile::Engine2d, ScriptEngineProfile::Engine3d] {
+            for wrapped in [
+                wrap_user_source(profile, source),
+                wrap_scene_source(profile, source),
+            ] {
+                let mut engine = Engine::new();
+                register_native_api(&mut engine, &ScriptApiContext::new(profile));
+                engine
+                    .compile(&wrapped)
+                    .expect("i18n preamble should compile");
+            }
+        }
+    }
+
+    #[test]
+    fn script_language_and_locale_changes_are_immediate() {
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        engine.set_i18n(test_catalogs(), locale("en"), locale("en-US"));
+
+        let result = eval_entity_source(
+            &mut engine,
+            r#"
+engine.set_language("es");
+engine.set_locale("es-MX");
+engine.get_locale() + ":" + tr("hello", "Hello")
+"#,
+        );
+
+        assert_eq!(result.cast::<String>(), "es-MX:Hola");
+        let snapshot = engine.i18n_snapshot();
+        assert_eq!(snapshot.active_language, locale("es"));
+        assert_eq!(snapshot.formatting_locale, locale("es-MX"));
+    }
+
+    #[test]
+    fn tr_with_source_uses_active_language() {
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        engine.set_i18n(test_catalogs(), locale("es"), locale("es-MX"));
+
+        let result = eval_entity_source(&mut engine, r#"tr("hello", "Hello")"#);
+
+        assert_eq!(result.cast::<String>(), "Hola");
+    }
+
+    #[test]
+    fn tr_with_source_uses_catalog_fallback_then_literal_source() {
+        let mut english = Catalog::new(locale("en"), "game");
+        let mut spanish = Catalog::new(locale("es"), "game");
+        spanish.insert("hello", entry("Hello", "Hola"));
+        english.insert("literal", entry("Literal", "Literal"));
+        let catalogs = CatalogSet::new(locale("en"), locale("es"), vec![english, spanish]);
+
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        engine.set_i18n(catalogs, locale("fr"), locale("fr-FR"));
+
+        let result = eval_entity_source(
+            &mut engine,
+            r#"[tr("hello", "Hello"), tr("literal", "Literal")]"#,
+        )
+        .cast::<rhai::Array>();
+
+        assert_eq!(result[0].clone().cast::<String>(), "Hola");
+        assert_eq!(result[1].clone().cast::<String>(), "Literal");
+    }
+
+    #[test]
+    fn tr_without_source_uses_default_catalog_and_never_invents_missing_text() {
+        let mut english = Catalog::new(locale("en"), "game");
+        english.insert("hello", entry("Hello", "Hello"));
+        let mut spanish = Catalog::new(locale("es"), "game");
+        spanish.insert("hello", entry("Hello", "Hola"));
+        let catalogs = CatalogSet::new(locale("en"), locale("fr"), vec![english, spanish]);
+
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        engine.set_i18n(catalogs, locale("es"), locale("es-MX"));
+
+        let result = eval_entity_source(&mut engine, r#"[tr("hello"), tr("missing")]"#)
+            .cast::<rhai::Array>();
+
+        assert_eq!(result[0].clone().cast::<String>(), "Hola");
+        assert_eq!(result[1].clone().cast::<String>(), "");
+    }
+
+    #[test]
+    fn identical_language_and_locale_are_noops() {
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        engine.set_i18n(test_catalogs(), locale("en"), locale("en-US"));
+        let initial = engine.i18n_snapshot();
+
+        let _ = eval_entity_source(
+            &mut engine,
+            r#"
+engine.set_language("EN");
+engine.set_locale("en-us");
+"#,
+        );
+
+        assert_eq!(engine.i18n_snapshot().epoch, initial.epoch);
+        assert!(engine.drain_i18n_changes().is_empty());
+    }
+
+    #[test]
+    fn authoritative_set_i18n_discards_pending_changes() {
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        engine.set_i18n(test_catalogs(), locale("en"), locale("en-US"));
+
+        let _ = eval_entity_source(
+            &mut engine,
+            r#"
+engine.set_language("es");
+engine.set_locale("es-MX");
+"#,
+        );
+        let script_state = engine.i18n_snapshot();
+
+        engine.set_i18n(test_catalogs(), locale("es"), locale("es-MX"));
+
+        assert_eq!(engine.i18n_snapshot().epoch, script_state.epoch);
+        assert!(engine.drain_i18n_changes().is_empty());
+    }
+
+    #[test]
+    fn tr_n_selects_russian_and_arabic_plural_forms() {
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        engine.set_i18n(plural_catalogs(), locale("en"), locale("en"));
+
+        let result = eval_entity_source(
+            &mut engine,
+            r#"
+engine.set_language("ru");
+engine.set_locale("ru");
+let ru = tr_n("items", 1)
+    + "|" + tr_n("items", 2)
+    + "|" + tr_n("items", 5)
+    + "|" + tr_n("items", 1.5)
+    + "|" + tr_n("items", 21, "{count} item")
+    + "|" + tr_n("items", 2.5, "{count} item");
+engine.set_language("ar");
+engine.set_locale("ar");
+let ar = tr_n("items", 0)
+    + "|" + tr_n("items", 1)
+    + "|" + tr_n("items", 2)
+    + "|" + tr_n("items", 3)
+    + "|" + tr_n("items", 11)
+    + "|" + tr_n("items", 100)
+    + "|" + tr_n("items", 1.5);
+ru + "|" + ar
+"#,
+        );
+
+        assert_eq!(
+            result.cast::<String>(),
+            "1 один|2 мало|5 много|1.5 другое|21 один|2.5 другое|0 صفر|1 один|2 два|3 мало|11 много|100 другое|1.5 другое"
+        );
+    }
+
+    #[test]
+    fn tr_n_plural_rules_use_catalog_locale_not_formatting_locale() {
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine2d).unwrap();
+        engine.set_i18n(plural_catalogs(), locale("ru"), locale("en-US"));
+
+        let russian =
+            eval_entity_source(&mut engine, r#"tr_n("items", 2) + "|" + tr_n("items", 5)"#);
+        assert_eq!(russian.cast::<String>(), "2 мало|5 много");
+
+        engine.set_i18n(plural_catalogs(), locale("ar"), locale("en"));
+
+        let arabic =
+            eval_entity_source(&mut engine, r#"tr_n("items", 2) + "|" + tr_n("items", 3)"#);
+        assert_eq!(arabic.cast::<String>(), "2 два|3 мало");
+    }
+
+    #[test]
+    fn tr_fmt_converts_nested_rhai_maps_and_supports_optional_source() {
+        let source = "Hello {name}: {count} {ratio} {enabled} {nested}";
+        let translated = "Hola {name}: {count} {ratio} {enabled} {nested}";
+        let mut english = Catalog::new(locale("en"), "game");
+        english.insert("welcome", entry(source, source));
+        let mut spanish = Catalog::new(locale("es"), "game");
+        spanish.insert("welcome", entry(source, translated));
+        let catalogs = CatalogSet::new(locale("en"), locale("en"), vec![english, spanish]);
+
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        engine.set_i18n(catalogs, locale("es"), locale("es"));
+
+        let result = eval_entity_source(
+            &mut engine,
+            r#"
+let args = #{
+    name: "Ada",
+    count: 3,
+    ratio: 2.5,
+    enabled: true,
+    nested: #{ items: [1, "two", false] }
+};
+[
+    tr_fmt("welcome", args),
+    tr_fmt("welcome", args, "Hello {name}: {count} {ratio} {enabled} {nested}")
+]
+"#,
+        )
+        .cast::<rhai::Array>();
+
+        let expected = "Hola Ada: 3 2.5 true {\"items\":[1,\"two\",false]}".to_owned();
+        assert_eq!(result[0].clone().cast::<String>(), expected);
+        assert_eq!(result[1].clone().cast::<String>(), expected);
+    }
+
+    #[test]
+    fn i18n_changes_drain_and_epoch_increments() {
+        let mut engine = ScriptEngine::new(ScriptEngineProfile::Engine3d).unwrap();
+        engine.set_i18n(test_catalogs(), locale("en"), locale("en-US"));
+        assert!(engine.drain_i18n_changes().is_empty());
+        let initial = engine.i18n_snapshot();
+
+        let _ = eval_entity_source(
+            &mut engine,
+            r#"
+engine.set_language("es");
+engine.set_locale("es-MX");
+"#,
+        );
+
+        let snapshot = engine.i18n_snapshot();
+        assert_eq!(snapshot.epoch, initial.epoch.wrapping_add(2));
+        assert_eq!(
+            engine.drain_i18n_changes(),
+            vec![
+                I18nChange::LanguageChanged {
+                    language: locale("es"),
+                    epoch: initial.epoch.wrapping_add(1),
+                },
+                I18nChange::LocaleChanged {
+                    locale: locale("es-MX"),
+                    epoch: initial.epoch.wrapping_add(2),
+                },
+            ]
+        );
+        assert!(engine.drain_i18n_changes().is_empty());
     }
 
     #[test]

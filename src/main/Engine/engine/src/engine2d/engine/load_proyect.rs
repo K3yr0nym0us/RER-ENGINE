@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use rer_engine_core::i18n::I18nConfig;
 use serde::{Deserialize, Serialize};
 
 use crate::engine2d::ipc::{
@@ -62,7 +63,7 @@ struct ProjectSaveData {
     #[serde(default)]
     blueprints: Vec<SavedBlueprint>,
     #[serde(default)]
-    language: Option<String>,
+    i18n: I18nConfig,
     #[serde(default)]
     playerUiScreens: Vec<SaveUiScreenSnapshot>,
     #[serde(default)]
@@ -287,7 +288,13 @@ impl State {
                 };
                 log::info!("{open_msg}");
                 send_load_progress(&open_msg, None, None);
-                match apply_loaded_proyect_2d(self, &project, load_started_at, &mut step_started) {
+                match apply_loaded_proyect_2d(
+                    self,
+                    &project,
+                    &extract_dir,
+                    load_started_at,
+                    &mut step_started,
+                ) {
                     Ok(view) => {
                         send_project_loaded_2d(self, &project, &view);
                         send_project_load_2d_complete_event();
@@ -325,7 +332,9 @@ fn load_project_from_extract_dir(extract_path: &str) -> Result<ProjectSaveData, 
     }
 
     let raw = fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?;
-    let project: ProjectSaveData = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    let manifest: serde_json::Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+    crate::i18n::validate_project_manifest(&manifest)?;
+    let project: ProjectSaveData = serde_json::from_value(manifest).map_err(|e| e.to_string())?;
     if project.r#type.is_empty() || project.gameStyle.is_empty() {
         return Err("manifest.json inválido (falta type o gameStyle)".to_string());
     }
@@ -943,10 +952,12 @@ fn log_load_step(total: Instant, step: &mut Instant, message: &str) {
 fn apply_loaded_proyect_2d(
     state: &mut State,
     project: &ProjectSaveData,
+    extract_dir: &Path,
     load_started_at: Instant,
     step_started: &mut Instant,
 ) -> Result<ActiveSaveView, String> {
     let view = pick_active_save_view(project)?;
+    state.load_i18n_config(extract_dir, Some(&project.i18n))?;
 
     load_project_asset_stores(state, project);
     log_load_step(
@@ -1072,7 +1083,8 @@ fn send_project_loaded_2d(state: &State, project: &ProjectSaveData, view: &Activ
         sceneName: view.sceneName.clone(),
         entityCount: view.entities.len() as u32,
         scenes,
-        language: project.language.clone(),
+        activeLanguage: state.i18n.active_language().to_string(),
+        formattingLocale: state.i18n.formatting_locale().to_string(),
         sprites: view
             .sprites
             .iter()
@@ -1178,11 +1190,8 @@ impl State {
             halfH: c.half_h,
         });
 
-        let language = if self.locale == "en" || self.locale == "es" {
-            Some(self.locale.clone())
-        } else {
-            None
-        };
+        let active_language = self.i18n.active_language().to_string();
+        let formatting_locale = self.i18n.formatting_locale().to_string();
 
         send_project_loaded_2d_event(&ProjectLoaded2dEvent {
             event: "project_loaded_2d",
@@ -1193,7 +1202,8 @@ impl State {
                 id: 1,
                 name: scene_name,
             }],
-            language,
+            activeLanguage: active_language,
+            formattingLocale: formatting_locale,
             sprites: Vec::new(),
             sounds: Vec::new(),
             fonts: Vec::new(),
@@ -1216,5 +1226,93 @@ impl State {
             backgroundPath: None,
             camera2d,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Value, json};
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::load_project_from_extract_dir;
+
+    fn manifest_dir(tag: &str, manifest: Value) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        let dir =
+            std::env::temp_dir().join(format!("rer-load-2d-{tag}-{}-{nonce}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create manifest test directory");
+        std::fs::write(dir.join("manifest.json"), manifest.to_string())
+            .expect("write manifest test file");
+        dir
+    }
+
+    #[test]
+    fn embedded_demo_loads_without_legacy_compatibility() {
+        let dir = crate::engine2d::bundled_demo::ensure_bundled_demo_2d_extract_dir()
+            .expect("extract embedded demo");
+        let project = load_project_from_extract_dir(&dir.to_string_lossy())
+            .expect("embedded demo must load with the clean contract");
+
+        assert_eq!(project.r#type, "2D");
+        assert_eq!(project.i18n.default_language.to_string(), "en");
+        assert_eq!(project.i18n.fallback_language.to_string(), "en");
+    }
+
+    #[test]
+    fn project_loader_rejects_legacy_or_missing_i18n_manifests() {
+        let valid = manifest_dir(
+            "valid",
+            json!({
+                "type": "2D",
+                "gameStyle": "platformer",
+                "i18n": {
+                    "defaultLanguage": "en",
+                    "fallbackLanguage": "en",
+                    "catalogPaths": []
+                }
+            }),
+        );
+        assert!(load_project_from_extract_dir(&valid.to_string_lossy()).is_ok());
+        let _ = std::fs::remove_dir_all(valid);
+
+        for (tag, manifest) in [
+            (
+                "version",
+                json!({
+                    "type": "2D",
+                    "gameStyle": "platformer",
+                    "version": 1,
+                    "i18n": { "defaultLanguage": "en", "fallbackLanguage": "en" }
+                }),
+            ),
+            (
+                "language",
+                json!({
+                    "type": "2D",
+                    "gameStyle": "platformer",
+                    "language": "es",
+                    "i18n": { "defaultLanguage": "en", "fallbackLanguage": "en" }
+                }),
+            ),
+            (
+                "missing",
+                json!({ "type": "2D", "gameStyle": "platformer" }),
+            ),
+            (
+                "null",
+                json!({ "type": "2D", "gameStyle": "platformer", "i18n": null }),
+            ),
+        ] {
+            let dir = manifest_dir(tag, manifest);
+            assert!(
+                load_project_from_extract_dir(&dir.to_string_lossy()).is_err(),
+                "el manifiesto {tag} debe rechazarse"
+            );
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 }

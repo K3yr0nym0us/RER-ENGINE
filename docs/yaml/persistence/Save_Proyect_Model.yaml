@@ -3,24 +3,26 @@
 # Principio: el acordeón **Resources** del sidebar es la puerta de entrada de
 # todos los archivos externos del proyecto. En disco (.save) cada archivo se
 # empaqueta una vez; en runtime un path lógico comparte import CPU y cachés GPU.
+# El editor Rust construye el manifiesto y empaqueta el ZIP; Electron solo abre
+# el diálogo y entrega la ruta del .save.
 #
 # Relacionado con:
-#   - src/renderer/.../ResourcesAccordion/   (UI de bibliotecas)
-#   - src/main/index.ts                        (solo diálogo: entrega la ruta del .save)
-#   - engine/src/editor/save_open.rs           (extrae el .save y decide 2D/3D)
-#   - engine/src/{engine2d,engine3d}/.../load_proyect.rs         (carga en stores del motor)
-#   - src/renderer/src/defaults/buildProjectSaveFromEngine.ts
+#   - docs/I18N_AND_TEXT.md
+#   - src/main/Engine/engine/src/editor/save/     (build_manifest + pack_and_write)
+#   - src/main/Engine/engine/src/editor/save_open.rs (extrae el .save y decide 2D/3D)
+#   - src/main/Engine/engine/src/{engine2d,engine3d}/.../load_proyect.rs (carga en stores del motor)
 
 principle:
   owner_ui: Resources_accordion
   owner_runtime: motor
+  owner_save: editor Rust (editor/save)
   rule: |
     1. El usuario importa un archivo desde Resources → el motor lo registra en su
        store en memoria (path absoluto en disco mientras no hay .save).
     2. El resto del editor (entidades, HUD, animaciones) **referencia** esos paths;
        no vuelve a importar el archivo ni lo duplica en el manifest como asset propio.
-    3. Al guardar .save, el editor Rust empaqueta cada archivo **una sola vez** a
-       carpetas por categoría y escribe rutas relativas en manifest.json.
+    3. Al guardar .save, el editor Rust construye manifest.json, copia cada archivo
+       **una sola vez** a carpetas por categoría y escribe rutas relativas.
     4. Al abrir .save, Rust extrae el ZIP, lee el manifest, decide 2D/3D y resuelve
        las rutas relativas → extract_dir antes de registrarlas en los stores del motor.
        Electron solo entrega la ruta del archivo.
@@ -46,7 +48,7 @@ libraries:
     fonts:
       ui: FontsAccordion
       manifest: fonts[]
-      motor_store: font_store
+      motor_store: font_store (biblioteca) + I18nRuntime/TextSystem (caras runtime)
       pack_dir: fonts/
       load_cmd: LoadFont
     backgrounds:
@@ -59,9 +61,7 @@ libraries:
   3D:
     models:
       ui: ResourcesAccordion / ModelsAccordion
-      manifest_v1: "models[] (biblioteca global; path al GLB/GLTF empaquetado en assets/)"
-      manifest_v2: |
-        version: 2
+      manifest: |
         resources.models[]: id, name, type, asset (imported/models/{id}.rerasset),
           importer_version, scene_id (opcional, recurso por escena),
           global: true (opcional, modelo globalizado por el usuario),
@@ -74,19 +74,18 @@ libraries:
         static_model_cache (clave model_id si Ready, si no path fuente),
         gltf_import_cache (sesión: decode GLB antes del bake),
         model_assets (skinned + skeleton + clips desde .rerasset)
-      pack_dir_v1: assets/
-      pack_dir_v2: imported/models/*.rerasset (+ source/models/ solo en dev al guardar)
+      pack_dir: imported/models/*.rerasset (+ source/models/ solo en dev al guardar)
       session_load: |
         LoadModelAsset → start_imported_model_pipeline:
         Importing → hilo CPU (preload + bake .rerasset) → GPU desde .rerasset.
         Eventos: ModelAssetImporting, ModelAssetImported, ModelAssetLoaded/Failed.
         Personaje (category=character): variantes editor + play_character + anim_asset.
-      save_load_v1: |
-        upsert_model_store_entry desde models[]; kickoff_preload_models_for_save (GLB global).
-      save_load_v2: |
+      save_load: |
         Registro imported_model_registry desde resources.models[] al abrir.
         Sin precarga global (lazy): ensure_static_model_cached al spawn por model_id.
         entity_source_model_path resuelve model_id → source_path del registro.
+        Las rutas fuente de modelos se aceptan como compatibilidad de assets antiguos;
+        no son una versión del manifiesto.
       note: "scene.models[] vacío al guardar; entidades referencian models[] y/o model_id."
     sounds:  { same_as: 2D.sounds }
     fonts:   { same_as: 2D.fonts }
@@ -107,7 +106,7 @@ references:
     points_to: models library
     note: "Spawn/replace desde ModelsAccordion; path en entidad = path del store. También puede usarse entity.path (mismo asset)."
   entity_3d.model_id:
-    points_to: resources.models[].id (manifest v2)
+    points_to: resources.models[].id
     note: "Referencia estable al .rerasset; entity.model conserva path fuente para compatibilidad."
   player_ui_text_box.font_path:
     points_to: fonts library
@@ -115,13 +114,13 @@ references:
     points_to: fonts library
   player_ui_button.texture_path:
     points_to: hudImages library
-    picker: ModalSelectHudImage
+    picker: selector nativo de imágenes HUD
   player_ui_image.image_path:
     points_to: hudImages library
-    picker: ModalSelectHudImage
+    picker: selector nativo de imágenes HUD
   player_ui_object.texture_path:
     points_to: hudImages library
-    picker: ModalSelectHudImage
+    picker: selector nativo de imágenes HUD
   animation.frames[].path:
     note: "Frames de sprite sheet por entidad; no pasan por Resources como ítem suelto."
   animation.audio_path:
@@ -138,7 +137,7 @@ references:
   scene.backgroundPath:
     points_to: backgrounds library (2D)
   entity.controls.*:
-    note: "Scripts Rhai embebidos o @file:scripting/... en manifest; ver save_flow.scripting."
+    note: "Scripts Rhai embebidos o @file:scripting/... en manifest; ver save_flow.pack_layout."
 
 # ---------------------------------------------------------------------------
 # Flujo en sesión de edición (antes del .save)
@@ -146,11 +145,11 @@ references:
 
 session_flow:
   import:
-    - "BtnLoad* en Resources → diálogo Electron → load_* IPC al motor."
+    - "BtnLoad* en Resources → diálogo nativo del editor → load_* al motor."
     - "Motor valida, inserta en store, emite *_loaded / *_list."
-    - "Renderer actualiza estado React (sounds, fonts, hudImages, models, …)."
+    - "El editor nativo actualiza sus listas de Recursos."
   use:
-    - "Modales de selección (ModalSelectHudImage, spawn model, etc.) devuelven el path del store."
+    - "Los selectores nativos devuelven el path del store."
     - "HUD / entidades guardan ese path como referencia, no copian el archivo."
   memory:
     - "Un path lógico = una entrada en model_store / sound_store / …"
@@ -179,53 +178,65 @@ runtime_caches:
     para variantes editor vs play_character (geometría distinta, texturas compartidas).
 
 # ---------------------------------------------------------------------------
-# Guardar .save (Electron main: src/main/index.ts)
+# Guardar .save (editor Rust: src/main/Engine/engine/src/editor/save/)
 # ---------------------------------------------------------------------------
 
 save_flow:
+  owner: editor Rust (src/main/Engine/engine/src/editor/save/)
   steps:
     1_build_manifest:
-      file: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
+      file: src/main/Engine/engine/src/editor/save/manifest.rs
       action: |
-        export_save_snapshot del motor + merge con metadatos del editor.
-        Fuentes del manifest:
-        - Escena activa: motor (world, entities, player, config_camera, config_editor_camera, playerUi*).
-        - Escenas inactivas: sceneStateStore (React).
-        - Bibliotecas globales en raíz:
-          · models, fonts, hudImages: merge editor + snapshot motor (por path).
-          · sounds, backgrounds: estado del editor Rust (no merge con snapshot motor).
-        - blueprints, language, playerUiScreens/menuUiScreens: editor.
-        Con scenes[]: datos de escena solo en scenes[]; raíz sin duplicar escena activa
-        (entities/player/config_* vacíos o null; sprites[] raíz vacío).
-        scene.models[] siempre vacío al guardar; models[] solo en raíz.
-    2_collect_asset_paths:
-      file: src/main/index.ts → collectAssetPaths
-      rule: |
-        Solo rutas absolutas existentes en disco. Fuentes:
-        - Arrays de biblioteca: sounds, fonts, backgrounds, hudImages, models.
-        - Por escena (si scenes[]): backgroundPath, sprites[], scene.player.model, scene.models[] (legacy).
-        - Raíz legacy (sin scenes): backgroundPath, sprites[].
-        - Contenido no-Resources: frames de animación, audio_path, blueprint path/model,
-          entity path/model (vía getEntityAssetPath; excluye entityPathMarker).
-        NO empaquetar paths solo porque aparecen en playerUi* (referencias a fonts/hudImages).
-        Manifest v2: NO empaquetar .glb/.gltf en assets/ (shouldPackModelSourcePath);
-        los modelos van en imported/ vía copyImportedAssetsToStaging; source/ solo dev.
-    3_copy_and_remap:
+        write_save combina el snapshot del motor con ProjectState del editor y llama a
+        build_manifest. La raíz incluye type/gameStyle, scenes[], activeSceneId,
+        bibliotecas, playerUiScreens/menuUiScreens y i18n. Con scenes[] los datos de
+        escena no se duplican en la raíz (entities/player/config_* vacíos o null).
+        La raíz no contiene version ni language; debe contener i18n con
+        defaultLanguage, fallbackLanguage y catalogPaths.
+    2_validate_and_stage:
+      file: src/main/Engine/engine/src/editor/save/pack.rs
       action: |
-        copyImportedAssetsToStaging + copySourceAssetsToStaging (dev) →
-        copyAssetsToDir → remapPaths → serializeScriptsToFiles
-      pack_layout:
-        "assets/": "sprites, fondos genéricos, frames de animación (v1: también modelos 3D fuente)"
-        imported/models/: .rerasset (manifest v2)
-        scene-{id}/assets/: .rerasset por escena (manifest v2, recursos exclusivos)
-        source/models/: GLB/GLTF espejo fuente (solo dev al guardar)
-        sounds/: audio
-        fonts/: fuentes
-        hud-images/: imágenes HUD (Resources Images 3D)
-        scripting/: scripts Rhai extraídos de entity.controls (@file:scripting/...)
-      dedup: "Set<toAssetPathKey> evita copiar dos veces el mismo archivo en disco."
-    4_zip:
-      output: "*.save (ZIP con manifest.json + carpetas anteriores)"
+        validate_pack_manifest rechaza manifiestos legacy con version/language y valida
+        I18nConfig. pack_into_staging copia y remapea assets; copy_catalogs copia los JSON
+        a i18n/ con nombres seguros/únicos y rewrite_catalog_paths deja rutas relativas.
+        copy_rerasset_models copia los assets importados referenciados por resources.models[].
+    3_write_zip:
+      file: src/main/Engine/engine/src/editor/save/pack.rs
+      output: "*.save (ZIP con manifest.json + carpetas empaquetadas)"
+  pack_layout:
+    "assets/": "sprites, fondos genéricos y frames de animación"
+    imported/models/: .rerasset
+    scene-{id}/assets/: .rerasset por escena (recursos exclusivos)
+    source/models/: GLB/GLTF espejo fuente (solo dev al guardar)
+    sounds/: audio
+    fonts/: fuentes
+    hud-images/: imágenes HUD (Resources Images 3D)
+    i18n/: catálogos JSON por locale/namespace
+    scripting/: scripts Rhai extraídos de entity.controls (@file:scripting/...)
+  dedup: "Cada asset se copia una vez; los nombres de catálogo repetidos se hacen únicos."
+  scope: |
+    El .save es un paquete de proyecto editable. No es un exportador de juego final,
+    no genera un ejecutable y no promete renderer runtime de menús.
+
+root_manifest:
+  required:
+    - "type, gameStyle, scenes[], activeSceneId"
+    - "i18n: { defaultLanguage, fallbackLanguage, catalogPaths }"
+  forbidden:
+    - version
+    - language
+  i18n: |
+    defaultLanguage es el idioma inicial de catálogos; fallbackLanguage se consulta
+    por mensaje; catalogPaths referencia JSON de locale/namespace. Al guardar, los
+    catálogos se copian a i18n/ y las rutas se reescriben relativas al .save.
+    El esquema completo está en docs/I18N_AND_TEXT.md.
+  compatibility: |
+    Un manifiesto raíz con version o language es legacy y se rechaza al abrir/guardar.
+    resources.models[].importer_version sí es válido: pertenece al formato binario
+    .rerasset y no versiona el proyecto ni el manifiesto.
+  project_versioning: |
+    No usar numeraciones de manifiesto para representar versiones del proyecto. La
+    compatibilidad de modelos antiguos se maneja por rutas/IDs de asset.
 
 # ---------------------------------------------------------------------------
 # Capas del manifest (no confundir biblioteca vs contenido de escena)
@@ -238,7 +249,7 @@ manifest_layers:
     3D: [sounds, fonts, backgrounds, models, hudImages]
   global_editor:
     description: "Metadatos y plantillas no ligados a una escena concreta."
-    fields: [blueprints, language, playerUiScreens, menuUiScreens]
+    fields: [blueprints, i18n, playerUiScreens, menuUiScreens]
   scene_content:
     description: "Contenido del nivel; vive en scenes[] cuando hay multi-escena."
     fields: |
@@ -328,7 +339,7 @@ load_flow:
     multi_scene: |
       scenes[] contiene world/entities/player/config_camera/config_editor_camera/camera2d/
       sprites/backgroundPath por escena (2D y 3D).
-      Raíz: bibliotecas globales + blueprints + UI screens; sin duplicar escena activa en raíz.
+      Raíz: bibliotecas globales + blueprints + i18n + UI screens; sin duplicar escena activa en raíz.
     references: |
       playerUi*.font_path / texture_path / image_path deben coincidir exactamente con
       el path relativo del ítem en fonts[] / hudImages[] (misma cadena tras remap).
@@ -338,36 +349,40 @@ load_flow:
       - showOpenDialog → filePath (no abre ni parsea el .save)
       - 'set-game-style con projectType save y save_path'
   editor_rust:
-    file: engine/src/editor/save_open.rs
+    file: src/main/Engine/engine/src/editor/save_open.rs
     steps:
       - open_save: extrae el ZIP a un directorio temporal
-      - lee type / gameStyle del manifest.json y decide el motor
+      - lee type / gameStyle / i18n del manifest.json y decide el motor
       - RER_PROJECT_EXTRACT_DIR / RER_PROJECT_SAVE_PATH al arrancar el motor in-process
   motor_3d:
-    file: engine_3d/.../load_proyect.rs
+    file: src/main/Engine/engine/src/engine3d/.../load_proyect.rs
     detail: docs/yaml/persistence/Project_Load_3D.yaml
     steps:
-      - resolve_loaded_paths (misma semántica que Electron)
+      - resolve_loaded_paths (misma semántica de rutas relativas)
+      - load_i18n_config: catálogos, defaultLanguage y formattingLocale inicial
       - apply_loaded_proyect_3d: mundo, iluminación, entidades, jugador play character, restore manifest
       - load_project_asset_stores: LoadSound, LoadFont, LoadBackgroundAsset, LoadHudImage (una vez por ítem)
-      - v1: upsert_model_store_entry + kickoff_preload_models_for_save + ensure_model_cached
-      - v2: imported_model_registry desde resources.models[]; carga lazy (sin precarga global)
+      - imported_model_registry desde resources.models[]; carga lazy (sin precarga global)
       - entity_source_model_path: model_id → source_path del registro para spawn/caché
       - "burst_load (escena con entidades o cámara play character con player): instancia entidades y ensure_static_model_cached bajo demanda (desde .rerasset si Ready)"
       - import_player_ui_* con paths ya resueltos
       - load_progress: mensajes [Carga] / pasos con tiempos
   motor_2d:
-    file: engine/src/engine2d/.../load_proyect.rs
+    file: src/main/Engine/engine/src/engine2d/.../load_proyect.rs
     steps:
       - resolve_loaded_paths (relativas; limpia raíz si scenes[])
+      - load_i18n_config: catálogos, defaultLanguage y formattingLocale inicial
       - "load_project_asset_stores: sounds, fonts, backgrounds (biblioteca global)"
       - "import_scene: sprites de escena, backgroundPath, entidades; resolve_entity_restore hereda metadatos de project.blueprints[] si blueprint_id (docs/yaml/gameplay/Blueprints_Model_2D.yaml)"
-      - project_loaded_2d → metadata al renderer
-      - project_load_2d_complete → front sincroniza con export_save_snapshot
+      - project_loaded_2d → activeLanguage/formattingLocale + metadata al editor nativo
+      - project_load_2d_complete → el editor sincroniza con export_save_snapshot
       - "load_progress: mensajes [Carga] en panel (misma semántica que 3D)"
-  renderer_sync:
-    events: project_loaded_2d | project_loaded_3d | project_load_2d_complete | project_load_3d_complete | load_progress
-    action: "SET_* en React + get_*_list al motor para alinear UI Resources (sin get_hud_images_list en 2D)."
+  editor_sync:
+    events: project_loaded_2d | project_loaded_3d | project_load_2d_complete | project_load_3d_complete | load_progress | locale_changed
+    action: |
+      El editor nativo actualiza sus stores y listas de Recursos. project_loaded_2d/3d
+      incluyen activeLanguage y formattingLocale; locale_changed reporta
+      {activeLanguage, formattingLocale, epoch} y sincroniza i18n.default_language.
 
 # ---------------------------------------------------------------------------
 # Verificación de cumplimiento (estado actual del código)
@@ -377,9 +392,9 @@ compliance:
   ok:
     - "Resources accordion concentra import de modelos, sonidos, fuentes, imágenes HUD, sprites, fondos."
     - "Motor mantiene stores por categoría; load_project_asset_stores carga sonidos/fuentes/fondos/hud una vez."
-    - "ModalSelectHudImage asigna path de hudImages a objetos/imágenes HUD (referencia)."
-    - "collectAssetPaths usa Set → sin duplicado en disco aunque el path aparezca en entidad y en models[]."
-    - "remapPaths remapea referencias playerUi* al mismo path relativo que la biblioteca."
+    - "El selector nativo asigna path de hudImages a objetos/imágenes HUD (referencia)."
+    - "El empaquetador Rust copia cada asset una sola vez aunque se referencie desde varias entidades."
+    - "El empaquetador Rust remapea referencias playerUi* al mismo path relativo que la biblioteca."
     - "playerUiObjects.texture_path no se empaqueta aparte; referencia hudImages[]."
     - "Sin fallback por basename ni rutas absolutas en manifest."
     - "Multi-escena: raíz sin duplicar escena activa; models[] solo global (3D); scene.models[] vacío al guardar."
@@ -388,12 +403,14 @@ compliance:
     - "Scripts Rhai en scripting/ al guardar; controles referencian @file:scripting/... relativo."
     - "import_gltf cache evita doble decode/resize/mip al reutilizar el mismo GLB en la sesión."
     - "Personaje en Resources: precarga CPU incluye skinned (load_skinned_asset) además de variantes editor/play."
-    - "Manifest v2: .rerasset en imported/, model_id en entidades, lazy load al abrir .save."
-    - "Import pipeline: bake atómico, importer_version 2 con skeleton + anim clips."
+    - "Models 3D: .rerasset en imported/, model_id en entidades, carga lazy al abrir .save."
+    - "Manifiesto raíz sin version/language; i18n obligatorio con catálogos JSON empaquetados."
+    - "Catálogos copiados a i18n/ con nombres seguros/únicos y catalogPaths relativo."
+    - "Import pipeline: bake atómico, importer_version 2 del .rerasset con skeleton + anim clips."
   notes:
-    - "frames de animación y algunos assets de entidad siguen en collectAssetPaths porque no son fila en Resources."
-    - "entity.model/path aparece en collectAssetPaths además de models[]; el Set deduplica en disco."
+    - "frames de animación y algunos assets de entidad se empaquetan desde sus referencias porque no son fila en Resources."
+    - "entity.model/path se empaqueta junto a models[] sin duplicar el archivo en disco."
     - "sprites 2D viven en scene.sprites (por escena), no en un array global del manifest."
-    - "sounds/backgrounds en save salen del estado React; fonts/hudImages/models se fusionan también con snapshot del motor."
+    - "sounds/backgrounds salen del estado del editor; fonts/hudImages/models se fusionan también con el snapshot del motor."
     - "Al abrir .save, models[] no dispara LoadModelAsset; la GPU se llena vía precarga/ensure_model_cached."
     - "Logs de diagnóstico 3D: [GLTF_IMPORT], [LOAD_GLTF_CPU], [LOAD_GLTF_SKINNED], [MODEL_BIND] (ver runtime_caches)."

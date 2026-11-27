@@ -1,11 +1,8 @@
 //! Renderizado NDC de botones HUD (forma, borde, textura, etiqueta).
 
-use std::sync::Arc;
-
-use ab_glyph::FontArc;
-
 use crate::engine2d::gizmo::GizmoVertex;
 use crate::engine2d::screen_hud_image::ScreenHudAtlas;
+use crate::text::hud_style;
 
 use super::config::{HasUiHudRect, PlayerUiButton, UiHudRect, box_corners};
 use super::font::build_hud_label_glyph;
@@ -40,8 +37,8 @@ pub(crate) fn append_button_gizmo_verts(
 }
 
 pub(crate) fn append_button_hud_glyphs(
+    i18n: &mut crate::i18n::I18nRuntime,
     buttons: &[PlayerUiButton],
-    font_cache: &mut std::collections::HashMap<String, Arc<FontArc>>,
     atlas: &mut ScreenHudAtlas,
     instances: &mut Vec<crate::engine2d::mesh::InstanceData>,
     viewport_w: f32,
@@ -64,26 +61,38 @@ pub(crate) fn append_button_hud_glyphs(
                 1.0,
             );
         }
-        if btn.text.trim().is_empty() || btn.font_path.is_empty() {
+        let Ok(resolved) = i18n.resolve(&btn.text) else {
+            log::warn!(
+                "[player-ui] no se pudo resolver texto para botón {}",
+                btn.id
+            );
+            continue;
+        };
+        let text = resolved.display;
+        if text.trim().is_empty() {
             continue;
         }
-        let font = match font_cache.get(&btn.font_path) {
-            Some(f) => f.clone(),
-            None => {
-                let Some(loaded) = super::font::load_font_arc(&btn.font_path) else {
-                    continue;
-                };
-                font_cache.insert(btn.font_path.clone(), loaded.clone());
-                loaded
+        let family = match i18n.ensure_font(&btn.font_path, &btn.font_name) {
+            Ok(family) => family,
+            Err(error) => {
+                log::warn!(
+                    "[player-ui] no se pudo cargar fuente para botón {}: {error}",
+                    btn.id
+                );
+                continue;
             }
         };
         let mut tint = btn.text_color;
         tint[3] *= btn.transparency_text.clamp(0.0, 1.0);
+        let rect = btn.ui_hud_rect();
+        let (width_px, height_px) = super::font::hud_pixel_size(rect, viewport_w, viewport_h);
+        let language = i18n.text_shaping_language(&btn.text);
+        let style = hud_style(family, width_px, height_px, tint, Some(&language));
         build_hud_label_glyph(
-            &font,
-            &btn.text,
-            btn.ui_hud_rect(),
-            tint,
+            i18n.text_system_mut(),
+            &text,
+            &style,
+            rect,
             viewport_w,
             viewport_h,
             atlas,

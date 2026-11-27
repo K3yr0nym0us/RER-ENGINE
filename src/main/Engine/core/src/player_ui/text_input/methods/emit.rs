@@ -6,10 +6,10 @@
 #[macro_export]
 macro_rules! __rer_player_ui_text_emit {
     () => {
-        fn emit_player_ui_text_updated(&self, id: u32, text: &str) {
+        fn emit_player_ui_text_updated(&self, id: u32, text: &rer_engine_core::i18n::TextValue) {
             send_event(&EngineEvent::PlayerUiTextBoxUpdated {
                 id,
-                text: text.to_string(),
+                text: text.clone(),
             });
         }
 

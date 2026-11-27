@@ -13,6 +13,7 @@ use crate::engine2d::entity_save_meta::EntitySaveRegistry;
 use crate::engine2d::gizmo;
 use crate::engine2d::mesh;
 use crate::engine2d::scripting::{ScriptEngine, ScriptEngineProfile};
+use crate::i18n::I18nRuntime;
 
 use super::State;
 use super::audio::start_audio_thread;
@@ -99,6 +100,15 @@ impl State {
         // creación/destrucción de Sinks de rodio (que puede bloquear en ALSA/PulseAudio)
         // nunca detenga el render loop ni cause drift en el timing de animaciones.
         let audio_slot = start_audio_thread();
+        let i18n = I18nRuntime::new();
+        let script_engine = ScriptEngine::new(ScriptEngineProfile::Engine2d)
+            .expect("Error al inicializar el motor de scripting Rhai");
+        let i18n_snapshot = i18n.snapshot();
+        script_engine.set_i18n(
+            i18n_snapshot.catalogs,
+            i18n_snapshot.active_language,
+            i18n_snapshot.formatting_locale,
+        );
 
         Ok(Self {
             window,
@@ -159,7 +169,6 @@ impl State {
             player_ui_text_overlay_buffer,
             player_ui_text_atlas,
             player_ui_hud_texture_cache: HashMap::new(),
-            player_ui_font_cache: HashMap::new(),
             player_ui_glyph_instances: Vec::new(),
             player_ui_selected_text_id: None,
             player_ui_selected_button_id: None,
@@ -176,7 +185,7 @@ impl State {
             debug_mode: false,
             vsync_enabled: false,
             tool_overlay_buffer: tool_overlay_buffer_init,
-            locale: "en".to_string(),
+            i18n,
             show_snap_hint: false,
             collider_entities: Vec::new(),
             execution_area_entities: Vec::new(),
@@ -193,8 +202,7 @@ impl State {
             default_animation_by_entity: HashMap::new(),
             anim_flip_overrides: HashMap::new(),
             entity_facing_right: HashMap::new(),
-            script_engine: ScriptEngine::new(ScriptEngineProfile::Engine2d)
-                .expect("Error al inicializar el motor de scripting Rhai"),
+            script_engine,
             script_snapshots: HashMap::new(),
             script_anim_names: HashMap::new(),
             control_bindings_by_entity: HashMap::new(),

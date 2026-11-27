@@ -4,6 +4,8 @@ use std::time::Instant;
 use rodio::Source as RodioSource;
 use winit::dpi::PhysicalSize;
 
+use rer_engine_core::i18n::LocaleId;
+
 use crate::engine3d::config_3d::plane_tools::{PlaneToolKind, plane_tool_scale_from_preview};
 use crate::engine3d::config_compat::ActiveTool;
 use crate::engine3d::ecs::{NameComponent, Transform};
@@ -397,19 +399,4 @@ impl State {
             log::warn!("[commands] comando sin manejar: {cmd:?}");
         }
     }
-}
-
-/// Valida extensión y contenido de un archivo de fuente (.ttf / .otf).
-pub(super) fn validate_font_file(path: &str) -> Result<(), String> {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    if ext != "ttf" && ext != "otf" {
-        return Err("Se esperaba un archivo .ttf u .otf".to_string());
-    }
-    let bytes = std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
-    ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("Archivo de fuente inválido: {e}"))?;
-    Ok(())
 }

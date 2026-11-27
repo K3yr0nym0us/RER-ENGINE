@@ -26,9 +26,12 @@ manifest_fields_outside_entity_contract:
   - field: "sprites, models, sounds, backgrounds"
     location: proyecto
     note: Precarga de assets
-  - field: "scenes, activeSceneId, version, gameStyle, language"
+  - field: "scenes, activeSceneId, gameStyle"
     location: manifest
     note: Metadatos de proyecto; gameStyle = modo de cámara 3D (first-person, third-person, …)
+  - field: i18n
+    location: manifest raíz
+    note: defaultLanguage, fallbackLanguage y catalogPaths; no hay version ni language legacy en la raíz
   - field: "Marcadores runtime ([Player], [Ground], [EditorBox], …)"
     location: motor interno
     note: Colisión distinta por tipo; ver collision_by_entity_type

@@ -5,11 +5,12 @@
 #
 # Relacionado con:
 #   - docs/yaml/engine/IPC_Protocol.yaml (resize, comandos de escena)
+#   - docs/I18N_AND_TEXT.md (locale del editor vs i18n del proyecto)
 #   - docs/yaml/engine/Engine_Context.yaml (reportBounds)
 #   - .cursor/rules/project.mdc
 
-version: 1
-updated: 2026-11-24
+version: 2
+updated: 2026-11-26
 
 editor_window:
   principle: |
@@ -19,6 +20,10 @@ editor_window:
   spawn_args: |
     rer_engine_editor --project-type <2D|3D> [--game-style <estilo>]
       [--save-path <ruta>] [--extract-dir <ruta>] [--locale <en|es>] [--electron-host]
+  locale: |
+    `--locale en|es` selecciona el idioma de la interfaz del editor y se envía al
+    motor como `set_language` al adjuntarlo. Los catálogos del proyecto se configuran
+    aparte mediante `i18n.defaultLanguage`, `fallbackLanguage` y `catalogPaths`.
   editor_control:
     note: "La confirmación de salida ya es una ventana nativa (editor/ui/exit_confirm_modal.rs); exit_request eliminado."
     exit_after_save: "Electron → editor: guarda y cierra (camino legacy)"

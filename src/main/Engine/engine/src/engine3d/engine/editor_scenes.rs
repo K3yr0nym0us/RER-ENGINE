@@ -325,6 +325,8 @@ impl State {
                     &project,
                     &view,
                     &editor_tabs,
+                    self.i18n.active_language().to_string(),
+                    self.i18n.formatting_locale().to_string(),
                 );
                 send_project_load_3d_complete_event();
                 self.clear_editor_undo_redo();

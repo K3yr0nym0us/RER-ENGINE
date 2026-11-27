@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glam::Vec3 as GlamVec3;
+use rer_engine_core::i18n::LocaleId;
 use rodio::Source as RodioSource;
 use winit::dpi::PhysicalSize;
 
@@ -688,9 +689,27 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::Redo) => {
                 self.apply_redo();
             }
-            EngineCommand::Common(EngineCommandCommon::SetLocale { locale }) => {
-                log::info!("[IPC] SetLocale: {}", locale);
-                self.locale = locale;
+            EngineCommand::Common(EngineCommandCommon::SetLanguage { language }) => {
+                log::info!("[IPC] SetLanguage: {}", language);
+                match LocaleId::parse(&language) {
+                    Ok(language) => {
+                        self.set_active_language(language);
+                    }
+                    Err(error) => send_event(&EngineEvent::Error {
+                        message: format!("Idioma inválido {language:?}: {error}"),
+                    }),
+                }
+            }
+            EngineCommand::Common(EngineCommandCommon::SetFormattingLocale { locale }) => {
+                log::info!("[IPC] SetFormattingLocale: {}", locale);
+                match LocaleId::parse(&locale) {
+                    Ok(locale) => {
+                        self.set_formatting_locale(locale);
+                    }
+                    Err(error) => send_event(&EngineEvent::Error {
+                        message: format!("Locale de formato inválido {locale:?}: {error}"),
+                    }),
+                }
             }
             EngineCommand::Common(EngineCommandCommon::SetAutosave { enabled }) => {
                 self.autosave_enabled = enabled;
@@ -727,7 +746,7 @@ impl State {
                                 id: entry.id,
                                 font_path: entry.font_path.clone(),
                                 font_name: entry.font_name.clone(),
-                                text: entry.text.clone(),
+                                text: entry.text.source_text().to_string(),
                                 center_x: entry.center_x,
                                 center_y: entry.center_y,
                                 width: entry.width,
@@ -789,9 +808,10 @@ impl State {
                 id,
                 locked,
                 z_index,
+                text,
             }) => {
                 if let Err(message) =
-                    self.set_player_ui_hud_element_props(&element_kind, id, locked, z_index)
+                    self.set_player_ui_hud_element_props(&element_kind, id, locked, z_index, text)
                 {
                     send_event(&EngineEvent::Error { message });
                 }
@@ -1304,9 +1324,12 @@ impl State {
                 send_event(&EngineEvent::SoundsList { sounds });
             }
             EngineCommand::Common(EngineCommandCommon::LoadFont { path, name }) => {
-                match validate_font_file(&path) {
+                let loaded = crate::text::validate_font_file(&path)
+                    .and_then(|()| self.i18n.ensure_font(&path, &name).map(|_| ()));
+                match loaded {
                     Ok(()) => {
                         self.font_store.insert(path.clone(), name.clone());
+                        self.rebuild_player_ui_overlay();
                         send_event(&EngineEvent::FontLoaded {
                             path: path.clone(),
                             name: name.clone(),
@@ -1322,6 +1345,8 @@ impl State {
             }
             EngineCommand::Common(EngineCommandCommon::RemoveFont { path }) => {
                 if self.font_store.remove(&path).is_some() {
+                    let _ = self.i18n.remove_font(&path);
+                    self.rebuild_player_ui_overlay();
                     send_event(&EngineEvent::FontRemoved { path: path.clone() });
                     log::info!("[font] eliminada: {}", path);
                 } else {
@@ -1494,19 +1519,4 @@ impl State {
             EngineCommand::Common(EngineCommandCommon::Shutdown) => {}
         }
     }
-}
-
-/// Valida extensión y contenido de un archivo de fuente (.ttf / .otf).
-fn validate_font_file(path: &str) -> Result<(), String> {
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    if ext != "ttf" && ext != "otf" {
-        return Err("Se esperaba un archivo .ttf u .otf".to_string());
-    }
-    let bytes = std::fs::read(path).map_err(|e| format!("No se pudo leer la fuente: {e}"))?;
-    ttf_parser::Face::parse(&bytes, 0).map_err(|e| format!("Archivo de fuente inválido: {e}"))?;
-    Ok(())
 }

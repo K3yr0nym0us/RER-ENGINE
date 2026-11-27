@@ -5,15 +5,16 @@
 
 use std::{collections::BTreeMap, path::Path};
 
+use rer_engine_core::i18n::I18nConfig;
 use serde_json::{Value, json};
 
 /// Datos del proyecto que no viven en el motor (escenas inactivas, blueprints,
-/// metadatos de entidad, pantallas UI e idioma).
+/// metadatos de entidad, pantallas UI e internacionalización).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ProjectState {
     pub project_type: Option<String>,
     pub game_style: Option<String>,
-    pub locale: Option<String>,
+    pub i18n: I18nConfig,
     pub scenes: Vec<Value>,
     pub active_scene_id: Option<u64>,
     pub blueprints: Vec<Value>,
@@ -35,7 +36,7 @@ impl ProjectState {
         Self {
             project_type: string_field(value, "projectType"),
             game_style: string_field(value, "gameStyle"),
-            locale: string_field(value, "locale"),
+            i18n: i18n_field(value),
             scenes: array_field(value, "scenes"),
             active_scene_id: value.get("activeSceneId").and_then(Value::as_u64),
             blueprints: array_field(value, "blueprints"),
@@ -60,6 +61,11 @@ impl ProjectState {
     pub fn from_manifest_dir(extract_dir: &Path) -> Option<Self> {
         let raw = std::fs::read_to_string(extract_dir.join("manifest.json")).ok()?;
         let manifest: Value = serde_json::from_str(&raw).ok()?;
+        if manifest.get("version").is_some() || manifest.get("language").is_some() {
+            return None;
+        }
+        let i18n: I18nConfig =
+            serde_json::from_value(manifest.get("i18n").cloned().unwrap_or(Value::Null)).ok()?;
         let take = |key: &str| manifest.get(key).cloned().unwrap_or(Value::Null);
         let models = manifest
             .get("resources")
@@ -69,7 +75,6 @@ impl ProjectState {
         let mut state = Self::from_value(&json!({
             "projectType": take("type"),
             "gameStyle": take("gameStyle"),
-            "locale": take("language"),
             "scenes": take("scenes"),
             "activeSceneId": take("activeSceneId"),
             "blueprints": take("blueprints"),
@@ -82,6 +87,7 @@ impl ProjectState {
             "menuUiScreens": take("menuUiScreens"),
             "interactionTooltips": take("interactionTooltips"),
         }));
+        state.i18n = i18n;
         state.entity_meta = entity_meta_from_manifest(&manifest);
         Some(state)
     }
@@ -165,6 +171,14 @@ fn string_field(value: &Value, key: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+fn i18n_field(value: &Value) -> I18nConfig {
+    value
+        .get("i18n")
+        .cloned()
+        .and_then(|config| serde_json::from_value(config).ok())
+        .unwrap_or_default()
+}
+
 fn array_field(value: &Value, key: &str) -> Vec<Value> {
     value
         .get(key)
@@ -232,13 +246,32 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
+
+    fn manifest_dir(tag: &str, manifest: Value) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "rer-ps-{tag}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
+        dir
+    }
 
     #[test]
     fn parses_project_state() {
         let value = json!({
             "projectType": "3D",
             "gameStyle": "third-person",
-            "locale": "es",
+            "i18n": {
+                "defaultLanguage": "es",
+                "fallbackLanguage": "en",
+                "catalogPaths": ["catalogs/ui.json"]
+            },
             "activeSceneId": 2,
             "scenes": [{ "id": 1 }, { "id": 2 }],
             "blueprints": [{ "id": "bp_1" }],
@@ -250,7 +283,12 @@ mod tests {
         let state = ProjectState::from_value(&value);
         assert_eq!(state.project_type.as_deref(), Some("3D"));
         assert_eq!(state.game_style.as_deref(), Some("third-person"));
-        assert_eq!(state.locale.as_deref(), Some("es"));
+        assert_eq!(state.i18n.default_language.to_string(), "es");
+        assert_eq!(state.i18n.fallback_language.to_string(), "en");
+        assert_eq!(
+            state.i18n.catalog_paths,
+            vec![PathBuf::from("catalogs/ui.json")]
+        );
         assert_eq!(state.active_scene_id, Some(2));
         assert_eq!(state.scenes.len(), 2);
         assert_eq!(state.blueprints.len(), 1);
@@ -266,7 +304,7 @@ mod tests {
     fn derives_entity_meta_from_manifest_entities() {
         let manifest = json!({
             "type": "3D",
-            "language": "es",
+            "i18n": { "defaultLanguage": "es", "fallbackLanguage": "en" },
             "activeSceneId": 1,
             "scenes": [{
                 "id": 1,
@@ -290,19 +328,29 @@ mod tests {
 
     #[test]
     fn loads_manifest_from_disk() {
-        let dir = std::env::temp_dir().join(format!("rer-ps-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        let manifest = json!({
-            "type": "3D", "gameStyle": "third-person", "language": "es",
-            "activeSceneId": 3, "scenes": [{ "id": 3, "name": "Nivel" }],
-            "blueprints": [{ "id": "bp" }],
-            "playerUiScreens": [{ "id": "hud", "name": "HUD" }],
-            "resources": { "models": [{ "name": "Hero", "path": "hero.glb" }] }
-        });
-        std::fs::write(dir.join("manifest.json"), manifest.to_string()).unwrap();
+        let dir = manifest_dir(
+            "load",
+            json!({
+                "type": "3D", "gameStyle": "third-person",
+                "i18n": {
+                    "defaultLanguage": "es",
+                    "fallbackLanguage": "en",
+                    "catalogPaths": ["i18n/ui.json"]
+                },
+                "activeSceneId": 3, "scenes": [{ "id": 3, "name": "Nivel" }],
+                "blueprints": [{ "id": "bp" }],
+                "playerUiScreens": [{ "id": "hud", "name": "HUD" }],
+                "resources": { "models": [{ "name": "Hero", "path": "hero.glb" }] }
+            }),
+        );
         let state = ProjectState::from_manifest_dir(&dir).expect("manifest leído");
         assert_eq!(state.project_type.as_deref(), Some("3D"));
-        assert_eq!(state.locale.as_deref(), Some("es"));
+        assert_eq!(state.i18n.default_language.to_string(), "es");
+        assert_eq!(state.i18n.fallback_language.to_string(), "en");
+        assert_eq!(
+            state.i18n.catalog_paths,
+            vec![PathBuf::from("i18n/ui.json")]
+        );
         assert_eq!(state.active_scene_id, Some(3));
         assert_eq!(state.models.len(), 1);
         assert_eq!(state.player_ui_screens.len(), 1);
@@ -310,13 +358,64 @@ mod tests {
     }
 
     #[test]
-    fn blank_strings_are_none() {
+    fn rejects_legacy_or_missing_i18n_manifests() {
+        for (tag, manifest) in [
+            (
+                "version",
+                json!({
+                    "type": "3D",
+                    "version": 1,
+                    "i18n": { "defaultLanguage": "en", "fallbackLanguage": "en" }
+                }),
+            ),
+            (
+                "language",
+                json!({
+                    "type": "3D",
+                    "language": "es",
+                    "i18n": { "defaultLanguage": "es", "fallbackLanguage": "en" }
+                }),
+            ),
+            ("missing", json!({ "type": "3D" })),
+        ] {
+            let dir = manifest_dir(tag, manifest);
+            assert!(
+                ProjectState::from_manifest_dir(&dir).is_none(),
+                "el manifiesto {tag} debe rechazarse"
+            );
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_i18n_fields_in_manifest() {
+        let dir = manifest_dir(
+            "unknown-i18n",
+            json!({
+                "type": "3D",
+                "i18n": {
+                    "defaultLanguage": "en",
+                    "fallbackLanguage": "en",
+                    "fallbackLangauge": "en"
+                }
+            }),
+        );
+        assert!(ProjectState::from_manifest_dir(&dir).is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn blank_strings_are_none_and_invalid_i18n_uses_default() {
         let state = ProjectState::from_value(&json!({
             "projectType": "  ",
-            "locale": ""
+            "i18n": {
+                "defaultLanguage": "en",
+                "fallbackLanguage": "en",
+                "unknownField": true
+            }
         }));
         assert_eq!(state.project_type, None);
-        assert_eq!(state.locale, None);
+        assert_eq!(state.i18n, I18nConfig::default());
     }
 
     #[test]

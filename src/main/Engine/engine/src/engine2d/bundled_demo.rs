@@ -86,3 +86,29 @@ pub fn ensure_bundled_demo_2d_extract_dir() -> Result<PathBuf, String> {
     fs::write(&stamp_path, &expected).map_err(|e| e.to_string())?;
     Ok(dest)
 }
+
+#[cfg(test)]
+mod tests {
+    use rer_engine_core::i18n::TextValue;
+    use serde_json::Value;
+
+    use super::DEMO_SAVE_BYTES;
+
+    #[test]
+    fn embedded_demo_uses_the_clean_i18n_and_text_value_contract() {
+        let cursor = std::io::Cursor::new(DEMO_SAVE_BYTES);
+        let mut archive = zip::ZipArchive::new(cursor).expect("embedded demo zip");
+        let raw = archive
+            .by_name("manifest.json")
+            .expect("embedded demo manifest");
+        let manifest: Value = serde_json::from_reader(raw).expect("embedded demo manifest JSON");
+
+        crate::i18n::validate_project_manifest(&manifest).expect("clean embedded demo manifest");
+        assert!(manifest.get("version").is_none());
+        assert!(manifest.get("language").is_none());
+        let text: TextValue =
+            serde_json::from_value(manifest["playerUiTextBoxes"][0]["text"].clone())
+                .expect("embedded demo HUD text value");
+        assert!(text.as_literal().is_some());
+    }
+}

@@ -234,24 +234,6 @@ impl Default for Interactable {
     }
 }
 
-impl Interactable {
-    /// Texto fijo del tooltip: «verbo del modo» + tecla + acción.
-    pub fn prompt_parts(&self, locale: &str) -> (String, String) {
-        let verb = match (&self.trigger, locale.eq_ignore_ascii_case("en")) {
-            (InteractionTrigger::Hold, true) => "Hold",
-            (InteractionTrigger::Hold, false) => "Mantén",
-            (InteractionTrigger::Press, true) => "Press",
-            (InteractionTrigger::Press, false) => "Pulsa",
-        };
-        let action = if locale.eq_ignore_ascii_case("en") {
-            "To interact"
-        } else {
-            "Para interactuar"
-        };
-        (verb.to_string(), action.to_string())
-    }
-}
-
 // ── Almacenamiento de componentes ─────────────────────────────────────────────
 
 /// Almacenamiento denso para un tipo de componente.

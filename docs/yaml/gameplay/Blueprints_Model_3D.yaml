@@ -13,7 +13,7 @@
 #   - docs/yaml/editor/Entity_Properties_Modal.yaml (convertToBlueprint, replaceModel)
 #   - docs/yaml/editor/MODAL_ELECTRON.yaml        (selector nativo de blueprints, migrado)
 #
-# Última revisión: junio 2026
+# Última revisión: noviembre 2026 (persistencia nativa del manifiesto)
 
 overview: |
   Una blueprint 3D es una plantilla con id estable (`bp_*` en editor, persistido en manifest).
@@ -64,10 +64,10 @@ model_resolution:
       blueprintFromSave: restaura model_id si model ya es model_*
       buildBlueprintPlacementMeta: IPC register_blueprint / quick_build
   save_flow:
-    file: src/renderer/src/defaults/buildProjectSaveFromEngine.ts
+    file: src/main/Engine/engine/src/editor/save/manifest.rs
     steps:
-      - attachModelIdsToBlueprints desde resources.models[]
-      - rewriteImportedBlueprintPaths: blueprint.model ← model_id (marcadores excluidos)
+      - attach_model_ids desde resources.models[]
+      - rewrite_imported_paths: blueprint.model ← model_id (marcadores excluidos)
   load_flow:
     file: src/main/Engine/engine/src/engine3d/engine/load_proyect.rs
     steps:
@@ -183,11 +183,11 @@ persistence:
   location: project.blueprints[] (raíz manifest; global al proyecto, no por escena)
   entities: entities[].blueprint_id en cada escena (scenes[].entities)
   merge_on_save:
-    - Editor: blueprintsRef (React)
-    - buildProjectSaveFromEngine: blueprintToSave + model_id + rewrite model → model_id
+    - Editor nativo: project_state.blueprints
+    - build_manifest: model_id + rewrite model → model_id
   on_load:
-    - blueprintFromSave en front (project_loaded_3d)
-    - setBlueprints → register_blueprint por cada entrada
+    - El editor nativo reconstruye la lista desde project_loaded_3d
+    - register_blueprint por cada entrada
     - Motor: burst precarga model_id requeridos por entidades + blueprints
 
 # ---------------------------------------------------------------------------

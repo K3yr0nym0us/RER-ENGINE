@@ -20,6 +20,8 @@ pub(crate) mod delete_ui_screen_modal;
 pub(crate) mod entity_properties_modal;
 /// Cuerpo de la ventana nativa de confirmación de salida del editor.
 pub(crate) mod exit_confirm_modal;
+/// Detalle ligero de una fuente del proyecto y su uso en el HUD.
+mod font_details_modal;
 mod frame;
 mod globalize_model_modal;
 /// Cuerpo de la ventana nativa del editor de HUD.
@@ -63,6 +65,7 @@ pub fn show(ui: &mut egui::Ui, app: &mut EditorApp) {
     frame::show(ui, app);
     // Modal flotante (backdrop sobre toda la ventana): tras los paneles.
     let ctx = ui.ctx().clone();
+    font_details_modal::show(&ctx, app);
     load_from_scene_modal::show(&ctx, app);
     globalize_model_modal::show(&ctx, app);
     switch_scene_modal::show(&ctx, app);
