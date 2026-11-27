@@ -65,15 +65,30 @@ impl HudAtlas {
         w: u32,
         h: u32,
     ) -> ScreenHudPackedImage {
-        let uv = self.pack_raw(gpu, rgba, w, h);
-        ScreenHudPackedImage {
+        self.try_pack_rgba(gpu, rgba, w, h).unwrap_or(ScreenHudPackedImage {
+            uv_rect: [0.0, 0.0, 1.0 / Self::SIZE as f32, 1.0 / Self::SIZE as f32],
+            pixel_width: w as f32,
+            pixel_height: h as f32,
+        })
+    }
+
+    /// Igual que `pack_rgba`, pero devuelve `None` si el atlas no tiene espacio.
+    pub fn try_pack_rgba(
+        &mut self,
+        gpu: &SharedGpu,
+        rgba: &[u8],
+        w: u32,
+        h: u32,
+    ) -> Option<ScreenHudPackedImage> {
+        let uv = self.try_pack_raw(gpu, rgba, w, h)?;
+        Some(ScreenHudPackedImage {
             uv_rect: uv,
             pixel_width: w as f32,
             pixel_height: h as f32,
-        }
+        })
     }
 
-    fn pack_raw(&mut self, gpu: &SharedGpu, rgba: &[u8], w: u32, h: u32) -> [f32; 4] {
+    fn try_pack_raw(&mut self, gpu: &SharedGpu, rgba: &[u8], w: u32, h: u32) -> Option<[f32; 4]> {
         if self.cursor_x + w > self.width {
             self.cursor_y += self.row_h;
             self.cursor_x = 0;
@@ -81,7 +96,7 @@ impl HudAtlas {
         }
         if self.cursor_y + h > self.height {
             log::error!("[hud_atlas] atlas lleno: no se puede empacar {w}x{h} (solo HUD pantalla)");
-            return [0.0, 0.0, 1.0 / Self::SIZE as f32, 1.0 / Self::SIZE as f32];
+            return None;
         }
 
         if let Err(error) =
@@ -98,7 +113,7 @@ impl HudAtlas {
         ];
         self.cursor_x += w;
         self.row_h = self.row_h.max(h);
-        uv
+        Some(uv)
     }
 }
 

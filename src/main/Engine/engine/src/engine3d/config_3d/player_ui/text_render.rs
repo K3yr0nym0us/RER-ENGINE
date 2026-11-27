@@ -63,7 +63,7 @@ pub(crate) fn append_text_box_gizmo_verts(
     }
 }
 
-pub(crate) fn append_text_glyphs(state: &mut State, boxes: &[PlayerUiTextBox]) {
+pub(crate) fn append_text_glyphs(state: &mut State, boxes: &[PlayerUiTextBox]) -> bool {
     let vw = state.size.width.max(1) as f32;
     let vh = state.size.height.max(1) as f32;
     for b in boxes {
@@ -89,18 +89,25 @@ pub(crate) fn append_text_glyphs(state: &mut State, boxes: &[PlayerUiTextBox]) {
         let (width_px, height_px) = super::font::hud_pixel_size(rect, vw, vh);
         let language = state.i18n.text_shaping_language(&b.text);
         let style = hud_style(family, width_px, height_px, [1.0; 4], Some(&language));
-        super::font::build_hud_label_glyph(
+        let cache_key = super::font::hud_text_cache_key(&text, &style);
+        if !super::font::build_hud_label_glyph(
             state.i18n.text_system_mut(),
             &text,
             &style,
+            &cache_key,
             rect,
             vw,
             vh,
             &state.vulkan,
             &mut state.player_ui_text_atlas,
+            &mut state.player_ui_text_cache,
+            &mut state.player_ui_hud_texture_cache,
             &mut state.player_ui_glyph_instances,
-        );
+        ) {
+            return false;
+        }
     }
+    true
 }
 
 pub(crate) fn rebuild_caret_buffer(state: &mut State, edit_id: u32) {

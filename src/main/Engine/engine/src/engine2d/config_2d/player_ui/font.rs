@@ -7,8 +7,8 @@ use crate::engine2d::mesh;
 use crate::engine2d::screen_hud_image::{self, ScreenHudAtlas, ScreenHudPackedImage};
 use crate::text::{TextStyle, TextSystem};
 
-/// Texto rasterizado: el bitmap ya compensa Y; el quad invierte V en el modelo.
-const HUD_TEXT_FLIP_BITMAP_Y: bool = true;
+/// cosmic-text/swash rasteriza top-left; el quad no debe invertir Y en 2D.
+const HUD_TEXT_FLIP_BITMAP_Y: bool = false;
 /// PNG/JPEG del accordion: en 2D el pass HUD no requiere invertir V (el texto sí).
 const HUD_FILE_TEXTURE_FLIP_BITMAP_Y: bool = false;
 
@@ -60,24 +60,63 @@ pub(crate) fn text_caret_line_ndc(
     })
 }
 
+/// Clave de caché para un glifo de texto HUD.
+pub(crate) fn hud_text_cache_key(text: &str, style: &TextStyle) -> String {
+    format!("{text:?}|{style:?}")
+}
+
 /// Layout en píxeles → raster → atlas → un quad con UV.
+/// Reutiliza el bitmap empaquetado cuando `cache_key` ya existe.
+/// Devuelve `false` si el atlas se reinició y el rebuild debe repetirse.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_hud_label_glyph(
     text_system: &mut TextSystem,
     text: &str,
     style: &TextStyle,
+    cache_key: &str,
     box_rect: UiHudRect,
     viewport_w: f32,
     viewport_h: f32,
     atlas: &mut ScreenHudAtlas,
+    text_cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
+    texture_cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
     out: &mut Vec<mesh::InstanceData>,
-) {
+) -> bool {
     if viewport_w <= 0.0 || viewport_h <= 0.0 || text.is_empty() {
-        return;
+        return true;
     }
 
     let (width_px, height_px) = hud_pixel_size(box_rect, viewport_w, viewport_h);
-    let raster = text_system.rasterize(text, style);
-    let packed = atlas.pack_rgba(&raster.rgba, raster.width, raster.height);
+    let (packed, atlas_reset) = if let Some(packed) = text_cache.get(cache_key) {
+        (*packed, false)
+    } else {
+        let raster = text_system.rasterize(text, style);
+        match atlas.try_pack_rgba(&raster.rgba, raster.width, raster.height) {
+            Some(packed) => {
+                text_cache.insert(cache_key.to_owned(), packed);
+                (packed, false)
+            }
+            None => {
+                atlas.reset();
+                text_cache.clear();
+                texture_cache.clear();
+                match atlas.try_pack_rgba(&raster.rgba, raster.width, raster.height) {
+                    Some(packed) => {
+                        text_cache.insert(cache_key.to_owned(), packed);
+                        (packed, true)
+                    }
+                    None => {
+                        log::error!(
+                            "[screen_hud_atlas] texto no cabe en atlas vacío: {}x{}",
+                            raster.width,
+                            raster.height
+                        );
+                        return true;
+                    }
+                }
+            }
+        }
+    };
 
     let hw = box_rect.width * 0.5;
     let hh = box_rect.height * 0.5;
@@ -99,6 +138,7 @@ pub(crate) fn build_hud_label_glyph(
             packed, model, 1.0,
         ));
     }
+    !atlas_reset
 }
 
 /// Empaqueta la imagen en el atlas (o devuelve la entrada de caché).

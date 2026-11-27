@@ -39,7 +39,7 @@ fn hud_and_prompt_styles_use_the_contract_sizes_and_shaping() {
         FontWeight::Bold,
         Some("ar"),
     );
-    assert_eq!(prompt.size, 78.0);
+    assert_eq!(prompt.size, 62.0);
     assert_eq!(prompt.weight, FontWeight::Bold);
     assert_eq!(prompt.align, TextAlign::Center);
     assert_eq!(prompt.wrap, TextWrap::WordOrGlyph);
@@ -514,3 +514,4 @@ fn locale_change_preserves_embedded_font_ids() {
     let after: Vec<_> = text.loaded_fonts().iter().map(|font| font.id).collect();
     assert_eq!(after, before);
 }
+

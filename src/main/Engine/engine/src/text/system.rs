@@ -199,9 +199,8 @@ impl TextSystem {
             for glyph in &mut glyphs {
                 let physical = glyph.layout.physical(
                     (
-                        geometry.shift_x * geometry.supersample as f32,
-                        geometry.shift_y * geometry.supersample as f32
-                            + glyph.line_y * geometry.supersample as f32,
+                        geometry.shift_x,
+                        geometry.shift_y + glyph.line_y * geometry.supersample as f32,
                     ),
                     geometry.supersample as f32,
                 );
@@ -425,9 +424,10 @@ fn measure_ink(
 ) -> Option<InkRect> {
     let mut rect: Option<InkRect> = None;
     for glyph in glyphs {
-        let physical = glyph
-            .layout
-            .physical((0.0, glyph.line_y), supersample as f32);
+        let physical = glyph.layout.physical(
+            (0.0, glyph.line_y * supersample as f32),
+            supersample as f32,
+        );
         let Some(image) = cache.get_image(font_system, physical.cache_key) else {
             continue;
         };

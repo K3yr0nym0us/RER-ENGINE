@@ -255,6 +255,7 @@ impl State {
             player_ui_text_overlay_buffer,
             player_ui_text_atlas,
             player_ui_hud_texture_cache: HashMap::new(),
+            player_ui_text_cache: HashMap::new(),
             player_ui_glyph_instances: Vec::new(),
             interaction_prompt_glyph_instances: Vec::new(),
             interaction_key_pressed: None,

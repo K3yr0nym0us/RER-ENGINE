@@ -151,6 +151,9 @@ pub struct State {
     pub(crate) player_ui_text_atlas: crate::engine2d::screen_hud_image::ScreenHudAtlas,
     pub(crate) player_ui_hud_texture_cache:
         HashMap<String, crate::engine2d::screen_hud_image::ScreenHudPackedImage>,
+    /// Glifos de texto HUD empaquetados por clave (texto+estilo+tamaño).
+    pub(crate) player_ui_text_cache:
+        HashMap<String, crate::engine2d::screen_hud_image::ScreenHudPackedImage>,
     pub(crate) player_ui_glyph_instances: Vec<crate::engine2d::mesh::InstanceData>,
     pub(crate) player_ui_selected_text_id: Option<u32>,
     pub(crate) player_ui_selected_button_id: Option<u32>,

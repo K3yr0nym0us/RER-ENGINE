@@ -251,6 +251,9 @@ pub struct State {
     /// UV empaquetados en `player_ui_text_atlas` por ruta de imagen (evita releer disco en cada frame).
     pub(crate) player_ui_hud_texture_cache:
         std::collections::HashMap<String, crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
+    /// Glifos de texto HUD empaquetados por clave (texto+estilo+tamaño).
+    pub(crate) player_ui_text_cache:
+        std::collections::HashMap<String, crate::engine3d::screen_hud_image::ScreenHudPackedImage>,
     pub(crate) player_ui_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,
     /// Glifos del prompt de interacción (se reconstruyen cada frame en play).
     pub(crate) interaction_prompt_glyph_instances: Vec<crate::engine3d::mesh::InstanceData>,

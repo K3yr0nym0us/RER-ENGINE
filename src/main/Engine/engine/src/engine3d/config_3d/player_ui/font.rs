@@ -7,7 +7,10 @@ use crate::engine3d::screen_hud_image::{HudAtlas, ScreenHudPackedImage};
 use crate::engine3d::vulkan::SharedGpu;
 use crate::text::{TextStyle, TextSystem};
 
-const HUD_BITMAP_FLIP_Y: bool = true;
+/// Los bitmaps rasterizados por cosmic-text/swash salen top-left; el quad no debe invertir Y.
+const HUD_TEXT_FLIP_BITMAP_Y: bool = false;
+/// PNG/JPEG en 3D mantienen la convención de flip del pipeline HUD.
+const HUD_FILE_TEXTURE_FLIP_BITMAP_Y: bool = true;
 
 /// Segmento vertical del cursor en NDC (z = 0).
 pub(crate) struct TextCaretLineNdc {
@@ -57,44 +60,44 @@ pub(crate) fn text_caret_line_ndc(
     })
 }
 
+/// Clave de caché para un glifo de texto HUD.
+pub(crate) fn hud_text_cache_key(text: &str, style: &TextStyle) -> String {
+    format!("{text:?}|{style:?}")
+}
+
 /// Layout en píxeles → raster → atlas → un quad con UV.
+/// Reutiliza el bitmap empaquetado cuando `cache_key` ya existe.
+/// Devuelve `false` si el atlas se reinició y el rebuild debe repetirse.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_hud_label_glyph(
     text_system: &mut TextSystem,
     text: &str,
     style: &TextStyle,
+    cache_key: &str,
     box_rect: UiHudRect,
     viewport_w: f32,
     viewport_h: f32,
     gpu: &SharedGpu,
     atlas: &mut HudAtlas,
+    text_cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
+    texture_cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
     out: &mut Vec<crate::engine3d::mesh::InstanceData>,
-) {
-    if viewport_w <= 0.0 || viewport_h <= 0.0 || text.is_empty() {
-        return;
-    }
-
-    let (width_px, height_px) = hud_pixel_size(box_rect, viewport_w, viewport_h);
-    let raster = text_system.rasterize(text, style);
-    let packed = atlas.pack_rgba(gpu, &raster.rgba, raster.width, raster.height);
-
-    let hw = box_rect.width * 0.5;
-    let hh = box_rect.height * 0.5;
-    let x0_ndc = box_rect.center_x - hw;
-    let y1_ndc = box_rect.center_y + hh;
-    let x0_px = (x0_ndc + 1.0) * 0.5 * viewport_w;
-    let y0_px = (1.0 - y1_ndc) * 0.5 * viewport_h;
-
-    if let Some(model) = ndc_transform_top_left(
-        x0_px,
-        y0_px,
-        width_px as f32,
-        height_px as f32,
+) -> bool {
+    build_cached_hud_label_glyph(
+        text_system,
+        text,
+        style,
+        cache_key,
+        box_rect,
+        1.0,
         viewport_w,
         viewport_h,
-        HUD_BITMAP_FLIP_Y,
-    ) {
-        out.push(crate::engine3d::screen_hud_image::build_screen_hud_instance(packed, model, 1.0));
-    }
+        gpu,
+        atlas,
+        text_cache,
+        texture_cache,
+        out,
+    )
 }
 
 /// Clave completa del prompt: idioma, locale, época, fuente, estilo, texto y caja.
@@ -115,6 +118,9 @@ pub(crate) fn prompt_cache_key(
 
 /// Igual que `build_hud_label_glyph` pero reutiliza el bitmap empaquetado.
 /// El alpha se aplica en la instancia, por lo que el raster queda en blanco.
+/// Si el atlas se llena, se reinicia y se vacían las caches; devuelve `false`
+/// para que el caller reinicie el rebuild completo.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_cached_hud_label_glyph(
     text_system: &mut TextSystem,
     text: &str,
@@ -126,21 +132,44 @@ pub(crate) fn build_cached_hud_label_glyph(
     viewport_h: f32,
     gpu: &SharedGpu,
     atlas: &mut HudAtlas,
-    cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
+    text_cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
+    texture_cache: &mut std::collections::HashMap<String, ScreenHudPackedImage>,
     out: &mut Vec<crate::engine3d::mesh::InstanceData>,
-) {
+) -> bool {
     if viewport_w <= 0.0 || viewport_h <= 0.0 || text.is_empty() {
-        return;
+        return true;
     }
 
     let (width_px, height_px) = hud_pixel_size(box_rect, viewport_w, viewport_h);
-    let packed = if let Some(packed) = cache.get(cache_key) {
-        *packed
+    let (packed, atlas_reset) = if let Some(packed) = text_cache.get(cache_key) {
+        (*packed, false)
     } else {
         let raster = text_system.rasterize(text, style);
-        let packed = atlas.pack_rgba(gpu, &raster.rgba, raster.width, raster.height);
-        cache.insert(cache_key.to_owned(), packed);
-        packed
+        match atlas.try_pack_rgba(gpu, &raster.rgba, raster.width, raster.height) {
+            Some(packed) => {
+                text_cache.insert(cache_key.to_owned(), packed);
+                (packed, false)
+            }
+            None => {
+                atlas.reset(gpu);
+                text_cache.clear();
+                texture_cache.clear();
+                match atlas.try_pack_rgba(gpu, &raster.rgba, raster.width, raster.height) {
+                    Some(packed) => {
+                        text_cache.insert(cache_key.to_owned(), packed);
+                        (packed, true)
+                    }
+                    None => {
+                        log::error!(
+                            "[hud_atlas] texto no cabe en atlas vacío: {}x{}",
+                            raster.width,
+                            raster.height
+                        );
+                        return true;
+                    }
+                }
+            }
+        }
     };
 
     let hw = box_rect.width * 0.5;
@@ -157,7 +186,7 @@ pub(crate) fn build_cached_hud_label_glyph(
         height_px as f32,
         viewport_w,
         viewport_h,
-        HUD_BITMAP_FLIP_Y,
+        HUD_TEXT_FLIP_BITMAP_Y,
     ) {
         out.push(
             crate::engine3d::screen_hud_image::build_screen_hud_instance(
@@ -167,6 +196,7 @@ pub(crate) fn build_cached_hud_label_glyph(
             ),
         );
     }
+    !atlas_reset
 }
 
 pub(crate) fn pack_hud_texture_cached(
@@ -223,7 +253,7 @@ pub(crate) fn push_hud_texture_quad_instance(
         h_px,
         viewport_w,
         viewport_h,
-        HUD_BITMAP_FLIP_Y,
+        HUD_FILE_TEXTURE_FLIP_BITMAP_Y,
     ) {
         out.push(
             crate::engine3d::screen_hud_image::build_screen_hud_instance(

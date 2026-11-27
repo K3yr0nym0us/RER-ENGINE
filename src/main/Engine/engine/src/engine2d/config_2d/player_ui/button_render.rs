@@ -47,7 +47,11 @@ pub(crate) fn append_button_hud_glyphs(
         String,
         crate::engine2d::screen_hud_image::ScreenHudPackedImage,
     >,
-) {
+    text_cache: &mut std::collections::HashMap<
+        String,
+        crate::engine2d::screen_hud_image::ScreenHudPackedImage,
+    >,
+) -> bool {
     for btn in buttons {
         if let Some(path) = btn.texture_path.as_deref() {
             super::font::build_hud_texture_quad_cached(
@@ -88,17 +92,24 @@ pub(crate) fn append_button_hud_glyphs(
         let (width_px, height_px) = super::font::hud_pixel_size(rect, viewport_w, viewport_h);
         let language = i18n.text_shaping_language(&btn.text);
         let style = hud_style(family, width_px, height_px, tint, Some(&language));
-        build_hud_label_glyph(
+        let cache_key = super::font::hud_text_cache_key(&text, &style);
+        if !build_hud_label_glyph(
             i18n.text_system_mut(),
             &text,
             &style,
+            &cache_key,
             rect,
             viewport_w,
             viewport_h,
             atlas,
+            text_cache,
+            texture_cache,
             instances,
-        );
+        ) {
+            return false;
+        }
     }
+    true
 }
 
 fn append_button_shape_fill(

@@ -140,53 +140,66 @@ impl State {
         }
         self.player_ui_text_overlay_buffer = gizmo::build_from_vertices(&verts);
 
-        if reset_atlas {
-            self.player_ui_text_atlas.reset();
-            self.player_ui_hud_texture_cache.clear();
-        }
+        // Siempre reiniciar el atlas: el texto rasterizado se vuelve a empaquetar en cada
+        // rebuild y, en preview en vivo, conservar el atlas lo llena rápidamente.
+        self.player_ui_text_atlas.reset();
+        self.player_ui_hud_texture_cache.clear();
+        self.player_ui_text_cache.clear();
 
-        self.player_ui_glyph_instances.clear();
-
-        for layer in &draw_order {
-            match layer.kind {
-                super::hud_layers::HudLayerKind::Text => {
-                    let b = &text_boxes[layer.index];
-                    text_render::append_text_glyphs(self, std::slice::from_ref(b));
+        'rebuild: for _ in 0..2 {
+            self.player_ui_glyph_instances.clear();
+            let mut atlas_reset = false;
+            for layer in &draw_order {
+                let ok = match layer.kind {
+                    super::hud_layers::HudLayerKind::Text => {
+                        let b = &text_boxes[layer.index];
+                        text_render::append_text_glyphs(self, std::slice::from_ref(b))
+                    }
+                    super::hud_layers::HudLayerKind::Button => {
+                        let btn = &buttons[layer.index];
+                        button_render::append_button_hud_glyphs(
+                            &mut self.i18n,
+                            std::slice::from_ref(btn),
+                            &mut self.player_ui_text_atlas,
+                            &mut self.player_ui_glyph_instances,
+                            vw,
+                            vh,
+                            &mut self.player_ui_hud_texture_cache,
+                            &mut self.player_ui_text_cache,
+                        )
+                    }
+                    super::hud_layers::HudLayerKind::Image => {
+                        let img = &images[layer.index];
+                        image_render::append_image_hud_glyphs(
+                            std::slice::from_ref(img),
+                            &mut self.player_ui_text_atlas,
+                            &mut self.player_ui_glyph_instances,
+                            vw,
+                            vh,
+                            &mut self.player_ui_hud_texture_cache,
+                        );
+                        true
+                    }
+                    super::hud_layers::HudLayerKind::Object => {
+                        let obj = &objects[layer.index];
+                        super::object::append_object_hud_glyphs(
+                            std::slice::from_ref(obj),
+                            &mut self.player_ui_text_atlas,
+                            &mut self.player_ui_glyph_instances,
+                            vw,
+                            vh,
+                            &mut self.player_ui_hud_texture_cache,
+                        );
+                        true
+                    }
+                };
+                if !ok {
+                    atlas_reset = true;
+                    break;
                 }
-                super::hud_layers::HudLayerKind::Button => {
-                    let btn = &buttons[layer.index];
-                    button_render::append_button_hud_glyphs(
-                        &mut self.i18n,
-                        std::slice::from_ref(btn),
-                        &mut self.player_ui_text_atlas,
-                        &mut self.player_ui_glyph_instances,
-                        vw,
-                        vh,
-                        &mut self.player_ui_hud_texture_cache,
-                    );
-                }
-                super::hud_layers::HudLayerKind::Image => {
-                    let img = &images[layer.index];
-                    image_render::append_image_hud_glyphs(
-                        std::slice::from_ref(img),
-                        &mut self.player_ui_text_atlas,
-                        &mut self.player_ui_glyph_instances,
-                        vw,
-                        vh,
-                        &mut self.player_ui_hud_texture_cache,
-                    );
-                }
-                super::hud_layers::HudLayerKind::Object => {
-                    let obj = &objects[layer.index];
-                    super::object::append_object_hud_glyphs(
-                        std::slice::from_ref(obj),
-                        &mut self.player_ui_text_atlas,
-                        &mut self.player_ui_glyph_instances,
-                        vw,
-                        vh,
-                        &mut self.player_ui_hud_texture_cache,
-                    );
-                }
+            }
+            if !atlas_reset {
+                break 'rebuild;
             }
         }
     }

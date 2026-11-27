@@ -427,7 +427,7 @@ impl State {
             prefix_w,
             prefix_h,
         );
-        super::player_ui::font::build_cached_hud_label_glyph(
+        if !super::player_ui::font::build_cached_hud_label_glyph(
             self.i18n.text_system_mut(),
             &prefix,
             &prefix_style,
@@ -439,8 +439,15 @@ impl State {
             &self.vulkan,
             &mut self.player_ui_text_atlas,
             &mut self.interaction_prompt_cache,
+            &mut self.player_ui_hud_texture_cache,
             &mut self.interaction_prompt_glyph_instances,
-        );
+        ) {
+            self.interaction_prompt_glyph_instances.clear();
+            self.player_ui_glyph_instances.clear();
+            self.player_ui_text_cache.clear();
+            self.rebuild_player_ui_overlay_live();
+            return;
+        }
 
         // 2. Botón de tecla: rectángulo oscuro con la tecla centrada.
         let key_line = line_rect(top_px + 48.0, 40.0);
@@ -471,7 +478,7 @@ impl State {
         let key_cache_key = super::player_ui::font::prompt_cache_key(
             &language, &locale, epoch, &font_path, &key_style, key, key_w, key_h,
         );
-        super::player_ui::font::build_cached_hud_label_glyph(
+        if !super::player_ui::font::build_cached_hud_label_glyph(
             self.i18n.text_system_mut(),
             key,
             &key_style,
@@ -483,8 +490,15 @@ impl State {
             &self.vulkan,
             &mut self.player_ui_text_atlas,
             &mut self.interaction_prompt_cache,
+            &mut self.player_ui_hud_texture_cache,
             &mut self.interaction_prompt_glyph_instances,
-        );
+        ) {
+            self.interaction_prompt_glyph_instances.clear();
+            self.player_ui_glyph_instances.clear();
+            self.player_ui_text_cache.clear();
+            self.rebuild_player_ui_overlay_live();
+            return;
+        }
 
         // 3. Acción: «to move the platform» / «para mover la plataforma».
         let action_rect = line_rect(top_px + 94.0, 28.0);
@@ -506,7 +520,7 @@ impl State {
             action_w,
             action_h,
         );
-        super::player_ui::font::build_cached_hud_label_glyph(
+        if !super::player_ui::font::build_cached_hud_label_glyph(
             self.i18n.text_system_mut(),
             &action,
             &action_style,
@@ -518,8 +532,15 @@ impl State {
             &self.vulkan,
             &mut self.player_ui_text_atlas,
             &mut self.interaction_prompt_cache,
+            &mut self.player_ui_hud_texture_cache,
             &mut self.interaction_prompt_glyph_instances,
-        );
+        ) {
+            self.interaction_prompt_glyph_instances.clear();
+            self.player_ui_glyph_instances.clear();
+            self.player_ui_text_cache.clear();
+            self.rebuild_player_ui_overlay_live();
+            return;
+        }
     }
 
     /// Anillo blanco que se llena/vacía alrededor del botón en modo «mantener».

@@ -209,7 +209,7 @@ pub(crate) fn hud_style(
     }
 }
 
-/// Estilo del prompt de interacción: tamaño mayor, negrita real y 4× SSAA.
+/// Estilo del prompt de interacción: negrita real y 4× SSAA.
 pub(crate) fn prompt_style(
     family: FontFamily,
     width_px: u32,
@@ -223,7 +223,7 @@ pub(crate) fn prompt_style(
         max_height: Some(height_px as f32),
         language: language.map(str::to_owned),
         supersample: 4,
-        ..TextStyle::new(family, height_px as f32 * 0.78)
+        ..TextStyle::new(family, height_px as f32 * 0.62)
     }
 }
 

@@ -45,6 +45,16 @@ impl ScreenHudAtlas {
 
     /// Empaca RGBA en el atlas y copia los mismos píxeles a la imagen Vulkan.
     pub fn pack_rgba(&mut self, rgba: &[u8], w: u32, h: u32) -> ScreenHudPackedImage {
+        self.try_pack_rgba(rgba, w, h)
+            .unwrap_or(ScreenHudPackedImage {
+                uv_rect: [0.0, 0.0, 1.0 / Self::SIZE as f32, 1.0 / Self::SIZE as f32],
+                pixel_width: w as f32,
+                pixel_height: h as f32,
+            })
+    }
+
+    /// Igual que `pack_rgba`, pero devuelve `None` si el atlas no tiene espacio.
+    pub fn try_pack_rgba(&mut self, rgba: &[u8], w: u32, h: u32) -> Option<ScreenHudPackedImage> {
         let Some((uv, x, y)) = self.packer.pack(w, h) else {
             log::error!(
                 "[screen_hud_atlas] atlas lleno — no se puede empacar {w}×{h} (solo HUD pantalla)"
@@ -52,21 +62,16 @@ impl ScreenHudAtlas {
             if !self.exhausted_notified {
                 self.exhausted_notified = true;
             }
-            let fallback = [0.0, 0.0, 1.0 / Self::SIZE as f32, 1.0 / Self::SIZE as f32];
-            return ScreenHudPackedImage {
-                uv_rect: fallback,
-                pixel_width: w as f32,
-                pixel_height: h as f32,
-            };
+            return None;
         };
         if let Err(error) = self.vulkan.upload_hud_atlas_region(rgba, x, y, w, h) {
             log::warn!("[screen-hud-atlas] no se pudo subir la región a Vulkan: {error}");
         }
-        ScreenHudPackedImage {
+        Some(ScreenHudPackedImage {
             uv_rect: uv,
             pixel_width: w as f32,
             pixel_height: h as f32,
-        }
+        })
     }
 }
 

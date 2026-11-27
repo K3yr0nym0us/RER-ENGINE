@@ -169,6 +169,7 @@ impl State {
             player_ui_text_overlay_buffer,
             player_ui_text_atlas,
             player_ui_hud_texture_cache: HashMap::new(),
+            player_ui_text_cache: HashMap::new(),
             player_ui_glyph_instances: Vec::new(),
             player_ui_selected_text_id: None,
             player_ui_selected_button_id: None,
