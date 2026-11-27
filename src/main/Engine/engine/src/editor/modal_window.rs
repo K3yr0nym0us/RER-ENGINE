@@ -100,12 +100,43 @@ const WORLDGEN_HEIGHT: f64 = 780.0;
 /// La modal de plugins era `lg` (800 de contenido + 48 de padding).
 const PLUGINS_WIDTH: f64 = 848.0;
 const PLUGINS_HEIGHT: f64 = 640.0;
-/// El editor de HUD era una modal `sm` (300 de contenido + 48 de padding).
-const HUD_WIDTH: f64 = 348.0;
-const HUD_HEIGHT: f64 = 560.0;
+/// El editor de HUD usa un ancho de trabajo compacto y alto adaptativo.
+const HUD_WIDTH: f64 = 420.0;
+const HUD_HEIGHT: f64 = 360.0;
 /// Editor del script asignado a un tooltip (520 de contenido + 48 de padding).
 const TOOLTIP_SCRIPT_WIDTH: f64 = 568.0;
 const TOOLTIP_SCRIPT_HEIGHT: f64 = 560.0;
+
+fn uses_dynamic_size(kind: NativeModal) -> bool {
+    matches!(
+        kind,
+        NativeModal::SocketConfig | NativeModal::EntityProperties | NativeModal::HudEditor
+    )
+}
+
+fn dynamic_content_size(
+    app: &EditorApp,
+    kind: NativeModal,
+    base_width: f64,
+    current_width: f64,
+) -> (f64, f64) {
+    let content_height = match kind {
+        NativeModal::EntityProperties => app.entity_properties.content_height,
+        NativeModal::HudEditor => app.hud_editor.content_height,
+        _ => app.socket_config.content_height,
+    };
+    let width = match kind {
+        NativeModal::EntityProperties => {
+            f64::from(app.entity_properties.content_width).max(base_width)
+        }
+        NativeModal::HudEditor => current_width.max(base_width),
+        _ => base_width,
+    };
+    (
+        width,
+        f64::from(content_height).ceil().max(MIN_INNER_HEIGHT),
+    )
+}
 
 pub(crate) struct ModalWindow {
     window: Arc<Window>,
@@ -121,7 +152,7 @@ pub(crate) struct ModalWindow {
     fitted: bool,
     /// Las confirmaciones se ajustan al contenido; la guía usa tamaño fijo + scroll.
     fit_to_content: bool,
-    /// La ventana de sockets se reajusta cada frame a medida que crece su contenido.
+    /// Las ventanas dinámicas se reajustan cada frame a medida que crece su contenido.
     dynamic_size: bool,
     /// Ancho base elegido al abrir (se mantiene al reajustar la altura).
     base_width: f64,
@@ -162,14 +193,17 @@ impl ModalWindow {
         let scale = beside.scale_factor();
         let max_initial_width = (f64::from(beside.outer_size().width) / scale) * 0.9;
         let width = width.min(max_initial_width).max(320.0);
-        // Propiedades también debe poder crecer: con `resizable=false` Windows
-        // ignora `request_inner_size` y la ventana se queda en el ancho inicial.
-        let resizable =
-            kind == NativeModal::SceneVisualScript || kind == NativeModal::EntityProperties;
+        // Propiedades y HUD también deben poder crecer: con `resizable=false`
+        // Windows ignora `request_inner_size` y deja el tamaño inicial fijo.
+        let resizable = matches!(
+            kind,
+            NativeModal::SceneVisualScript | NativeModal::EntityProperties | NativeModal::HudEditor
+        );
         let (min_width, min_height) = match kind {
             NativeModal::SceneVisualScript => (VISUAL_SCRIPT_MIN_WIDTH, VISUAL_SCRIPT_MIN_HEIGHT),
             NativeModal::EntityProperties => (ENTITY_PROPS_WIDTH, MIN_INNER_HEIGHT),
             NativeModal::ModelPicker => (MODEL_PICKER_MIN_WIDTH, MIN_INNER_HEIGHT),
+            NativeModal::HudEditor => (HUD_WIDTH, 220.0),
             _ => (320.0, MIN_INNER_HEIGHT),
         };
         let mut attributes = Window::default_attributes()
@@ -277,10 +311,7 @@ impl ModalWindow {
                     | NativeModal::TooltipScriptEditor
                     | NativeModal::RemoveTooltipScript
             ),
-            dynamic_size: matches!(
-                kind,
-                NativeModal::SocketConfig | NativeModal::EntityProperties
-            ),
+            dynamic_size: uses_dynamic_size(kind),
             base_width: width,
             kind,
             locale: Locale::En,
@@ -549,21 +580,9 @@ impl ModalWindow {
             return;
         }
         let scale = self.window.scale_factor();
+        let current_width = f64::from(self.window.inner_size().width) / scale;
         let (width, height) = if self.dynamic_size {
-            let is_props = self.kind == NativeModal::EntityProperties;
-            let content_height = if is_props {
-                app.entity_properties.content_height
-            } else {
-                app.socket_config.content_height
-            };
-            let height = f64::from(content_height);
-            // Propiedades crece en ancho con sus pestañas; Sockets mantiene el suyo.
-            let width = if is_props {
-                f64::from(app.entity_properties.content_width).max(self.base_width)
-            } else {
-                self.base_width
-            };
-            (width, height.ceil().max(MIN_INNER_HEIGHT))
+            dynamic_content_size(app, self.kind, self.base_width, current_width)
         } else {
             let used = self.egui_ctx.globally_used_rect();
             if !used.is_finite() || used.height() <= 1.0 {
@@ -644,5 +663,26 @@ impl Drop for ModalWindow {
             let _ = self.present.gpu().device().device_wait_idle();
         }
         self.egui_renderer.take();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hud_editor_window_uses_the_measured_content_height() {
+        let mut app = crate::editor::app::EditorApp::new(crate::editor::cli::Cli::default());
+        app.hud_editor.content_height = 287.0;
+
+        assert!(uses_dynamic_size(NativeModal::HudEditor));
+        let (width, height) =
+            dynamic_content_size(&app, NativeModal::HudEditor, HUD_WIDTH, HUD_WIDTH);
+        assert_eq!(width, HUD_WIDTH);
+        assert_eq!(height, 287.0);
+
+        let (resized_width, _) =
+            dynamic_content_size(&app, NativeModal::HudEditor, HUD_WIDTH, 510.0);
+        assert_eq!(resized_width, 510.0);
     }
 }

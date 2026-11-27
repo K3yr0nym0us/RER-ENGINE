@@ -4,10 +4,13 @@
 //! Los elementos se leen del evento `player_ui_text_boxes_list` del motor y
 //! todas las acciones se envían como comandos del motor desde Rust.
 
+use std::collections::HashMap;
+
 use rer_engine_core::i18n::TextValue;
 use serde_json::{Value, json};
 
 use crate::editor::app::EditorApp;
+use crate::editor::ui::components::NumberDraft;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HudElementKind {
@@ -37,7 +40,6 @@ pub struct HudElement {
     pub z_index: i32,
     pub locked: bool,
     pub fill_color: Option<[f32; 4]>,
-    #[allow(dead_code)]
     pub texture_path: Option<String>,
 }
 
@@ -62,6 +64,10 @@ pub struct HudEditorState {
     pub image_draft: String,
     pub open_group: usize,
     pub object_draw_active: bool,
+    /// Alto medido del cuerpo; la ventana nativa lo usa para ajustarse al contenido.
+    pub content_height: f32,
+    /// Borradores de z-index para no perder ediciones mientras llega el motor.
+    pub z_drafts: HashMap<u32, NumberDraft>,
 }
 
 /// Lista de elementos del motor para la pantalla que se está editando.
@@ -209,6 +215,8 @@ pub fn begin_edit(app: &mut EditorApp, screen_id: &str) {
     app.hud_editor.editing_name = false;
     app.hud_editor.nested = None;
     app.hud_editor.open_group = 0;
+    app.hud_editor.content_height = 0.0;
+    app.hud_editor.z_drafts.clear();
     app.send_engine(json!({
         "cmd": "set_player_ui_edit_mode",
         "active": true,
@@ -257,6 +265,8 @@ pub fn end_edit(app: &mut EditorApp) {
     app.hud_editor.open = false;
     app.hud_editor.nested = None;
     app.hud_editor.object_draw_active = false;
+    app.hud_editor.content_height = 0.0;
+    app.hud_editor.z_drafts.clear();
     app.send_engine(json!({
         "cmd": "set_player_ui_edit_mode",
         "active": false,
@@ -416,6 +426,25 @@ mod tests {
         assert_eq!(app.hud_editor.font_draft, "keep.ttf");
         assert!(app.hud_editor.nested.is_none());
         assert!(app.pending_engine.borrow().is_empty());
+    }
+
+    #[test]
+    fn opening_and_closing_hud_clears_transient_layout_drafts() {
+        let mut app = EditorApp::new(crate::editor::cli::Cli::default());
+        app.hud_editor.content_height = 320.0;
+        app.hud_editor.z_drafts.insert(7, NumberDraft::default());
+
+        begin_edit(&mut app, "hud-main");
+
+        assert!(app.hud_editor.z_drafts.is_empty());
+        assert_eq!(app.hud_editor.content_height, 0.0);
+
+        app.hud_editor.content_height = 320.0;
+        app.hud_editor.z_drafts.insert(7, NumberDraft::default());
+        end_edit(&mut app);
+
+        assert!(app.hud_editor.z_drafts.is_empty());
+        assert_eq!(app.hud_editor.content_height, 0.0);
     }
 
     #[test]
